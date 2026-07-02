@@ -221,6 +221,13 @@ describe("Models route — generic OAuth refresh-and-retry", () => {
     });
     const body = await res.json();
 
+    expect(mocks.updateProviderCredentials).toHaveBeenCalledWith(
+      "conn-qwen",
+      expect.objectContaining({
+        providerSpecificData: { resourceUrl: "https://new-shard.example/v1" },
+      })
+    );
+
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
     const [retryUrl, retryInit] = mocks.fetch.mock.calls[1];
     expect(retryUrl).toBe("https://new-shard.example/v1/models");

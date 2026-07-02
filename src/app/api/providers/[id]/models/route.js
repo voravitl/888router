@@ -519,10 +519,10 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }
 
-    const buildFetchRequest = (authToken) => {
+    const buildFetchRequest = (authToken, conn = connection) => {
       let requestUrl = config.url;
-      if (connection.provider === "qwen") {
-        requestUrl = resolveQwenModelsUrl(connection);
+      if (conn.provider === "qwen") {
+        requestUrl = resolveQwenModelsUrl(conn);
       }
       if (config.authQuery) {
         requestUrl += `?${config.authQuery}=${authToken}`;
@@ -563,13 +563,21 @@ export async function GET(request, { params }) {
         if (refreshed?.accessToken) {
           await updateProviderCredentials(connection.id, refreshed);
 
-          // Merge refreshed providerSpecificData (e.g. qwen's rotated resourceUrl)
-          // into the in-memory connection so the retry targets the new shard.
-          if (refreshed.providerSpecificData) {
-            connection.providerSpecificData = refreshed.providerSpecificData;
-          }
+          // Build a request-scoped view with the refreshed providerSpecificData
+          // (e.g. qwen's rotated resourceUrl) merged in, without mutating the
+          // loaded connection record itself.
+          const refreshedConn = refreshed.providerSpecificData
+            ? {
+                ...connection,
+                ...refreshed,
+                providerSpecificData: {
+                  ...connection.providerSpecificData,
+                  ...refreshed.providerSpecificData,
+                },
+              }
+            : connection;
 
-          ({ requestUrl, requestOptions } = buildFetchRequest(refreshed.accessToken));
+          ({ requestUrl, requestOptions } = buildFetchRequest(refreshed.accessToken, refreshedConn));
           response = await fetch(requestUrl, requestOptions);
         }
       } catch (refreshError) {
