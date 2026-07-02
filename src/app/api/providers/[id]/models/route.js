@@ -6,6 +6,7 @@ import { OllamaService } from "@/lib/oauth/services/ollama";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { resolveDefaultProfileArn } from "open-sse/config/kiroConstants.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -294,7 +295,15 @@ export async function GET(request, { params }) {
       let warning;
       try {
         const kiroService = new KiroService();
-        const profileArn = connection.providerSpecificData?.profileArn;
+        const authMethod = connection.providerSpecificData?.authMethod;
+        const storedProfileArn = connection.providerSpecificData?.profileArn;
+        // API-key auth must never use the shared default ARN (403); OAuth/social fall back to it.
+        // Mirrors the same resolution used for chat requests (claude-to-kiro.js / openai-to-kiro.js)
+        // and usage lookups (usage/kiro.js) — ListAvailableModels needs the same fallback to avoid
+        // AccessDeniedException when a connection has no profileArn of its own.
+        const profileArn = authMethod === "api_key"
+          ? (storedProfileArn || "")
+          : (storedProfileArn || resolveDefaultProfileArn(authMethod));
         const accessToken = connection.accessToken;
         const refreshToken = connection.refreshToken;
 
