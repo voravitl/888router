@@ -23,6 +23,12 @@ vi.mock("@/lib/oauth/services/kiro", () => ({
   }),
 }));
 
+vi.mock("@/sse/services/tokenRefresh", () => ({
+  refreshGoogleToken: vi.fn(),
+  updateProviderCredentials: vi.fn(),
+  refreshKiroToken: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("next/server", () => ({
   NextResponse: {
     json(body, init = {}) {
@@ -99,6 +105,31 @@ describe("Kiro models route — profileArn resolution", () => {
     await res.json();
 
     expect(mocks.listAvailableModels).toHaveBeenCalledWith("kiro-api-key", "");
+  });
+
+  it("degrades to the built-in Kiro catalog with a friendly warning when AWS blocks ListAvailableModels", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-kiro-idc",
+      provider: "kiro",
+      accessToken: "kiro-access-token",
+      providerSpecificData: { authMethod: "idc" },
+    });
+    mocks.listAvailableModels.mockRejectedValue(new Error(
+      'Failed to list models: {"__type":"com.amazon.aws.codewhisperer#AccessDeniedException","message":"Your subscription does not support this application. Please contact your administrator."}',
+    ));
+
+    const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
+
+    const res = await GET(new Request("http://localhost/api/providers/conn-kiro-idc/models"), {
+      params: Promise.resolve({ id: "conn-kiro-idc" }),
+    });
+    const body = await res.json();
+
+    // Built-in catalog returned (not empty), and the raw AWS JSON is NOT surfaced.
+    expect(body.models.length).toBeGreaterThan(0);
+    expect(body.models.some((m) => m.id === "claude-sonnet-4.5")).toBe(true);
+    expect(body.warning).toMatch(/can't list models dynamically/i);
+    expect(body.warning).not.toMatch(/AccessDeniedException/);
   });
 
   it("uses the connection's own stored profileArn when present, regardless of authMethod", async () => {
