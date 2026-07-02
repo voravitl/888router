@@ -41,6 +41,11 @@ export class OllamaService {
 
       return models.map((m) => this._normalizeModel(m)).filter(Boolean);
     } catch (error) {
+      // Re-throw errors we deliberately threw above as-is — only wrap genuinely
+      // unexpected errors (e.g. network failures) with the generic message.
+      if (error.message === "Invalid or expired Ollama API key" || error.message.startsWith("HTTP ")) {
+        throw error;
+      }
       throw new Error(`Failed to list Ollama models: ${error.message}`);
     }
   }

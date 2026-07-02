@@ -349,7 +349,7 @@ export async function GET(request, { params }) {
       let warning;
       try {
         const ollamaService = new OllamaService();
-        const accessToken = connection.accessToken;
+        const accessToken = connection.accessToken || connection.apiKey;
 
         if (accessToken) {
           try {
