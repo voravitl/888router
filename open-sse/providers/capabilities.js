@@ -278,3 +278,27 @@ export function getCapabilitiesForModel(provider, model) {
   // 4. Floor
   return { ...DEFAULT_CAPABILITIES };
 }
+
+/**
+ * Strict contextWindow resolver — returns undefined ONLY when the model is
+ * genuinely unknown (would hit the step-4 DEFAULT floor). Returns the real
+ * contextWindow (including a legitimate 200000) for any matched entry in
+ * PROVIDER / MODEL / PATTERN. Used by callers that must distinguish "unknown"
+ * from "known but small" — e.g. a combo MIN must not fabricate a floor value
+ * for an unknown member, but must honour a real 200k member.
+ */
+export function resolveKnownContextWindow(provider, model) {
+  if (!model) return undefined;
+  if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
+    return PROVIDER_CAPABILITIES[provider][model].contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
+  }
+  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[model];
+  if (exact) return exact.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
+  for (const { pattern, caps } of PATTERN_CAPABILITIES) {
+    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
+      return caps.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
+    }
+  }
+  return undefined; // step-4 floor → genuinely unknown
+}
