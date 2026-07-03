@@ -201,6 +201,10 @@ export const PATTERN_CAPABILITIES = [
   // GLM-5.2 = 1M context. Match both "glm-5.2" (z.ai) and dash/date-suffixed
   // variants ("glm-5-2-260617" on BytePlus/bpm) — exact MODEL_CAPABILITIES key
   // only catches the dot form, so glob both before the generic *glm-5* 200k.
+  // NOTE: these mirror the *glm-5* family caps (zai/128k output) — only the
+  // contextWindow differs from the 200k fallback. The exact `glm-5.2` entry
+  // above (line ~75) is z.ai-specific (openai/48k) and still wins for the dot
+  // form via exact-match precedence; these patterns serve other providers.
   { pattern: "*glm-5.2*",        caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*glm-5-2*",        caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*glm-5*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
