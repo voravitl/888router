@@ -13,7 +13,7 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel, DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -89,7 +89,10 @@ const MODEL_TYPE_TO_KIND = {
 };
 
 // Resolve context_window for a combo = min across member models (round-robin/fallback
-// must work for every member). undefined if no member exposes a contextWindow.
+// must work for every member). undefined if no member exposes a real contextWindow.
+// Members that fall through to the DEFAULT_CAPABILITIES floor (unknown model) are
+// excluded so they don't fabricate a 200k floor value that distorts the min.
+const FLOOR_CONTEXT_WINDOW = DEFAULT_CAPABILITIES.contextWindow;
 function resolveComboContextWindow(combo) {
   if (!Array.isArray(combo?.models) || combo.models.length === 0) return undefined;
   let min = Infinity;
@@ -100,7 +103,9 @@ function resolveComboContextWindow(combo) {
     const modelId = ref.slice(slash + 1);
     const providerId = ALIAS_TO_ID[alias] || alias;
     const cw = getCapabilitiesForModel(providerId, modelId)?.contextWindow;
-    if (cw && cw < min) min = cw;
+    // Skip members whose only source is the DEFAULT floor (unknown to the catalog)
+    // — their 200k would fabricate a misleading min.
+    if (cw && cw !== FLOOR_CONTEXT_WINDOW && cw < min) min = cw;
   }
   return min === Infinity ? undefined : min;
 }
@@ -256,11 +261,13 @@ export async function buildModelsList(kindFilter) {
     };
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
-    }
-    const comboContextWindow = resolveComboContextWindow(combo);
-    if (comboContextWindow) {
-      entry.context_window = comboContextWindow;
-      entry.contextWindow = comboContextWindow;
+    } else {
+      // LLM combos only — web search/fetch have no chat context window
+      const comboContextWindow = resolveComboContextWindow(combo);
+      if (comboContextWindow) {
+        entry.context_window = comboContextWindow;
+        entry.contextWindow = comboContextWindow;
+      }
     }
     models.push(entry);
   }
