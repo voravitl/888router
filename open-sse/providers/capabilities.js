@@ -198,6 +198,11 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*kimi*",          caps: { reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
 
   // ── GLM / Z.ai (thinking.enabled; disable via enable_thinking:false) ─
+  // GLM-5.2 = 1M context. Match both "glm-5.2" (z.ai) and dash/date-suffixed
+  // variants ("glm-5-2-260617" on BytePlus/bpm) — exact MODEL_CAPABILITIES key
+  // only catches the dot form, so glob both before the generic *glm-5* 200k.
+  { pattern: "*glm-5.2*",        caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5-2*",        caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*glm-5*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4.7*",       caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
