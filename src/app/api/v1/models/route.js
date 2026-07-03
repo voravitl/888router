@@ -1,6 +1,7 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
+  ALIAS_TO_ID,
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
@@ -86,6 +87,23 @@ const MODEL_TYPE_TO_KIND = {
   stt: "stt",
   imageToText: "imageToText",
 };
+
+// Resolve context_window for a combo = min across member models (round-robin/fallback
+// must work for every member). undefined if no member exposes a contextWindow.
+function resolveComboContextWindow(combo) {
+  if (!Array.isArray(combo?.models) || combo.models.length === 0) return undefined;
+  let min = Infinity;
+  for (const ref of combo.models) {
+    if (typeof ref !== "string" || !ref.includes("/")) continue;
+    const slash = ref.indexOf("/");
+    const alias = ref.slice(0, slash);
+    const modelId = ref.slice(slash + 1);
+    const providerId = ALIAS_TO_ID[alias] || alias;
+    const cw = getCapabilitiesForModel(providerId, modelId)?.contextWindow;
+    if (cw && cw < min) min = cw;
+  }
+  return min === Infinity ? undefined : min;
+}
 
 function modelKind(model) {
   const k = model?.kind || model?.type;
@@ -238,6 +256,11 @@ export async function buildModelsList(kindFilter) {
     };
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
+    }
+    const comboContextWindow = resolveComboContextWindow(combo);
+    if (comboContextWindow) {
+      entry.context_window = comboContextWindow;
+      entry.contextWindow = comboContextWindow;
     }
     models.push(entry);
   }
