@@ -6,18 +6,14 @@ import { Card, Button, Modal } from "@/shared/components";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { getClaudeCodeFullModelId } from "@/shared/utils/claudeCodeModelId";
+import { useModelContextWindows, resolveContextWindow } from "@/shared/hooks/useModelContextWindows";
 
-// For "alias/model" full ids, resolve to "alias/model[1m]" when the model's
-// resolved context window is ≥ 1M (Claude Code 1M activation); bare otherwise.
-function getClaudeCodeCopyText(fullModel) {
-  if (typeof fullModel !== "string" || !fullModel.includes("/")) return fullModel;
-  const slash = fullModel.indexOf("/");
-  return getClaudeCodeFullModelId(fullModel.slice(0, slash), fullModel.slice(slash + 1));
-}
+const ONE_MILLION = 1_000_000;
 
 // ── ModelRow ───────────────────────────────────────────────────
-export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
+export function ModelRow({ model, fullModel, copied, onCopy, getContextWindow, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
+  const cw = getContextWindow?.(fullModel);
+  const copyText = cw >= ONE_MILLION ? `${fullModel}[1m]` : fullModel;
   const borderColor = testStatus === "ok" ? "border-green-500/40" : testStatus === "error" ? "border-red-500/40" : "border-border";
   const iconColor = testStatus === "ok" ? "#22c55e" : testStatus === "error" ? "#ef4444" : undefined;
 
@@ -44,7 +40,7 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
           </div>
         )}
         <div className="relative group/btn">
-          <button onClick={() => onCopy(getClaudeCodeCopyText(fullModel), `model-${model.id}`)} className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary" title={getClaudeCodeCopyText(fullModel) === fullModel ? "Copy model id" : "Copy model id with [1m] suffix for Claude Code 1M context"}>
+          <button onClick={() => onCopy(copyText, `model-${model.id}`)} className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary" title={copyText === fullModel ? "Copy model id" : "Copy model id with [1m] suffix for Claude Code 1M context"}>
             <span className="material-symbols-outlined text-sm">{copied === `model-${model.id}` ? "check" : "content_copy"}</span>
           </button>
           <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
@@ -119,6 +115,8 @@ AddCustomModelModal.propTypes = {
 // kindFilter: if provided, only shows models with matching type/kinds field.
 export default function ModelsCard({ providerId, kindFilter, providerAliasOverride }) {
   const { copied, copy } = useCopyToClipboard();
+  const { contextByFullModel } = useModelContextWindows();
+  const getContextWindow = (fullModel) => resolveContextWindow(contextByFullModel, fullModel);
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
   const [modelTestResults, setModelTestResults] = useState({});
@@ -248,6 +246,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
                 alias={existingAlias}
                 copied={copied}
                 onCopy={copy}
+                getContextWindow={getContextWindow}
                 onSetAlias={(alias) => handleSetAlias(model.id, alias)}
                 onDeleteAlias={() => handleDeleteAlias(existingAlias)}
                 testStatus={modelTestResults[model.id]}
@@ -265,6 +264,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
               fullModel={`${providerAlias}/${model.id}`}
               copied={copied}
               onCopy={copy}
+              getContextWindow={getContextWindow}
               onSetAlias={() => {}}
               onDeleteAlias={() => handleDeleteCustomModel(model.id)}
               testStatus={modelTestResults[model.id]}

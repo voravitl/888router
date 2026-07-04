@@ -4,16 +4,11 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-import { getClaudeCodeFullModelId } from "@/shared/utils/claudeCodeModelId";
 
-// Resolve "alias/model[1m]" when the model's context window is ≥ 1M
-// (Claude Code 1M activation); bare id otherwise.
-function getClaudeCodeCopyText(fullModel) {
-  if (typeof fullModel !== "string" || !fullModel.includes("/")) return fullModel;
-  const slash = fullModel.indexOf("/");
-  return getClaudeCodeFullModelId(fullModel.slice(0, slash), fullModel.slice(slash + 1));
-}
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+const ONE_MILLION = 1_000_000;
+function CompatibleModelRow({ modelId, fullModel, copied, onCopy, getContextWindow, onDeleteAlias, onTest, testStatus, isTesting }) {
+  const cw = getContextWindow?.(fullModel);
+  const copyText = cw >= ONE_MILLION ? `${fullModel}[1m]` : fullModel;
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -40,7 +35,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           <div className="relative group/btn">
             <button
-              onClick={() => onCopy(getClaudeCodeCopyText(fullModel), `model-${modelId}`)}
+              onClick={() => onCopy(copyText, `model-${modelId}`)}
               className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
             >
               <span className="material-symbols-outlined text-sm">
@@ -80,7 +75,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, getContextWindow, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -211,6 +206,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               fullModel={`${providerDisplayAlias}/${id}`}
               copied={copied}
               onCopy={onCopy}
+              getContextWindow={getContextWindow}
               onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
               onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
               testStatus={modelTestResults[id]}
