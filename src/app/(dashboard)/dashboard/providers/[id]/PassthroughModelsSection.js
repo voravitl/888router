@@ -4,6 +4,15 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { getClaudeCodeFullModelId } from "@/shared/utils/claudeCodeModelId";
+
+// Resolve "alias/model[1m]" when the model's context window is ≥ 1M
+// (Claude Code 1M activation); bare id otherwise.
+function getClaudeCodeCopyText(fullModel) {
+  if (typeof fullModel !== "string" || !fullModel.includes("/")) return fullModel;
+  const slash = fullModel.indexOf("/");
+  return getClaudeCodeFullModelId(fullModel.slice(0, slash), fullModel.slice(slash + 1));
+}
 
 function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
@@ -34,7 +43,7 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
         <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           <div className="relative group/btn">
             <button
-              onClick={() => onCopy(fullModel, `model-${modelId}`)}
+              onClick={() => onCopy(getClaudeCodeCopyText(fullModel), `model-${modelId}`)}
               className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
             >
               <span className="material-symbols-outlined text-sm">
