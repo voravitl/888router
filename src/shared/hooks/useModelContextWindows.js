@@ -14,23 +14,25 @@ async function loadContextWindows() {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const res = await fetch("/v1/models", { credentials: "include" });
+      // /api/models is the cookie-authed dashboard endpoint; /v1/models would
+      // 401 in the browser (it requires a Bearer token the UI doesn't have).
+      const res = await fetch("/api/models", { credentials: "include" });
       if (!res.ok) {
-        console.warn("[useModelContextWindows] /v1/models fetch failed", res.status);
+        console.warn("[useModelContextWindows] /api/models fetch failed", res.status);
         return null;
       }
       const data = await res.json();
       const map = {};
-      for (const m of data.data || []) {
-        const id = m?.id;
+      for (const m of data.models || []) {
+        const id = m?.fullModel || m?.id;
         if (!id) continue;
-        const cw = m.context_window || m.contextWindow;
+        const cw = m?.caps?.contextWindow;
         if (cw) map[id] = cw;
       }
       cache = map;
       return map;
     } catch (e) {
-      console.warn("[useModelContextWindows] /v1/models fetch error", e);
+      console.warn("[useModelContextWindows] /api/models fetch error", e);
       return null;
     } finally {
       inflight = null;
