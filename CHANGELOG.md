@@ -1,3 +1,9 @@
+# v0.6.3 (2026-07-04)
+
+## Fixes
+
+- **UI**: the dynamic `[1m]` copy suffix never fired on the providers detail page because page.js renders `ModelRow` from `./ModelRow.js` — a different component than the `ModelsCard` that #29/#31 wired. This PR wires `getContextWindow` + `fullModelWithSuffix` into the actual rendered row, so copying `glm/glm-5.2` now yields `glm/glm-5.2[1m]` (#33) — voravitl
+
 # v0.6.2 (2026-07-04)
 
 ## Fixes
