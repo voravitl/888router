@@ -1,3 +1,9 @@
+# v0.7.0 (2026-07-04)
+
+## Features
+
+- **Usage**: new `GET /api/usage/summary` aggregates per-provider usage/limits across every active connection in one shot — claude (5h/7d), kiro (weekly), codebuddy, codex, github, google, and more. Mirrors the per-connection route's discipline: sequential OAuth refresh, parallel usage fetch, `{authExpired:true}` for re-auth prompts, `{skipped:true,reason}` for transient failures, `connectionId` to disambiguate multi-account. Foundation for OMC HUD multi-provider limit bars (client element in a follow-up) (#35, #36) — voravitl
+
 # v0.6.3 (2026-07-04)
 
 ## Fixes
