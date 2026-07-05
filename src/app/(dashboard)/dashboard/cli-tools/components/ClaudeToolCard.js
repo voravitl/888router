@@ -5,6 +5,7 @@ import { Card, Button, ModelSelectModal, ManualConfigModal, Tooltip } from "@/sh
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
+import HudSetupButton from "./HudSetupButton";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -385,6 +386,9 @@ export default function ClaudeToolCard({
         title="Claude CLI - Manual Configuration"
         configs={getManualConfigs()}
       />
+      <div className="flex justify-end pt-2">
+        <HudSetupButton />
+      </div>
     </Card>
   );
 }
