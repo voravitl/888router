@@ -29,6 +29,10 @@ const PUBLIC_API_PATHS = [
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
+  // Aggregate usage endpoint — does its own auth (Bearer API key OR cookie),
+  // see src/app/api/usage/summary/route.js. Listed public so the guard doesn't
+  // 401 the Bearer path before the route can validate it.
+  "/api/usage/summary",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
