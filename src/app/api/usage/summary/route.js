@@ -7,25 +7,32 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { ID_TO_ALIAS as PROVIDER_ID_TO_ALIAS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials, isAuthExpiredMessage } from "../[connectionId]/route.js";
-import { getAdapter } from "@/lib/db/driver";
+import Database from "better-sqlite3";
+
+// Resolve the on-disk sqlite path the app uses (set at boot, fallback to default).
+function dbPath() {
+  return process.env.NINEROUTER_DB_PATH || "/app/data/db/data.sqlite";
+}
 
 // Accept either the dashboard cookie auth (UI) or a 9router Bearer API key
-// (for external callers like the OMC HUD rateLimitsProvider script).
-async function isAuthorized(request) {
+// (for external callers like the OMC HUD rateLimitsProvider script). Sync
+// DB open avoids the async-adapter init race that was rejecting valid keys.
+function isAuthorizedSync(request) {
   const auth = request.headers.get("authorization") || "";
-  if (auth.startsWith("Bearer ")) {
-    const token = auth.slice(7).trim();
-    try {
-      const db = await getAdapter();
-      const row = db.prepare("SELECT isActive FROM apiKeys WHERE key = ?").get(token);
-      return !!row && (row.isActive === 1 || row.isActive === true);
-    } catch (e) {
-      console.warn("[Usage/summary] Bearer auth check failed:", e?.message);
-      return false;
-    }
+  if (!auth.startsWith("Bearer ")) return true; // cookie/session layer handles it
+  const token = auth.slice(7).trim();
+  if (!token) return false;
+  let db;
+  try {
+    db = new Database(dbPath(), { readonly: true, fileMustExist: true });
+    const row = db.prepare("SELECT isActive FROM apiKeys WHERE key = ?").get(token);
+    return !!row && (row.isActive === 1 || row.isActive === true);
+  } catch (e) {
+    console.warn("[Usage/summary] Bearer auth check failed:", e?.message);
+    return false;
+  } finally {
+    try { db?.close(); } catch {}
   }
-  // No Authorization header → rely on dashboard cookie/session auth.
-  return true;
 }
 
 /**
@@ -81,7 +88,7 @@ function buildProxyOptions(conn) {
 }
 
 export async function GET(request) {
-  if (!(await isAuthorized(request))) {
+  if (!isAuthorizedSync(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
