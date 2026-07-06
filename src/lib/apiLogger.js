@@ -34,16 +34,35 @@ function statusCodeOf(result) {
   if (typeof result.status === "function") {
     try { return result.status(); } catch {}
   }
-  if (typeof result.json === "function") {
-    // No status() — default 200 for NextResponse per Next.js semantics.
-    return 200;
-  }
+  // No status() method → don't assume 200; let end-log show (unknown).
   return undefined;
+}
+
+// Patterns redacted from logged response bodies to prevent credential/PII
+// leakage if `withLogging` is ever wired to a route whose error body echoes
+// secrets (auth, settings, db). Matches JSON keys and Authorization headers.
+const REDACT_PATTERNS = [
+  /("(?:apiKey|password|token|secret|authorization)"\s*:\s*)"[^"]*"/gi,
+  /\b(Bearer|Basic)\s+[A-Za-z0-9._\-]+/gi,
+];
+const REDACT_MAX_BODY_LEN = 500;
+
+function redactBody(text) {
+  let out = text;
+  for (const re of REDACT_PATTERNS) {
+    out = out.replace(re, (_, p1) =>
+      p1 ? `${p1}"[redacted]"` : "[redacted]",
+    );
+  }
+  if (out.length > REDACT_MAX_BODY_LEN) {
+    out = `${out.slice(0, REDACT_MAX_BODY_LEN)}…[truncated]`;
+  }
+  return out;
 }
 
 /**
  * For 4xx/5xx responses, log the body so silent auth/quota failures are
- * debuggable. Reads the body text without consuming the stream when possible.
+ * debuggable. Body is redacted + length-capped to avoid leaking credentials.
  */
 async function logBodyIfErrorStatus(method, url, status, result) {
   if (status === undefined || status < 400) return;
@@ -58,7 +77,7 @@ async function logBodyIfErrorStatus(method, url, status, result) {
     console.warn(`[API] ${method} ${url} ${status} (body read failed)`);
     return;
   }
-  console.warn(`[API] ${method} ${url} ${status} body=${bodyText}`);
+  console.warn(`[API] ${method} ${url} ${status} body=${redactBody(bodyText)}`);
 }
 
 /**

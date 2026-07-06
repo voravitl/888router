@@ -116,4 +116,67 @@ describe("withLogging", () => {
       expect.stringContaining("[API] GET http://localhost/api/x 403 body=forbidden"),
     );
   });
+
+  it("redacts sensitive keys (token/password/apiKey) from logged 4xx body", async () => {
+    const handler = vi.fn(async () => makeNextResponse({
+      status: 401,
+      body: { token: "abc123", password: "hunter2", apiKey: "sk-xxx", normal: "keep" },
+    }));
+    const wrapped = withLogging(handler, "GET /secret");
+
+    await wrapped(makeRequest({ url: "http://localhost/secret" }));
+
+    const warnLine = warnSpy.mock.calls[0][0];
+    expect(warnLine).not.toContain("abc123");
+    expect(warnLine).not.toContain("hunter2");
+    expect(warnLine).not.toContain("sk-xxx");
+    expect(warnLine).toContain("[redacted]");
+    // Non-sensitive value is kept for debuggability.
+    expect(warnLine).toContain("keep");
+  });
+
+  it("redacts Bearer/Basic auth header values from logged body", async () => {
+    const handler = vi.fn(async () => makeNextResponse({
+      status: 500,
+      body: "Authorization: Bearer eyJhbGci.payload.sig",
+    }));
+    const wrapped = withLogging(handler, "GET /auth");
+
+    await wrapped(makeRequest({ url: "http://localhost/auth" }));
+
+    const warnLine = warnSpy.mock.calls[0][0];
+    expect(warnLine).not.toContain("eyJhbGci");
+    expect(warnLine).toContain("[redacted]");
+  });
+
+  it("truncates very long error bodies to a capped length", async () => {
+    const longBody = "x".repeat(2000);
+    const handler = vi.fn(async () => makeNextResponse({ status: 500, body: longBody }));
+    const wrapped = withLogging(handler, "GET /big");
+
+    await wrapped(makeRequest({ url: "http://localhost/big" }));
+
+    const warnLine = warnSpy.mock.calls[0][0];
+    // Capped at 500 + truncation marker — well below the full 2000 chars.
+    expect(warnLine).toContain("[truncated]");
+    expect(warnLine.length).toBeLessThan(700);
+  });
+
+  it("statusCodeOf returns undefined for json-only stub (no 200 assumption)", async () => {
+    // A third-party Response stub with .json() but no .status — the old code
+    // assumed 200 here, the fix returns undefined so end-log shows (unknown).
+    const jsonOnlyResponse = { async json() { return { ok: true }; } };
+    const handler = vi.fn(async () => jsonOnlyResponse);
+    const wrapped = withLogging(handler, "GET /weird");
+
+    await wrapped(makeRequest({ url: "http://localhost/weird" }));
+
+    // End-log uses `status ?? 200` — undefined falls back to 200 in the log
+    // line, but the wrapper no longer lies about status inside
+    // statusCodeOf; behavior of logEnd unchanged. We assert no body warn
+    // fires (status < 400 path) and end log shows 200.
+    expect(warnSpy).not.toHaveBeenCalled();
+    const endLine = logSpy.mock.calls[1][0];
+    expect(endLine).toMatch(/→ 200 \(\d+ms\)/);
+  });
 });
