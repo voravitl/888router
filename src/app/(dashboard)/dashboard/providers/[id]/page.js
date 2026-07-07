@@ -13,7 +13,7 @@ import { useModelContextWindows, resolveContextWindow } from "@/shared/hooks/use
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-import ModelRow from "./ModelRow";
+import ModelsTable from "./ModelsTable";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
 import ConnectionRow from "./ConnectionRow";
@@ -79,6 +79,7 @@ export default function ProviderDetailPage() {
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [syncedMap, setSyncedMap] = useState({});
   const { copied, copy } = useCopyToClipboard();
   const { contextByFullModel } = useModelContextWindows();
   const getContextWindow = (fullModel) => resolveContextWindow(contextByFullModel, fullModel);
@@ -245,6 +246,21 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error fetching custom models:", error);
+    }
+  }, []);
+
+  const fetchSyncedModels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/models/synced", { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncedMap(data || {});
+      } else {
+        setSyncedMap({});
+      }
+    } catch (error) {
+      console.log("Error fetching synced models:", error);
+      setSyncedMap({});
     }
   }, []);
 
@@ -423,7 +439,8 @@ export default function ProviderDetailPage() {
     fetchAliases();
     fetchCustomModels();
     fetchDisabledModels();
-  }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
+    fetchSyncedModels();
+  }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels, fetchSyncedModels]);
 
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
@@ -1079,63 +1096,77 @@ export default function ProviderDetailPage() {
       type: "llm",
     });
 
+    // Build a unified list for the sortable table: custom rows first, then
+    // built-in (display) models. Each row carries enough context for the
+    // Actions cell (custom rows show remove, built-in rows show disable).
+    const findSynced = (modelId) => {
+      for (const conn of connections) {
+        const key = `${conn.id}:${modelId}`;
+        if (syncedMap[key]) return syncedMap[key];
+      }
+      return {};
+    };
+    const tableModels = [
+      ...customModelRows.map((row) => {
+        const synced = findSynced(row.id);
+        return {
+          id: row.id,
+          name: row.name,
+          fullModel: `${providerDisplayAlias}/${row.id}`,
+          source: row.source,
+          alias: row.alias,
+          isCustom: true,
+          lastSyncedAt: synced.lastSyncedAt || null,
+          firstSeenAt: synced.firstSeenAt || null,
+        };
+      }),
+      ...displayModels.map((m) => {
+        const synced = findSynced(m.id);
+        return {
+          ...m,
+          fullModel: `${providerDisplayAlias}/${m.id}`,
+          isCustom: false,
+          lastSyncedAt: synced.lastSyncedAt || m.lastSyncedAt || null,
+          firstSeenAt: synced.firstSeenAt || m.firstSeenAt || null,
+        };
+      }),
+    ];
+    const isCustomMap = {};
+    const capsMap = {};
+    for (const m of tableModels) {
+      isCustomMap[m.id] = !!m.isCustom;
+      capsMap[m.id] = getCaps(`${providerId}/${m.id}`);
+    }
+    const canTest = connections.length > 0 || isFreeNoAuth;
+
     return (
-      <div className="flex flex-wrap gap-3">
-        {/* Custom models first */}
-        {customModelRows.map((model) => (
-          <ModelRow
-            key={`${model.source}-${model.fullModel}`}
-            model={{ id: model.id, name: model.name }}
-            fullModel={`${providerDisplayAlias}/${model.id}`}
-            alias={model.alias}
-            copied={copied}
-            onCopy={copy}
-            getContextWindow={getContextWindow}
-            onSetAlias={() => {}}
-            onDeleteAlias={() => {
-              if (model.source === "custom") {
-                handleDeleteCustomModel(model.id, "llm", providerStorageAlias);
-              } else {
-                handleDeleteAlias(model.alias);
-              }
-            }}
-            testStatus={modelTestResults[model.id]}
-            onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-            isTesting={testingModelIds.has(model.id)}
-            isCustom
-            isFree={false}
-            caps={getCaps(`${providerId}/${model.id}`)}
-          />
-        ))}
+      <div className="flex flex-col gap-3">
+        <ModelsTable
+          models={tableModels}
+          getContextWindow={getContextWindow}
+          copied={copied}
+          onCopy={copy}
+          onTest={canTest ? (modelId) => handleTestModel(modelId) : undefined}
+          onDeleteAlias={(modelId) => {
+            const row = customModelRows.find((r) => r.id === modelId);
+            if (!row) return;
+            if (row.source === "custom") {
+              handleDeleteCustomModel(row.id, "llm", providerStorageAlias);
+            } else {
+              handleDeleteAlias(row.alias);
+            }
+          }}
+          onDisable={(modelId) => handleDisableModel(modelId)}
+          modelTestResults={modelTestResults}
+          testingModelIds={testingModelIds}
+          isCustomMap={isCustomMap}
+          capsMap={capsMap}
+          fullModelFor={(m) => m.fullModel}
+          emptyMessage="No models configured for this provider."
+        />
 
-        {displayModels.map((model) => {
-          const fullModel = `${providerStorageAlias}/${model.id}`;
-          const oldFormatModel = `${providerId}/${model.id}`;
-          const existingAlias = Object.entries(modelAliases).find(
-            ([, m]) => m === fullModel || m === oldFormatModel
-          )?.[0];
-          return (
-            <ModelRow
-              key={model.id}
-              model={model}
-              fullModel={`${providerDisplayAlias}/${model.id}`}
-              alias={existingAlias}
-              copied={copied}
-              onCopy={copy}
-              getContextWindow={getContextWindow}
-              onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
-              onDeleteAlias={() => handleDeleteAlias(existingAlias)}
-              testStatus={modelTestResults[model.id]}
-              onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-              isTesting={testingModelIds.has(model.id)}
-              isFree={model.isFree}
-              onDisable={() => handleDisableModel(model.id)}
-              caps={getCaps(`${providerId}/${model.id}`)}
-            />
-          );
-        })}
-
-        {/* Add model button — inline, same style as model chips */}
+        <div className="flex flex-wrap gap-3">
+          {/* Add model button — inline, same style as model chips */}
         <button
           onClick={() => setShowAddCustomModel(true)}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
@@ -1222,6 +1253,7 @@ export default function ProviderDetailPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     );
   };
