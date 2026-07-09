@@ -70,7 +70,6 @@ export default function ProviderDetailPage() {
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [dynamicModels, setDynamicModels] = useState([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
@@ -463,10 +462,12 @@ export default function ProviderDetailPage() {
     const supportsDynamicModels = !isCompatible && !["kilocode", "qoder"].includes(providerId);
     if (!supportsDynamicModels) return;
 
-    setModelsLoading(true);
+    // Guard against out-of-order responses / setState-after-unmount when
+    // connections/providerId change rapidly or the page unmounts mid-fetch.
+    const controller = new AbortController();
     // Use the first active connection to fetch models
     const firstConn = activeConnections[0];
-    fetch(`/api/providers/${firstConn.id}/models`, { cache: "no-store" })
+    fetch(`/api/providers/${firstConn.id}/models`, { cache: "no-store", signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
         if (data.models && Array.isArray(data.models)) {
@@ -476,10 +477,12 @@ export default function ProviderDetailPage() {
         }
       })
       .catch((err) => {
-        console.log("Error fetching dynamic models:", err);
+        if (err?.name === "AbortError") return;
+        console.error("Error fetching dynamic models:", err);
         setDynamicModels([]);
-      })
-      .finally(() => setModelsLoading(false));
+      });
+
+    return () => controller.abort();
   }, [connections, providerId, isCompatible]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
