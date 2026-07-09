@@ -1,6 +1,6 @@
 services:
   888router:
-    image: voravitl/888router:v0.10.0
+    image: voravitl/888router:latest
     container_name: 888router
     restart: always
     ports:
