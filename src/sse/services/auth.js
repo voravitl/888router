@@ -4,6 +4,7 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { partitionByQuotaHealth, QUOTA_AVOID_THRESHOLD_PCT, QUOTA_SNAPSHOT_MAX_AGE_MS } from "open-sse/services/quotaSnapshot.js";
+import { pickByScore } from "open-sse/services/accountScoring.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -107,7 +108,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const settings = await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
-    const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
+    const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "weighted";
 
     let connection;
     // Pin to preferred connection if specified and available
@@ -158,6 +159,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           consecutiveUseCount: 1
         });
       }
+    } else if (strategy === "weighted") {
+      const byRecency = [...selectionPool].sort((a, b) => {
+        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+        if (!a.lastUsedAt) return 1;
+        if (!b.lastUsedAt) return -1;
+        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
+      });
+      const currentPickId = byRecency[0]?.lastUsedAt ? byRecency[0].id : null;
+
+      const result = pickByScore(selectionPool, { currentPickId });
+      connection = result.connection;
+      log.info("AUTH", `${provider} | weighted pick ${connection.id?.slice(0, 8)} | ${result.breakdown.reason}`);
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
       connection = selectionPool[0];

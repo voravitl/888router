@@ -135,6 +135,22 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     return null;
   };
 
+  // Read-only weighted-scoring health snapshot (quota + EMA fields written by accountScoring.js)
+  const healthParts = [];
+  if (typeof connection.quotaRemainingPct === "number" && Number.isFinite(connection.quotaRemainingPct)) {
+    healthParts.push(`quota ${connection.quotaRemainingPct}%`);
+  }
+  if (typeof connection.successEwma === "number" && Number.isFinite(connection.successEwma)) {
+    healthParts.push(`success ${Math.round(connection.successEwma * 100)}%`);
+  }
+  if (typeof connection.latEwmaPerTokenMs === "number" && Number.isFinite(connection.latEwmaPerTokenMs)) {
+    healthParts.push(`${Math.round(connection.latEwmaPerTokenMs)}ms/tok`);
+  }
+  if (connection.healthSamples) {
+    healthParts.push(`${connection.healthSamples} samples`);
+  }
+  const healthText = healthParts.join(" · ");
+
   return (
     <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
@@ -206,6 +222,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                   no_proxy: {noProxyText}
                 </span>
               )}
+            </div>
+          )}
+          {healthText && (
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-text-muted">{healthText}</span>
             </div>
           )}
         </div>
