@@ -8,7 +8,8 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, updateProviderConnection } from "@/lib/localDb";
+import { isAccountQualityFailure, updateHealthEma } from "open-sse/services/accountScoring.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -249,6 +250,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const dispatchStartedAt = Date.now();
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -282,10 +284,29 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      const latencyMs = Date.now() - dispatchStartedAt;
+      const emaUpdate = updateHealthEma(credentials._connection, { ok: true, latencyMs, outputTokens: undefined });
+      if (Object.keys(emaUpdate).length > 0) {
+        updateProviderConnection(credentials.connectionId, emaUpdate).catch((e) => {
+          log.warn("AUTH", `health EMA persist failed: ${e.message}`);
+        });
+      }
+      return result.response;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+
+    if (isAccountQualityFailure(result.status, result.error)) {
+      const latencyMs = Date.now() - dispatchStartedAt;
+      const emaUpdate = updateHealthEma(credentials._connection, { ok: false, latencyMs });
+      if (Object.keys(emaUpdate).length > 0) {
+        updateProviderConnection(credentials.connectionId, emaUpdate).catch((e) => {
+          log.warn("AUTH", `health EMA persist failed: ${e.message}`);
+        });
+      }
+    }
 
     if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
