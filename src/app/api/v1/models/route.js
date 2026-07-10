@@ -15,6 +15,7 @@ import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
+import { toClaudeCodeModelId } from "@/shared/utils/claudeCodeModelId";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -256,6 +257,10 @@ export async function buildModelsList(kindFilter) {
 
   const models = [];
 
+  // Client-facing model id for Claude Code: dashify Claude family N.M → N-M.
+  // Inverse of resolveKiroModel inbound dash→dot. Non-Claude / date ids unchanged.
+  const clientModelId = (modelId) => toClaudeCodeModelId(modelId);
+
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
@@ -289,7 +294,7 @@ export async function buildModelsList(kindFilter) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
         models.push({
-          id: `${alias}/${model.id}`,
+          id: `${alias}/${clientModelId(model.id)}`,
           object: "model",
           owned_by: alias,
         });
@@ -307,7 +312,7 @@ export async function buildModelsList(kindFilter) {
       if (!modelId) continue;
 
       models.push({
-        id: `${providerAlias}/${modelId}`,
+        id: `${providerAlias}/${clientModelId(modelId)}`,
         object: "model",
         owned_by: providerAlias,
       });
@@ -444,7 +449,7 @@ export async function buildModelsList(kindFilter) {
         if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
 
         const model = {
-          id: `${outputAlias}/${modelId}`,
+          id: `${outputAlias}/${clientModelId(modelId)}`,
           object: "model",
           owned_by: outputAlias,
         };
