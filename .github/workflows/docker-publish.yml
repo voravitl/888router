@@ -2,6 +2,8 @@ name: Build and Push Docker Image
 
 on:
   push:
+    branches:
+      - master
     tags:
       - "v*"
   workflow_dispatch:
@@ -43,8 +45,12 @@ jobs:
             ${{ env.GHCR_IMAGE }}
             ${{ env.DOCKERHUB_IMAGE }}
           tags: |
+            # Release tags: v0.10.1 → 0.10.1 (semver pattern strips leading v)
             type=semver,pattern={{version}}
+            # Continuous deploy: every master push → :latest
             type=raw,value=latest,enable={{is_default_branch}}
+            # Traceability for branch/master builds
+            type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
 
       - name: Build and push
         uses: docker/build-push-action@v6
