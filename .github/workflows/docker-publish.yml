@@ -25,14 +25,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
+          # Repo does not commit package-lock.json — skip npm cache/lock-based ci.
 
       - name: Install root dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Install test dependencies
         working-directory: tests
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Run unit smoke tests
         working-directory: tests
