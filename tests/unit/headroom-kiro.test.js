@@ -29,17 +29,21 @@ describe("compressWithHeadroom — Kiro/CodeWhisperer conversationState (#122)",
   it("compresses large toolResult text in place via Headroom", async () => {
     const longText = "x".repeat(2000);
     const shortText = "y".repeat(400);
-    global.fetch = vi.fn(async () =>
-      new Response(
+    global.fetch = vi.fn(async (_url, init) => {
+      const payload = JSON.parse(init.body);
+      // Must send tool role (user blobs are not compressed by Headroom by default)
+      expect(payload.messages[0].role).toBe("tool");
+      expect(payload.messages[0].tool_call_id).toBeTruthy();
+      return new Response(
         JSON.stringify({
-          messages: [{ role: "user", content: shortText }],
+          messages: [{ role: "tool", tool_call_id: "kiro-tool-0", content: shortText }],
           tokens_before: 500,
           tokens_after: 100,
           tokens_saved: 400,
         }),
         { status: 200 },
-      ),
-    );
+      );
+    });
 
     const body = makeKiroBody(longText);
     const diagnostics = {};
@@ -85,7 +89,7 @@ describe("compressWithHeadroom — Kiro/CodeWhisperer conversationState (#122)",
     global.fetch = vi.fn(async () =>
       new Response(
         JSON.stringify({
-          messages: [{ role: "user", content: longText + "extra" }],
+          messages: [{ role: "tool", tool_call_id: "kiro-tool-0", content: longText + "extra" }],
         }),
         { status: 200 },
       ),
@@ -111,7 +115,7 @@ describe("compressWithHeadroom — Kiro/CodeWhisperer conversationState (#122)",
     global.fetch = vi.fn(async () =>
       new Response(
         JSON.stringify({
-          messages: [{ role: "user", content: "short" }],
+          messages: [{ role: "tool", tool_call_id: "kiro-tool-0", content: "short" }],
           tokens_saved: 10,
         }),
         { status: 200 },

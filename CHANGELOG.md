@@ -1,3 +1,8 @@
+# v0.10.13 (2026-07-13)
+
+## Fixes
+- **Headroom + Kiro**: send tool blobs as `role:tool` (not user) so Headroom actually compresses; verified live shrink 5914→569 chars — voravitl
+
 # v0.10.12 (2026-07-13)
 
 ## Features
