@@ -237,12 +237,15 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     skipReasons: {},
   };
   const recent = [];
+  /** @type {Record<string, { date: string, before: number, after: number, saved: number, requests: number }>} */
+  const byDay = {};
 
   for (const row of rows) {
     const detail = parseJson(row.data, {});
     const rtkStats = detail?.rtkStats;
     const hs = detail?.headroomStats;
     const diag = detail?.headroomDiagnostics || {};
+    const dayKey = (detail.timestamp && String(detail.timestamp).slice(0, 10)) || "unknown";
 
     let rtkSaved = 0;
     let rtkPct = 0;
@@ -264,6 +267,13 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
           rtk.filterHits[key] = (rtk.filterHits[key] || 0) + 1;
         }
       }
+      if (!byDay[dayKey]) {
+        byDay[dayKey] = { date: dayKey, before: 0, after: 0, saved: 0, requests: 0 };
+      }
+      byDay[dayKey].before += rtkStats.bytesBefore;
+      byDay[dayKey].after += rtkStats.bytesAfter;
+      byDay[dayKey].saved += rtkSaved;
+      byDay[dayKey].requests += 1;
     }
 
     let hrTokens = 0;
@@ -317,6 +327,11 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     .slice(0, 5)
     .map(([reason, count]) => ({ reason, count }));
 
+  // Oldest → newest for charts (unknown last)
+  const series = Object.values(byDay)
+    .filter((d) => d.date !== "unknown")
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   return {
     period: {
       startDate: startDate || null,
@@ -337,6 +352,8 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
         : 0,
       topSkipReasons,
     },
+    // Chart-friendly series: daily RTK tool-blob bytes (not full bill)
+    series,
     recent,
     notes: {
       rtk: "Measures tool_result compression in bytes (before → after).",
