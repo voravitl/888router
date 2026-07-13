@@ -81,6 +81,32 @@ describe("dashboard guard public LLM API access", () => {
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
   });
 
+  it("allows dashboard chat completions under default /api auth (no bearer key)", async () => {
+    // Test Chat uses /api/dashboard/chat/completions so requireLogin=false / JWT
+    // works even when Docker port-publish makes the peer look non-loopback.
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    const response = await proxy(request("/api/dashboard/chat/completions", {
+      host: "localhost:20128",
+      "x-9r-real-ip": "192.168.215.1",
+      origin: "http://localhost:20128",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects dashboard chat completions when unauthenticated and requireLogin=true", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    const response = await proxy(request("/api/dashboard/chat/completions", {
+      host: "router.example.com",
+      "x-9r-real-ip": "203.0.113.10",
+    }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("Unauthorized");
+  });
+
   it("rejects remote rewritten public LLM API without API key", async () => {
     const response = await proxy(request("/api/v1/chat/completions", { host: "router.example.com" }));
 

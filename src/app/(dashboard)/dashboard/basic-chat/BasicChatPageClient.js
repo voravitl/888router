@@ -755,9 +755,10 @@ export default function BasicChatPageClient() {
       }));
 
     try {
-      // Route through the gateway OpenAI-compatible endpoint (same as CLI clients).
-      // Historical path /api/dashboard/chat/completions does not exist in this app (404).
-      const response = await fetch("/v1/chat/completions", {
+      // Dashboard-auth path (JWT / requireLogin=false), not public /v1.
+      // /v1 requires an API key for any non-loopback peer — Docker port-publish
+      // makes host→container look remote, so Test Chat would 401 without a key.
+      const response = await fetch("/api/dashboard/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
