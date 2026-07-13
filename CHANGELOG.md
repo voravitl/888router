@@ -1,3 +1,8 @@
+# v0.10.5 (2026-07-13)
+
+## Fixes
+- **Test Chat**: `API key required for remote API access` when chatting via Docker — route Test Chat through `/api/dashboard/chat/completions` (dashboard session auth) instead of public `/v1` which requires an API key for non-loopback peers — voravitl
+
 # v0.10.4 (2026-07-13)
 
 ## Fixes
