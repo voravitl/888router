@@ -1,3 +1,8 @@
+# v0.10.8 (2026-07-13)
+
+## Features
+- **Token Savings charts**: big kept/saved bar, Before·After·Saved bars, daily saved area, top-filter bars (recharts) + daily `series` in summary API — voravitl
+
 # v0.10.7 (2026-07-13)
 
 ## Features
