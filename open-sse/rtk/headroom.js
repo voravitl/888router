@@ -115,7 +115,13 @@ async function compressKiroWithHeadroom(body, url, model, timeoutMs, diagnostics
     return null;
   }
 
-  const oaiMessages = work.map((s) => ({ role: "user", content: s.text }));
+  // Headroom leaves role:user alone unless compress_user_messages=true.
+  // These blobs are tool outputs — send as role:tool so the proxy compresses them.
+  const oaiMessages = work.map((s, i) => ({
+    role: "tool",
+    tool_call_id: `kiro-tool-${i}`,
+    content: s.text,
+  }));
   const data = await callCompress(url, oaiMessages, model, timeoutMs, false, diagnostics || {});
   if (!data) return null;
 
