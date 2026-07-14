@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Headroom + Kiro**: match compressed messages back to slots by `tool_call_id` instead of array index — Headroom may drop/reorder/merge messages, and positional mapping silently applied compressed text to the wrong slot, permanently corrupting kiro `conversationState`. Unknown/duplicate/missing ids are now skipped rather than guessed (#130) — voravitl
+
 # v0.10.14 (2026-07-13)
 
 ## Features
