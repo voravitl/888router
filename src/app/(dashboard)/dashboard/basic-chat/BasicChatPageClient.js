@@ -145,7 +145,7 @@ function normalizeLiveModel(model, connection) {
     id: dedupId,
     requestModel,
     name: displayName,
-    providerId: connection.provider,
+    providerId: provider,
     providerName: getProviderLabel(connection),
     source: "live",
   };
