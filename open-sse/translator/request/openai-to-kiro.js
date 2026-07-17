@@ -532,14 +532,14 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   // Trim old history when payload exceeds the model's context window.
   // Some gpt-5.6 models have tight context limits; dropping early turns keeps
   // the request under the threshold and avoids a 400 CONTENT_LENGTH_EXCEEDS_THRESHOLD.
-  const contextWindow = getCapabilitiesForModel("kr", upstreamModel).contextWindow || 200_000;
-  const rawPayload = JSON.stringify({ history, text: currentMessage?.userInputMessage?.content || "" });
-  const estimateTokens = Math.ceil(rawPayload.length / 3.5);
-  const maxSafeTokens = Math.floor(contextWindow * 0.8);
-  if (estimateTokens > maxSafeTokens && history.length > 1) {
-    // Trim oldest history entries until we fit, keeping at least the last exchange.
-    while (history.length > 1 && Math.ceil(JSON.stringify({ history, text: currentMessage?.userInputMessage?.content || "" }).length / 3.5) > maxSafeTokens) {
-      history.shift();
+  // Remove complete user+assistant pairs (2 entries) to avoid orphaned assistant turns.
+  const contextWindow = getCapabilitiesForModel("kiro", upstreamModel).contextWindow || 200_000;
+  if (contextWindow && history.length > 2 && currentMessage) {
+    const maxSafeInputBytes = Math.floor(contextWindow * 3.0); // ~3 bytes/token conservative estimate
+    let payloadPreview = JSON.stringify({ history, text: currentMessage.userInputMessage?.content || "" });
+    while (history.length > 2 && payloadPreview.length > maxSafeInputBytes) {
+      history.splice(0, 2); // remove oldest user+assistant pair
+      payloadPreview = JSON.stringify({ history, text: currentMessage.userInputMessage?.content || "" });
     }
   }
 
