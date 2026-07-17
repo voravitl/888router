@@ -133,15 +133,15 @@ function normalizeLiveModel(model, connection) {
     ? model
     : model?.name || model?.displayName || rawId;
 
-  let requestModel = rawId;
-  // Always prefix with provider when no slashes — matches normalizeStaticModel format,
-  // so dedupeModels() in the caller can match live models against static ones.
-  if (!rawId.includes("/")) {
-    requestModel = `${connection.provider}/${rawId}`;
-  }
+  // Prefix provider/ for dedup key only — matches normalizeStaticModel format so
+  // dedupeModels() can match live models against static ones. Keep requestModel
+  // raw for non-compatible providers that may not understand provider/ prefix.
+  const dedupId = rawId.includes("/") ? rawId : `${connection.provider}/${rawId}`;
+  const isCompatible = isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider);
+  const requestModel = isCompatible ? dedupId : rawId;
 
   return {
-    id: requestModel,
+    id: dedupId,
     requestModel,
     name: displayName,
     providerId: connection.provider,
