@@ -93,6 +93,11 @@ export class KiroExecutor extends BaseExecutor {
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
 
+  // No-op: Kiro payload is already fully built by the translator. IMPORTANT:
+  // the reactive shrink-retry in execute() mutates args.body in place and relies
+  // on this returning the SAME body reference (so the mutation reaches the retry).
+  // If this is ever changed to return a new/cloned object, update execute()
+  // accordingly or the shrink-retry will silently re-send the un-shrunk payload.
   transformRequest(model, body, stream, credentials) {
     return body;
   }
@@ -145,6 +150,14 @@ export class KiroExecutor extends BaseExecutor {
       // Shrink the built Kiro payload in place. false → nothing left to shed,
       // so surface the 400 (client must compact its own context).
       if (!shrinkKiroPayload(args.body)) break;
+
+      // We are discarding this 400 response to retry with a smaller payload.
+      // clone().text() above consumed only the clone, so the original body is
+      // still unconsumed — cancel it so undici releases the socket. Without
+      // this, the repeated-400 hot loop this path exists for would leak up to
+      // KIRO_MAX_SHRINK_RETRIES sockets per request. Best-effort: a failure
+      // here must not mask the retry.
+      try { await result.response.body?.cancel?.(); } catch { /* best-effort */ }
 
       attempts++;
       args.log?.info?.("KIRO", `content-length 400 — shrank payload, retry ${attempts}/${KIRO_MAX_SHRINK_RETRIES}`);

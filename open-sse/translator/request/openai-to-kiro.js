@@ -660,16 +660,22 @@ export function shrinkKiroPayload(payload) {
   // tools schema) intact. Drop ~half the remaining history per call (geometric)
   // so we converge in a few round-trips even for long conversations — each call
   // is one upstream request, so linear single-pair drops would be far too slow.
-  // Keep the drop count even and taken from the front so the remaining history
-  // stays user-first and alternating (Kiro requires it). Dropping an assistant
-  // turn can orphan a toolResult whose defining toolUse just left — reconcile
-  // folds those back into text (same shape flattenToolInteractions produces) so
-  // Kiro does not 400 on a dangling structured reference.
+  // An even drop count from the front USUALLY keeps history user-first and
+  // alternating (Kiro requires it), but Math.min() can clamp it to an odd count
+  // when dropping the whole tail — so we post-assert the user-first invariant
+  // explicitly rather than relying on the arithmetic. Dropping an assistant turn
+  // can orphan a toolResult whose defining toolUse just left — reconcile folds
+  // those back into text (same shape flattenToolInteractions produces) so Kiro
+  // does not 400 on a dangling structured reference.
   if (Array.isArray(history) && history.length > 0) {
     let drop = Math.floor(history.length / 2);
     if (drop % 2 === 1) drop += 1; // round up to an even count
     if (drop < 2) drop = 2;        // always shed at least one turn-pair
     history.splice(0, Math.min(drop, history.length));
+    // Guarantee user-first: if the drop left a leading assistant turn, shed it.
+    if (history.length > 0 && !history[0].userInputMessage) {
+      history.splice(0, 1);
+    }
     reconcileOrphanedToolResults(history, currentMessage);
     return true;
   }

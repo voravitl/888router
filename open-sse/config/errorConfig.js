@@ -50,11 +50,14 @@ const COOLDOWN = {
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
- * Each rule: { text?, status?, cooldownMs?, backoff? }
+ * Each rule: { text?, status?, cooldownMs?, backoff?, noFallback? }
  *   - text: substring match (case-insensitive) on error message
  *   - status: HTTP status code match
  *   - cooldownMs: fixed cooldown duration
  *   - backoff: true = use exponential backoff (rate limit)
+ *   - noFallback: true = error is not account-specific (e.g. a gateway
+ *     input-size limit); do not rotate accounts or lock the account —
+ *     surface the error to the client instead.
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
