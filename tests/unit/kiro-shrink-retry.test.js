@@ -75,8 +75,7 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
       });
 
     const exec = new KiroExecutor();
-    // Skip the real AWS EventStream transform on the 200 — return response as-is.
-    vi.spyOn(exec, "transformEventStreamToSSE").mockImplementation((resp) => resp);
+    const transformSpy = vi.spyOn(exec, "transformEventStreamToSSE").mockImplementation((resp) => resp);
 
     const result = await exec.execute({ model: "kr/gpt-5.6-terra", body, stream: true, log: null });
 
@@ -84,6 +83,12 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
     expect(result.response.ok).toBe(true);                          // ended on 200
     expect(historyLenAtCall[1]).toBeLessThan(historyLenAtCall[0]);  // MUTATION propagated: payload shrank between calls
     expect(cancelLog).toEqual([400]);                               // discarded 400 body cancelled exactly once (HIGH fix)
+    // Finding #2 fix: verify transform IS called on success path
+    expect(transformSpy).toHaveBeenCalledTimes(1);
+    expect(transformSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 200, ok: true }),
+      "kr/gpt-5.6-terra",
+    );
   });
 
   it("non-content-length 400 → no retry, no shrink, body preserved for downstream", async () => {
@@ -107,9 +112,17 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
     expect(cancelLog).toEqual([]);                              // body untouched → readable by parseUpstreamError
   });
 
-  it("persistent content_length 400 → bounded retries → surfaces final 400 (not transformed)", async () => {
+  it("persistent content_length 400 → hits KIRO_MAX_SHRINK_RETRIES cap exactly (not transform)", async () => {
     const cancelLog = [];
-    const body = makeBody(6);
+    // Large current turn content so shrink never bottoms out within 5 retries.
+    // shrinkKiroPayload: empty history → falls to strategy 2 (halve content each time).
+    // 140_000 chars → 70k → 35k → 17.5k → 8.75k → 4.375k (all > 4000 floor) = 5 successful shrinks.
+    const body = {
+      conversationState: {
+        history: [],
+        currentMessage: { userInputMessage: { content: "X".repeat(140000), modelId: "m" } },
+      },
+    };
     const transformSpy = vi.fn((r) => r);
 
     const spy = vi
@@ -124,14 +137,11 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
 
     const result = await exec.execute({ model: "kr/x", body, stream: true, log: null });
 
-    // initial + retries; hard-capped at 1 + KIRO_MAX_SHRINK_RETRIES(5) = 6,
-    // but stops earlier when shrink hits the floor (history drained + tiny current turn).
-    expect(spy.mock.calls.length).toBeGreaterThan(1);           // did retry
-    expect(spy.mock.calls.length).toBeLessThanOrEqual(6);       // bounded
-    expect(result.response.status).toBe(400);                   // surfaced, not swallowed
+    // Finding #1 fix: proves the cap is exactly KIRO_MAX_SHRINK_RETRIES (5)
+    expect(spy).toHaveBeenCalledTimes(6);                       // initial + 5 retries = 6 total
+    expect(cancelLog).toHaveLength(5);                          // one cancel per discarded response
+    expect(result.response.status).toBe(400);                   // final 400 surfaced, not swallowed
     expect(transformSpy).not.toHaveBeenCalled();                // never transformed an error response
-    // one cancel per discarded 400 (every call except the final surfaced one)
-    expect(cancelLog.length).toBe(spy.mock.calls.length - 1);
   });
 
   it("oversized single current turn (empty history) → truncates content → 200", async () => {
@@ -151,12 +161,18 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
     });
 
     const exec = new KiroExecutor();
-    vi.spyOn(exec, "transformEventStreamToSSE").mockImplementation((r) => r);
+    const transformSpy = vi.spyOn(exec, "transformEventStreamToSSE").mockImplementation((r) => r);
 
     const result = await exec.execute({ model: "kr/x", body, stream: true, log: null });
 
     expect(result.response.ok).toBe(true);
     expect(body.conversationState.currentMessage.userInputMessage.content.length).toBeLessThan(50000); // truncated
     expect(cancelLog).toEqual([400]);
+    // Finding #2 fix: verify transform IS called on success path
+    expect(transformSpy).toHaveBeenCalledTimes(1);
+    expect(transformSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 200, ok: true }),
+      "kr/x",
+    );
   });
 });
