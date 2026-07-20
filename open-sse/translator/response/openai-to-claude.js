@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { accumulateToolName } from "../concerns/toolCall.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -180,43 +181,39 @@ export function openaiToClaudeResponse(chunk, state) {
   }
 
   // Tool calls
+  //
+  // Providers disagree on WHEN the tool name arrives: deepseek/claude send it
+  // in the first chunk (alongside the id), while GLM 5.2 / GPT / grok open the
+  // call with an id and stream the name in a LATER chunk (sometimes split across
+  // several). The old code read `tc.function?.name || ""` once, at first sight
+  // of the id, and emitted content_block_start immediately — so a late name was
+  // lost and the block shipped with name:"" (Claude clients then reject it with
+  // "No such tool available: "). We now ACCUMULATE both name and args across
+  // chunks and defer the block emission to finish (the same shape the
+  // antigravity translator already uses), so the name is always complete.
   if (delta?.tool_calls) {
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
 
-      // GLM/fireworks repeats id+null-name on every arg chunk; open block once per idx
-      if (tc.id && !state.toolCalls.has(idx)) {
-        stopThinkingBlock(state, results);
-        stopTextBlock(state, results);
+      // Open a provisional slot keyed on index alone so a name/args fragment
+      // that arrives before the id is not lost (some providers stream them out
+      // of order). The id and name are filled in as their fragments arrive; a
+      // slot that never gets both is dropped at finish.
+      if (!state.toolCalls.has(idx)) {
+        state.toolCalls.set(idx, { id: null, name: "" });
+      }
+      const toolInfo = state.toolCalls.get(idx);
+      if (tc.id) toolInfo.id = toolInfo.id || tc.id;
 
-        const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
-
-        // Strip prefix from tool name for response
-        let toolName = tc.function?.name || "";
-        if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
-          toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
-        }
-
-        results.push({
-          type: "content_block_start",
-          index: toolBlockIndex,
-          content_block: {
-            type: CLAUDE_BLOCK.TOOL_USE,
-            id: tc.id,
-            name: toolName,
-            input: {}
-          }
-        });
+      // Merge the name fragment, tolerating split / re-echo / snapshot shapes.
+      if (tc.function?.name) {
+        toolInfo.name = accumulateToolName(toolInfo.name, tc.function.name);
       }
 
+      // Buffer args — sanitized and emitted at finish to fix bad params.
       if (tc.function?.arguments) {
-        const toolInfo = state.toolCalls.get(idx);
-        if (toolInfo) {
-          // Buffer args instead of streaming — sanitize at finish to fix bad params
-          if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
-        }
+        if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
+        state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
       }
     }
   }
@@ -226,31 +223,66 @@ export function openaiToClaudeResponse(chunk, state) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
+    let emittedToolBlocks = 0;
     for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
+      // Resolve the fully-accumulated name; strip the legacy proxy_ prefix.
+      let toolName = toolInfo.name || "";
+      if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+        toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+      }
+
+      // A provisional slot that never received both an id and a name cannot be
+      // a valid tool_use — a nameless (or id-less) block is exactly what Claude
+      // clients reject, so drop it.
+      if (!toolInfo.id || !toolName) continue;
+      emittedToolBlocks++;
+
+      // Allocate the block index now (deferred from first-sight of the id) so
+      // it always follows any text/thinking blocks already flushed above.
+      const toolBlockIndex = state.nextBlockIndex++;
+      results.push({
+        type: "content_block_start",
+        index: toolBlockIndex,
+        content_block: {
+          type: CLAUDE_BLOCK.TOOL_USE,
+          id: toolInfo.id,
+          name: toolName,
+          input: {}
+        }
+      });
+
+      // Emit buffered + sanitized args as a single delta before stop.
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {
         const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
         results.push({
           type: "content_block_delta",
-          index: toolInfo.blockIndex,
+          index: toolBlockIndex,
           delta: { type: "input_json_delta", partial_json: sanitized }
         });
       }
       results.push({
         type: "content_block_stop",
-        index: toolInfo.blockIndex
+        index: toolBlockIndex
       });
     }
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
 
+    // If every tool call was dropped (no valid block emitted), a
+    // stop_reason of "tool_use" would tell the client to run tools that
+    // don't exist — some clients hang on that. Downgrade to end_turn.
+    let stopReason = convertFinishReason(choice.finish_reason);
+    if (stopReason === "tool_use" && emittedToolBlocks === 0) {
+      stopReason = "end_turn";
+    }
+
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+      delta: { stop_reason: stopReason },
       usage: finalUsage
     });
     results.push({ type: "message_stop" });
