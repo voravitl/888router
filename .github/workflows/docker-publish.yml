@@ -42,7 +42,8 @@ jobs:
             unit/capabilities.test.js \
             unit/dashboard-guard.test.js \
             unit/capabilities-grok-context.test.js \
-            unit/tool-cap.test.js
+            unit/tool-cap.test.js \
+            unit/provider-variance-fixes.test.js
 
   build-and-push:
     needs: test
