@@ -37,3 +37,8 @@ Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM cha
 - `registry/index.js` is an auto-generated static import list; regenerate it (don't hand-edit) after adding a `registry/{id}.js`. REGISTRY_TEMPLATE is excluded by design.
 - Special binary/protobuf formats (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — handle in their executor.
 - `rtk/` + `headroom.js` mutate the request body in-place and are **fail-open**: any error returns null and leaves the body untouched — never throw out of them. RTK skips `is_error`/`status:"error"` tool results to preserve traces.
+- **Provider Variance Guardrails**:
+  1. *Ollama `num_ctx`*: Use `resolveKnownContextWindow("ollama", model)` (NOT `getCapabilitiesForModel`) to prevent fabricating fake context limits (e.g., 200k) for unknown local models which causes VRAM OOM / HTTP 400.
+  2. *Inline Thinking Tags*: Use stateful stream processor `processStreamThinkingTags(text, state)` (NOT stateless regex) to handle `<think>` / `<reasoning>` tags split across SSE chunk boundaries and route reasoning to `thinking_delta`.
+  3. *Capabilities Scoping*: Scope 1M context windows ONLY to explicit adaptive patterns (e.g. `*claude*opus-4.6*`); fallback wildcards (`*claude*opus*`, `*claude*sonnet*`) must remain at 200k.
+
