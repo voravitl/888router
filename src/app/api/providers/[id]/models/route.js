@@ -548,8 +548,8 @@ export async function GET(request, { params }) {
       try {
         let response = await fetchModels(accessToken);
 
-        // Attempt refresh on 401/403 when refresh token exists
-        if (!response.ok && (response.status === 401 || response.status === 403) && refreshToken) {
+        // Attempt refresh on 401 when refresh token exists
+        if (!response.ok && response.status === 401 && refreshToken) {
           const refreshed = await refreshGoogleToken(refreshToken, GEMINI_CONFIG.clientId, GEMINI_CONFIG.clientSecret);
           if (refreshed?.accessToken) {
             await updateProviderCredentials(connection.id, {
@@ -667,9 +667,11 @@ export async function GET(request, { params }) {
     // token (refreshing the OAuth token would not mint a new Copilot token), so
     // github is explicitly excluded below and not covered by this generic refresh.
     const usesCopilotToken = !!connection.providerSpecificData?.copilotToken;
+    const isGoogleCliProvider = connection.provider === "antigravity" || connection.provider === "gemini-cli";
+    const isRefreshableStatus = isGoogleCliProvider ? response.status === 401 : (response.status === 401 || response.status === 403);
     if (
       !response.ok &&
-      (response.status === 401 || response.status === 403) &&
+      isRefreshableStatus &&
       connection.refreshToken &&
       !usesCopilotToken
     ) {
