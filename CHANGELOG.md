@@ -1,3 +1,15 @@
+# v0.10.26 (2026-07-24)
+
+## Fixes
+- **LLM Translator (Request Normalization)**: flatten text-only content arrays (`[{ type: 'text', text: '...' }]`) to plain strings for OpenAI-compatible providers, eliminating 400 Bad Request payload structure errors — voravitl
+- **LLM Stream Parser (NDJSON)**: support raw NDJSON stream lines starting with `{` in `parseSSELine` for Ollama/local model endpoints — voravitl
+- **LLM Translator (Response Sanitization)**: safely initialize `toolCalls` state map and sanitize `Read` tool arguments in `openaiToClaudeResponse` — voravitl
+
+# v0.10.25 (2026-07-23)
+
+## Fixes
+- **Antigravity (Model Sync)**: pass `{ project: projectId }` and `antigravity` User-Agent header in `fetchAvailableModels` requests, enabling full dynamic model listing in Sync Upstream Models UI — voravitl
+
 # v0.10.24 (2026-07-23)
 
 ## Fixes

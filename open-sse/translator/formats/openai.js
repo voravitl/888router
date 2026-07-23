@@ -53,7 +53,14 @@ export function filterToOpenAIFormat(body, opts = {}) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
-      
+
+      // If array contains ONLY text blocks (without cache_control), flatten to a single string for provider compatibility
+      const isTextOnly = !keepCache && filteredContent.every(b => b.type === OPENAI_BLOCK.TEXT && !b.cache_control);
+      if (isTextOnly) {
+        const textStr = filteredContent.map(b => b.text || "").join("\n");
+        return { ...msg, content: textStr };
+      }
+
       return { ...msg, content: filteredContent };
     }
     

@@ -214,6 +214,7 @@ export function openaiToClaudeResponse(chunk, state) {
   // chunks and defer the block emission to finish (the same shape the
   // antigravity translator already uses), so the name is always complete.
   if (delta?.tool_calls) {
+    if (!state.toolCalls) state.toolCalls = new Map();
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
 
@@ -246,7 +247,7 @@ export function openaiToClaudeResponse(chunk, state) {
     stopTextBlock(state, results);
 
     let emittedToolBlocks = 0;
-    for (const [idx, toolInfo] of state.toolCalls) {
+    for (const [idx, toolInfo] of (state.toolCalls || [])) {
       // Resolve the fully-accumulated name; strip the legacy proxy_ prefix.
       let toolName = toolInfo.name || "";
       if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
