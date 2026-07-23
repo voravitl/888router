@@ -1,3 +1,8 @@
+# v0.10.23 (2026-07-23)
+
+## Fixes
+- **Antigravity (Token Refresh)**: restrict OAuth token refresh trigger to 401 Unauthorized only (preventing infinite token refresh loops on 403 Permission Denied) — voravitl
+
 # v0.10.22 (2026-07-23)
 
 ## Fixes
