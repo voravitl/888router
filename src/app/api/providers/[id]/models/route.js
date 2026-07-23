@@ -4,7 +4,7 @@ import { getSyncedModelsMap, stampSyncedModels } from "@/lib/db";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { OllamaService } from "@/lib/oauth/services/ollama";
-import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
+import { GEMINI_CONFIG, ANTIGRAVITY_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { refreshProviderCredentials } from "open-sse/services/oauthCredentialManager.js";
@@ -533,10 +533,10 @@ export async function GET(request, { params }) {
         ? "antigravity/1.107.0 darwin/arm64"
         : "google-api-nodejs-client/9.15.1";
       const clientId = connection.provider === "antigravity"
-        ? ANTIGRAVITY_OAUTH_CLIENT.clientId
+        ? ANTIGRAVITY_CONFIG.clientId
         : GEMINI_CONFIG.clientId;
       const clientSecret = connection.provider === "antigravity"
-        ? ANTIGRAVITY_OAUTH_CLIENT.clientSecret
+        ? ANTIGRAVITY_CONFIG.clientSecret
         : GEMINI_CONFIG.clientSecret;
 
       const fetchModels = async (token) => {
