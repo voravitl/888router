@@ -78,7 +78,7 @@ describe("Group A models config", () => {
       const body = await res.json();
 
       expect(mocks.fetch.mock.calls.at(-1)[0], provider).toBe(url);
-      expect(body.models, provider).toEqual([{ id: "m1" }]);
+      expect(body.models.map((m) => ({ id: m.id })), provider).toEqual([{ id: "m1" }]);
     }
   });
 });

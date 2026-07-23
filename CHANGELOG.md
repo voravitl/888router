@@ -1,3 +1,10 @@
+# v0.10.27 (2026-07-24)
+
+## Fixes & Improvements
+- **LLM Context History (Reasoning Context)**: preserve `reasoning_content` from OpenAI assistant message history into Claude `thinking` blocks in `openaiToClaudeRequest`, preventing loss of model reasoning context — voravitl
+- **LLM Token Limits (`max_completion_tokens`)**: support `max_completion_tokens` fallback in `adjustMaxTokens` for modern OpenAI/reasoning models (o1, o3-mini, GPT-4o, GPT-5) — voravitl
+- **Combo Auto-Switch**: enable `web_search` tool capability detection and optimize `reorderByCapabilities` array reference stability — voravitl
+
 # v0.10.26 (2026-07-24)
 
 ## Fixes

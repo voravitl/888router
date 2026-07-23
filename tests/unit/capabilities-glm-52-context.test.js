@@ -11,7 +11,7 @@ describe("GLM-5.2 1M context capabilities", () => {
   const cases = [
     ["bpm", "glm-5-2-260617"], // BytePlus dash/date form (the bug)
     ["glm", "glm-5.2"], // z.ai dot form
-    ["codebuddy-cn", "glm-5.2"],
+    ["volcengine", "glm-5.2"],
     ["ollama", "glm-5.2"],
     ["openrouter", "glm-5.2"],
   ];
