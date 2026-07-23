@@ -87,7 +87,7 @@ const LIVE_MODEL_RESOLVERS = {
       return res;
     };
     let res = await doFetch(token).catch(() => null);
-    if (res && (res.status === 401 || res.status === 403) && conn.refreshToken) {
+    if (res && res.status === 401 && conn.refreshToken) {
       const refreshed = await refreshGoogleToken(
         conn.refreshToken,
         ANTIGRAVITY_OAUTH_CLIENT.clientId,
