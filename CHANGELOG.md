@@ -1,4 +1,4 @@
-# v0.10.21 (2026-07-23)
+# v0.10.22 (2026-07-23)
 
 ## Fixes
 - **Antigravity (Live Model Resolver)**: fix `refreshed?.access_token` typo (`accessToken`) in Google token refresh for `antigravity` live model resolver in `/v1/models` route — voravitl
