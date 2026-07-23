@@ -47,12 +47,15 @@ class MemoryHealthStore {
     }
   }
 
-  isNodeOpen(nodeId) {
+  isNodeOpen(nodeId, providerId) {
     if (!nodeId) return false;
     const entry = this.nodeFailures.get(nodeId);
     if (!entry) return false;
     if (this.now() > entry.resetAt) {
       this.nodeFailures.delete(nodeId);
+      if (providerId && this.providerFailedNodes.has(providerId)) {
+        this.providerFailedNodes.get(providerId).delete(nodeId);
+      }
       return false;
     }
     return entry.count >= this.maxNodeErrors;
@@ -61,7 +64,15 @@ class MemoryHealthStore {
   isProviderOpen(providerId) {
     if (!providerId) return false;
     const failedSet = this.providerFailedNodes.get(providerId);
-    if (!failedSet) return false;
+    if (!failedSet || failedSet.size === 0) return false;
+
+    // Prune any expired node IDs from the failed set
+    for (const nodeId of Array.from(failedSet)) {
+      if (!this.isNodeOpen(nodeId, providerId)) {
+        failedSet.delete(nodeId);
+      }
+    }
+
     return failedSet.size >= this.minFailedNodesForProviderCB;
   }
 

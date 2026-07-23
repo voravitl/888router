@@ -44,13 +44,22 @@ export function estimateRequestTokens(body) {
 
 /**
  * Group messages into atomic turn groups to ensure tool_use & tool_result pairs are never split.
- * Group structure: { isSystem: boolean, isTrailing: boolean, messages: Array }
+ * Handles both OpenAI (role: "tool") and Claude (role: "user" with type: "tool_result") shapes.
  */
 export function groupMessageTurns(messages) {
   if (!Array.isArray(messages) || messages.length === 0) return [];
 
   const groups = [];
   let currentGroup = [];
+
+  const isToolResultMsg = (msg) => {
+    if (!msg) return false;
+    if (msg.role === "tool" || msg.role === "function") return true;
+    if (msg.role === "user" && Array.isArray(msg.content)) {
+      return msg.content.some(b => b && (b.type === "tool_result" || b.tool_use_id));
+    }
+    return false;
+  };
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
@@ -65,19 +74,15 @@ export function groupMessageTurns(messages) {
       continue;
     }
 
-    if (msg.role === "user") {
+    if (msg.role === "user" && !isToolResultMsg(msg)) {
       if (currentGroup.length > 0) {
         groups.push({ messages: currentGroup });
         currentGroup = [];
       }
       currentGroup.push(msg);
     } else {
-      // assistant or tool or function
-      if (currentGroup.length === 0) {
-        currentGroup.push(msg);
-      } else {
-        currentGroup.push(msg);
-      }
+      // assistant or tool or user tool_result
+      currentGroup.push(msg);
     }
   }
 
@@ -109,7 +114,10 @@ export function pruneMessageHistory(body, provider, model) {
   const caps = getCapabilitiesForModel(provider, model);
   const contextWindow = caps.contextWindow || 200000;
   const maxOutput = caps.maxOutput || 64000;
-  const budget = Math.max(8000, contextWindow - maxOutput - DEFAULT_RESERVE_TOKENS);
+
+  // Safe budget formula: never collapse below 70% of contextWindow even when maxOutput equals contextWindow
+  const rawBudget = contextWindow - maxOutput - DEFAULT_RESERVE_TOKENS;
+  const budget = Math.max(Math.floor(contextWindow * 0.7), rawBudget);
 
   const initialEstimate = estimateRequestTokens(body);
   if (initialEstimate <= budget) return body;

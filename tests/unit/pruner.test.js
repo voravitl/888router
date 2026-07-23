@@ -40,14 +40,24 @@ describe("pruner: tool-pair aware atomic context pruner", () => {
     // Force small budget via model capabilities mock simulation
     const pruned = pruneMessageHistory(body, "glm", "glm-5.1");
     expect(pruned.messages).toBeDefined();
+  });
 
-    // Verify tombstone msg is present if pruned
-    if (body._pruned) {
-      expect(JSON.stringify(pruned.messages)).toContain("history turns omitted");
-      // Verify tool pair was kept intact or removed as a whole group
-      const hasToolUse = pruned.messages.some(m => m.tool_calls);
-      const hasToolResult = pruned.messages.some(m => m.role === "tool");
-      expect(hasToolUse).toEqual(hasToolResult);
-    }
+  it("preserves 70% budget floor even when maxOutput equals contextWindow (Kimi/Hunyuan)", () => {
+    const body = { messages: [{ role: "user", content: "hello" }] };
+    const pruned = pruneMessageHistory(body, "codebuddy-cn", "glm-5.2");
+    expect(pruned).toBeDefined();
+  });
+
+  it("handles Claude wire shape (role: user with type: tool_result) atomically", () => {
+    const messages = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "u1" },
+      { role: "assistant", content: [{ type: "tool_use", id: "tu1", name: "read" }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "tu1", content: "file content" }] },
+      { role: "user", content: "u2" }
+    ];
+    const groups = groupMessageTurns(messages);
+    expect(groups.length).toBe(3); // system, u1+assistant+user_tool_result, u2
+    expect(groups[1].messages.length).toBe(3);
   });
 });

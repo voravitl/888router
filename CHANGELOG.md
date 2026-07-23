@@ -1,3 +1,11 @@
+# v0.10.29 (2026-07-24)
+
+## Fixes & Improvements (Adversarial Sub-Agent Audit Refinements)
+- **Context Pruner Budget Floor**: fixed budget floor calculation to preserve `70% * contextWindow` minimum for high-maxOutput models like Kimi & Hunyuan — voravitl
+- **Claude Wire Tool-Pair Grouping**: extended `groupMessageTurns` to recognize Claude `role: "user"` tool_result blocks atomically, preventing tool chain splits — voravitl
+- **Stale Node Cleanup in HealthStore**: added automated pruning of expired node IDs in `isProviderOpen` and `isNodeOpen` — voravitl
+- **ProxyAgent Socket Cleanup**: destroy evicted ProxyAgent instances to prevent FD/socket leaks on proxy configuration changes — voravitl
+
 # v0.10.28 (2026-07-24)
 
 ## Features & Improvements (4-Phase Ultracode Architecture)
