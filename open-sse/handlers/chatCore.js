@@ -28,6 +28,7 @@ import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadr
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
+import { pruneMessageHistory } from "../translator/concerns/pruner.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -174,6 +175,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody.messages = translatedBody.messages.filter(msg => msg.role !== "tool");
     delete translatedBody.tools;
   }
+
+  // Context Pruner: atomic middle-out pruning when prompt tokens exceed model context budget
+  pruneMessageHistory(translatedBody, provider, upstreamModel);
 
   // RTK: compress tool_result content
   rtkStats = compressMessages(translatedBody, rtkEnabled);

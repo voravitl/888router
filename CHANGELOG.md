@@ -1,3 +1,11 @@
+# v0.10.28 (2026-07-24)
+
+## Features & Improvements (4-Phase Ultracode Architecture)
+- **Phase 1 (Latency & Media)**: persistent `undici.Agent` HTTP Keep-Alive connection pool in `proxyFetch.js` (`keepAliveTimeout: 30s`, `connections: 100`) — voravitl
+- **Phase 2 (Context Pruner)**: tool-pair aware atomic middle-out context pruner (`open-sse/translator/concerns/pruner.js`) preventing history token overflow while strictly keeping `tool_use` and `tool_result` pairs intact — voravitl
+- **Phase 3 (Reasoning Gap-Fill)**: unified thinking normalization for Qwen, Kimi, Hunyuan, and Step reasoning tags — voravitl
+- **Phase 4 (Health & Circuit Breaker)**: in-memory `MemoryHealthStore` (`open-sse/services/healthStore.js`) and L1->L2->L3 layered circuit breaker preventing single-account 429 quota locks from closing provider nodes — voravitl
+
 # v0.10.27 (2026-07-24)
 
 ## Fixes & Improvements

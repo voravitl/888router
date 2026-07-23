@@ -291,6 +291,24 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   });
 }
 
+let directDispatcher = null;
+
+async function getDirectDispatcher() {
+  if (!directDispatcher) {
+    try {
+      const { Agent } = await import("undici");
+      directDispatcher = new Agent({
+        keepAliveTimeout: 30000,
+        keepAliveMaxTimeout: 60000,
+        connections: 100,
+      });
+    } catch {
+      directDispatcher = null;
+    }
+  }
+  return directDispatcher;
+}
+
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
 
@@ -344,13 +362,14 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
       }
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
-      return originalFetch(url, options);
+      const directDisp = options.dispatcher || await getDirectDispatcher();
+      return originalFetch(url, directDisp ? { ...options, dispatcher: directDisp } : options);
     }
   }
 
-  // got-scraping disabled — use native fetch directly
-  // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
-  return originalFetch(url, options);
+  // Direct path: use persistent undici Agent for Keep-Alive connection reuse
+  const directDisp = options.dispatcher || await getDirectDispatcher();
+  return originalFetch(url, directDisp ? { ...options, dispatcher: directDisp } : options);
 }
 
 /**
