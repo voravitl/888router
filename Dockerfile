@@ -27,6 +27,11 @@ ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
 
+# Time zone for usage stats — Thailand time (default, override via -e TZ=<zone>)
+# docker run -e TZ=Europe/Berlin ... to use a different zone
+RUN apk --no-cache add tzdata
+ENV TZ=Asia/Bangkok
+
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
