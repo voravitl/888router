@@ -9,6 +9,7 @@ describe("OpenCode Zen & Go Unified Executor & Registry", () => {
     expect(opencodeRegistry.authModes).toContain("apikey");
     expect(opencodeRegistry.category).toBe("apikey");
     expect(opencodeRegistry.hasFree).toBe(true);
+    expect(opencodeRegistry.aliases).toContain("oc");
   });
 
   it("should route to OpenCode Free (Zen) when no API key is provided", () => {
@@ -21,13 +22,34 @@ describe("OpenCode Zen & Go Unified Executor & Registry", () => {
     expect(url).toBe("https://opencode.ai/zen/v1/chat/completions");
   });
 
-  it("should route to OpenCode Go when an API key is provided", () => {
+  it("should route whitespace-only API keys to Free (Zen) mode", () => {
+    const executor = new OpenCodeExecutor();
+    const creds = { apiKey: "   " };
+    const headers = executor.buildHeaders(creds, true, "glm-5.2");
+    const url = executor.buildUrl("glm-5.2", true, 0, creds);
+
+    expect(headers["Authorization"]).toBe("Bearer public");
+    expect(url).toBe("https://opencode.ai/zen/v1/chat/completions");
+  });
+
+  it("should include anthropic-version for free mode Claude format models", () => {
+    const executor = new OpenCodeExecutor();
+    const headers = executor.buildHeaders(null, true, "minimax-m3");
+    const url = executor.buildUrl("minimax-m3", true, 0, null);
+
+    expect(headers["Authorization"]).toBe("Bearer public");
+    expect(headers["anthropic-version"]).toBeDefined();
+    expect(url).toBe("https://opencode.ai/zen/v1/messages");
+  });
+
+  it("should route to OpenCode Go when a valid API key is provided and include x-opencode-client", () => {
     const executor = new OpenCodeExecutor();
     const creds = { apiKey: "sk-test-opencode-key" };
     const url = executor.buildUrl("glm-5.2", true, 0, creds);
     const headers = executor.buildHeaders(creds, true, "glm-5.2");
 
     expect(headers["Authorization"]).toBe("Bearer sk-test-opencode-key");
+    expect(headers["x-opencode-client"]).toBe("desktop");
     expect(url).toBe("https://opencode.ai/zen/go/v1/chat/completions");
   });
 
@@ -39,6 +61,7 @@ describe("OpenCode Zen & Go Unified Executor & Registry", () => {
 
     expect(url).toBe("https://opencode.ai/zen/go/v1/messages");
     expect(headers["x-api-key"]).toBe("sk-test-opencode-key");
+    expect(headers["x-opencode-client"]).toBe("desktop");
     expect(headers["anthropic-version"]).toBeDefined();
   });
 

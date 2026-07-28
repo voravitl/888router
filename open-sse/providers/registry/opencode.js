@@ -3,7 +3,7 @@ export default {
   priority: 210,
   hasFree: true,
   alias: "oc",
-  aliases: ["opencode", "ocg"],
+  aliases: ["oc", "opencode", "ocg"],
   uiAlias: "oc",
   display: {
     name: "OpenCode",
