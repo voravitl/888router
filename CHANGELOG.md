@@ -1,3 +1,9 @@
+# v0.10.37 (2026-07-28)
+
+## Fixes & Improvements (dataDir Error Handling & Unit Test Coverage)
+- **dataDir Error Handling**: restricted `getDataDir` error catch block to `ENOENT`, `EACCES`, and `EPERM` so unrecoverable system errors (e.g. `ENOSPC`) re-throw properly — voravitl
+- **Unit Test Coverage**: added `tests/unit/datadir-fallback.test.js` pinning default dir fallback and `ENOSPC` re-throw contract — voravitl
+
 # v0.10.36 (2026-07-28)
 
 ## Fixes & Improvements (Responses API Tool Name Accumulation & Unit Test Coverage)
