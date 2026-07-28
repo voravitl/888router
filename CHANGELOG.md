@@ -1,3 +1,11 @@
+# v0.10.32 (2026-07-28)
+
+## Features & Improvements (Models Table Deduplication, Search & 1M Combo Suffix)
+- **Available Models Table Deduplication & Realtime Search**: deduplicated model rows in `ModelsTable` and `CompatibleModelsSection` by `fullModel`/`id`, added realtime search filter bar with model count, and fixed thinking dropdown formatting — voravitl
+- **Dynamic Context Window Sorting**: updated `compareModels` to compute fallback context sizes via `getContextWindow`, ensuring context column sorting works accurately — voravitl
+- **Combos 1M Context Badge & Auto-Suffix**: added `1M` purple badge on combo cards with maxContext >= 1M tokens and updated copy action to append `[1m]` suffix automatically for Claude Code — voravitl
+- **Docker Builder Safety**: ensured `/app/data` directory exists during Next.js static page prerendering phase in Dockerfile — voravitl
+
 # v0.10.31 (2026-07-24)
 
 ## Features & Improvements (Token Savings DB Metering & Dual-Average UI)
