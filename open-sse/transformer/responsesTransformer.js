@@ -6,6 +6,7 @@
 
 import fs from "fs";
 import path from "path";
+import { accumulateToolName } from "../translator/concerns/toolCall.js";
 
 // Create log directory for responses (Node.js only)
 export function createResponsesLogger(model, logsDir = null) {
@@ -379,7 +380,7 @@ export function createResponsesApiTransformStream(logger = null) {
             const newCallId = tc.id;
             const funcName = tc.function?.name;
 
-            if (funcName) state.funcNames[tcIdx] = funcName;
+            if (funcName) state.funcNames[tcIdx] = accumulateToolName(state.funcNames[tcIdx], funcName);
 
             if (!state.funcCallIds[tcIdx] && newCallId) {
               state.funcCallIds[tcIdx] = newCallId;

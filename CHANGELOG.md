@@ -1,3 +1,9 @@
+# v0.10.36 (2026-07-28)
+
+## Fixes & Improvements (Responses API Tool Name Accumulation & Unit Test Coverage)
+- **Responses API Tool Name Accumulation**: fixed tool name accumulation in `responsesTransformer.js` to use `accumulateToolName` instead of overwriting, supporting split tool name chunks across streaming SSE chunks — voravitl (closes #149)
+- **Unit Test Coverage**: added dedicated unit test suite in `tests/unit/tool-call-accumulate.test.js` locking `accumulateToolName()` logic across split, re-echo, snapshot, shorter re-echo, and streaming SSE responses — voravitl (fixes #151)
+
 # v0.10.35 (2026-07-28)
 
 ## Features & Improvements (OpenCode Free Models Registry)

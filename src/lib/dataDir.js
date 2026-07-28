@@ -26,11 +26,8 @@ export function getDataDir() {
     fs.mkdirSync(configured, { recursive: true });
     return configured;
   } catch (e) {
-    if (e?.code === "EACCES" || e?.code === "EPERM") {
-      console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
-      return defaultDir();
-    }
-    throw e;
+    console.warn(`[DATA_DIR] '${configured}' invalid or not writable (${e?.code || e?.message}) → fallback ~/.${APP_NAME}`);
+    return defaultDir();
   }
 }
 
