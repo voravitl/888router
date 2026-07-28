@@ -1,3 +1,8 @@
+# v0.10.34 (2026-07-28)
+
+## Features & Improvements (OpenCode Dynamic Model Sync Handler)
+- **OpenCode Model Sync**: added dynamic model listing handler for `opencode` provider in `/api/providers/[id]/models` route, automatically fetching live models from Zen Free or Zen Go based on connection API key presence — voravitl
+
 # v0.10.33 (2026-07-28)
 
 ## Features & Improvements (Unified OpenCode Zen Free & OpenCode Go Provider)
