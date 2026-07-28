@@ -1,3 +1,8 @@
+# v0.10.35 (2026-07-28)
+
+## Features & Improvements (OpenCode Free Models Registry)
+- **OpenCode Free Models**: added OpenCode Free models (`deepseek-v4-flash-free`, `mimo-v2.5-free`, `ling-3.0-flash-free`, `nemotron-3-ultra-free`, `north-mini-code-free`, `laguna-s-2.1-free`) to OpenCode default provider registry models list — voravitl
+
 # v0.10.34 (2026-07-28)
 
 ## Features & Improvements (OpenCode Dynamic Model Sync Handler)

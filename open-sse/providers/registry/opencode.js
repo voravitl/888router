@@ -28,6 +28,12 @@ export default {
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
   models: [
+    { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash (Free)" },
+    { id: "mimo-v2.5-free", name: "MiMo V2.5 (Free)" },
+    { id: "ling-3.0-flash-free", name: "Ling 3.0 Flash (Free)" },
+    { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra (Free)" },
+    { id: "north-mini-code-free", name: "North Mini Code (Free)" },
+    { id: "laguna-s-2.1-free", name: "Laguna S 2.1 (Free)" },
     { id: "glm-5.2", name: "GLM 5.2" },
     { id: "glm-5.1", name: "GLM 5.1" },
     { id: "kimi-k2.7-code", name: "Kimi K2.7 Code" },
