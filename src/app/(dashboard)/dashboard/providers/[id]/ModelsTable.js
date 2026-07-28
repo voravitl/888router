@@ -49,6 +49,7 @@ export default function ModelsTable({
 }) {
   const [sortField, setSortField] = useState("releasedAt");
   const [sortOrder, setSortOrder] = useState("desc");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const toggleSort = (field) => {
     if (sortField === field) {
@@ -59,11 +60,29 @@ export default function ModelsTable({
     }
   };
 
-  const sorted = useMemo(() => {
+  const filteredModels = useMemo(() => {
     const arr = Array.isArray(models) ? [...models] : [];
-    arr.sort((a, b) => compareModels(a, b, sortField, sortOrder));
+    if (!searchQuery.trim()) return arr;
+    const q = searchQuery.trim().toLowerCase();
+    return arr.filter((m) => {
+      const fullModel = (fullModelFor ? fullModelFor(m) : m.fullModel) || "";
+      const name = m.name || "";
+      const id = m.id || "";
+      const alias = m.alias || "";
+      return (
+        fullModel.toLowerCase().includes(q) ||
+        name.toLowerCase().includes(q) ||
+        id.toLowerCase().includes(q) ||
+        alias.toLowerCase().includes(q)
+      );
+    });
+  }, [models, searchQuery, fullModelFor]);
+
+  const sorted = useMemo(() => {
+    const arr = [...filteredModels];
+    arr.sort((a, b) => compareModels(a, b, sortField, sortOrder, getContextWindow));
     return arr;
-  }, [models, sortField, sortOrder]);
+  }, [filteredModels, sortField, sortOrder, getContextWindow]);
 
   const headerCell = (field, label, align = "left") => (
     <th
@@ -79,6 +98,36 @@ export default function ModelsTable({
 
   return (
     <div className="overflow-hidden rounded-xl border border-border/80 bg-background shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border-b border-border/60 bg-sidebar/30">
+        <div className="relative flex-1 max-w-sm">
+          <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-text-muted/60">
+            search
+          </span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search models..."
+            className="w-full rounded-lg border border-border/80 bg-background pl-8 pr-8 py-1.5 text-xs text-text-main placeholder:text-text-muted/50 focus:border-primary focus:outline-none transition-colors"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted/60 hover:text-text-main"
+              title="Clear search"
+            >
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          )}
+        </div>
+        <div className="text-xs text-text-muted px-1">
+          {searchQuery ? (
+            <span>Showing {sorted.length} of {models.length} model{models.length !== 1 ? "s" : ""}</span>
+          ) : (
+            <span>{models.length} model{models.length !== 1 ? "s" : ""} available</span>
+          )}
+        </div>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-border/60 bg-sidebar/50 text-xs text-text-muted uppercase tracking-wider">
@@ -90,7 +139,22 @@ export default function ModelsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {sorted.length === 0 && (
+            {models.length > 0 && sorted.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-text-muted">
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    <span className="material-symbols-outlined text-[32px] text-text-muted/40">search_off</span>
+                    <span>No models matching "{searchQuery}"</span>
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="text-xs text-primary hover:underline font-medium mt-1"
+                    >
+                      Clear search
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ) : sorted.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-text-muted">
                   <div className="flex flex-col items-center justify-center gap-2">
@@ -99,10 +163,10 @@ export default function ModelsTable({
                   </div>
                 </td>
               </tr>
-            )}
-            {sorted.map((model) => {
+            ) : null}
+            {sorted.map((model, idx) => {
               const fullModel = fullModelFor ? fullModelFor(model) : model.fullModel;
-              const rowKey = fullModel || model.id;
+              const rowKey = `${fullModel || model.id}-${idx}`;
               const ctx = model.maxInputTokens || model.contextLength || (getContextWindow ? getContextWindow(fullModel) : 0) || 0;
               const testStatus = modelTestResults[model.id];
               const isTesting = testingModelIds && testingModelIds.has ? testingModelIds.has(model.id) : false;
@@ -132,7 +196,19 @@ export default function ModelsTable({
                       </span>
                       <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <div className="flex items-center gap-2">
-                          <code className="max-w-[72vw] truncate rounded-md border border-border/60 bg-sidebar px-2 py-0.5 font-mono text-xs font-semibold text-text-main group-hover:border-primary/40 group-hover:text-primary transition-colors sm:max-w-[360px]">
+                          <code
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => onCopy?.(copyText, `model-${model.id}`)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                onCopy?.(copyText, `model-${model.id}`);
+                              }
+                            }}
+                            title="Click to copy model name"
+                            className="max-w-[72vw] cursor-pointer truncate rounded-md border border-border/60 bg-sidebar px-2 py-0.5 font-mono text-xs font-semibold text-text-main group-hover:border-primary/40 group-hover:text-primary transition-colors sm:max-w-[360px]"
+                          >
                             {fullModel}
                           </code>
                           {isCustom && (

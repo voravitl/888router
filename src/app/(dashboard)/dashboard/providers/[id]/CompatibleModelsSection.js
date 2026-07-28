@@ -99,13 +99,21 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   // have no static catalog, so every row is custom (remove-only). The aliases
   // returned from /models (handleImport path) carry lastSyncedAt/firstSeenAt
   // when present on the stored custom-model record (currently absent → null).
-  const tableModels = allModels.map((row) => ({
-    id: row.id,
-    name: row.name,
-    fullModel: `${providerDisplayAlias}/${row.id}`,
-    source: row.source,
-    alias: row.alias,
-  }));
+  const seenKeys = new Set();
+  const tableModels = allModels
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      fullModel: `${providerDisplayAlias}/${row.id}`,
+      source: row.source,
+      alias: row.alias,
+    }))
+    .filter((m) => {
+      const key = m.fullModel || m.id;
+      if (seenKeys.has(key)) return false;
+      seenKeys.add(key);
+      return true;
+    });
   const testingModelIds = {
     has: (id) => testingModelId === id,
   };

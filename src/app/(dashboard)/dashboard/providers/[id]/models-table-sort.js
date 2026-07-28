@@ -5,7 +5,7 @@
 // Sortable fields: "releasedAt" | "name" | "context".
 // Null releasedAt sorts LAST under both asc and desc.
 // Tie-break: model.id ascending (stable).
-export function compareModels(a, b, field, order) {
+export function compareModels(a, b, field, order, getContextWindow) {
   const dir = order === "asc" ? 1 : -1;
   let cmp = 0;
 
@@ -21,8 +21,10 @@ export function compareModels(a, b, field, order) {
     const nb = (b.name || b.id || "").toLowerCase();
     cmp = na.localeCompare(nb) * dir;
   } else if (field === "context") {
-    const ca = a.maxInputTokens || a.contextLength || 0;
-    const cb = b.maxInputTokens || b.contextLength || 0;
+    const fullA = a.fullModel || a.id;
+    const fullB = b.fullModel || b.id;
+    const ca = a.maxInputTokens || a.contextLength || (getContextWindow ? getContextWindow(fullA) : 0) || 0;
+    const cb = b.maxInputTokens || b.contextLength || (getContextWindow ? getContextWindow(fullB) : 0) || 0;
     cmp = (ca - cb) * dir;
   }
 
@@ -32,3 +34,4 @@ export function compareModels(a, b, field, order) {
   const idb = (b.id || "").toString();
   return ida.localeCompare(idb);
 }
+

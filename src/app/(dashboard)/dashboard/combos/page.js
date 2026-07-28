@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useModelContextWindows, resolveContextWindow } from "@/shared/hooks/useModelContextWindows";
+import { withClaudeCodeSuffix } from "@/shared/utils/claudeCodeModelId";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
@@ -22,6 +24,7 @@ export default function CombosPage() {
   const [modelCaps, setModelCaps] = useState({});
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  const { contextByFullModel } = useModelContextWindows();
 
   useEffect(() => {
     fetchData();
@@ -190,6 +193,7 @@ export default function CombosPage() {
               key={combo.id}
               combo={combo}
               modelCaps={modelCaps}
+              contextByFullModel={contextByFullModel}
               activeProviders={activeProviders}
               copied={copied}
               onCopy={copy}
@@ -240,11 +244,25 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+
+  const maxContext = useMemo(() => {
+    let maxCw = 0;
+    for (const m of combo.models || []) {
+      const cw = modelCaps[m]?.contextWindow ||
+                 contextByFullModel[m] ||
+                 resolveContextWindow(contextByFullModel, m) ||
+                 0;
+      if (cw > maxCw) maxCw = cw;
+    }
+    return maxCw;
+  }, [combo.models, modelCaps, contextByFullModel]);
+
+  const copyText = withClaudeCodeSuffix(combo.name, maxContext);
 
   return (
     <Card padding="sm" className="group">
@@ -254,7 +272,26 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
-            <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+            <div className="flex items-center gap-2">
+              <code
+                onClick={(e) => { e.stopPropagation(); onCopy(copyText, `combo-${combo.id}`); }}
+                className="block cursor-pointer truncate font-mono text-sm font-medium hover:text-primary transition-colors"
+                title={`Click to copy combo name (${copyText})`}
+              >
+                {combo.name}
+              </code>
+              {maxContext > 0 && (
+                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10px] ${
+                  maxContext >= 1000000
+                    ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 font-semibold"
+                    : maxContext >= 200000
+                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                    : "bg-sidebar text-text-muted border border-border/60"
+                }`}>
+                  {maxContext >= 1000000 ? `${(maxContext / 1000000).toFixed(1).replace(/\.0$/, "")}M` : `${Math.round(maxContext / 1000)}k`}
+                </span>
+              )}
+            </div>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
@@ -310,9 +347,9 @@ function ComboCard({ combo, modelCaps = {}, activeProviders = [], copied, onCopy
 
           <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
-              onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
+              onClick={(e) => { e.stopPropagation(); onCopy(copyText, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
-              title="Copy combo name"
+              title={`Copy combo name (${copyText})`}
             >
               <span className="material-symbols-outlined text-[18px]">
                 {copied === `combo-${combo.id}` ? "check" : "content_copy"}
