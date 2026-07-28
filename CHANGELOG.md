@@ -1,3 +1,9 @@
+# v0.10.33 (2026-07-28)
+
+## Features & Improvements (Unified OpenCode Zen Free & OpenCode Go Provider)
+- **Unified OpenCode Provider**: updated `opencode` provider registry and executor to seamlessly support both OpenCode Free (Zen) anonymous mode and OpenCode Go API key authenticated connections — voravitl
+- **Stateless Concurrency Architecture**: refactored `OpenCodeExecutor` to be completely stateless to prevent concurrent request race conditions and call-order coupling — voravitl
+
 # v0.10.32 (2026-07-28)
 
 ## Features & Improvements (Models Table Deduplication, Search & 1M Combo Suffix)
