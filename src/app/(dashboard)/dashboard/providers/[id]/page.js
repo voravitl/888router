@@ -1205,9 +1205,19 @@ export default function ProviderDetailPage() {
         };
       }),
     ];
+
+    // Deduplicate by fullModel/id to prevent duplicate rows & React key collisions
+    const seenFullModels = new Set();
+    const uniqueTableModels = tableModels.filter((m) => {
+      const key = m.fullModel || m.id;
+      if (seenFullModels.has(key)) return false;
+      seenFullModels.add(key);
+      return true;
+    });
+
     const isCustomMap = {};
     const capsMap = {};
-    for (const m of tableModels) {
+    for (const m of uniqueTableModels) {
       isCustomMap[m.id] = !!m.isCustom;
       capsMap[m.id] = getCaps(`${providerId}/${m.id}`);
     }
@@ -1216,7 +1226,7 @@ export default function ProviderDetailPage() {
     return (
       <div className="flex flex-col gap-3">
         <ModelsTable
-          models={tableModels}
+          models={uniqueTableModels}
           getContextWindow={getContextWindow}
           copied={copied}
           onCopy={copy}
@@ -1739,9 +1749,16 @@ export default function ProviderDetailPage() {
                 title="Appends (level) suffix to copied model names"
                 className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
               >
-                {providerThinkingLevels.map((opt) => (
-                  <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
-                ))}
+                {providerThinkingLevels.map((opt) => {
+                  const label = opt === "auto"
+                    ? "Thinking: Auto"
+                    : opt.toLowerCase() === "thinking"
+                    ? "Thinking: Enabled"
+                    : `Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`;
+                  return (
+                    <option key={opt} value={opt}>{label}</option>
+                  );
+                })}
               </select>
             )}
           </div>
