@@ -485,6 +485,48 @@ export async function GET(request, { params }) {
     }
 
     // Ollama Cloud: Fetch models from API
+    // OpenCode: Fetch models from Zen Free or Zen Go API depending on API key presence
+    if (connection.provider === "opencode") {
+      let warning;
+      try {
+        const apiKey = (connection.apiKey || connection.accessToken || "").trim();
+        const url = apiKey ? "https://opencode.ai/zen/go/v1/models" : "https://opencode.ai/zen/v1/models";
+        const headers = {
+          "Content-Type": "application/json",
+          "x-opencode-client": "desktop",
+        };
+        if (apiKey) {
+          headers["Authorization"] = `Bearer ${apiKey}`;
+        } else {
+          headers["Authorization"] = "Bearer public";
+        }
+        const response = await fetch(url, { headers });
+        if (response.ok) {
+          const data = await response.json();
+          const models = parseOpenAIStyleModels(data);
+          if (models.length > 0) {
+            return buildModelsResponse({
+              provider: connection.provider,
+              connectionId: connection.id,
+              models,
+            });
+          }
+        } else {
+          warning = `Failed to fetch OpenCode models: HTTP ${response.status}`;
+        }
+      } catch (error) {
+        warning = `Failed to fetch OpenCode models: ${error.message}`;
+        console.log("Failed to fetch OpenCode models dynamically:", error.message);
+      }
+
+      return buildModelsResponse({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: [],
+        warning,
+      });
+    }
+
     if (connection.provider === "ollama") {
       let warning;
       try {
