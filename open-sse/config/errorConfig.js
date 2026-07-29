@@ -61,6 +61,19 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
+
+  // Model-level errors: model doesn't exist or isn't supported upstream.
+  // Retrying with another account of the same provider is pointless (same
+  // model = same error). Account-level: shouldFallback=false (skip accounts).
+  // Combo-level: modelError=true → skip to next model immediately.
+  { text: "not supported",    modelError: true },
+  { text: "model not found",  modelError: true },
+  { text: "model_not_found",  modelError: true },
+  { text: "unknown model",    modelError: true },
+  { text: "does not exist",   modelError: true },
+  { text: "invalid model",    modelError: true },
+  { text: "not available in", modelError: true },
+
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
@@ -79,7 +92,8 @@ export const ERROR_RULES = [
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
-  { status: 404, cooldownMs: COOLDOWN.long },
+  // 404 = model not found → don't cycle accounts, let combo skip to next model
+  { status: 404, modelError: true },
   { status: 429, backoff: true },
 ];
 

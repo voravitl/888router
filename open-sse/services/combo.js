@@ -289,11 +289,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+      const { shouldFallback, cooldownMs, modelError } = checkFallbackError(result.status, errorText);
 
-      if (!shouldFallback) {
+      if (!shouldFallback && !modelError) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
+      }
+
+      if (modelError) {
+        log.warn("COMBO", `Model ${modelStr} permanent model-error, skipping to next model`, { status: result.status });
       }
 
       // For transient errors (503/502/504), wait for cooldown before falling through
