@@ -282,7 +282,19 @@ export const PATTERN_CAPABILITIES = [
 ];
 
 /**
- * Resolve capabilities for a model using the 4-step fallback chain,
+ * Dynamic Capabilities Store (In-Memory Cache)
+ * Populated at runtime from DB (syncedModelsRepo) or provider sync handlers.
+ */
+export const DYNAMIC_CAPABILITIES_CACHE = new Map();
+
+export function registerDynamicCapabilities(modelId, caps) {
+  if (!modelId || !caps) return;
+  const baseId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
+  DYNAMIC_CAPABILITIES_CACHE.set(baseId, { ...caps });
+}
+
+/**
+ * Resolve capabilities for a model using the 5-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
  *
  * @param {string} provider
@@ -297,19 +309,28 @@ export function getCapabilitiesForModel(provider, model) {
     return { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model] };
   }
 
-  // 2. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
+
+  // 2. Dynamic Runtime / DB Cache (Extracted from Upstream Sync or DB)
+  if (DYNAMIC_CAPABILITIES_CACHE.has(baseModel)) {
+    return { ...DEFAULT_CAPABILITIES, ...DYNAMIC_CAPABILITIES_CACHE.get(baseModel) };
+  }
+  if (DYNAMIC_CAPABILITIES_CACHE.has(model)) {
+    return { ...DEFAULT_CAPABILITIES, ...DYNAMIC_CAPABILITIES_CACHE.get(model) };
+  }
+
+  // 3. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
   if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
   if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
 
-  // 3. Pattern match (first match wins)
+  // 4. Pattern match (first match wins)
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
       return { ...DEFAULT_CAPABILITIES, ...caps };
     }
   }
 
-  // 4. Floor
+  // 5. Safe Floor
   return { ...DEFAULT_CAPABILITIES };
 }
 

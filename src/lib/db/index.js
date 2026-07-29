@@ -67,9 +67,10 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getTokenSaveSummary,
 } from "./repos/requestDetailsRepo.js";
 
-// Synced models (lastSyncedAt / firstSeenAt per connection+model)
+// Synced models & dynamic capabilities
 export {
   getSyncedModelsMap, stampSyncedModels, upsertSyncedModel,
+  getModelDynamicCapabilities, saveModelDynamicCapabilities,
 } from "./repos/syncedModelsRepo.js";
 
 // Export/import full DB

@@ -43,3 +43,28 @@ export async function stampSyncedModels(entries) {
 export async function upsertSyncedModel(connectionId, modelId) {
   return await stampSyncedModels([{ connectionId, modelId }]);
 }
+
+/**
+ * Dynamic Capabilities Repo
+ * Stores & reads model capabilities extracted dynamically from provider sync APIs or online lookup
+ */
+export async function getModelDynamicCapabilities(modelId) {
+  if (!modelId) return null;
+  const baseId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
+  const db = await getAdapter();
+  const row = db.get(`SELECT value FROM kv WHERE scope = 'modelCapabilities' AND key = ?`, [baseId]);
+  if (!row) return null;
+  return parseJson(row.value, null);
+}
+
+export async function saveModelDynamicCapabilities(modelId, caps) {
+  if (!modelId || !caps) return;
+  const baseId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
+  const db = await getAdapter();
+  const now = new Date().toISOString();
+  const value = { ...caps, updatedAt: now };
+  db.run(
+    `INSERT INTO kv(scope, key, value) VALUES('modelCapabilities', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
+    [baseId, stringifyJson(value)]
+  );
+}

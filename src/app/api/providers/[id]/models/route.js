@@ -78,8 +78,29 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
     try {
       await stampSyncedModels(safeModels.map((m) => ({ connectionId, modelId: m.id })));
       stampMap = await getSyncedModelsMap();
+
+      // Extract & persist dynamic capabilities metadata from upstream response
+      const { saveModelDynamicCapabilities } = await import("@/lib/db");
+      const { registerDynamicCapabilities } = await import("open-sse/providers/capabilities.js");
+
+      for (const m of safeModels) {
+        const id = m.id;
+        const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.details?.context_length;
+        const vision = m.supportsImages || m.supportsVision || m.vision || m.details?.families?.includes("vision");
+        const reasoning = m.reasoning || m.thinking;
+
+        if (ctx || vision !== undefined || reasoning !== undefined) {
+          const caps = {};
+          if (ctx) caps.contextWindow = Number(ctx);
+          if (vision !== undefined) caps.vision = Boolean(vision);
+          if (reasoning !== undefined) caps.reasoning = Boolean(reasoning);
+
+          await saveModelDynamicCapabilities(id, caps);
+          registerDynamicCapabilities(id, caps);
+        }
+      }
     } catch (error) {
-      console.log("Failed to stamp synced models:", error?.message);
+      console.log("Failed to stamp synced models / capabilities:", error?.message);
       stampMap = {};
     }
   }
