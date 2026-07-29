@@ -99,3 +99,9 @@ jobs:
           platforms: linux/amd64,linux/arm64
           provenance: false
           sbom: false
+
+      # Cleanup: prune build cache and dangling images after every build
+      - name: Cleanup Docker build cache
+        run: |
+          docker builder prune -f
+          docker image prune -f
