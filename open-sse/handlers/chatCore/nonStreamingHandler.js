@@ -9,6 +9,7 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { setCachedResponse } from "../../translator/concerns/responseCache.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -305,6 +306,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }, { endpoint: clientRawRequest?.endpoint || null, ...(detailId ? { id: detailId } : {}) })).catch(err => {
     console.error("[RequestDetail] Failed to save:", err.message);
   });
+
+  // Response Caching Layer: store non-streaming response for future replay
+  setCachedResponse(body, model, translatedResponse, clientRawRequest?.headers || {});
 
   return {
     success: true,
