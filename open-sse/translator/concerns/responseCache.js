@@ -14,6 +14,23 @@ const DEFAULT_TTL_MS = 3600 * 1000; // 1 hour TTL
 const cacheStore = new Map();
 
 /**
+ * Case-insensitive header lookup
+ */
+function getHeader(headers, name) {
+  if (!headers) return "";
+  const lower = name.toLowerCase();
+  // Direct match
+  if (typeof headers[lower] === "string") return headers[lower];
+  // Node Headers object
+  if (typeof headers.get === "function") return headers.get(name) || headers.get(lower) || "";
+  // Raw object with original casing
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lower) return String(headers[key]);
+  }
+  return "";
+}
+
+/**
  * Generate SHA-256 cache key from comprehensive request fingerprint
  */
 export function computeResponseCacheKey(body, model) {
@@ -22,13 +39,25 @@ export function computeResponseCacheKey(body, model) {
   try {
     const messages = body.messages || body.input || body.contents || [];
     const system = body.system || "";
+    // Gemini uses systemInstruction
+    const systemInstruction = body.systemInstruction
+      ? (typeof body.systemInstruction === "string" ? body.systemInstruction : JSON.stringify(body.systemInstruction))
+      : "";
     const tools = body.tools || [];
     const temp = body.temperature ?? "";
     const topP = body.top_p ?? "";
+    const topK = body.top_k ?? "";
+    const maxTokens = body.max_tokens ?? body.maxTokens ?? "";
+    const n = body.n ?? "";
+    const stop = body.stop ? JSON.stringify(body.stop) : "";
+    const presencePenalty = body.presence_penalty ?? "";
+    const frequencyPenalty = body.frequency_penalty ?? "";
     const seed = body.seed ?? "";
+    const user = body.user ?? "";
+    const logprobs = body.logprobs ?? "";
     const fmt = body.response_format ? JSON.stringify(body.response_format) : "";
 
-    const rawString = `${model || ""}:${JSON.stringify(messages)}:${JSON.stringify(system)}:${JSON.stringify(tools)}:${temp}:${topP}:${seed}:${fmt}`;
+    const rawString = `${model || ""}:${JSON.stringify(messages)}:${JSON.stringify(system)}:${systemInstruction}:${JSON.stringify(tools)}:${temp}:${topP}:${topK}:${maxTokens}:${n}:${stop}:${presencePenalty}:${frequencyPenalty}:${seed}:${user}:${logprobs}:${fmt}`;
     return createHash("sha256").update(rawString).digest("hex");
   } catch (e) {
     console.warn("[ResponseCache] computeResponseCacheKey failed:", e.message);
@@ -40,7 +69,7 @@ export function computeResponseCacheKey(body, model) {
  * Check if response caching is opt-in via headers only (STRICT CONTRACT)
  */
 export function isResponseCacheOptIn(body, headers = {}) {
-  const cacheHeader = String(headers["x-888-response-cache"] || headers["x-cache-response"] || "").toLowerCase();
+  const cacheHeader = getHeader(headers, "x-888-response-cache") || getHeader(headers, "x-cache-response");
   return cacheHeader === "true" || cacheHeader === "1";
 }
 
@@ -70,6 +99,7 @@ export function isCacheablePayload(body, response = null) {
 
 /**
  * Retrieve cached response if present and valid (not expired)
+ * Returns { cachedResponse, hit, cacheKey } or null
  */
 export function getCachedResponse(body, model, headers = {}) {
   if (!isResponseCacheOptIn(body, headers)) return null;
@@ -115,7 +145,9 @@ export function setCachedResponse(body, model, response, headers = {}) {
   let serialized = "";
   try {
     serialized = JSON.stringify(response);
-    if (!serialized || serialized.length > MAX_PAYLOAD_BYTES) return false; // Enforce max 500KB per entry
+    if (!serialized) return false;
+    // Use byte length, not char length, for accurate size enforcement
+    if (Buffer.byteLength(serialized, "utf8") > MAX_PAYLOAD_BYTES) return false;
   } catch {
     return false;
   }

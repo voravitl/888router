@@ -31,7 +31,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { pruneMessageHistory } from "../translator/concerns/pruner.js";
 import { injectPromptCaching } from "../translator/concerns/promptCache.js";
 import { routeByIntent } from "../translator/concerns/intentRouter.js";
-import { getCachedResponse, setCachedResponse } from "../translator/concerns/responseCache.js";
+import { getCachedResponse } from "../translator/concerns/responseCache.js";
 
 
 /**
@@ -61,23 +61,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const { provider, model } = modelInfo;
 
-  // Response Caching Layer (Exact Q&A replay when opt-in header x-888-response-cache is present)
-  const cachedHit = getCachedResponse(body, model, clientRawRequest?.headers || {});
-  if (cachedHit && cachedHit.hit) {
-    log?.info?.("RESPONSE_CACHE", `Cache HIT for model ${model} (key: ${cachedHit.cacheKey.slice(0, 8)}...)`);
-    return {
-      status: HTTP_STATUS.OK,
-      data: cachedHit.cachedResponse,
-      cached: true
-    };
-  }
-
   const sourceFormat = sourceFormatOverride || detectFormat(body);
-
 
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);
   if (bypassResponse) return bypassResponse;
+
+  // Response Caching Layer (Exact Q&A replay when opt-in header x-888-response-cache is present)
+  // Snapshot the original body for cache key — body gets mutated by RTK/pruner/prefetch below
+  const cacheRequestBody = JSON.parse(JSON.stringify(body));
+  const cachedHit = getCachedResponse(cacheRequestBody, model, clientRawRequest?.headers || {});
+  if (cachedHit && cachedHit.hit) {
+    log?.info?.("RESPONSE_CACHE", `Cache HIT for model ${model} (key: ${cachedHit.cacheKey.slice(0, 8)}...)`);
+    return {
+      success: true,
+      response: new Response(JSON.stringify(cachedHit.cachedResponse), {
+        status: HTTP_STATUS.OK,
+        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-Cache": "HIT" }
+      }),
+      cached: true
+    };
+  }
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);

@@ -105,6 +105,40 @@ describe("P4/P5: Response Caching Layer (Exact SHA-256)", () => {
       const key = computeResponseCacheKey(body, "claude-sonnet-4");
       expect(key).toHaveLength(64);
     });
+
+    it("produces different keys for different max_tokens", () => {
+      const body = { messages: [{ role: "user", content: "hello" }] };
+      const key1 = computeResponseCacheKey({ ...body, max_tokens: 100 }, "gpt-4o");
+      const key2 = computeResponseCacheKey({ ...body, max_tokens: 500 }, "gpt-4o");
+      expect(key1).not.toBe(key2);
+    });
+
+    it("produces different keys for different stop sequences", () => {
+      const body = { messages: [{ role: "user", content: "hello" }] };
+      const key1 = computeResponseCacheKey({ ...body, stop: ["\n"] }, "gpt-4o");
+      const key2 = computeResponseCacheKey({ ...body, stop: ["."] }, "gpt-4o");
+      expect(key1).not.toBe(key2);
+    });
+
+    it("produces different keys for different presence_penalty", () => {
+      const body = { messages: [{ role: "user", content: "hello" }] };
+      const key1 = computeResponseCacheKey({ ...body, presence_penalty: 0 }, "gpt-4o");
+      const key2 = computeResponseCacheKey({ ...body, presence_penalty: 1 }, "gpt-4o");
+      expect(key1).not.toBe(key2);
+    });
+
+    it("produces different keys for different Gemini systemInstruction", () => {
+      const body = { contents: [{ role: "user", parts: [{ text: "hello" }] }] };
+      const key1 = computeResponseCacheKey({ ...body, systemInstruction: "You are helpful" }, "gemini-2.0-flash");
+      const key2 = computeResponseCacheKey({ ...body, systemInstruction: "You are a poet" }, "gemini-2.0-flash");
+      expect(key1).not.toBe(key2);
+    });
+
+    it("handles Gemini systemInstruction as object", () => {
+      const body = { contents: [{ role: "user", parts: [{ text: "hello" }] }], systemInstruction: { parts: [{ text: "Be concise" }] } };
+      const key = computeResponseCacheKey(body, "gemini-2.0-flash");
+      expect(key).toHaveLength(64);
+    });
   });
 
   // ── Cacheable payload checks ──
@@ -322,12 +356,13 @@ describe("P4/P5: Response Caching Layer (Exact SHA-256)", () => {
 
       // Simulate time travel by manipulating Date.now
       const RealDateNow = Date.now;
-      Date.now = () => RealDateNow() + 3601 * 1000; // 1h + 1s
-
-      const hit = getCachedResponse(body, "gpt-4o", headers);
-      expect(hit).toBeNull();
-
-      Date.now = RealDateNow;
+      try {
+        Date.now = () => RealDateNow() + 3601 * 1000; // 1h + 1s
+        const hit = getCachedResponse(body, "gpt-4o", headers);
+        expect(hit).toBeNull();
+      } finally {
+        Date.now = RealDateNow;
+      }
     });
   });
 
