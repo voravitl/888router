@@ -30,7 +30,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { pruneMessageHistory } from "../translator/concerns/pruner.js";
 import { injectPromptCaching } from "../translator/concerns/promptCache.js";
-
+import { routeByIntent } from "../translator/concerns/intentRouter.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -48,7 +48,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Prefer original client model (combo/alias) from the inbound request before routing rewrites body.model
   const clientModel = clientRawRequest?.body?.model || body?.model || null;
 
+  // Opt-in Smart Intent-Based Model Routing
+  if (modelInfo && modelInfo.model) {
+    const intentResult = routeByIntent(body, modelInfo.model, clientRawRequest?.headers || {});
+    if (intentResult.stats.routed) {
+      modelInfo.model = intentResult.model;
+      log?.info?.("INTENT_ROUTER", intentResult.stats.reason);
+    }
+  }
+
   const { provider, model } = modelInfo;
+
 
   const sourceFormat = sourceFormatOverride || detectFormat(body);
 
