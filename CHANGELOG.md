@@ -1,4 +1,13 @@
+# v0.10.42 (2026-07-29)
+
+## Features & Improvements (P3: Smart Intent-Based Router)
+- **Smart Intent-Based Router**: added `open-sse/translator/concerns/intentRouter.js` classifying prompt complexity (Fast vs Heavy vs Standard) and dynamically routing requests to optimal model tiers when opt-in header (`x-888-auto-route: true` or `x-intent: auto|fast|heavy`) is present.
+- **Strict Opt-in Allowlist**: restricted auto-routing to verified opt-in headers only, defaulting to requested models 100% when headers are absent.
+- **Same-Family Mapping & Word-Boundary Safety**: enforced same-provider mapping (Anthropic ⟷ Anthropic, OpenAI ⟷ OpenAI, Gemini ⟷ Gemini) and regex word boundary checks (`FAST_REGEX` & `HEAVY_REGEX`), eliminating cross-provider hallucinations and false positives.
+- **Unit Test Coverage**: added `tests/unit/intent-router.test.js` covering opt-in contracts, same-family mappings, word boundary protection, and safe null model guards.
+
 # v0.10.41 (2026-07-29)
+
 
 ## Features & Improvements (P2: Dynamic AST Soft-Pruner & History Shrinker)
 - **AST Soft-Pruner & History Shrinker**: added `open-sse/translator/concerns/astSummarizer.js` to extract AST outlines (function signatures, class definitions, struct interfaces) for JS, TS, Python, Go, and Rust code blocks in middle turns before hard middle-out pruning.
