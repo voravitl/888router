@@ -29,6 +29,8 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { pruneMessageHistory } from "../translator/concerns/pruner.js";
+import { injectPromptCaching } from "../translator/concerns/promptCache.js";
+
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -212,6 +214,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
   }
+
+  // Auto Prompt Caching: inject cache_control or normalize static prefix
+  if (injectPromptCaching(translatedBody, finalFormat)) {
+    log?.debug?.("PROMPTCACHE", `injected prompt cache controls for ${finalFormat}`);
+  }
+
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);

@@ -1,4 +1,12 @@
+# v0.10.39 (2026-07-29)
+
+## Features & Improvements (Auto Upstream Prompt Caching Injection & Build Resilience)
+- **Auto Prompt Caching Injection**: added `open-sse/translator/concerns/promptCache.js` for automatic `cache_control: { type: "ephemeral", ttl: "1h" }` injection in Claude requests and static system prefix normalization for OpenAI/Codex/Gemini requests (saves up to 90% input token cost).
+- **Hardened Caching Logic**: enforced max 4 explicit Anthropic cache breakpoints, excluded `thinking`/`redacted_thinking` content blocks, preserved existing client cache controls, and added unit tests (`tests/unit/prompt-cache-concern.test.js`).
+- **Data Dir Build Fallback**: added `ENOENT` error handling to `src/mitm/paths.js` and `src/lib/mitmAliasCache.js` fallback mechanism, ensuring clean Next.js production builds when `/app/data` is unmapped.
+
 # v0.10.38 (2026-07-29)
+
 
 ## Fixes & Improvements (Combo Fallback Classification & Model Capabilities Sync)
 - **Combo Model-Error Fallback**: classified permanent model-level errors (`"not supported"`, `"model not found"`, status 404, etc.) as `modelError` — bypassing useless account cycling and triggering immediate combo fallback to the next model without locking fine accounts.
