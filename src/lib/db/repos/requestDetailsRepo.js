@@ -248,6 +248,10 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     skipReasonsRecent24h: {},
     skipNewestAt: null,
   };
+  const cache = {
+    hits: 0,
+    requests: 0,
+  };
   const recent = [];
   /** @type {Record<string, { date: string, before: number, after: number, saved: number, requests: number }>} */
   const byDay = {};
@@ -272,7 +276,12 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     const rtkStats = detail?.rtkStats;
     const hs = detail?.headroomStats;
     const diag = detail?.headroomDiagnostics || {};
+    const isCacheHit = detail?.cacheHit === true;
     const dayKey = (detail.timestamp && String(detail.timestamp).slice(0, 10)) || "unknown";
+
+    // Track response cache hits
+    cache.requests += 1;
+    if (isCacheHit) cache.hits += 1;
 
     let prunerTokensSaved = 0;
     if (ps && typeof ps.tokensBefore === "number") {
@@ -396,6 +405,10 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
         : 0,
       topSkipReasons,
       topSkipReasonsRecent24h,
+    },
+    cache: {
+      ...cache,
+      hitRate: cache.requests > 0 ? Math.round((cache.hits / cache.requests) * 100) : 0,
     },
     // Chart-friendly series: daily RTK tool-blob bytes (not full bill)
     series,
