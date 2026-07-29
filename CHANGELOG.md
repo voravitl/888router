@@ -1,3 +1,10 @@
+# v0.10.38 (2026-07-29)
+
+## Fixes & Improvements (Combo Fallback Classification & Model Capabilities Sync)
+- **Combo Model-Error Fallback**: classified permanent model-level errors (`"not supported"`, `"model not found"`, status 404, etc.) as `modelError` — bypassing useless account cycling and triggering immediate combo fallback to the next model without locking fine accounts.
+- **Model Capabilities & Pricing Sync**: added `kimi-k3` specs (1M context, vision, thinking, $3/$0.30/$15 pricing) and updated capability pattern matching for Claude 4.5/4.6/thinking variants, DeepSeek v4 vision, and Kimi models.
+- **Capabilities Validation Script**: added `scripts/validate-capabilities.mjs` tool for automated cross-referencing against authoritative model specs.
+
 # v0.10.37 (2026-07-28)
 
 ## Fixes & Improvements (dataDir Error Handling & Unit Test Coverage)

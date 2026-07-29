@@ -56,3 +56,26 @@ describe("combo round-robin routing", () => {
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
   });
 });
+
+describe("combo modelError fallback rules", () => {
+  it("classifies permanent model-level errors as modelError", async () => {
+    const { checkFallbackError } = await import("../../open-sse/services/accountFallback.js");
+
+    const notSupported = checkFallbackError(400, "Model deepseek-v4-flash-free is not supported");
+    expect(notSupported.shouldFallback).toBe(false);
+    expect(notSupported.modelError).toBe(true);
+
+    const notFoundText = checkFallbackError(400, "model not found");
+    expect(notFoundText.shouldFallback).toBe(false);
+    expect(notFoundText.modelError).toBe(true);
+
+    const status404 = checkFallbackError(404, "Not Found");
+    expect(status404.shouldFallback).toBe(false);
+    expect(status404.modelError).toBe(true);
+
+    // Standard rate limit should still be account fallback, not model error
+    const rateLimit = checkFallbackError(429, "Rate limit exceeded");
+    expect(rateLimit.shouldFallback).toBe(true);
+    expect(rateLimit.modelError).toBeUndefined();
+  });
+});
