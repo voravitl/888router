@@ -30,7 +30,8 @@ export class OpenCodeExecutor extends BaseExecutor {
   buildUrl(model, stream = true, urlIndex = 0, credentials = null) {
     const rawKey = credentials?.apiKey || credentials?.accessToken;
     const key = typeof rawKey === "string" ? rawKey.trim() : null;
-    const base = key ? ZEN_GO_BASE : ZEN_FREE_BASE;
+    const isFreeModel = typeof model === "string" && model.endsWith("-free");
+    const base = (key && !isFreeModel) ? ZEN_GO_BASE : ZEN_FREE_BASE;
     return MESSAGES_FORMAT_MODELS.has(model)
       ? `${base}/messages`
       : `${base}/chat/completions`;
@@ -39,12 +40,13 @@ export class OpenCodeExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, model = null) {
     const rawKey = credentials?.apiKey || credentials?.accessToken;
     const key = typeof rawKey === "string" ? rawKey.trim() : null;
+    const isFreeModel = typeof model === "string" && model.endsWith("-free");
     const headers = {
       "Content-Type": "application/json",
       "x-opencode-client": "desktop",
     };
 
-    if (key) {
+    if (key && !isFreeModel) {
       // OpenCode Go with API Key
       if (model && MESSAGES_FORMAT_MODELS.has(model)) {
         headers["x-api-key"] = key;
