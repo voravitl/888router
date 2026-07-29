@@ -1,4 +1,5 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { softSummarizeMiddleGroups } from "./astSummarizer.js";
 
 const DEFAULT_RESERVE_TOKENS = 4000;
 const CHARS_PER_TOKEN = 3.5;
@@ -107,6 +108,7 @@ export function groupMessageTurns(messages) {
 
 /**
  * Prune message history atomically while preserving tool pairs, system prompt, and trailing user turn.
+ * First applies Soft AST Compression to middle code blocks; falls back to hard middle-out drop if still over budget.
  */
 export function pruneMessageHistory(body, provider, model) {
   if (!body || typeof body !== "object") return body;
@@ -135,6 +137,7 @@ export function pruneMessageHistory(body, provider, model) {
     tokensAfter: initialEstimate,
     tokensSaved: 0,
     omittedMessages: 0,
+    astSummarized: false,
     pruned: false
   };
 
@@ -148,10 +151,33 @@ export function pruneMessageHistory(body, provider, model) {
   const trailingGroups = groups.filter(g => g.isTrailing);
   const middleGroups = groups.filter(g => !g.isSystem && !g.isTrailing);
 
+  // Phase 1: Soft AST Summarization of code blocks in middle turns
+  const astSummarized = softSummarizeMiddleGroups(middleGroups);
+  if (astSummarized) {
+    body._prunerStats.astSummarized = true;
+  }
+
+  const softCandidateBody = {
+    ...body,
+    [messagesKey]: [
+      ...systemGroups.flatMap(g => g.messages),
+      ...middleGroups.flatMap(g => g.messages),
+      ...trailingGroups.flatMap(g => g.messages)
+    ]
+  };
+
+  if (estimateRequestTokens(softCandidateBody) <= budget) {
+    body[messagesKey] = softCandidateBody[messagesKey];
+    const tokensAfter = estimateRequestTokens(body);
+    body._prunerStats.tokensAfter = tokensAfter;
+    body._prunerStats.tokensSaved = Math.max(0, initialEstimate - tokensAfter);
+    return body;
+  }
+
+  // Phase 2: Hard middle-out drop if tokens still exceed budget
   let prunedMiddle = [...middleGroups];
   let omittedCount = 0;
 
-  // Prune middle groups from oldest to newest until estimated tokens <= budget
   while (prunedMiddle.length > 0) {
     const candidateBody = {
       ...body,
@@ -188,6 +214,7 @@ export function pruneMessageHistory(body, provider, model) {
     tokensAfter,
     tokensSaved,
     omittedMessages: omittedCount,
+    astSummarized,
     pruned: omittedCount > 0
   };
   if (omittedCount > 0) {

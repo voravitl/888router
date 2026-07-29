@@ -1,4 +1,13 @@
+# v0.10.41 (2026-07-29)
+
+## Features & Improvements (P2: Dynamic AST Soft-Pruner & History Shrinker)
+- **AST Soft-Pruner & History Shrinker**: added `open-sse/translator/concerns/astSummarizer.js` to extract AST outlines (function signatures, class definitions, struct interfaces) for JS, TS, Python, Go, and Rust code blocks in middle turns before hard middle-out pruning.
+- **Zero-Bloat Invariant**: enforced strict shrink constraint (`result.length < match.length`), ensuring soft AST outlines never expand payload size.
+- **Gemini & Multi-Payload Support**: added `msg.parts` array support alongside standard `msg.content` string and content arrays.
+- **Unit Test Coverage**: added `tests/unit/ast-summarizer.test.js` pinning language signature extraction, zero-bloat invariant, and soft-only middle turn preservation.
+
 # v0.10.40 (2026-07-29)
+
 
 ## Features & Improvements (P1: RTK v2 & Tool Output Hard-Caps)
 - **RTK v2 Hard Caps**: added `applyHardCap` truncation guard in `open-sse/rtk/index.js` capping oversized tool outputs at 32KB (or `RTK_HARD_CAP_BYTES`) with guaranteed length invariants (`out.length <= capBytes && out.length < text.length`), preventing runaway tool outputs from blowing up context budgets.
