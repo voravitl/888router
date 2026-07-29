@@ -1,4 +1,13 @@
+# v0.10.40 (2026-07-29)
+
+## Features & Improvements (P1: RTK v2 & Tool Output Hard-Caps)
+- **RTK v2 Hard Caps**: added `applyHardCap` truncation guard in `open-sse/rtk/index.js` capping oversized tool outputs at 32KB (or `RTK_HARD_CAP_BYTES`) with guaranteed length invariants (`out.length <= capBytes && out.length < text.length`), preventing runaway tool outputs from blowing up context budgets.
+- **RAW_CAP Bypass Safety**: enforced hard caps even when tool outputs exceed `RAW_CAP` (>10MB), ensuring deterministic token composition for massive command logs and git diffs.
+- **Gemini Contents Format Support**: added `compressGeminiFormat` supporting Gemini/Antigravity `functionResponse` and tool parts while preserving object structure.
+- **Unit Test Coverage**: added dedicated test suite `tests/unit/rtk-v2-caps.test.js` pinning length invariants, object structure preservation, and oversized payload caps.
+
 # v0.10.39 (2026-07-29)
+
 
 ## Features & Improvements (Auto Upstream Prompt Caching Injection & Build Resilience)
 - **Auto Prompt Caching Injection**: added `open-sse/translator/concerns/promptCache.js` for automatic `cache_control: { type: "ephemeral", ttl: "1h" }` injection in Claude requests and static system prefix normalization for OpenAI/Codex/Gemini requests (saves up to 90% input token cost).

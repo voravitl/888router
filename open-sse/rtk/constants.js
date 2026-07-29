@@ -43,6 +43,11 @@ export const SMART_TRUNCATE_MIN_LINES = 250;   // only kick in above this
 // readNumbered (files with "  N|content" lines, e.g. Cursor read_file)
 export const READ_NUMBERED_MIN_HIT_RATIO = 0.7;
 
+// RTK v2 Hard Cap (Max bytes allowed per tool_result block)
+const rawCap = parseInt(process.env.RTK_HARD_CAP_BYTES || "32768", 10);
+export const HARD_CAP_BYTES = (Number.isFinite(rawCap) && rawCap > 0) ? rawCap : 32768; // 32 KB default cap
+
+
 // Filter name strings (Rust parity + JS extras)
 export const FILTERS = {
   GIT_DIFF: "git-diff",
@@ -56,5 +61,7 @@ export const FILTERS = {
   SMART_TRUNCATE: "smart-truncate",
   READ_NUMBERED: "read-numbered",
   SEARCH_LIST: "search-list",
-  BUILD_OUTPUT: "build-output"
+  BUILD_OUTPUT: "build-output",
+  HARD_CAP: "hard-cap"
 };
+

@@ -1,6 +1,6 @@
 // RTK port: compress tool_result content in LLM request bodies
 // Injected at the top of translateRequest (before any format translation)
-import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
+import { RAW_CAP, MIN_COMPRESS_SIZE, HARD_CAP_BYTES, FILTERS } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
@@ -12,6 +12,11 @@ export function compressMessages(body, enabled) {
   // Kiro format: conversationState.history + conversationState.currentMessage
   if (body.conversationState) {
     return compressKiroFormat(body, enabled);
+  }
+
+  // Gemini format: body.contents || body.request?.contents
+  if (Array.isArray(body.contents) || Array.isArray(body.request?.contents)) {
+    return compressGeminiFormat(body, enabled);
   }
 
   // Support both OpenAI/Claude "messages" and OpenAI Responses "input"
@@ -117,32 +122,142 @@ function compressKiroFormat(body, enabled) {
   return stats;
 }
 
+// Compress Gemini format: body.contents || body.request?.contents
+function compressGeminiFormat(body, enabled) {
+  const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
+  try {
+    const contents = Array.isArray(body.contents) ? body.contents
+      : Array.isArray(body.request?.contents) ? body.request.contents
+      : [];
+
+    for (const item of contents) {
+      if (!item || !Array.isArray(item.parts)) continue;
+      const role = String(item.role || "").toLowerCase();
+      if (role === "function" || role === "tool" || role === "user") {
+        for (const part of item.parts) {
+          if (!part) continue;
+          if (part.functionResponse) {
+            const fnResp = part.functionResponse;
+            if (!fnResp || fnResp.response == null) continue;
+
+            if (typeof fnResp.response === "string") {
+              fnResp.response = compressText(fnResp.response, stats, "gemini-function-response");
+            } else if (typeof fnResp.response === "object") {
+              // Deep traverse object string fields (e.g. output, result) without breaking object structure
+              for (const key of Object.keys(fnResp.response)) {
+                const val = fnResp.response[key];
+                if (typeof val === "string") {
+                  fnResp.response[key] = compressText(val, stats, `gemini-function-response-${key}`);
+                }
+              }
+            }
+          } else if (typeof part.text === "string" && (role === "function" || role === "tool")) {
+            part.text = compressText(part.text, stats, "gemini-tool-part");
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[RTK] compressGeminiFormat error:", e.message);
+    return null;
+  }
+  return stats;
+}
+
+/**
+ * Apply RTK Hard Cap truncation to text exceeding HARD_CAP_BYTES.
+ * Guaranteed invariant: out.length <= capBytes && out.length < text.length && out.length > 0
+ */
+export function applyHardCap(text, capBytes = HARD_CAP_BYTES) {
+  if (!text || text.length <= capBytes) return text;
+
+  const markerText = `\n\n[... truncated by 888router RTK Hard Cap ...]\n\n`;
+  if (capBytes <= markerText.length) {
+    return text.slice(0, capBytes);
+  }
+
+  const budget = capBytes - markerText.length;
+  const lines = text.split("\n");
+
+  let result = "";
+  if (lines.length <= 180) {
+    const headLen = Math.floor(budget * 0.65);
+    const tailLen = budget - headLen;
+    const head = text.slice(0, headLen);
+    const tail = text.slice(-tailLen);
+    result = `${head}${markerText}${tail}`;
+  } else {
+    const headLines = lines.slice(0, 100).join("\n");
+    const tailLines = lines.slice(-40).join("\n");
+    const candidate = `${headLines}${markerText}${tailLines}`;
+    if (candidate.length <= capBytes) {
+      result = candidate;
+    } else {
+      const headLen = Math.floor(budget * 0.65);
+      const tailLen = budget - headLen;
+      result = `${text.slice(0, headLen)}${markerText}${text.slice(-tailLen)}`;
+    }
+  }
+
+  // Strict invariant enforcement: ensure never longer than capBytes and shorter than text
+  if (result.length > capBytes) {
+    result = result.slice(0, capBytes);
+  }
+  return result.length < text.length ? result : text.slice(0, capBytes);
+}
+
 function compressText(text, stats, shape) {
+  if (typeof text !== "string") return text;
   const bytesIn = text.length;
   stats.bytesBefore += bytesIn;
 
-  if (bytesIn < MIN_COMPRESS_SIZE || bytesIn > RAW_CAP) {
+  // RAW_CAP bypass safety: if blob exceeds RAW_CAP, STILL force apply hard cap!
+  if (bytesIn > RAW_CAP) {
+    const capped = applyHardCap(text, HARD_CAP_BYTES);
+    if (capped.length < bytesIn) {
+      stats.bytesAfter += capped.length;
+      stats.hits.push({ shape, filter: FILTERS.HARD_CAP, saved: bytesIn - capped.length });
+      return capped;
+    }
     stats.bytesAfter += bytesIn;
     return text;
   }
 
-  const fn = autoDetectFilter(text);
-  if (!fn) {
+  if (bytesIn < MIN_COMPRESS_SIZE) {
     stats.bytesAfter += bytesIn;
     return text;
   }
 
-  const out = safeApply(fn, text);
+  let workingText = text;
+  let filterName = null;
+
+  const fn = autoDetectFilter(workingText);
+  if (fn) {
+    const out = safeApply(fn, workingText);
+    if (out && out.length > 0 && out.length < workingText.length) {
+      filterName = fn.filterName || fn.name;
+      workingText = out;
+    }
+  }
+
+  // RTK v2 Hard Cap Guard: if text is still larger than HARD_CAP_BYTES, truncate safely
+  if (workingText.length > HARD_CAP_BYTES) {
+    const capped = applyHardCap(workingText, HARD_CAP_BYTES);
+    if (capped && capped.length < workingText.length) {
+      filterName = filterName ? `${filterName}+${FILTERS.HARD_CAP}` : FILTERS.HARD_CAP;
+      workingText = capped;
+    }
+  }
 
   // Safety: never return empty, never grow the input
-  if (!out || out.length === 0 || out.length >= bytesIn) {
+  if (!workingText || workingText.length === 0 || workingText.length >= bytesIn) {
     stats.bytesAfter += bytesIn;
     return text;
   }
 
-  stats.bytesAfter += out.length;
-  stats.hits.push({ shape, filter: fn.filterName || fn.name, saved: bytesIn - out.length });
-  return out;
+  stats.bytesAfter += workingText.length;
+  stats.hits.push({ shape, filter: filterName || "rtk-compress", saved: bytesIn - workingText.length });
+  return workingText;
 }
 
 // Convenience: format a log line from stats
