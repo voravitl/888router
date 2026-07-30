@@ -229,6 +229,19 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(toolCallIdx).toBeLessThan(doneIdx);
   });
 
+  it("createStreamToolShimTransformStream strips un-declared tool call tags from stream output", async () => {
+    const shim = createStreamToolShimTransformStream([{ name: "declared_tool" }], "openai");
+    const writer = shim.writable.getWriter();
+    const readPromise = new Response(shim.readable).text();
+
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"<tool_call>{\\"name\\":\\"undeclared_tool\\",\\"arguments\\":{}}</tool_call>"}}]}\n\n`));
+    await writer.close();
+
+    const outputText = await readPromise;
+    expect(outputText).not.toContain("<tool_call>");
+    expect(outputText).not.toContain("undeclared_tool");
+  });
+
   it("createStreamToolShimTransformStream emits terminal event if stream ends inside un-closed tool tag", async () => {
     const shim = createStreamToolShimTransformStream([{ name: "toolA" }], "openai");
     const writer = shim.writable.getWriter();

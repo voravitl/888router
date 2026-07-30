@@ -193,8 +193,14 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
             pendingEventName = "";
             return;
           } else {
-            log?.warn?.("TOOLSHIM", "Failed to parse tool_call JSON from XML tag, falling back to text");
+            log?.warn?.("TOOLSHIM", "Failed or rejected tool_call JSON from XML tag, emitting clean text");
             inToolTag = false;
+            if (parsed.text && parsed.text.trim()) {
+              emitTextChunk(parsed.text, json, clientFormat, controller);
+            }
+            textBuffer = "";
+            pendingEventName = "";
+            return;
           }
         }
 
