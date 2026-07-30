@@ -37,6 +37,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
   const declaredNames = getDeclaredToolNames(tools);
   let textBuffer = "";
   let sseLineBuffer = "";
+  let pendingEventName = "";
   let inToolTag = false;
   let toolCallCounter = 0;
   let sawMessageStop = false;
@@ -44,13 +45,21 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
   function processLine(line, controller) {
     const trimmed = line.trim();
 
-    if (trimmed.includes("message_stop") || trimmed === "data: [DONE]") {
-      sawMessageStop = true;
+    if (trimmed.startsWith("event: ")) {
+      pendingEventName = trimmed.slice(7).trim();
+      if (pendingEventName === "message_stop") {
+        sawMessageStop = true;
+      }
+      return; // Hold event line until data line arrives
     }
 
     // Pass non-data lines directly when not buffering inside tool tag
     if (!trimmed.startsWith("data: ")) {
       if (!inToolTag) {
+        if (pendingEventName) {
+          controller.enqueue(new TextEncoder().encode(`event: ${pendingEventName}\n`));
+          pendingEventName = "";
+        }
         controller.enqueue(new TextEncoder().encode(line + "\n"));
       }
       return;
@@ -59,6 +68,10 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
     const dataStr = trimmed.slice(6).trim();
     if (dataStr === "[DONE]") {
       sawMessageStop = true;
+      if (!inToolTag) {
+        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+      }
+      pendingEventName = "";
       return;
     }
 
@@ -92,6 +105,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
           emitTextChunk(textBuffer, json, clientFormat, controller);
           textBuffer = "";
           inToolTag = false;
+          pendingEventName = "";
           return;
         }
 
@@ -113,6 +127,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
             }
             textBuffer = "";
             inToolTag = false;
+            pendingEventName = "";
             return;
           } else {
             log?.warn?.("TOOLSHIM", "Failed to parse tool_call JSON from XML tag, falling back to text");
@@ -133,16 +148,29 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
             textBuffer = "";
           }
         }
+        pendingEventName = "";
         return;
       }
 
       // Pass non-text data events (e.g. message_start, content_block_start, ping) through when not inside tool tag
       if (!inToolTag) {
+        if (pendingEventName) {
+          controller.enqueue(new TextEncoder().encode(`event: ${pendingEventName}\n`));
+          pendingEventName = "";
+        }
         controller.enqueue(new TextEncoder().encode(line + "\n"));
+      } else {
+        pendingEventName = "";
       }
     } catch {
       if (!inToolTag) {
+        if (pendingEventName) {
+          controller.enqueue(new TextEncoder().encode(`event: ${pendingEventName}\n`));
+          pendingEventName = "";
+        }
         controller.enqueue(new TextEncoder().encode(line + "\n"));
+      } else {
+        pendingEventName = "";
       }
     }
   }
