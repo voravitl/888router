@@ -279,7 +279,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       if (toolCallCount > 0) {
         translatedResponse.content = newContent;
         translatedResponse.stop_reason = "tool_use";
-        reqLogger?.logInfo?.("TOOLSHIM", `Parsed ${toolCallCount} tool call(s) from Claude non-streaming response`);
+        log?.info?.("TOOLSHIM", `Parsed ${toolCallCount} tool call(s) from Claude non-streaming response`);
       }
     } else if (translatedResponse?.choices?.[0]?.message?.content) {
       const choice = translatedResponse.choices[0];
@@ -288,7 +288,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         choice.message.tool_calls = parsed.toolCalls;
         choice.message.content = parsed.text || null;
         choice.finish_reason = "tool_calls";
-        reqLogger?.logInfo?.("TOOLSHIM", `Parsed ${parsed.toolCalls.length} tool call(s) from OpenAI non-streaming response`);
+        log?.info?.("TOOLSHIM", `Parsed ${parsed.toolCalls.length} tool call(s) from OpenAI non-streaming response`);
       }
     }
   }
