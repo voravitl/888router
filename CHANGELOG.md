@@ -1,3 +1,17 @@
+# v0.11.0 (2026-07-30)
+
+## Features & Improvements
+- **Optimization Savings Dashboard**: new Savings tab showing RTK Compression, AST Pruner, Headroom Proxy, and Response Cache stats with before/after/saved metrics.
+- **Cache Hit Tracking**: response cache hits now tracked in requestDetails with aggregate cache hit-rate in token-save-summary API.
+- **kr/auto Context Window**: added `auto` to MODEL_CAPABILITIES with contextWindow=1M so combo context resolution isn't capped by undefined members.
+
+## Fixes
+- **savedPct Color**: fixed string-vs-number comparison so green `text-success` activates when savings > 0.
+- **Period Fallthrough**: `today` and `60d` periods now resolve correctly instead of defaulting to 7d.
+- **cacheHit Persistence**: added `cacheHit`/`cacheKey` fields to `buildRequestDetail` so cache tracking actually persists.
+- **Cache Hit Request**: uses `extractRequestConfig` instead of hand-built request object for consistency.
+- **Null Safety**: added optional chaining throughout OptimizationSavings component to prevent crash on partial API data.
+
 # v0.10.42 (2026-07-29)
 
 ## Features & Improvements (P3: Smart Intent-Based Router)
