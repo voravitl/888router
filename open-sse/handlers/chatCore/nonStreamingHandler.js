@@ -268,6 +268,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
                 input: inputObj
               });
             }
+          } else if (parsed.text !== block.text) {
+            newContent.push({ ...block, text: parsed.text });
           } else {
             newContent.push(block);
           }
@@ -289,6 +291,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         choice.message.content = parsed.text || null;
         choice.finish_reason = "tool_calls";
         log?.info?.("TOOLSHIM", `Parsed ${parsed.toolCalls.length} tool call(s) from OpenAI non-streaming response`);
+      } else if (parsed.text !== choice.message.content) {
+        choice.message.content = parsed.text || null;
       }
     }
   }

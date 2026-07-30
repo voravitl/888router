@@ -40,6 +40,9 @@ export function parseUniversalToolCalls(text, declaredToolNames = new Set()) {
     const rawJsonContent = xmlMatch[1] || xmlMatch[2];
     const parsed = repairAndParseJson(rawJsonContent);
 
+    // Always strip matched XML tag from cleanText
+    cleanText = cleanText.replace(xmlMatch[0], "").trim();
+
     if (parsed && parsed.name && (declaredToolNames.size === 0 || declaredToolNames.has(parsed.name))) {
       const toolName = parsed.name;
       const toolArgs = typeof parsed.arguments === "string"
@@ -54,11 +57,6 @@ export function parseUniversalToolCalls(text, declaredToolNames = new Set()) {
           arguments: toolArgs
         }
       });
-      // Strip XML tag from cleanText
-      cleanText = cleanText.replace(xmlMatch[0], "").trim();
-    } else if (parsed && parsed.name) {
-      // Strip rejected/undeclared XML tag from text
-      cleanText = cleanText.replace(xmlMatch[0], "").trim();
     }
   }
 

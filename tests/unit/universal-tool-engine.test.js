@@ -96,7 +96,7 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(parsed2).toEqual({ name: "run_command" });
   });
 
-  it("parseUniversalToolCalls parses XML <tool_call> tags and strips un-declared tool XML tags", () => {
+  it("parseUniversalToolCalls parses XML <tool_call> tags and strips un-declared or malformed tool XML tags", () => {
     const declaredNames = new Set(["run_command"]);
     const rawText = `Here is the command execution:\n<tool_call>\n{"name": "run_command", "arguments": {"CommandLine": "git status"}}\n</tool_call>`;
 
@@ -111,6 +111,12 @@ describe("Universal Tool Call & MCP Engine", () => {
     const falseResult = parseUniversalToolCalls(falseText, declaredNames);
     expect(falseResult.hasToolCalls).toBe(false);
     expect(falseResult.text).not.toContain("<tool_call>");
+
+    // Malformed JSON inside <tool_call> tag should also be stripped
+    const malformedText = `<tool_call>\n{invalid json}\n</tool_call>`;
+    const malformedResult = parseUniversalToolCalls(malformedText, declaredNames);
+    expect(malformedResult.hasToolCalls).toBe(false);
+    expect(malformedResult.text).not.toContain("<tool_call>");
   });
 
   it("stripContextSuffix and parseModel remove [1m]/[128k] suffixes cleanly", () => {
