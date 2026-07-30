@@ -41,7 +41,7 @@ import { getCachedResponse } from "../translator/concerns/responseCache.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
   const requestStartTime = Date.now();
   const detailId = `detail_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   let rtkStats = null;
@@ -222,8 +222,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let prunerStats = null;
 
   // Context Pruner: atomic middle-out pruning when prompt tokens exceed model context budget
-  pruneMessageHistory(translatedBody, provider, upstreamModel);
-  prunerStats = translatedBody._prunerStats || null;
+  if (prunerEnabled !== false) {
+    pruneMessageHistory(translatedBody, provider, upstreamModel);
+    prunerStats = translatedBody._prunerStats || null;
+  }
   delete translatedBody._pruned;
   delete translatedBody._omittedTurns;
   delete translatedBody._prunerStats;

@@ -262,6 +262,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
+      prunerEnabled: chatSettings.prunerEnabled !== false,
       headroomEnabled: !!chatSettings.headroomEnabled,
       // Prefer compose sidecar URL when settings still say localhost (Docker).
       headroomUrl: resolveHeadroomUrl(chatSettings.headroomUrl || DEFAULT_HEADROOM_URL),
