@@ -2,7 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 import { partitionByQuotaHealth, QUOTA_AVOID_THRESHOLD_PCT, QUOTA_SNAPSHOT_MAX_AGE_MS } from "open-sse/services/quotaSnapshot.js";
 import { pickByScore } from "open-sse/services/accountScoring.js";
 import * as log from "../utils/logger.js";
@@ -34,8 +34,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
 
-    // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
-    if (FREE_PROVIDERS[providerId]?.noAuth) {
+    // Helper to build virtual connection for free / no-auth providers with proxy pool from settings
+    async function getVirtualNoAuthConnection() {
       const settings = await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: override.proxyPoolId || "" });
@@ -54,10 +54,19 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
+    // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
+    if (FREE_PROVIDERS[providerId]?.noAuth || AI_PROVIDERS[providerId]?.noAuth) {
+      return await getVirtualNoAuthConnection();
+    }
+
     const connections = await getProviderConnections({ provider: providerId, isActive: true });
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
+      if (AI_PROVIDERS[providerId]?.hasFree || AI_PROVIDERS[providerId]?.noAuth) {
+        log.info("AUTH", `No saved credentials for ${provider}, using virtual free mode with proxy pool`);
+        return await getVirtualNoAuthConnection();
+      }
       log.warn("AUTH", `No credentials for ${provider}`);
       return null;
     }

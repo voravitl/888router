@@ -272,6 +272,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
       providerThinking,
+      outboundProxyEnabled: !!chatSettings.outboundProxyEnabled,
+      outboundProxyUrl: chatSettings.outboundProxyUrl || "",
+      outboundNoProxy: chatSettings.outboundNoProxy || "",
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {

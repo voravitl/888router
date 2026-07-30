@@ -83,6 +83,7 @@ export const ERROR_RULES = [
   // lock the account — surface the 400 to the client.
   { text: "content_length_exceeds_threshold", noFallback: true },
   { text: "rate limit",               backoff: true },
+  { text: "usage limit",              backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
   { text: "capacity",                 backoff: true },
