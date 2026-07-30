@@ -29,8 +29,9 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(r1DistillRes).toBe(true);
   });
 
-  it("injectUniversalToolPrompt escapes XML characters and strips native tools parameter", () => {
+  it("injectUniversalToolPrompt escapes XML characters, supports top-level body.system, and strips native tools parameter", () => {
     const body = {
+      system: "You are a helpful assistant",
       tools: [
         {
           function: {
@@ -45,10 +46,9 @@ describe("Universal Tool Call & MCP Engine", () => {
 
     injectUniversalToolPrompt(body);
 
-    const sysMsg = body.messages.find(m => m.role === "system");
-    expect(sysMsg).toBeDefined();
-    expect(sysMsg.content).toContain("&lt;script&gt;");
-    expect(sysMsg.content).toContain("Run &amp; test &lt;evil&gt;");
+    expect(body.system).toContain("You are a helpful assistant");
+    expect(body.system).toContain("&lt;script&gt;");
+    expect(body.system).toContain("Run &amp; test &lt;evil&gt;");
 
     // Native tools parameter must be stripped from body
     expect(body.tools).toBeUndefined();
@@ -96,7 +96,7 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(parsed2).toEqual({ name: "run_command" });
   });
 
-  it("parseUniversalToolCalls parses XML <tool_call> tags with Strict Schema Name Matching", () => {
+  it("parseUniversalToolCalls parses XML <tool_call> tags and strips un-declared tool XML tags", () => {
     const declaredNames = new Set(["run_command"]);
     const rawText = `Here is the command execution:\n<tool_call>\n{"name": "run_command", "arguments": {"CommandLine": "git status"}}\n</tool_call>`;
 
@@ -106,10 +106,11 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(result.toolCalls[0].function.name).toBe("run_command");
     expect(result.toolCalls[0].function.arguments).toContain("git status");
 
-    // Strict Schema Name Matching: reject un-declared tool names
+    // Strict Schema Name Matching: reject un-declared tool names and strip tag from text
     const falseText = `<tool_call>\n{"name": "malicious_tool", "arguments": {}}\n</tool_call>`;
     const falseResult = parseUniversalToolCalls(falseText, declaredNames);
     expect(falseResult.hasToolCalls).toBe(false);
+    expect(falseResult.text).not.toContain("<tool_call>");
   });
 
   it("stripContextSuffix and parseModel remove [1m]/[128k] suffixes cleanly", () => {

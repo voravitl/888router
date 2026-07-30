@@ -159,21 +159,28 @@ If you need to execute a tool, output strictly using the following XML tag forma
 Do not add conversational fluff before or after <tool_call>. Output strictly valid JSON inside <tool_call>.
 `.trim();
 
-  // Inject preamble into system prompt or prepend to first message
+  // Inject preamble into top-level system parameter or system message
   if (!body.messages || !Array.isArray(body.messages)) {
     body.messages = [];
   }
 
-  const sysMsg = body.messages.find(m => m.role === "system" || m.role === "developer");
-
-  if (sysMsg) {
-    if (typeof sysMsg.content === "string") {
-      sysMsg.content = `${sysMsg.content}\n\n${preamble}`;
-    } else if (Array.isArray(sysMsg.content)) {
-      sysMsg.content.push({ type: "text", text: `\n\n${preamble}` });
+  if (body.system !== undefined) {
+    if (typeof body.system === "string") {
+      body.system = `${body.system}\n\n${preamble}`;
+    } else if (Array.isArray(body.system)) {
+      body.system.push({ type: "text", text: `\n\n${preamble}` });
     }
   } else {
-    body.messages.unshift({ role: "system", content: preamble });
+    const sysMsg = body.messages.find(m => m.role === "system" || m.role === "developer");
+    if (sysMsg) {
+      if (typeof sysMsg.content === "string") {
+        sysMsg.content = `${sysMsg.content}\n\n${preamble}`;
+      } else if (Array.isArray(sysMsg.content)) {
+        sysMsg.content.push({ type: "text", text: `\n\n${preamble}` });
+      }
+    } else {
+      body.messages.unshift({ role: "system", content: preamble });
+    }
   }
 
   // Strip native tools and tool_choice from request so upstream doesn't receive redundant/rejected schemas

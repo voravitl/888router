@@ -56,6 +56,9 @@ export function parseUniversalToolCalls(text, declaredToolNames = new Set()) {
       });
       // Strip XML tag from cleanText
       cleanText = cleanText.replace(xmlMatch[0], "").trim();
+    } else if (parsed && parsed.name) {
+      // Strip rejected/undeclared XML tag from text
+      cleanText = cleanText.replace(xmlMatch[0], "").trim();
     }
   }
 
@@ -93,5 +96,5 @@ export function parseUniversalToolCalls(text, declaredToolNames = new Set()) {
     };
   }
 
-  return { hasToolCalls: false, text, toolCalls: [] };
+  return { hasToolCalls: false, text: cleanText, toolCalls: [] };
 }
