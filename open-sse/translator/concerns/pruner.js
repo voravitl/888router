@@ -175,59 +175,71 @@ export function pruneMessageHistory(body, provider, model) {
   }
 
   // Phase 2: Hard middle-out drop if tokens still exceed budget
-  // NEVER drop groups that contain tool calls/results — model needs them to know
-  // what tools were invoked and what came back. Without them, the model can't
-  // issue follow-up tool calls and may respond with HTML comments or refuse.
+  // Prefer dropping text-only groups before tool-bearing groups to preserve
+  // tool call history. Tool groups are dropped only as last resort.
+  // IMPORTANT: preserve original chronological order — never reorder groups.
   let prunedMiddle = [...middleGroups];
   let omittedCount = 0;
 
-  // Separate tool-bearing groups (must keep) from plain-text groups (can drop)
+  // Detect if a group contains tool calls/results (must keep preferentially)
   const hasToolContent = (group) =>
     group.messages.some((msg) => {
       if (msg.role === "tool" || msg.role === "function") return true;
-      if (Array.isArray(msg.tool_calls)) return true;
+      if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) return true;
       if (msg.role === "user" && Array.isArray(msg.content)) {
         return msg.content.some((b) => b && (b.type === "tool_result" || b.tool_use_id));
+      }
+      // Claude format: assistant messages with tool_use blocks
+      if (msg.role === "assistant" && Array.isArray(msg.content)) {
+        return msg.content.some((b) => b && b.type === "tool_use");
       }
       return false;
     });
 
-  const toolGroups = prunedMiddle.filter(hasToolContent);
-  const textGroups = prunedMiddle.filter((g) => !hasToolContent(g));
+  // Tag each group once: true = tool-bearing, false = text-only
+  const toolFlags = prunedMiddle.map(hasToolContent);
 
-  // Drop text-only groups first (oldest first)
-  while (textGroups.length > 0) {
-    const candidateBody = {
-      ...body,
-      [messagesKey]: [
-        ...systemGroups.flatMap((g) => g.messages),
-        ...textGroups.flatMap((g) => g.messages),
-        ...toolGroups.flatMap((g) => g.messages),
-        ...trailingGroups.flatMap((g) => g.messages),
-      ],
-    };
-    if (estimateRequestTokens(candidateBody) <= budget) break;
-    const removed = textGroups.shift();
-    omittedCount += removed.messages.length;
+  // Drop groups oldest-first until remaining fit in budget.
+  // Pass 1: drop text-only groups first (preserve tool history).
+  // Pass 2: if still over budget, drop tool groups too.
+  for (let pass = 0; pass < 2; pass++) {
+    let i = 0;
+    while (i < prunedMiddle.length) {
+      const isTool = toolFlags[i];
+      if ((pass === 0 && isTool) || (pass === 1 && !isTool)) { i++; continue; }
+      // Drop this group permanently
+      const removedMsgs = prunedMiddle[i]?.messages?.length || 1;
+      prunedMiddle.splice(i, 1);
+      toolFlags.splice(i, 1);
+      omittedCount += removedMsgs;
+      // Check if remaining fit in budget
+      const candidateBody = {
+        ...body,
+        [messagesKey]: [
+          ...systemGroups.flatMap((g) => g.messages),
+          ...prunedMiddle.flatMap((g) => g.messages),
+          ...trailingGroups.flatMap((g) => g.messages),
+        ],
+      };
+      if (estimateRequestTokens(candidateBody) <= budget) {
+        i = prunedMiddle.length; // exit while
+        break;
+      }
+      // i stays same (next group shifted in)
+    }
+    // Check if already under budget after pass 1
+    if (pass === 0) {
+      const checkBody = {
+        ...body,
+        [messagesKey]: [
+          ...systemGroups.flatMap((g) => g.messages),
+          ...prunedMiddle.flatMap((g) => g.messages),
+          ...trailingGroups.flatMap((g) => g.messages),
+        ],
+      };
+      if (estimateRequestTokens(checkBody) <= budget) break;
+    }
   }
-
-  // If still over budget, start dropping tool groups too (oldest first)
-  while (toolGroups.length > 0) {
-    const candidateBody = {
-      ...body,
-      [messagesKey]: [
-        ...systemGroups.flatMap((g) => g.messages),
-        ...textGroups.flatMap((g) => g.messages),
-        ...toolGroups.flatMap((g) => g.messages),
-        ...trailingGroups.flatMap((g) => g.messages),
-      ],
-    };
-    if (estimateRequestTokens(candidateBody) <= budget) break;
-    const removed = toolGroups.shift();
-    omittedCount += removed.messages.length;
-  }
-
-  prunedMiddle = [...textGroups, ...toolGroups];
 
   const tombstoneMsg = {
     role: "user",
