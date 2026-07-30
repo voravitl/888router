@@ -54,7 +54,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
     // Pass non-data lines directly when not buffering inside tool tag
     if (!trimmed.startsWith("data: ")) {
-      if (!inToolTag) {
+      if (!inToolTag && !hasEmittedToolCalls) {
         if (pendingEventName) {
           if (pendingEventName === "message_stop") sawMessageStop = true;
           controller.enqueue(new TextEncoder().encode(`event: ${pendingEventName}\n`));
@@ -67,7 +67,8 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
     const dataStr = trimmed.slice(6).trim();
     if (dataStr === "[DONE]") {
-      if (!inToolTag) {
+      // Hold [DONE] for flush if tool calls were emitted or tag is buffering
+      if (!inToolTag && !hasEmittedToolCalls) {
         sawMessageStop = true;
         controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
       }
@@ -77,7 +78,24 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
     try {
       const json = JSON.parse(dataStr);
-      if (json.type === "message_stop" && !inToolTag) {
+
+      // Suppress upstream "stop" or "end_turn" finish_reason chunks if tool calls are present
+      if (hasEmittedToolCalls || inToolTag) {
+        if (json.choices?.[0]?.finish_reason === "stop") {
+          pendingEventName = "";
+          return;
+        }
+        if (json.type === "message_delta" && json.delta?.stop_reason) {
+          pendingEventName = "";
+          return;
+        }
+        if (json.type === "message_stop") {
+          pendingEventName = "";
+          return;
+        }
+      }
+
+      if (json.type === "message_stop" && !inToolTag && !hasEmittedToolCalls) {
         sawMessageStop = true;
       }
       
@@ -165,7 +183,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
       }
 
       // Pass non-text data events (e.g. message_start, content_block_start, ping) through when not inside tool tag
-      if (!inToolTag) {
+      if (!inToolTag && !hasEmittedToolCalls) {
         if (pendingEventName) {
           controller.enqueue(new TextEncoder().encode(`event: ${pendingEventName}\n`));
           pendingEventName = "";
@@ -175,7 +193,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         pendingEventName = "";
       }
     } catch {
-      if (!inToolTag) {
+      if (!inToolTag && !hasEmittedToolCalls) {
         if (pendingEventName) {
           controller.enqueue(new TextEncoder().encode(`event: ${pendingEventName}\n`));
           pendingEventName = "";
@@ -279,10 +297,11 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         textBuffer = "";
       }
 
-      // Emit terminal tool_calls finish_reason / stop_reason ONCE at stream completion
+      // Emit terminal tool_calls finish_reason / stop_reason BEFORE [DONE] or message_stop
       if (hasEmittedToolCalls) {
         if (clientFormat === "claude") {
           controller.enqueue(new TextEncoder().encode(`event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use" } })}\n\n`));
+          controller.enqueue(new TextEncoder().encode("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"));
         } else {
           const finishChunk = `data: ${JSON.stringify({
             id: `chatcmpl-shim-finish-${Date.now()}`,
@@ -291,10 +310,9 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
             choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }]
           })}\n\n`;
           controller.enqueue(new TextEncoder().encode(finishChunk));
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
         }
-      }
-
-      if (!sawMessageStop) {
+      } else if (!sawMessageStop) {
         if (clientFormat === "claude") {
           controller.enqueue(new TextEncoder().encode("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"));
         } else {

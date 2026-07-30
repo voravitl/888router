@@ -192,6 +192,26 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(finishMatches.length).toBe(1);
   });
 
+  it("createStreamToolShimTransformStream suppresses upstream finish_reason:stop and emits tool_calls BEFORE data: [DONE]", async () => {
+    const shim = createStreamToolShimTransformStream([{ name: "test_tool" }], "openai");
+    const writer = shim.writable.getWriter();
+    const readPromise = new Response(shim.readable).text();
+
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"<tool_call>{\\"name\\":\\"test_tool\\",\\"arguments\\":{}}</tool_call>"}}]}\n\n`));
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n`));
+    await writer.write(new TextEncoder().encode(`data: [DONE]\n\n`));
+    await writer.close();
+
+    const outputText = await readPromise;
+    expect(outputText).not.toContain('"finish_reason":"stop"');
+
+    const toolCallIdx = outputText.indexOf('"finish_reason":"tool_calls"');
+    const doneIdx = outputText.indexOf('data: [DONE]');
+    expect(toolCallIdx).toBeGreaterThan(-1);
+    expect(doneIdx).toBeGreaterThan(-1);
+    expect(toolCallIdx).toBeLessThan(doneIdx);
+  });
+
   it("createStreamToolShimTransformStream emits terminal event if stream ends inside un-closed tool tag", async () => {
     const shim = createStreamToolShimTransformStream([{ name: "toolA" }], "openai");
     const writer = shim.writable.getWriter();
