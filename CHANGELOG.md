@@ -1,3 +1,14 @@
+# v0.12.1 (2026-07-30)
+
+## Fixes & Enhancements
+- **OpenCode Proxy Pool Connection Fix**: allowed creating and saving connections for no-auth/free mode providers (such as OpenCode Free) without requiring an API key, enabling custom Proxy Pool binding. Added Proxy Pool selector dropdown in `EditConnectionModal.js`.
+- **Anthropic System Content Block Normalization**: fixed `API Error: Content block is not a text block` by normalizing system string/array inputs to strict `{ type: "text", text: "..." }` blocks in `prepareClaudeRequest` and `openaiToClaudeRequest`.
+
+# v0.12.0 (2026-07-30)
+
+## Features & Improvements
+- **Universal Tool Engine**: introduced Universal Tool Engine for non-native models, supporting forced SSE-to-JSON and stream shim transform stream.
+
 # v0.11.1 (2026-07-30)
 
 ## Fixes & Enhancements (Context Pruner Hardening)
