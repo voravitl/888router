@@ -10,7 +10,7 @@ const MAX_BUFFER_SIZE = 64 * 1024; // 64KB safety cap against memory DoS
  * Creates a TransformStream that inspects SSE streams for <tool_call> tags and transforms them to tool_calls SSE events.
  * Supports both OpenAI SSE format and Claude SSE format (content_block_start/delta).
  */
-export function createStreamToolShimTransformStream(tools = [], clientFormat = "openai") {
+export function createStreamToolShimTransformStream(tools = [], clientFormat = "openai", log = null) {
   const declaredNames = getDeclaredToolNames(tools);
   let textBuffer = "";
   let sseLineBuffer = "";
@@ -47,6 +47,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
         // Prevent memory DoS
         if (textBuffer.length > MAX_BUFFER_SIZE) {
+          log?.warn?.("TOOLSHIM", `Stream buffer overflow (${textBuffer.length} bytes), flushing text`);
           emitTextChunk(textBuffer, json, clientFormat, controller);
           textBuffer = "";
           inToolTag = false;
@@ -55,18 +56,21 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
         if (!inToolTag && textBuffer.includes("<tool_call>")) {
           inToolTag = true;
+          log?.debug?.("TOOLSHIM", "Detected <tool_call> tag in stream buffer");
         }
 
         if (inToolTag && (textBuffer.includes("</tool_call>") || textBuffer.includes("</tool_use>"))) {
           const parsed = parseUniversalToolCalls(textBuffer, declaredNames);
           if (parsed.hasToolCalls) {
             for (const tc of parsed.toolCalls) {
+              log?.info?.("TOOLSHIM", `Stream parsed tool call: ${tc.function.name}`);
               emitToolCallChunk(tc, toolCallCounter++, clientFormat, controller);
             }
             textBuffer = parsed.text || "";
             inToolTag = false;
             return;
           } else {
+            log?.warn?.("TOOLSHIM", "Failed to parse tool_call JSON from XML tag, falling back to text");
             inToolTag = false;
           }
         }

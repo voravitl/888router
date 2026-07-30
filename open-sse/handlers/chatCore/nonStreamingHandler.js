@@ -254,6 +254,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         choice.message.tool_calls = parsed.toolCalls;
         choice.message.content = parsed.text || null;
         choice.finish_reason = "tool_calls";
+        reqLogger?.logInfo?.("TOOLSHIM", `Parsed ${parsed.toolCalls.length} tool call(s) from non-streaming response`);
       }
     }
   }
