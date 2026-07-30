@@ -23,8 +23,6 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { capTools } from "../utils/toolCap.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
-import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt } from "../translator/concerns/universalToolPrompt.js";
-import { adaptHistoryForUniversalTools } from "../translator/concerns/historyAdapter.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
@@ -263,13 +261,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Auto Prompt Caching: inject cache_control or normalize static prefix
   if (injectPromptCaching(translatedBody, finalFormat)) {
     log?.debug?.("PROMPTCACHE", `injected prompt cache controls for ${finalFormat}`);
-  }
-
-  // Universal Tool Call Engine: inject XML preamble & adapt history for non-tool models
-  if (shouldInjectUniversalToolPrompt(translatedBody, { provider, model: upstreamModel })) {
-    adaptHistoryForUniversalTools(translatedBody);
-    injectUniversalToolPrompt(translatedBody);
-    log?.info?.("TOOLSHIM", `injected universal tool preamble for model ${upstreamModel}`);
   }
 
 
