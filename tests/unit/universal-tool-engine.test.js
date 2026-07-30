@@ -6,6 +6,7 @@ import { repairAndParseJson } from "../../open-sse/translator/concerns/jsonAutoR
 import { createStreamToolShimTransformStream } from "../../open-sse/transformer/streamToolShim.js";
 import { stripContextSuffix, parseModel } from "../../open-sse/services/model.js";
 import { handleNonStreamingResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";
+import { handleForcedSSEToJson } from "../../open-sse/handlers/chatCore/sseToJsonHandler.js";
 
 describe("Universal Tool Call & MCP Engine", () => {
   it("shouldInjectUniversalToolPrompt detects non-tool models or denylisted models", () => {
@@ -271,6 +272,28 @@ describe("Universal Tool Call & MCP Engine", () => {
     const bodyJson = await res.response.json();
     expect(bodyJson.content[0].text).not.toContain("<tool_call>");
     expect(bodyJson.content[0].text).toContain("Hello  world");
+  });
+
+  it("handleForcedSSEToJson parses universal tool calls and strips undeclared tags", async () => {
+    const sseContent = `data: {"choices":[{"delta":{"content":"Hello <tool_call>{\\"name\\":\\"run_command\\",\\"arguments\\":{\\"CommandLine\\":\\"ls\\"}}</tool_call>"}}]}\n\ndata: [DONE]\n\n`;
+    const mockReqConfig = {
+      providerResponse: {
+        headers: { get: () => "text/event-stream" },
+        text: async () => sseContent
+      },
+      sourceFormat: "openai",
+      provider: "openrouter",
+      model: "qwen",
+      body: { _universalToolPromptInjected: true, _declaredTools: [{ name: "run_command" }] },
+      stream: false,
+      trackDone: () => {},
+      appendLog: () => {}
+    };
+
+    const res = await handleForcedSSEToJson(mockReqConfig);
+    const bodyJson = await res.response.json();
+    expect(bodyJson.choices[0].finish_reason).toBe("tool_calls");
+    expect(bodyJson.choices[0].message.tool_calls[0].function.name).toBe("run_command");
   });
 
   it("createStreamToolShimTransformStream emits terminal event if stream ends inside un-closed tool tag", async () => {
