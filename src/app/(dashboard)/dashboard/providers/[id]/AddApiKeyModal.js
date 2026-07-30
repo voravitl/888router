@@ -19,8 +19,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
-  const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
-  const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
+  const providerCfg = AI_PROVIDERS?.[provider] || null;
+  const providerRegions = providerCfg?.regions || null;
+  const defaultRegion = providerCfg?.defaultRegion || providerRegions?.[0]?.id || "";
+  const allowsNoAuth = isOllamaLocal ||
+    !!providerCfg?.noAuth ||
+    !!providerCfg?.hasFree ||
+    !!providerCfg?.authModes?.includes("noauth");
 
   const [formData, setFormData] = useState({
     name: "",
@@ -85,36 +90,37 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const handleSubmit = async () => {
     if (!provider) return;
-    if (!isOllamaLocal && !formData.apiKey) return;
-    if (!isOllamaLocal) {
-      // Non-ollama providers require a name
-      if (!formData.name) return;
-    }
+    if (!allowsNoAuth && !formData.apiKey) return;
+    if (!formData.name) return;
     if (isCompatible && !formData.defaultModel.trim()) return;
 
     setSaving(true);
     try {
       let isValid = false;
-      try {
-        setValidating(true);
-        setValidationResult(null);
-        const res = await fetch("/api/providers/validate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
-        });
-        const data = await res.json();
-        isValid = !!data.valid;
-        setValidationResult(isValid ? "success" : "failed");
-      } catch {
-        setValidationResult("failed");
-      } finally {
-        setValidating(false);
+      if (formData.apiKey) {
+        try {
+          setValidating(true);
+          setValidationResult(null);
+          const res = await fetch("/api/providers/validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+          });
+          const data = await res.json();
+          isValid = !!data.valid;
+          setValidationResult(isValid ? "success" : "failed");
+        } catch {
+          setValidationResult("failed");
+        } finally {
+          setValidating(false);
+        }
+      } else {
+        isValid = true;
       }
 
       await onSave({
-        name: formData.name || (isOllamaLocal ? "Ollama Local" : ""),
-        apiKey: formData.apiKey,
+        name: formData.name || (isOllamaLocal ? "Ollama Local" : "Free Mode"),
+        apiKey: formData.apiKey || "",
         defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
@@ -219,7 +225,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               type={isCookie ? "text" : "password"}
               value={formData.apiKey}
               onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-              placeholder={credentialPlaceholder}
+              placeholder={credentialPlaceholder || (allowsNoAuth ? "Leave blank for free mode" : "")}
               className="flex-1"
             />
             <div className="pt-6">
@@ -356,7 +362,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || !formData.name || (!allowsNoAuth && !formData.apiKey) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

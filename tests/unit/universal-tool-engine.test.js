@@ -7,6 +7,7 @@ import { createStreamToolShimTransformStream } from "../../open-sse/transformer/
 import { stripContextSuffix, parseModel } from "../../open-sse/services/model.js";
 import { handleNonStreamingResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";
 import { handleForcedSSEToJson } from "../../open-sse/handlers/chatCore/sseToJsonHandler.js";
+import { prepareClaudeRequest } from "../../open-sse/translator/formats/claude.js";
 
 describe("Universal Tool Call & MCP Engine", () => {
   it("shouldInjectUniversalToolPrompt detects non-tool models or denylisted models", () => {
@@ -308,5 +309,21 @@ describe("Universal Tool Call & MCP Engine", () => {
     const outputText = await readPromise;
     expect(outputText).toContain("data: [DONE]");
     expect(outputText).toContain("<tool_call>");
+  });
+
+  it("prepareClaudeRequest normalizes system array blocks so every item strictly has type text", () => {
+    const body = {
+      model: "claude-3-5-sonnet-latest",
+      system: ["Raw system string 1", { text: "Raw system object 2" }],
+      messages: [{ role: "user", content: ["Hello", { type: "text", text: "World" }] }]
+    };
+
+    prepareClaudeRequest(body, "claude");
+
+    expect(Array.isArray(body.system)).toBe(true);
+    for (const sys of body.system) {
+      expect(sys.type).toBe("text");
+      expect(typeof sys.text).toBe("string");
+    }
   });
 });

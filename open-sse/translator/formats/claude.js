@@ -215,15 +215,26 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     }
   }
 
-  // 1. System: remove all cache_control, add only to last block with ttl 1h
-  if (body.system && Array.isArray(body.system)) {
-    body.system = body.system.map((block, i) => {
-      const { cache_control, ...rest } = block;
-      if (i === body.system.length - 1) {
-        return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
+  // 1. System: normalize string/array system blocks into valid { type: "text", text: "..." } blocks
+  if (body.system) {
+    if (typeof body.system === "string") {
+      if (body.system.trim()) {
+        body.system = [{ type: CLAUDE_BLOCK.TEXT, text: body.system, cache_control: { type: "ephemeral", ttl: "1h" } }];
+      } else {
+        delete body.system;
       }
-      return rest;
-    });
+    } else if (Array.isArray(body.system)) {
+      body.system = body.system.map((block, i) => {
+        const textVal = typeof block === "string" ? block : (block?.text || (typeof block === "object" ? JSON.stringify(block) : String(block || "")));
+        const cacheCtrl = i === body.system.length - 1 ? { type: "ephemeral", ttl: "1h" } : undefined;
+        return {
+          type: CLAUDE_BLOCK.TEXT,
+          text: textVal,
+          ...(cacheCtrl ? { cache_control: cacheCtrl } : {}),
+        };
+      }).filter(block => block.text.trim().length > 0);
+      if (body.system.length === 0) delete body.system;
+    }
   }
 
   // 2. Messages: process in optimized passes
@@ -231,15 +242,25 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     const len = body.messages.length;
     let filtered = [];
 
-    // Pass 1: remove cache_control + filter empty messages
+    // Pass 1: remove cache_control + normalize content blocks + filter empty messages
     for (let i = 0; i < len; i++) {
       const msg = body.messages[i];
 
-      // Remove cache_control from content blocks
+      // Normalize content blocks & remove cache_control
       if (Array.isArray(msg.content)) {
+        const normalizedBlocks = [];
         for (const block of msg.content) {
-          delete block.cache_control;
+          if (typeof block === "string") {
+            if (block.trim()) normalizedBlocks.push({ type: CLAUDE_BLOCK.TEXT, text: block });
+          } else if (block && typeof block === "object") {
+            const { cache_control, ...rest } = block;
+            if (!rest.type && typeof rest.text === "string") {
+              rest.type = CLAUDE_BLOCK.TEXT;
+            }
+            normalizedBlocks.push(rest);
+          }
         }
+        msg.content = normalizedBlocks;
       }
 
       // Keep final assistant even if empty, otherwise check valid content
@@ -359,7 +380,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
   // Apply cloaking for OAuth tokens (billing header + fake user ID)
   // session_id in user_id must match X-Claude-Code-Session-Id for fingerprint consistency
-  if ((provider === "claude" || provider?.startsWith("anthropic-compatible")) && apiKey) {
+  const providerStr = typeof provider === "string" ? provider : (provider?.provider || "");
+  if ((providerStr === "claude" || providerStr.startsWith("anthropic-compatible")) && apiKey) {
     const sid = sessionId || resolveSessionId({ headers: rawHeaders, body, connectionId, scope: "claude" });
     body = applyCloaking(body, apiKey, sid);
   }

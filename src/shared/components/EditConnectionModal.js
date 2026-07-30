@@ -9,11 +9,14 @@ import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
 
+const NONE_PROXY_POOL_VALUE = "__none__";
+
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
     priority: 1,
     apiKey: "",
+    proxyPoolId: NONE_PROXY_POOL_VALUE,
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -35,6 +38,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        proxyPoolId: connection.providerSpecificData?.proxyPoolId || NONE_PROXY_POOL_VALUE,
       });
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
@@ -120,6 +124,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       const updates = {
         name: formData.name,
         priority: formData.priority,
+        proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
       };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -272,6 +277,17 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
           />
         )}
+
+        <Select
+          label="Proxy Pool"
+          value={formData.proxyPoolId}
+          onChange={(e) => setFormData({ ...formData, proxyPoolId: e.target.value })}
+          options={[
+            { value: NONE_PROXY_POOL_VALUE, label: "None" },
+            ...(proxyPools || []).map((pool) => ({ value: pool.id, label: pool.name })),
+          ]}
+          placeholder="None"
+        />
 
         {!isCompatible && !isAzure && !isCloudflareAi && (
           <div className="flex items-center gap-3">
