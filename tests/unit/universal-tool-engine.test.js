@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt } from "../../open-sse/translator/concerns/universalToolPrompt.js";
+import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt, stripPrivateToolFields } from "../../open-sse/translator/concerns/universalToolPrompt.js";
 import { adaptHistoryForUniversalTools } from "../../open-sse/translator/concerns/historyAdapter.js";
 import { parseUniversalToolCalls } from "../../open-sse/translator/concerns/universalToolParser.js";
 import { repairAndParseJson } from "../../open-sse/translator/concerns/jsonAutoRepair.js";
+import { createStreamToolShimTransformStream } from "../../open-sse/transformer/streamToolShim.js";
 import { stripContextSuffix, parseModel } from "../../open-sse/services/model.js";
 
 describe("Universal Tool Call & MCP Engine", () => {
@@ -11,13 +12,17 @@ describe("Universal Tool Call & MCP Engine", () => {
       tools: [{ function: { name: "run_command" } }]
     };
 
-    // Native model (Claude 3.5 Sonnet) should NOT inject (bypassed)
+    // Native model (Claude 3.5 Sonnet) should NOT inject
     const nativeRes = shouldInjectUniversalToolPrompt(body, { model: "claude-3-5-sonnet", provider: "anthropic", capabilities: { tools: true } });
     expect(nativeRes).toBe(false);
 
     // Ollama / open model should inject
-    const openRes = shouldInjectUniversalToolPrompt(body, { model: "ollama/qwen-base", provider: "ollama", capabilities: { tools: false } });
+    const openRes = shouldInjectUniversalToolPrompt(body, { model: "qwen2.5", provider: "ollama", capabilities: { tools: true } });
     expect(openRes).toBe(true);
+
+    // Model with explicit capabilities.tools === false should inject
+    const noToolRes = shouldInjectUniversalToolPrompt(body, { model: "custom-model", provider: "custom", capabilities: { tools: false } });
+    expect(noToolRes).toBe(true);
   });
 
   it("injectUniversalToolPrompt escapes XML characters and strips native tools parameter", () => {
@@ -44,6 +49,20 @@ describe("Universal Tool Call & MCP Engine", () => {
     // Native tools parameter must be stripped from body
     expect(body.tools).toBeUndefined();
     expect(body._universalToolPromptInjected).toBe(true);
+  });
+
+  it("stripPrivateToolFields removes internal metadata fields before upstream dispatch", () => {
+    const body = {
+      model: "test",
+      _universalToolPromptInjected: true,
+      _declaredTools: [{ name: "foo" }]
+    };
+
+    stripPrivateToolFields(body);
+
+    expect(body._universalToolPromptInjected).toBeUndefined();
+    expect(body._declaredTools).toBeUndefined();
+    expect(body.model).toBe("test");
   });
 
   it("adaptHistoryForUniversalTools translates role:tool and Anthropic tool_use to taught prose", () => {
@@ -96,5 +115,19 @@ describe("Universal Tool Call & MCP Engine", () => {
     const parsed = parseModel("oc/deepseek-v4-flash-free[1m]");
     expect(parsed.provider).toBe("opencode");
     expect(parsed.model).toBe("deepseek-v4-flash-free");
+  });
+
+  it("createStreamToolShimTransformStream drains buffer on flush and supports Claude SSE format", async () => {
+    const shim = createStreamToolShimTransformStream([{ name: "test_tool" }], "claude");
+    const writer = shim.writable.getWriter();
+    const readPromise = new Response(shim.readable).text();
+
+    await writer.write(new TextEncoder().encode(`data: {"content":"Hello <tool_call>{\\"name\\":\\"test_tool\\",\\"arguments\\":{}}</tool_call>"}`));
+    await writer.close();
+
+    const outputText = await readPromise;
+    expect(outputText).toContain("content_block_start");
+    expect(outputText).toContain("test_tool");
+    expect(outputText).toContain("message_stop");
   });
 });

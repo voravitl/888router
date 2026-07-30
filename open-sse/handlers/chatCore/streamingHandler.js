@@ -81,7 +81,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   if (translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected) {
     const declaredTools = translatedBody?._declaredTools || body?._declaredTools || [];
-    outputStream = outputStream.pipeThrough(createStreamToolShimTransformStream(declaredTools));
+    outputStream = outputStream.pipeThrough(createStreamToolShimTransformStream(declaredTools, sourceFormat));
   }
 
   saveRequestDetail(buildRequestDetail({

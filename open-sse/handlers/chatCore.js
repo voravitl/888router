@@ -23,7 +23,7 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { capTools } from "../utils/toolCap.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
-import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt } from "../translator/concerns/universalToolPrompt.js";
+import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt, stripPrivateToolFields } from "../translator/concerns/universalToolPrompt.js";
 import { adaptHistoryForUniversalTools } from "../translator/concerns/historyAdapter.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
@@ -331,8 +331,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
+  const upstreamPayload = stripPrivateToolFields(JSON.parse(JSON.stringify(translatedBody)));
   try {
-    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executor.execute({ model, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;

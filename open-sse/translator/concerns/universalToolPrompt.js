@@ -1,12 +1,18 @@
 // Universal Tool Call Schema Injector & Token Bomb Guard (Layer 1)
 // Injects XML <tool_call> instructions for models that lack native function calling capabilities.
 
-const NON_TOOL_DENYLIST = [
-  "deepseek-r1",
-  "qwen-base",
+const NON_TOOL_PROVIDERS = new Set(["ollama"]);
+
+const NON_TOOL_DENYLIST_PATTERNS = [
+  "r1",
+  "base",
+  "free",
   "llama-3-8b",
   "mistral-base",
-  "gemma"
+  "gemma",
+  "deepseek-v4-flash-free",
+  "mimo-v2.5-free",
+  "ling-3.0-flash-free"
 ];
 
 const MAX_TOOLS = 50;
@@ -44,17 +50,24 @@ export function shouldInjectUniversalToolPrompt(body, modelInfo = {}, options = 
     return true;
   }
 
-  // Check capability system first
-  if (modelInfo.capabilities) {
-    if (modelInfo.capabilities.tools === false) return true;
-    if (modelInfo.capabilities.tools === true) return false;
+  // Explicit capability override
+  if (modelInfo.capabilities && modelInfo.capabilities.tools === false) {
+    return true;
   }
 
-  // Denylist check fallback
   const modelName = String(modelInfo.model || body.model || "").toLowerCase();
   const provider = String(modelInfo.provider || "").toLowerCase();
 
-  return NON_TOOL_DENYLIST.some(d => modelName.includes(d) || provider.includes(d));
+  // Non-tool providers or denylisted open models
+  if (NON_TOOL_PROVIDERS.has(provider)) {
+    return true;
+  }
+
+  if (NON_TOOL_DENYLIST_PATTERNS.some(p => modelName.includes(p))) {
+    return true;
+  }
+
+  return false;
 }
 
 /**
@@ -162,5 +175,15 @@ Do not add conversational fluff before or after <tool_call>. Output strictly val
   delete body.tool_choice;
 
   body._universalToolPromptInjected = true;
+  return body;
+}
+
+/**
+ * Removes internal private fields before body is passed to upstream executor / fetch payload.
+ */
+export function stripPrivateToolFields(body) {
+  if (!body || typeof body !== "object") return body;
+  delete body._universalToolPromptInjected;
+  delete body._declaredTools;
   return body;
 }
