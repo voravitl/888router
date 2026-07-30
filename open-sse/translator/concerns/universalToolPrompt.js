@@ -69,7 +69,7 @@ export function shouldInjectUniversalToolPrompt(body, modelInfo = {}, options = 
     return true;
   }
 
-  if (NON_TOOL_DENYLIST_SUFFIXES.some(s => modelName.endsWith(s))) {
+  if (NON_TOOL_DENYLIST_SUFFIXES.some(s => modelName.endsWith(s)) || modelName.includes("r1-distill")) {
     return true;
   }
 

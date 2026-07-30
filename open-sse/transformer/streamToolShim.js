@@ -47,9 +47,6 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
     if (trimmed.startsWith("event: ")) {
       pendingEventName = trimmed.slice(7).trim();
-      if (pendingEventName === "message_stop") {
-        sawMessageStop = true;
-      }
       return; // Hold event line until data line arrives
     }
 
@@ -57,6 +54,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
     if (!trimmed.startsWith("data: ")) {
       if (!inToolTag) {
         if (pendingEventName) {
+          if (pendingEventName === "message_stop") sawMessageStop = true;
           controller.enqueue(new TextEncoder().encode(`event: ${pendingEventName}\n`));
           pendingEventName = "";
         }
@@ -67,8 +65,8 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
     const dataStr = trimmed.slice(6).trim();
     if (dataStr === "[DONE]") {
-      sawMessageStop = true;
       if (!inToolTag) {
+        sawMessageStop = true;
         controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
       }
       pendingEventName = "";
@@ -77,7 +75,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
     try {
       const json = JSON.parse(dataStr);
-      if (json.type === "message_stop") {
+      if (json.type === "message_stop" && !inToolTag) {
         sawMessageStop = true;
       }
       
@@ -179,6 +177,10 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
     if (format === "claude") {
       const blockIndex = index + 1; // Index 0 is reserved for text block
       const toolUseId = tc.id || `toolu_${Date.now()}_${index}`;
+      
+      // Emit content_block_stop for index 0 text block before starting tool_use block
+      const closeTextBlock = `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`;
+
       const blockStart = `event: content_block_start\ndata: ${JSON.stringify({
         type: "content_block_start",
         index: blockIndex,
@@ -204,7 +206,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         delta: { stop_reason: "tool_use" }
       })}\n\n`;
 
-      controller.enqueue(new TextEncoder().encode(blockStart + blockDelta + blockStop + messageDelta));
+      controller.enqueue(new TextEncoder().encode(closeTextBlock + blockStart + blockDelta + blockStop + messageDelta));
     } else {
       const ssePayload = `data: ${JSON.stringify({
         id: `chatcmpl-shim-${Date.now()}-${index}`,
