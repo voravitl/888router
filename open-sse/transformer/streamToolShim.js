@@ -42,6 +42,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
   let toolCallCounter = 0;
   let sawMessageStop = false;
   let textBlockClosed = false;
+  let hasEmittedToolCalls = false;
 
   function processLine(line, controller) {
     const trimmed = line.trim();
@@ -131,9 +132,9 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
             const totalCalls = parsed.toolCalls.length;
             for (let i = 0; i < totalCalls; i++) {
               const tc = parsed.toolCalls[i];
-              const isLast = i === totalCalls - 1;
               log?.info?.("TOOLSHIM", `Stream parsed tool call: ${tc.function.name}`);
-              emitToolCallChunk(tc, toolCallCounter++, clientFormat, controller, isLast);
+              emitToolCallChunk(tc, toolCallCounter++, clientFormat, controller);
+              hasEmittedToolCalls = true;
             }
 
             textBuffer = "";
@@ -186,7 +187,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
     }
   }
 
-  function emitToolCallChunk(tc, index, format, controller, isLast = true) {
+  function emitToolCallChunk(tc, index, format, controller) {
     if (format === "claude") {
       const blockIndex = index + 1; // Index 0 was closed
       const toolUseId = tc.id || `toolu_${Date.now()}_${index}`;
@@ -211,17 +212,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         index: blockIndex
       })}\n\n`;
 
-      let payload = blockStart + blockDelta + blockStop;
-
-      // Emit message_delta with stop_reason: tool_use ONLY ONCE on final tool call chunk
-      if (isLast) {
-        payload += `event: message_delta\ndata: ${JSON.stringify({
-          type: "message_delta",
-          delta: { stop_reason: "tool_use" }
-        })}\n\n`;
-      }
-
-      controller.enqueue(new TextEncoder().encode(payload));
+      controller.enqueue(new TextEncoder().encode(blockStart + blockDelta + blockStop));
     } else {
       const ssePayload = `data: ${JSON.stringify({
         id: `chatcmpl-shim-${Date.now()}-${index}`,
@@ -238,7 +229,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
               function: tc.function
             }]
           },
-          finish_reason: isLast ? "tool_calls" : null
+          finish_reason: null
         }]
       })}\n\n`;
       controller.enqueue(new TextEncoder().encode(ssePayload));
@@ -286,6 +277,21 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
       if (textBuffer.length > 0) {
         emitTextChunk(textBuffer, null, clientFormat, controller);
         textBuffer = "";
+      }
+
+      // Emit terminal tool_calls finish_reason / stop_reason ONCE at stream completion
+      if (hasEmittedToolCalls) {
+        if (clientFormat === "claude") {
+          controller.enqueue(new TextEncoder().encode(`event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use" } })}\n\n`));
+        } else {
+          const finishChunk = `data: ${JSON.stringify({
+            id: `chatcmpl-shim-finish-${Date.now()}`,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }]
+          })}\n\n`;
+          controller.enqueue(new TextEncoder().encode(finishChunk));
+        }
       }
 
       if (!sawMessageStop) {

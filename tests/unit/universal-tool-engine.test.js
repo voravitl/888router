@@ -166,6 +166,30 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(stopMatches.length).toBe(1);
     expect(outputText).toContain("toolA");
     expect(outputText).toContain("toolB");
+
+    // message_delta with stop_reason: tool_use must appear ONCE
+    const deltaMatches = outputText.match(/"stop_reason":"tool_use"/g) || [];
+    expect(deltaMatches.length).toBe(1);
+  });
+
+  it("createStreamToolShimTransformStream emits terminal events once at stream end for sequential multi-tool chunks", async () => {
+    const shim = createStreamToolShimTransformStream([{ name: "toolA" }, { name: "toolB" }], "openai");
+    const writer = shim.writable.getWriter();
+    const readPromise = new Response(shim.readable).text();
+
+    // Chunk 1: toolA
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"<tool_call>{\\"name\\":\\"toolA\\",\\"arguments\\":{}}</tool_call>"}}]}\n\n`));
+    // Chunk 2: toolB
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"<tool_call>{\\"name\\":\\"toolB\\",\\"arguments\\":{}}</tool_call>"}}]}\n\n`));
+    await writer.close();
+
+    const outputText = await readPromise;
+    expect(outputText).toContain("toolA");
+    expect(outputText).toContain("toolB");
+    
+    // finish_reason: tool_calls must appear ONCE at stream completion
+    const finishMatches = outputText.match(/"finish_reason":"tool_calls"/g) || [];
+    expect(finishMatches.length).toBe(1);
   });
 
   it("createStreamToolShimTransformStream emits terminal event if stream ends inside un-closed tool tag", async () => {
