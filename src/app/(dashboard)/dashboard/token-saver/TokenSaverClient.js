@@ -62,6 +62,7 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [prunerEnabled, setPrunerEnabled] = useState(true);
   const [locale, setLocale] = useState("en");
   const [summaryPeriod, setSummaryPeriod] = useState("7d");
   const [summary, setSummary] = useState(null);
@@ -221,6 +222,7 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setPrunerEnabled(data.prunerEnabled !== false);
           refreshHeadroomStatus();
         }
       } catch {}
@@ -604,6 +606,28 @@ export default function TokenSaverClient() {
           <Toggle
             checked={rtkEnabled}
             onChange={() => handleRtkEnabled(!rtkEnabled)}
+          />
+        </div>
+        {/* Pruner toggle */}
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Prune history{" "}
+              <span className="text-xs font-normal text-text-muted">
+                (Context Pruner)
+              </span>
+            </p>
+            <p className="text-sm text-text-muted">
+              Drop middle conversation turns when context exceeds model budget
+            </p>
+          </div>
+          <Toggle
+            checked={prunerEnabled}
+            onChange={() => {
+              const next = !prunerEnabled;
+              setPrunerEnabled(next);
+              patchSetting({ prunerEnabled: next });
+            }}
           />
         </div>
         <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">

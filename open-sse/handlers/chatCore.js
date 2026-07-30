@@ -222,8 +222,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let prunerStats = null;
 
   // Context Pruner: atomic middle-out pruning when prompt tokens exceed model context budget
-  pruneMessageHistory(translatedBody, provider, upstreamModel);
-  prunerStats = translatedBody._prunerStats || null;
+  if (prunerEnabled !== false) {
+    pruneMessageHistory(translatedBody, provider, upstreamModel);
+    prunerStats = translatedBody._prunerStats || null;
+  }
   delete translatedBody._pruned;
   delete translatedBody._omittedTurns;
   delete translatedBody._prunerStats;
