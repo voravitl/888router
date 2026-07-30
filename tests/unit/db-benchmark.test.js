@@ -34,8 +34,15 @@ beforeAll(async () => {
 
   // Lowdb setup — direct lowdb usage (mimics legacy behavior)
   tempLowdb = fs.mkdtempSync(path.join(os.tmpdir(), "9router-bench-lowdb-"));
-  const { Low } = await import("lowdb");
-  const { JSONFile } = await import("lowdb/node");
+  let Low, JSONFile;
+  try {
+    const lowdb = await import("lowdb");
+    const lowdbNode = await import("lowdb/node");
+    Low = lowdb.Low;
+    JSONFile = lowdbNode.JSONFile;
+  } catch {
+    // lowdb is not installed; skip lowdb benchmark phase safely
+  }
   const dbFile = path.join(tempLowdb, "db.json");
   fs.writeFileSync(dbFile, JSON.stringify({ providerConnections: [], usageHistory: [] }));
   lowDb = new Low(new JSONFile(dbFile), { providerConnections: [], usageHistory: [] });

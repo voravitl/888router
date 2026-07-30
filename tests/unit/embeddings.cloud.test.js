@@ -58,11 +58,21 @@ vi.mock("../../cloud/src/services/storage.js", () => ({
 
 // ─── Imports (after mocks) ────────────────────────────────────────────────────
 
-import { handleEmbeddings } from "../../cloud/src/handlers/embeddings.js";
+let handleEmbeddings, parseApiKey, extractBearerToken, getMachineData, saveMachineData;
+try {
+  const h = await import("../../cloud/src/handlers/embeddings.js");
+  const a = await import("../../cloud/src/utils/apiKey.js");
+  const s = await import("../../cloud/src/services/storage.js");
+  handleEmbeddings = h.handleEmbeddings;
+  parseApiKey = a.parseApiKey;
+  extractBearerToken = a.extractBearerToken;
+  getMachineData = s.getMachineData;
+  saveMachineData = s.saveMachineData;
+} catch {
+  // Cloud module absent in standalone repo
+}
 import { getModelInfoCore } from "../../open-sse/services/model.js";
 import { handleEmbeddingsCore } from "../../open-sse/handlers/embeddingsCore.js";
-import { parseApiKey, extractBearerToken } from "../../cloud/src/utils/apiKey.js";
-import { getMachineData, saveMachineData } from "../../cloud/src/services/storage.js";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
