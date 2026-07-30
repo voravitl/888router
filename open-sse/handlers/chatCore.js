@@ -23,6 +23,8 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { capTools } from "../utils/toolCap.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt, stripPrivateToolFields } from "../translator/concerns/universalToolPrompt.js";
+import { adaptHistoryForUniversalTools } from "../translator/concerns/historyAdapter.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
@@ -41,7 +43,7 @@ import { getCachedResponse } from "../translator/concerns/responseCache.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy }) {
   const requestStartTime = Date.now();
   const detailId = `detail_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   let rtkStats = null;
@@ -263,6 +265,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log?.debug?.("PROMPTCACHE", `injected prompt cache controls for ${finalFormat}`);
   }
 
+  // Universal Tool Call Engine: inject XML preamble & adapt history for non-tool models
+  const modelCaps = getCapabilitiesForModel(provider, model);
+  if (shouldInjectUniversalToolPrompt(translatedBody, { provider, model: upstreamModel, capabilities: modelCaps })) {
+    adaptHistoryForUniversalTools(translatedBody, log);
+    injectUniversalToolPrompt(translatedBody);
+    log?.info?.("TOOLSHIM", `injected universal tool preamble for model ${upstreamModel}`);
+  }
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
@@ -280,10 +289,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log, provider, model
   });
 
+  const connProxyEnabled = credentials?.providerSpecificData?.connectionProxyEnabled === true;
+  const connProxyUrl = credentials?.providerSpecificData?.connectionProxyUrl || "";
+  const connNoProxy = credentials?.providerSpecificData?.connectionNoProxy || "";
+
+  const useGlobalProxy = !connProxyUrl && outboundProxyEnabled && outboundProxyUrl;
+
   const proxyOptions = {
-    connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
-    connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
-    connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
+    connectionProxyEnabled: connProxyEnabled || Boolean(useGlobalProxy),
+    connectionProxyUrl: connProxyUrl || (useGlobalProxy ? outboundProxyUrl : ""),
+    connectionNoProxy: connNoProxy || (useGlobalProxy ? outboundNoProxy : ""),
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
   };
 
@@ -315,8 +330,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
+  const upstreamPayload = stripPrivateToolFields(JSON.parse(JSON.stringify(translatedBody)));
   try {
-    const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executor.execute({ model, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -359,7 +375,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
-          const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+          const retryResult = await executor.execute({ model, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
           if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {
@@ -410,14 +426,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // True non-streaming response
   if (!stream) {
-    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, log, toolNameMap, trackDone, appendLog });
     streamController.handleComplete();
     return result;
   }
 
   // Streaming response
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId });
+  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, userAgent, reqLogger, log, toolNameMap, streamController, onStreamComplete, streamDetailId });
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

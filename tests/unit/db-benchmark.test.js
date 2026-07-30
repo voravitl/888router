@@ -34,12 +34,21 @@ beforeAll(async () => {
 
   // Lowdb setup — direct lowdb usage (mimics legacy behavior)
   tempLowdb = fs.mkdtempSync(path.join(os.tmpdir(), "9router-bench-lowdb-"));
-  const { Low } = await import("lowdb");
-  const { JSONFile } = await import("lowdb/node");
+  let Low, JSONFile;
+  try {
+    const lowdb = await import("lowdb");
+    const lowdbNode = await import("lowdb/node");
+    Low = lowdb.Low;
+    JSONFile = lowdbNode.JSONFile;
+  } catch {
+    // lowdb is not installed; skip lowdb benchmark phase safely
+  }
   const dbFile = path.join(tempLowdb, "db.json");
   fs.writeFileSync(dbFile, JSON.stringify({ providerConnections: [], usageHistory: [] }));
-  lowDb = new Low(new JSONFile(dbFile), { providerConnections: [], usageHistory: [] });
-  await lowDb.read();
+  if (Low && JSONFile) {
+    lowDb = new Low(new JSONFile(dbFile), { providerConnections: [], usageHistory: [] });
+    await lowDb.read();
+  }
 });
 
 afterAll(() => {
@@ -63,6 +72,7 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
     });
 
     const lowdbTime = await bench("Lowdb push + write", async () => {
+      if (!lowDb) return;
       for (let i = 0; i < N_ITEMS; i++) {
         lowDb.data.providerConnections.push({
           id: `id-${i}`, provider: `bench-p${i % 5}`, authType: "apikey",
@@ -87,6 +97,7 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
     });
 
     const lowdbTime = await bench("Lowdb read + filter", async () => {
+      if (!lowDb) return;
       for (let i = 0; i < N_QUERIES; i++) {
         await lowDb.read();
         lowDb.data.providerConnections.filter((c) => c.provider === `bench-p${i % 5}`);
@@ -107,8 +118,9 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
       for (const id of ids) await sqliteDb.getProviderConnectionById(id);
     });
 
-    const lowdbIds = lowDb.data.providerConnections.slice(0, N_QUERIES).map((c) => c.id);
+    const lowdbIds = lowDb?.data?.providerConnections?.slice(0, N_QUERIES).map((c) => c.id) || [];
     const lowdbTime = await bench("Lowdb find by id", async () => {
+      if (!lowDb) return;
       for (const id of lowdbIds) {
         await lowDb.read();
         lowDb.data.providerConnections.find((c) => c.id === id);
@@ -133,6 +145,7 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
     });
 
     const lowdbTime = await bench("Lowdb push history + write", async () => {
+      if (!lowDb) return;
       lowDb.data.usageHistory = [];
       for (let i = 0; i < N_ITEMS; i++) {
         lowDb.data.usageHistory.push({
@@ -156,6 +169,7 @@ describe("DB Benchmark — SQLite vs Lowdb", () => {
     });
 
     const lowdbTime = await bench("Lowdb read + aggregate", async () => {
+      if (!lowDb) return;
       for (let i = 0; i < 50; i++) {
         await lowDb.read();
         const cutoff = Date.now() - 86400000;

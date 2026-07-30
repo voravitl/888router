@@ -8,6 +8,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requ
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
+import { parseUniversalToolCalls, getDeclaredToolNames } from "../../translator/concerns/universalToolParser.js";
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
@@ -232,6 +233,20 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       },
       status: "success"
     }, detailOverrides)).catch(() => {});
+
+    // Universal Tool Engine parsing for forced SSE-to-JSON path
+    if ((translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected) && parsed?.choices?.[0]?.message?.content) {
+      const choice = parsed.choices[0];
+      const declaredNames = getDeclaredToolNames(translatedBody?._declaredTools || body?._declaredTools || []);
+      const toolParsed = parseUniversalToolCalls(choice.message.content, declaredNames);
+      if (toolParsed.hasToolCalls) {
+        choice.message.tool_calls = toolParsed.toolCalls;
+        choice.message.content = toolParsed.text || null;
+        choice.finish_reason = "tool_calls";
+      } else if (toolParsed.text !== choice.message.content) {
+        choice.message.content = toolParsed.text || null;
+      }
+    }
 
     // Strip reasoning_content only when content is non-empty.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),

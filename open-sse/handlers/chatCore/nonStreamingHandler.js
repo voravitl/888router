@@ -10,6 +10,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { setCachedResponse } from "../../translator/concerns/responseCache.js";
+import { parseUniversalToolCalls, getDeclaredToolNames } from "../../translator/concerns/universalToolParser.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -199,7 +200,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, rtkStats = null, prunerStats = null, headroomStats = null, headroomDiagnostics = null, detailId = null, clientModel = null }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, log, toolNameMap, trackDone, appendLog, rtkStats = null, prunerStats = null, headroomStats = null, headroomDiagnostics = null, detailId = null, clientModel = null }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -242,6 +243,61 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
+
+  // Universal Tool Engine non-streaming response parser
+  if (translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected) {
+    const declaredNames = getDeclaredToolNames(translatedBody?._declaredTools || body?._declaredTools || []);
+
+    if (isClaudeMessageResponse && Array.isArray(translatedResponse.content)) {
+      const newContent = [];
+      let toolCallCount = 0;
+
+      for (const block of translatedResponse.content) {
+        if (block.type === "text" && block.text) {
+          const parsed = parseUniversalToolCalls(block.text, declaredNames);
+          if (parsed.hasToolCalls) {
+            if (parsed.text) newContent.push({ type: "text", text: parsed.text });
+            for (const tc of parsed.toolCalls) {
+              toolCallCount++;
+              let inputObj = {};
+              try { inputObj = JSON.parse(tc.function.arguments || "{}"); } catch { }
+              newContent.push({
+                type: "tool_use",
+                id: tc.id || `toolu_${Date.now()}_${toolCallCount}`,
+                name: tc.function.name,
+                input: inputObj
+              });
+            }
+          } else if (parsed.text !== block.text) {
+            newContent.push({ ...block, text: parsed.text });
+          } else {
+            newContent.push(block);
+          }
+        } else {
+          newContent.push(block);
+        }
+      }
+
+      if (newContent.length > 0) {
+        translatedResponse.content = newContent;
+        if (toolCallCount > 0) {
+          translatedResponse.stop_reason = "tool_use";
+          log?.info?.("TOOLSHIM", `Parsed ${toolCallCount} tool call(s) from Claude non-streaming response`);
+        }
+      }
+    } else if (translatedResponse?.choices?.[0]?.message?.content) {
+      const choice = translatedResponse.choices[0];
+      const parsed = parseUniversalToolCalls(choice.message.content, declaredNames);
+      if (parsed.hasToolCalls) {
+        choice.message.tool_calls = parsed.toolCalls;
+        choice.message.content = parsed.text || null;
+        choice.finish_reason = "tool_calls";
+        log?.info?.("TOOLSHIM", `Parsed ${parsed.toolCalls.length} tool call(s) from OpenAI non-streaming response`);
+      } else if (parsed.text !== choice.message.content) {
+        choice.message.content = parsed.text || null;
+      }
+    }
+  }
 
   // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
   if (translatedResponse?.choices?.[0]) {

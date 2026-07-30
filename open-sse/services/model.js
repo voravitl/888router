@@ -25,6 +25,14 @@ export function resolveProviderAlias(aliasOrId) {
 }
 
 /**
+ * Strip context window suffixes like [1m], [128k], [200k] attached by Claude Code
+ */
+export function stripContextSuffix(modelStr) {
+  if (typeof modelStr !== "string") return modelStr;
+  return modelStr.replace(/\[\d+[km]\]$/i, "");
+}
+
+/**
  * Parse model string: "alias/model" or "provider/model" or just alias
  */
 export function parseModel(modelStr) {
@@ -32,11 +40,13 @@ export function parseModel(modelStr) {
     return { provider: null, model: null, isAlias: false, providerAlias: null };
   }
 
+  const cleanStr = stripContextSuffix(modelStr);
+
   // Check if standard format: provider/model or alias/model
-  if (modelStr.includes("/")) {
-    const firstSlash = modelStr.indexOf("/");
-    const providerOrAlias = modelStr.slice(0, firstSlash);
-    const model = modelStr.slice(firstSlash + 1);
+  if (cleanStr.includes("/")) {
+    const firstSlash = cleanStr.indexOf("/");
+    const providerOrAlias = cleanStr.slice(0, firstSlash);
+    const model = cleanStr.slice(firstSlash + 1);
     const provider = resolveProviderAlias(providerOrAlias);
     return { provider, model, isAlias: false, providerAlias: providerOrAlias };
   }
@@ -44,7 +54,7 @@ export function parseModel(modelStr) {
   // Alias format (model alias, not provider alias)
   return {
     provider: null,
-    model: modelStr,
+    model: cleanStr,
     isAlias: true,
     providerAlias: null,
   };
