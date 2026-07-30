@@ -10,6 +10,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { setCachedResponse } from "../../translator/concerns/responseCache.js";
+import { parseUniversalToolCalls, getDeclaredToolNames } from "../../translator/concerns/universalToolParser.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -242,6 +243,20 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
+
+  // Universal Tool Engine non-streaming response parser
+  if (translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected) {
+    if (translatedResponse?.choices?.[0]?.message?.content) {
+      const choice = translatedResponse.choices[0];
+      const declaredNames = getDeclaredToolNames(translatedBody?._declaredTools || body?._declaredTools || []);
+      const parsed = parseUniversalToolCalls(choice.message.content, declaredNames);
+      if (parsed.hasToolCalls) {
+        choice.message.tool_calls = parsed.toolCalls;
+        choice.message.content = parsed.text || null;
+        choice.finish_reason = "tool_calls";
+      }
+    }
+  }
 
   // Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other")
   if (translatedResponse?.choices?.[0]) {

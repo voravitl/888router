@@ -2,13 +2,27 @@
 // Injects XML <tool_call> instructions for models that lack native function calling capabilities.
 
 const NON_TOOL_DENYLIST = [
-  "ollama",
   "deepseek-r1",
   "qwen-base",
-  "llama-3",
+  "llama-3-8b",
   "mistral-base",
   "gemma"
 ];
+
+const MAX_TOOLS = 50;
+const MAX_PREAMBLE_CHARS = 8000;
+
+/**
+ * Escapes special XML characters to prevent prompt injection via tool names/descriptions.
+ */
+function escapeXml(str) {
+  if (typeof str !== "string") return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 /**
  * Determines whether to inject the Universal Tool Call Preamble into the request.
@@ -30,14 +44,17 @@ export function shouldInjectUniversalToolPrompt(body, modelInfo = {}, options = 
     return true;
   }
 
-  // "auto" mode: check if model lacks native tools or is in denylist
+  // Check capability system first
+  if (modelInfo.capabilities) {
+    if (modelInfo.capabilities.tools === false) return true;
+    if (modelInfo.capabilities.tools === true) return false;
+  }
+
+  // Denylist check fallback
   const modelName = String(modelInfo.model || body.model || "").toLowerCase();
   const provider = String(modelInfo.provider || "").toLowerCase();
 
-  const isDenylisted = NON_TOOL_DENYLIST.some(d => modelName.includes(d) || provider.includes(d));
-  const lacksNativeTools = modelInfo.capabilities && modelInfo.capabilities.tools === false;
-
-  return isDenylisted || lacksNativeTools;
+  return NON_TOOL_DENYLIST.some(d => modelName.includes(d) || provider.includes(d));
 }
 
 /**
@@ -47,8 +64,7 @@ function compactParameters(params, maxLen = 1500) {
   if (!params || typeof params !== "object") return "{}";
   try {
     const str = JSON.stringify(params);
-    if (str.length <= maxLen) return str;
-    // Truncate non-essential description fields in properties if oversized
+    if (str.length <= maxLen) return escapeXml(str);
     const copy = JSON.parse(str);
     if (copy.properties) {
       for (const key of Object.keys(copy.properties)) {
@@ -57,7 +73,7 @@ function compactParameters(params, maxLen = 1500) {
         }
       }
     }
-    return JSON.stringify(copy);
+    return escapeXml(JSON.stringify(copy));
   } catch {
     return "{}";
   }
@@ -65,15 +81,20 @@ function compactParameters(params, maxLen = 1500) {
 
 /**
  * Formats body.tools into a clean XML Preamble and injects it into the system prompt.
+ * Also strips native `tools` and `tool_choice` fields from the request body so upstream doesn't reject them.
  */
 export function injectUniversalToolPrompt(body) {
   if (!body.tools || !Array.isArray(body.tools) || body.tools.length === 0) {
     return body;
   }
 
+  // Keep a copy of declared tool schemas for response-side strict name matching
+  body._declaredTools = body.tools;
+
+  const toolsToInject = body.tools.slice(0, MAX_TOOLS);
   const toolLines = [];
 
-  for (const t of body.tools) {
+  for (const t of toolsToInject) {
     let name = "";
     let desc = "";
     let params = {};
@@ -90,16 +111,25 @@ export function injectUniversalToolPrompt(body) {
 
     if (!name) continue;
 
+    const safeName = escapeXml(name);
+    const safeDesc = escapeXml(String(desc).slice(0, 300));
+    const safeParams = compactParameters(params);
+
     toolLines.push(`
 <tool>
-<name>${name}</name>
-<description>${String(desc).slice(0, 300)}</description>
-<parameters>${compactParameters(params)}</parameters>
+<name>${safeName}</name>
+<description>${safeDesc}</description>
+<parameters>${safeParams}</parameters>
 </tool>`);
   }
 
+  let preambleStr = toolLines.join("");
+  if (preambleStr.length > MAX_PREAMBLE_CHARS) {
+    preambleStr = preambleStr.slice(0, MAX_PREAMBLE_CHARS) + "\n<!-- truncated -->";
+  }
+
   const preamble = `
-<available_tools>${toolLines.join("")}
+<available_tools>${preambleStr}
 </available_tools>
 
 MANDATE FOR TOOL CALLS:
@@ -126,6 +156,10 @@ Do not add conversational fluff before or after <tool_call>. Output strictly val
   } else {
     body.messages.unshift({ role: "system", content: preamble });
   }
+
+  // Strip native tools and tool_choice from request so upstream doesn't receive redundant/rejected schemas
+  delete body.tools;
+  delete body.tool_choice;
 
   body._universalToolPromptInjected = true;
   return body;

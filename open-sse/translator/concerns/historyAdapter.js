@@ -10,26 +10,49 @@ export function adaptHistoryForUniversalTools(body) {
     return body;
   }
 
-  const adaptedMessages = [];
+  const rawAdapted = [];
   const toolCallNames = new Map(); // id -> name mapping
 
   for (const msg of body.messages) {
-    // 1. Assistant message containing tool_calls or tool_use
+    if (!msg) continue;
+
+    // 1. Assistant message containing tool_calls or Anthropic tool_use blocks
     if (msg.role === "assistant") {
       let contentStr = typeof msg.content === "string" ? msg.content : "";
+      
+      // OpenAI tool_calls
       const toolCalls = msg.tool_calls;
-
       if (toolCalls && Array.isArray(toolCalls)) {
         for (const tc of toolCalls) {
           const name = tc.function?.name || tc.name || "unknown_tool";
           const args = tc.function?.arguments || tc.arguments || "{}";
           if (tc.id) toolCallNames.set(tc.id, name);
 
-          const xmlTag = `<tool_call>\n{"name": "${name}", "arguments": ${typeof args === "string" ? args : JSON.stringify(args)}}\n</tool_call>`;
+          const xmlTag = `<tool_call>\n{"name": ${JSON.stringify(name)}, "arguments": ${typeof args === "string" ? args : JSON.stringify(args)}}\n</tool_call>`;
           contentStr = contentStr ? `${contentStr}\n${xmlTag}` : xmlTag;
         }
-        adaptedMessages.push({ role: "assistant", content: contentStr });
+        rawAdapted.push({ role: "assistant", content: contentStr });
         continue;
+      }
+
+      // Anthropic tool_use content blocks
+      if (Array.isArray(msg.content)) {
+        const textParts = [];
+        const xmlParts = [];
+        for (const block of msg.content) {
+          if (block.type === "text" && block.text) {
+            textParts.push(block.text);
+          } else if (block.type === "tool_use") {
+            const name = block.name || "unknown_tool";
+            if (block.id) toolCallNames.set(block.id, name);
+            xmlParts.push(`<tool_call>\n{"name": ${JSON.stringify(name)}, "arguments": ${JSON.stringify(block.input || {})}}\n</tool_call>`);
+          }
+        }
+        if (xmlParts.length > 0) {
+          const combined = [...textParts, ...xmlParts].join("\n");
+          rawAdapted.push({ role: "assistant", content: combined });
+          continue;
+        }
       }
     }
 
@@ -39,7 +62,7 @@ export function adaptHistoryForUniversalTools(body) {
       const resultText = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content || "");
       const proseContent = `Tool Output [${toolName}]:\n${resultText}`;
 
-      adaptedMessages.push({
+      rawAdapted.push({
         role: "user",
         content: proseContent
       });
@@ -71,15 +94,28 @@ export function adaptHistoryForUniversalTools(body) {
       }
 
       if (convertedToProse) {
-        adaptedMessages.push({ role: "user", content: newContent });
+        rawAdapted.push({ role: "user", content: newContent });
         continue;
       }
     }
 
     // Keep all other regular messages unchanged
-    adaptedMessages.push(msg);
+    rawAdapted.push(msg);
   }
 
-  body.messages = adaptedMessages;
+  // Merge consecutive user messages to prevent role duplication errors
+  const finalMessages = [];
+  for (const m of rawAdapted) {
+    const prev = finalMessages[finalMessages.length - 1];
+    if (prev && prev.role === "user" && m.role === "user") {
+      const prevText = typeof prev.content === "string" ? prev.content : JSON.stringify(prev.content);
+      const currText = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+      prev.content = `${prevText}\n\n${currText}`;
+    } else {
+      finalMessages.push(m);
+    }
+  }
+
+  body.messages = finalMessages;
   return body;
 }

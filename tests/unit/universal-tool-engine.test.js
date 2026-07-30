@@ -3,6 +3,7 @@ import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt } from "../.
 import { adaptHistoryForUniversalTools } from "../../open-sse/translator/concerns/historyAdapter.js";
 import { parseUniversalToolCalls } from "../../open-sse/translator/concerns/universalToolParser.js";
 import { repairAndParseJson } from "../../open-sse/translator/concerns/jsonAutoRepair.js";
+import { stripContextSuffix, parseModel } from "../../open-sse/services/model.js";
 
 describe("Universal Tool Call & MCP Engine", () => {
   it("shouldInjectUniversalToolPrompt detects non-tool models or denylisted models", () => {
@@ -19,14 +20,14 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(openRes).toBe(true);
   });
 
-  it("injectUniversalToolPrompt generates compact XML preamble", () => {
+  it("injectUniversalToolPrompt escapes XML characters and strips native tools parameter", () => {
     const body = {
       tools: [
         {
           function: {
-            name: "run_command",
-            description: "Run shell command",
-            parameters: { type: "object", properties: { CommandLine: { type: "string" } } }
+            name: "run<script>",
+            description: "Run & test <evil>",
+            parameters: { type: "object", properties: { cmd: { type: "string" } } }
           }
         }
       ],
@@ -37,16 +38,20 @@ describe("Universal Tool Call & MCP Engine", () => {
 
     const sysMsg = body.messages.find(m => m.role === "system");
     expect(sysMsg).toBeDefined();
-    expect(sysMsg.content).toContain("<available_tools>");
-    expect(sysMsg.content).toContain("<name>run_command</name>");
-    expect(sysMsg.content).toContain("<tool_call>");
+    expect(sysMsg.content).toContain("&lt;script&gt;");
+    expect(sysMsg.content).toContain("Run &amp; test &lt;evil&gt;");
+
+    // Native tools parameter must be stripped from body
+    expect(body.tools).toBeUndefined();
+    expect(body._universalToolPromptInjected).toBe(true);
   });
 
-  it("adaptHistoryForUniversalTools translates role:tool to taught prose", () => {
+  it("adaptHistoryForUniversalTools translates role:tool and Anthropic tool_use to taught prose", () => {
     const body = {
       messages: [
         { role: "assistant", tool_calls: [{ id: "call_1", function: { name: "run_command", arguments: '{"CommandLine":"ls"}' } }] },
-        { role: "tool", tool_call_id: "call_1", content: "file1.txt\nfile2.txt" }
+        { role: "tool", tool_call_id: "call_1", content: "file1.txt\nfile2.txt" },
+        { role: "assistant", content: [{ type: "tool_use", id: "call_2", name: "read_file", input: { path: "a.txt" } }] }
       ]
     };
 
@@ -54,6 +59,8 @@ describe("Universal Tool Call & MCP Engine", () => {
 
     expect(body.messages[1].role).toBe("user");
     expect(body.messages[1].content).toContain("Tool Output [run_command]:\nfile1.txt\nfile2.txt");
+    expect(body.messages[2].content).toContain('<tool_call>');
+    expect(body.messages[2].content).toContain('read_file');
   });
 
   it("repairAndParseJson auto-fixes trailing commas and single quotes", () => {
@@ -80,5 +87,14 @@ describe("Universal Tool Call & MCP Engine", () => {
     const falseText = `<tool_call>\n{"name": "malicious_tool", "arguments": {}}\n</tool_call>`;
     const falseResult = parseUniversalToolCalls(falseText, declaredNames);
     expect(falseResult.hasToolCalls).toBe(false);
+  });
+
+  it("stripContextSuffix and parseModel remove [1m]/[128k] suffixes cleanly", () => {
+    expect(stripContextSuffix("oc/deepseek-v4-flash-free[1m]")).toBe("oc/deepseek-v4-flash-free");
+    expect(stripContextSuffix("claude-sonnet-4[128k]")).toBe("claude-sonnet-4");
+
+    const parsed = parseModel("oc/deepseek-v4-flash-free[1m]");
+    expect(parsed.provider).toBe("opencode");
+    expect(parsed.model).toBe("deepseek-v4-flash-free");
   });
 });
