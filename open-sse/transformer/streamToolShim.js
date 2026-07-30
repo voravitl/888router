@@ -19,6 +19,8 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
   function processLine(line, controller) {
     const trimmed = line.trim();
+
+    // Pass non-data lines directly when not buffering inside tool tag
     if (!trimmed.startsWith("data: ")) {
       if (!inToolTag) {
         controller.enqueue(new TextEncoder().encode(line + "\n"));
@@ -34,15 +36,20 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
       
       // Extract delta text content across OpenAI or Claude SSE formats
       let deltaContent = "";
+      let isTextDelta = false;
+
       if (json.choices?.[0]?.delta?.content !== undefined) {
         deltaContent = json.choices[0].delta.content || "";
+        isTextDelta = true;
       } else if (json.type === "content_block_delta" && json.delta?.text) {
         deltaContent = json.delta.text;
+        isTextDelta = true;
       } else if (typeof json.content === "string") {
         deltaContent = json.content;
+        isTextDelta = true;
       }
 
-      if (deltaContent) {
+      if (isTextDelta && deltaContent) {
         textBuffer += deltaContent;
 
         // Prevent memory DoS
@@ -62,11 +69,15 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         if (inToolTag && (textBuffer.includes("</tool_call>") || textBuffer.includes("</tool_use>"))) {
           const parsed = parseUniversalToolCalls(textBuffer, declaredNames);
           if (parsed.hasToolCalls) {
+            // FIX #2: Emit text BEFORE tool call chunk if text preceded the tag
+            if (parsed.text && parsed.text.trim()) {
+              emitTextChunk(parsed.text, json, clientFormat, controller);
+            }
             for (const tc of parsed.toolCalls) {
               log?.info?.("TOOLSHIM", `Stream parsed tool call: ${tc.function.name}`);
               emitToolCallChunk(tc, toolCallCounter++, clientFormat, controller);
             }
-            textBuffer = parsed.text || "";
+            textBuffer = "";
             inToolTag = false;
             return;
           } else {
@@ -79,6 +90,12 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
           emitTextChunk(textBuffer, json, clientFormat, controller);
           textBuffer = "";
         }
+        return;
+      }
+
+      // FIX #1: Pass non-text data events (e.g. message_start, content_block_start, ping) through when not inside tool tag
+      if (!inToolTag) {
+        controller.enqueue(new TextEncoder().encode(line + "\n"));
       }
     } catch {
       if (!inToolTag) {

@@ -122,10 +122,12 @@ describe("Universal Tool Call & MCP Engine", () => {
     const writer = shim.writable.getWriter();
     const readPromise = new Response(shim.readable).text();
 
+    await writer.write(new TextEncoder().encode(`event: message_start\ndata: {"type":"message_start"}\n\n`));
     await writer.write(new TextEncoder().encode(`data: {"content":"Hello <tool_call>{\\"name\\":\\"test_tool\\",\\"arguments\\":{}}</tool_call>"}`));
     await writer.close();
 
     const outputText = await readPromise;
+    expect(outputText).toContain("message_start");
     expect(outputText).toContain("content_block_start");
     expect(outputText).toContain("test_tool");
     expect(outputText).toContain("message_stop");

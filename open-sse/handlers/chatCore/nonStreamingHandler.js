@@ -246,15 +246,49 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   // Universal Tool Engine non-streaming response parser
   if (translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected) {
-    if (translatedResponse?.choices?.[0]?.message?.content) {
+    const declaredNames = getDeclaredToolNames(translatedBody?._declaredTools || body?._declaredTools || []);
+
+    if (isClaudeMessageResponse && Array.isArray(translatedResponse.content)) {
+      const newContent = [];
+      let toolCallCount = 0;
+
+      for (const block of translatedResponse.content) {
+        if (block.type === "text" && block.text) {
+          const parsed = parseUniversalToolCalls(block.text, declaredNames);
+          if (parsed.hasToolCalls) {
+            if (parsed.text) newContent.push({ type: "text", text: parsed.text });
+            for (const tc of parsed.toolCalls) {
+              toolCallCount++;
+              let inputObj = {};
+              try { inputObj = JSON.parse(tc.function.arguments || "{}"); } catch { }
+              newContent.push({
+                type: "tool_use",
+                id: tc.id || `toolu_${Date.now()}_${toolCallCount}`,
+                name: tc.function.name,
+                input: inputObj
+              });
+            }
+          } else {
+            newContent.push(block);
+          }
+        } else {
+          newContent.push(block);
+        }
+      }
+
+      if (toolCallCount > 0) {
+        translatedResponse.content = newContent;
+        translatedResponse.stop_reason = "tool_use";
+        reqLogger?.logInfo?.("TOOLSHIM", `Parsed ${toolCallCount} tool call(s) from Claude non-streaming response`);
+      }
+    } else if (translatedResponse?.choices?.[0]?.message?.content) {
       const choice = translatedResponse.choices[0];
-      const declaredNames = getDeclaredToolNames(translatedBody?._declaredTools || body?._declaredTools || []);
       const parsed = parseUniversalToolCalls(choice.message.content, declaredNames);
       if (parsed.hasToolCalls) {
         choice.message.tool_calls = parsed.toolCalls;
         choice.message.content = parsed.text || null;
         choice.finish_reason = "tool_calls";
-        reqLogger?.logInfo?.("TOOLSHIM", `Parsed ${parsed.toolCalls.length} tool call(s) from non-streaming response`);
+        reqLogger?.logInfo?.("TOOLSHIM", `Parsed ${parsed.toolCalls.length} tool call(s) from OpenAI non-streaming response`);
       }
     }
   }
