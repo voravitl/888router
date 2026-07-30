@@ -39,9 +39,14 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
   let sseLineBuffer = "";
   let inToolTag = false;
   let toolCallCounter = 0;
+  let sawMessageStop = false;
 
   function processLine(line, controller) {
     const trimmed = line.trim();
+
+    if (trimmed.includes("message_stop") || trimmed === "data: [DONE]") {
+      sawMessageStop = true;
+    }
 
     // Pass non-data lines directly when not buffering inside tool tag
     if (!trimmed.startsWith("data: ")) {
@@ -52,10 +57,16 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
     }
 
     const dataStr = trimmed.slice(6).trim();
-    if (dataStr === "[DONE]") return;
+    if (dataStr === "[DONE]") {
+      sawMessageStop = true;
+      return;
+    }
 
     try {
       const json = JSON.parse(dataStr);
+      if (json.type === "message_stop") {
+        sawMessageStop = true;
+      }
       
       // Extract delta text content across OpenAI or Claude SSE formats
       let deltaContent = "";
@@ -138,10 +149,11 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
   function emitToolCallChunk(tc, index, format, controller) {
     if (format === "claude") {
+      const blockIndex = index + 1; // Index 0 is reserved for text block
       const toolUseId = tc.id || `toolu_${Date.now()}_${index}`;
       const blockStart = `event: content_block_start\ndata: ${JSON.stringify({
         type: "content_block_start",
-        index,
+        index: blockIndex,
         content_block: { type: "tool_use", id: toolUseId, name: tc.function.name, input: {} }
       })}\n\n`;
 
@@ -150,16 +162,21 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
       const blockDelta = `event: content_block_delta\ndata: ${JSON.stringify({
         type: "content_block_delta",
-        index,
+        index: blockIndex,
         delta: { type: "input_json_delta", partial_json: JSON.stringify(argsObj) }
       })}\n\n`;
 
       const blockStop = `event: content_block_stop\ndata: ${JSON.stringify({
         type: "content_block_stop",
-        index
+        index: blockIndex
       })}\n\n`;
 
-      controller.enqueue(new TextEncoder().encode(blockStart + blockDelta + blockStop));
+      const messageDelta = `event: message_delta\ndata: ${JSON.stringify({
+        type: "message_delta",
+        delta: { stop_reason: "tool_use" }
+      })}\n\n`;
+
+      controller.enqueue(new TextEncoder().encode(blockStart + blockDelta + blockStop + messageDelta));
     } else {
       const ssePayload = `data: ${JSON.stringify({
         id: `chatcmpl-shim-${Date.now()}-${index}`,
@@ -226,10 +243,12 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         textBuffer = "";
       }
 
-      if (clientFormat === "claude") {
-        controller.enqueue(new TextEncoder().encode("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"));
-      } else {
-        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+      if (!sawMessageStop) {
+        if (clientFormat === "claude") {
+          controller.enqueue(new TextEncoder().encode("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"));
+        } else {
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+        }
       }
     }
   });

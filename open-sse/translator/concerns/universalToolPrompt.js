@@ -69,7 +69,7 @@ export function shouldInjectUniversalToolPrompt(body, modelInfo = {}, options = 
     return true;
   }
 
-  if (NON_TOOL_DENYLIST_SUFFIXES.some(s => modelName.endsWith(s) || modelName.includes(s))) {
+  if (NON_TOOL_DENYLIST_SUFFIXES.some(s => modelName.endsWith(s))) {
     return true;
   }
 
