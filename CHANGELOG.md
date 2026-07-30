@@ -1,3 +1,12 @@
+# v0.12.0 (2026-07-30)
+
+## Major Features (Universal Tool Call & MCP Compatibility Engine)
+- **Universal Tool Engine**: transparent 4-layer proxy compatibility engine that enables ANY LLM model (including non-tool-tuned open models, Ollama models, or cheap fallbacks) to execute tool calls and MCP tools cleanly.
+- **Layer 1 (Schema Injector & Token Bomb Guard)**: converts `tools` schema into compact XML `<tool_call>` Preamble, capped under 2,000 tokens to prevent prompt explosion.
+- **Layer 2 (Multi-Turn History Adapter)**: `historyAdapter.js` rewrites previous `role: "tool"` or `tool_result` history into taught prose format (`Tool Output [tool_name]: ...`), ensuring multi-turn agent loops succeed across multiple steps.
+- **Layer 3 (Response Parser & SSE Stream Shim)**: stateful SSE stream transformer (`streamToolShim.js`) and response parser (`universalToolParser.js`) with Strict Schema Name Matching.
+- **Layer 4 (JSON Auto-Repair & Safe Fallback)**: `jsonAutoRepair.js` automatically repairs malformed LLM JSON (trailing commas, single quotes, unescaped quotes) with fail-open safe recovery.
+
 # v0.11.1 (2026-07-30)
 
 ## Fixes & Enhancements (Context Pruner Hardening)
