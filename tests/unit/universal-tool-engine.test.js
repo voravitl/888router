@@ -23,6 +23,10 @@ describe("Universal Tool Call & MCP Engine", () => {
     // Model with explicit capabilities.tools === false should inject
     const noToolRes = shouldInjectUniversalToolPrompt(body, { model: "custom-model", provider: "custom", capabilities: { tools: false } });
     expect(noToolRes).toBe(true);
+
+    // DeepSeek R1 Distill model should inject
+    const r1DistillRes = shouldInjectUniversalToolPrompt(body, { model: "deepseek-r1-distill-qwen-32b", provider: "openrouter", capabilities: { tools: true } });
+    expect(r1DistillRes).toBe(true);
   });
 
   it("injectUniversalToolPrompt escapes XML characters and strips native tools parameter", () => {
@@ -145,5 +149,36 @@ describe("Universal Tool Call & MCP Engine", () => {
     const outputText = await readPromise;
     expect(outputText).toContain("split_tool");
     expect(outputText).toContain("tool_calls");
+  });
+
+  it("createStreamToolShimTransformStream deduplicates content_block_stop for multi-tool Claude streams", async () => {
+    const shim = createStreamToolShimTransformStream([{ name: "toolA" }, { name: "toolB" }], "claude");
+    const writer = shim.writable.getWriter();
+    const readPromise = new Response(shim.readable).text();
+
+    const multiToolXml = `<tool_call>\n{"name":"toolA","arguments":{}}\n</tool_call>\n<tool_call>\n{"name":"toolB","arguments":{}}\n</tool_call>`;
+    await writer.write(new TextEncoder().encode(`data: {"content":${JSON.stringify(multiToolXml)}}`));
+    await writer.close();
+
+    const outputText = await readPromise;
+    // content_block_stop for index 0 text block must appear ONCE
+    const stopMatches = outputText.match(/"type":"content_block_stop","index":0/g) || [];
+    expect(stopMatches.length).toBe(1);
+    expect(outputText).toContain("toolA");
+    expect(outputText).toContain("toolB");
+  });
+
+  it("createStreamToolShimTransformStream emits terminal event if stream ends inside un-closed tool tag", async () => {
+    const shim = createStreamToolShimTransformStream([{ name: "toolA" }], "openai");
+    const writer = shim.writable.getWriter();
+    const readPromise = new Response(shim.readable).text();
+
+    // Stream ends mid-tag without closing </tool_call>
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"<tool_call>{\\"name\\":\\"toolA\\""}}]}\n\n`));
+    await writer.close();
+
+    const outputText = await readPromise;
+    expect(outputText).toContain("data: [DONE]");
+    expect(outputText).toContain("<tool_call>");
   });
 });
