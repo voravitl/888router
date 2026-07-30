@@ -5,7 +5,7 @@
 /**
  * Rewrites tool_calls and tool_result history messages for models using the Universal Tool Shim.
  */
-export function adaptHistoryForUniversalTools(body) {
+export function adaptHistoryForUniversalTools(body, log = null) {
   if (!body.messages || !Array.isArray(body.messages)) {
     return body;
   }
@@ -114,6 +114,10 @@ export function adaptHistoryForUniversalTools(body) {
     } else {
       finalMessages.push(m);
     }
+  }
+
+  if (toolCallNames.size > 0) {
+    log?.debug?.("TOOLSHIM", `adapted ${toolCallNames.size} historical tool call(s) to taught prose`);
   }
 
   body.messages = finalMessages;

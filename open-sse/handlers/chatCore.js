@@ -268,7 +268,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Universal Tool Call Engine: inject XML preamble & adapt history for non-tool models
   const modelCaps = getCapabilitiesForModel(provider, model);
   if (shouldInjectUniversalToolPrompt(translatedBody, { provider, model: upstreamModel, capabilities: modelCaps })) {
-    adaptHistoryForUniversalTools(translatedBody);
+    adaptHistoryForUniversalTools(translatedBody, log);
     injectUniversalToolPrompt(translatedBody);
     log?.info?.("TOOLSHIM", `injected universal tool preamble for model ${upstreamModel}`);
   }
