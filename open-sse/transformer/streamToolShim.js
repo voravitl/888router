@@ -30,6 +30,37 @@ function getPartialTagPrefixLength(text) {
 }
 
 /**
+ * Inspects `text` for unclosed `<tool_call>`/`<tool_use>` tags or trailing tag prefixes.
+ * Preserves unclosed tag portions in `remainingBuffer` so sequential stream chunks are not lost.
+ */
+function extractUnclosedBuffer(text) {
+  if (!text) return { cleanText: "", remainingBuffer: "", inTag: false };
+
+  const lastOpenCall = Math.max(text.lastIndexOf("<tool_call>"), text.lastIndexOf("<tool_use>"));
+  if (lastOpenCall !== -1) {
+    const lastCloseCall = Math.max(text.lastIndexOf("</tool_call>"), text.lastIndexOf("</tool_use>"));
+    if (lastCloseCall < lastOpenCall) {
+      return {
+        cleanText: text.slice(0, lastOpenCall),
+        remainingBuffer: text.slice(lastOpenCall),
+        inTag: true
+      };
+    }
+  }
+
+  const holdLen = getPartialTagPrefixLength(text);
+  if (holdLen > 0) {
+    return {
+      cleanText: text.slice(0, text.length - holdLen),
+      remainingBuffer: text.slice(text.length - holdLen),
+      inTag: false
+    };
+  }
+
+  return { cleanText: text, remainingBuffer: "", inTag: false };
+}
+
+/**
  * Creates a TransformStream that inspects SSE streams for <tool_call> tags and transforms them to tool_calls SSE events.
  * Supports both OpenAI SSE format and Claude SSE format (content_block_start/delta).
  */
@@ -135,9 +166,11 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         if (inToolTag && (textBuffer.includes("</tool_call>") || textBuffer.includes("</tool_use>"))) {
           const parsed = parseUniversalToolCalls(textBuffer, declaredNames);
           if (parsed.hasToolCalls) {
-            // Emit text BEFORE tool call chunk if text preceded the tag
-            if (parsed.text && parsed.text.trim()) {
-              emitTextChunk(parsed.text, json, clientFormat, controller);
+            const unclosedState = extractUnclosedBuffer(parsed.text || "");
+
+            // Emit text BEFORE tool call chunk if clean text preceded the tag
+            if (unclosedState.cleanText && unclosedState.cleanText.trim()) {
+              emitTextChunk(unclosedState.cleanText, json, clientFormat, controller);
             }
 
             // For Claude format: close text block (index 0) ONCE before emitting any tool_use blocks
@@ -155,8 +188,8 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
               hasEmittedToolCalls = true;
             }
 
-            textBuffer = "";
-            inToolTag = false;
+            textBuffer = unclosedState.remainingBuffer;
+            inToolTag = unclosedState.inTag;
             pendingEventName = "";
             return;
           } else {

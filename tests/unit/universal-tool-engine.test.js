@@ -192,6 +192,22 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(finishMatches.length).toBe(1);
   });
 
+  it("createStreamToolShimTransformStream preserves residual partial toolB tag when toolA finishes in chunk 1", async () => {
+    const shim = createStreamToolShimTransformStream([{ name: "toolA" }, { name: "toolB" }], "openai");
+    const writer = shim.writable.getWriter();
+    const readPromise = new Response(shim.readable).text();
+
+    // Chunk 1: complete toolA + partial toolB tag
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"<tool_call>{\\"name\\":\\"toolA\\",\\"arguments\\":{}}</tool_call><tool_call>{\\"name\\":\\"too"}}]}\n\n`));
+    // Chunk 2: remainder of toolB
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"lB\\",\\"arguments\\":{}}</tool_call>"}}]}\n\n`));
+    await writer.close();
+
+    const outputText = await readPromise;
+    expect(outputText).toContain("toolA");
+    expect(outputText).toContain("toolB");
+  });
+
   it("createStreamToolShimTransformStream suppresses upstream finish_reason:stop and emits tool_calls BEFORE data: [DONE]", async () => {
     const shim = createStreamToolShimTransformStream([{ name: "test_tool" }], "openai");
     const writer = shim.writable.getWriter();
