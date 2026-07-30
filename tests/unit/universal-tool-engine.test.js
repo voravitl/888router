@@ -5,6 +5,7 @@ import { parseUniversalToolCalls } from "../../open-sse/translator/concerns/univ
 import { repairAndParseJson } from "../../open-sse/translator/concerns/jsonAutoRepair.js";
 import { createStreamToolShimTransformStream } from "../../open-sse/transformer/streamToolShim.js";
 import { stripContextSuffix, parseModel } from "../../open-sse/services/model.js";
+import { handleNonStreamingResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";
 
 describe("Universal Tool Call & MCP Engine", () => {
   it("shouldInjectUniversalToolPrompt detects non-tool models or denylisted models", () => {
@@ -246,6 +247,30 @@ describe("Universal Tool Call & MCP Engine", () => {
     const outputText = await readPromise;
     expect(outputText).not.toContain("<tool_call>");
     expect(outputText).not.toContain("undeclared_tool");
+  });
+
+  it("handleNonStreamingResponse strips undeclared tool call tags in Claude non-streaming responses", async () => {
+    const claudeResp = {
+      type: "message",
+      content: [{ type: "text", text: "Hello <tool_call>{\"name\":\"evil\"}</tool_call> world" }],
+      stop_reason: "end_turn"
+    };
+
+    const mockReqConfig = {
+      body: { _universalToolPromptInjected: true, _declaredTools: [{ name: "valid_tool" }] },
+      sourceFormat: "claude",
+      targetFormat: "claude",
+      executor: {},
+      providerResponse: { ok: true, status: 200, headers: { get: () => "application/json" }, json: async () => claudeResp },
+      reqLogger: { logProviderResponse: () => {}, logConvertedResponse: () => {} },
+      trackDone: () => {},
+      appendLog: () => {}
+    };
+
+    const res = await handleNonStreamingResponse(mockReqConfig);
+    const bodyJson = await res.response.json();
+    expect(bodyJson.content[0].text).not.toContain("<tool_call>");
+    expect(bodyJson.content[0].text).toContain("Hello  world");
   });
 
   it("createStreamToolShimTransformStream emits terminal event if stream ends inside un-closed tool tag", async () => {

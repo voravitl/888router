@@ -278,10 +278,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         }
       }
 
-      if (toolCallCount > 0) {
+      if (newContent.length > 0) {
         translatedResponse.content = newContent;
-        translatedResponse.stop_reason = "tool_use";
-        log?.info?.("TOOLSHIM", `Parsed ${toolCallCount} tool call(s) from Claude non-streaming response`);
+        if (toolCallCount > 0) {
+          translatedResponse.stop_reason = "tool_use";
+          log?.info?.("TOOLSHIM", `Parsed ${toolCallCount} tool call(s) from Claude non-streaming response`);
+        }
       }
     } else if (translatedResponse?.choices?.[0]?.message?.content) {
       const choice = translatedResponse.choices[0];
