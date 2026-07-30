@@ -297,6 +297,14 @@ export function pruneMessageHistory(body, provider, model) {
         firstMsg.content = `${tombstoneText}\n\n${firstMsg.content}`;
       } else if (Array.isArray(firstMsg.content)) {
         firstMsg.content = [{ type: "text", text: `${tombstoneText}\n\n` }, ...firstMsg.content];
+      } else if (Array.isArray(firstMsg.parts)) {
+        const partsCopy = [...firstMsg.parts];
+        if (partsCopy.length > 0 && typeof partsCopy[0].text === "string") {
+          partsCopy[0] = { ...partsCopy[0], text: `${tombstoneText}\n\n${partsCopy[0].text}` };
+        } else {
+          partsCopy.unshift({ text: `${tombstoneText}\n\n` });
+        }
+        firstMsg.parts = partsCopy;
       } else {
         firstMsg.content = tombstoneText;
       }
@@ -307,9 +315,12 @@ export function pruneMessageHistory(body, provider, model) {
       ];
     } else {
       // First remaining message is assistant or tool (or empty): insert standalone user tombstone
+      const standaloneTombstone = targetInfo.key === "contents"
+        ? { role: "user", parts: [{ text: tombstoneText }] }
+        : { role: "user", content: tombstoneText };
       finalMessages = [
         ...leadingMsgs,
-        { role: "user", content: tombstoneText },
+        standaloneTombstone,
         ...remainingMiddleAndTrailing,
       ];
     }

@@ -131,6 +131,12 @@ describe("pruner: tool-pair aware atomic context pruner", () => {
     const result = pruneMessageHistory(body, "codebuddy-cn", "glm-5.2");
     expect(result.request.contents).toBeDefined();
     expect(result._pruned).toBe(true);
+
+    // Verify Gemini parts tombstone formatting
+    const trailingUserMsg = result.request.contents.find(m => m.parts && m.parts.some(p => p.text.includes("u3 (trailing)")));
+    expect(trailingUserMsg).toBeDefined();
+    expect(trailingUserMsg.content).toBeUndefined(); // Must NOT set invalid content field on Gemini shape
+    expect(trailingUserMsg.parts[0].text).toContain("[earlier 2 history turns omitted for context limit]");
   });
 });
 
