@@ -3,16 +3,18 @@
 
 const NON_TOOL_PROVIDERS = new Set(["ollama"]);
 
-const NON_TOOL_DENYLIST_PATTERNS = [
-  "r1",
-  "base",
-  "free",
-  "llama-3-8b",
-  "mistral-base",
-  "gemma",
+const NON_TOOL_DENYLIST_EXACT = new Set([
   "deepseek-v4-flash-free",
   "mimo-v2.5-free",
   "ling-3.0-flash-free"
+]);
+
+const NON_TOOL_DENYLIST_SUFFIXES = [
+  "-free",
+  "-base",
+  "-r1",
+  "/r1",
+  "r1-distill"
 ];
 
 const MAX_TOOLS = 50;
@@ -63,7 +65,11 @@ export function shouldInjectUniversalToolPrompt(body, modelInfo = {}, options = 
     return true;
   }
 
-  if (NON_TOOL_DENYLIST_PATTERNS.some(p => modelName.includes(p))) {
+  if (NON_TOOL_DENYLIST_EXACT.has(modelName)) {
+    return true;
+  }
+
+  if (NON_TOOL_DENYLIST_SUFFIXES.some(s => modelName.endsWith(s) || modelName.includes(s))) {
     return true;
   }
 

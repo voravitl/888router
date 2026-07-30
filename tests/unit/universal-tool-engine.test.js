@@ -132,4 +132,18 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(outputText).toContain("test_tool");
     expect(outputText).toContain("message_stop");
   });
+
+  it("createStreamToolShimTransformStream handles partial <tool_call> tag split across SSE chunks", async () => {
+    const shim = createStreamToolShimTransformStream([{ name: "split_tool" }], "openai");
+    const writer = shim.writable.getWriter();
+    const readPromise = new Response(shim.readable).text();
+
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"Hi <to"}}]}\n\n`));
+    await writer.write(new TextEncoder().encode(`data: {"choices":[{"delta":{"content":"ol_call>{\\"name\\":\\"split_tool\\",\\"arguments\\":{}}</tool_call>"}}]}\n\n`));
+    await writer.close();
+
+    const outputText = await readPromise;
+    expect(outputText).toContain("split_tool");
+    expect(outputText).toContain("tool_calls");
+  });
 });

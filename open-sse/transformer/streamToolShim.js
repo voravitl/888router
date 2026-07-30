@@ -6,6 +6,29 @@ import { parseUniversalToolCalls, getDeclaredToolNames } from "../translator/con
 
 const MAX_BUFFER_SIZE = 64 * 1024; // 64KB safety cap against memory DoS
 
+const TAG_PREFIXES = [
+  "<tool_call>",
+  "<tool_use>",
+  "</tool_call>",
+  "</tool_use>"
+];
+
+/**
+ * Checks if the trailing characters of `text` match a partial prefix of any XML tool tag.
+ */
+function getPartialTagPrefixLength(text) {
+  if (!text) return 0;
+  for (const tag of TAG_PREFIXES) {
+    for (let len = tag.length - 1; len >= 1; len--) {
+      const prefix = tag.slice(0, len);
+      if (text.endsWith(prefix)) {
+        return len;
+      }
+    }
+  }
+  return 0;
+}
+
 /**
  * Creates a TransformStream that inspects SSE streams for <tool_call> tags and transforms them to tool_calls SSE events.
  * Supports both OpenAI SSE format and Claude SSE format (content_block_start/delta).
@@ -61,7 +84,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
           return;
         }
 
-        if (!inToolTag && textBuffer.includes("<tool_call>")) {
+        if (!inToolTag && (textBuffer.includes("<tool_call>") || textBuffer.includes("<tool_use>"))) {
           inToolTag = true;
           log?.debug?.("TOOLSHIM", "Detected <tool_call> tag in stream buffer");
         }
@@ -69,7 +92,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         if (inToolTag && (textBuffer.includes("</tool_call>") || textBuffer.includes("</tool_use>"))) {
           const parsed = parseUniversalToolCalls(textBuffer, declaredNames);
           if (parsed.hasToolCalls) {
-            // FIX #2: Emit text BEFORE tool call chunk if text preceded the tag
+            // Emit text BEFORE tool call chunk if text preceded the tag
             if (parsed.text && parsed.text.trim()) {
               emitTextChunk(parsed.text, json, clientFormat, controller);
             }
@@ -87,13 +110,22 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         }
 
         if (!inToolTag && textBuffer) {
-          emitTextChunk(textBuffer, json, clientFormat, controller);
-          textBuffer = "";
+          const holdLen = getPartialTagPrefixLength(textBuffer);
+          if (holdLen > 0) {
+            const safeText = textBuffer.slice(0, textBuffer.length - holdLen);
+            if (safeText) {
+              emitTextChunk(safeText, json, clientFormat, controller);
+            }
+            textBuffer = textBuffer.slice(textBuffer.length - holdLen);
+          } else {
+            emitTextChunk(textBuffer, json, clientFormat, controller);
+            textBuffer = "";
+          }
         }
         return;
       }
 
-      // FIX #1: Pass non-text data events (e.g. message_start, content_block_start, ping) through when not inside tool tag
+      // Pass non-text data events (e.g. message_start, content_block_start, ping) through when not inside tool tag
       if (!inToolTag) {
         controller.enqueue(new TextEncoder().encode(line + "\n"));
       }
