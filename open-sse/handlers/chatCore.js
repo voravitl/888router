@@ -73,6 +73,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const cachedHit = getCachedResponse(cacheRequestBody, model, clientRawRequest?.headers || {});
   if (cachedHit && cachedHit.hit) {
     log?.info?.("RESPONSE_CACHE", `Cache HIT for model ${model} (key: ${cachedHit.cacheKey.slice(0, 8)}...)`);
+    // Track cache hit in requestDetails for dashboard visibility
+    saveRequestDetail(buildRequestDetail({
+      provider: provider || "unknown",
+      model: model || "unknown",
+      clientModel: clientModel || null,
+      connectionId: connectionId || undefined,
+      timestamp: new Date().toISOString(),
+      latency: { ttft: 0, total: 0 },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: { messages: body.messages || [], model, stream: body.stream },
+      status: "success",
+      cacheHit: true,
+      cacheKey: cachedHit.cacheKey,
+    }, { id: detailId })).catch(() => {});
     return {
       success: true,
       response: new Response(JSON.stringify(cachedHit.cachedResponse), {
