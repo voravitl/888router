@@ -78,4 +78,59 @@ describe("pruner: tool-pair aware atomic context pruner", () => {
     expect(typeof result._prunerStats.tokensSaved).toBe("number");
     expect(result._prunerStats.pruned).toBe(true);
   });
+
+  it("prevents consecutive user messages when inserting tombstone notice", () => {
+    const messages = [
+      { role: "system", content: "sys" },
+      { role: "user", content: "u1 ".repeat(120000) },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: "u2 ".repeat(120000) },
+      { role: "assistant", content: "a2" },
+      { role: "user", content: "u3 (trailing)" }
+    ];
+    const body = { messages };
+    const result = pruneMessageHistory(body, "codebuddy-cn", "glm-5.2");
+
+    // Check non-system messages: roles must alternate without consecutive "user" roles
+    const roles = result.messages.filter(m => m.role !== "system").map(m => m.role);
+    for (let i = 0; i < roles.length - 1; i++) {
+      if (roles[i] === "user") {
+        expect(roles[i + 1]).not.toBe("user");
+      }
+    }
+  });
+
+  it("accurately estimates tokens for Claude tool_result content blocks", () => {
+    const body = {
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "call_123",
+              content: "A".repeat(35000) // 10k tokens
+            }
+          ]
+        }
+      ]
+    };
+    const est = estimateRequestTokens(body);
+    expect(est).toBeGreaterThan(9000);
+  });
+
+  it("prunes nested body.request.contents for Gemini/Google shape", () => {
+    const contents = [
+      { role: "user", parts: [{ text: "u1 " }] },
+      { role: "model", parts: [{ text: "a1" }] },
+      { role: "user", parts: [{ text: "u2 ".repeat(300000) }] },
+      { role: "model", parts: [{ text: "a2" }] },
+      { role: "user", parts: [{ text: "u3 (trailing)" }] }
+    ];
+    const body = { request: { contents } };
+    const result = pruneMessageHistory(body, "codebuddy-cn", "glm-5.2");
+    expect(result.request.contents).toBeDefined();
+    expect(result._pruned).toBe(true);
+  });
 });
+
