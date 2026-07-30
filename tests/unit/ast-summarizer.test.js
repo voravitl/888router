@@ -112,7 +112,9 @@ func ProcessRequest(req string) (string, error) {
     const body = {
       messages: [
         { role: "system", content: "sys" },
-        { role: "user", content: "old user prompt" },
+        { role: "user", content: "initial system & skill prompt" },
+        { role: "assistant", content: "understood" },
+        { role: "user", content: "middle prompt with code" },
         { role: "assistant", content: codeBody },
         { role: "user", content: "latest user prompt" }
       ]
@@ -123,7 +125,7 @@ func ProcessRequest(req string) (string, error) {
     expect(prunedBody._prunerStats).toBeDefined();
     expect(prunedBody._prunerStats.astSummarized).toBe(true);
     expect(prunedBody._prunerStats.omittedMessages).toBe(0); // Soft path saved middle turn from hard drop!
-    expect(prunedBody.messages.length).toBe(4); // All 4 turns intact!
+    expect(prunedBody.messages.length).toBe(6); // All 6 messages intact!
   });
 
   it("handles Gemini parts array format in soft AST summarizer", () => {

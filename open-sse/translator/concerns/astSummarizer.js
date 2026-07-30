@@ -128,6 +128,12 @@ export function softSummarizeMiddleGroups(middleGroups) {
               part.text = out;
               summarized = true;
             }
+          } else if (part && typeof part.content === "string") {
+            const out = summarizeCodeTextToAST(part.content);
+            if (out && out.length < part.content.length) {
+              part.content = out;
+              summarized = true;
+            }
           }
         }
       }

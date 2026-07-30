@@ -19,10 +19,17 @@ export function estimateRequestTokens(body) {
     } else if (Array.isArray(content)) {
       for (const item of content) {
         if (!item) continue;
-        if (typeof item === "string") textLength += item.length;
-        else if (item.text && typeof item.text === "string") textLength += item.text.length;
-        if (item.type === "image_url" || item.type === "image" || item.type === "input_image") mediaCount++;
-        if (item.inlineData || item.fileData) mediaCount++;
+        if (typeof item === "string") {
+          textLength += item.length;
+        } else if (typeof item === "object") {
+          if (typeof item.text === "string") textLength += item.text.length;
+          if (typeof item.content === "string") textLength += item.content.length;
+          else if (Array.isArray(item.content)) processContent(item.content);
+          if (typeof item.output === "string") textLength += item.output.length;
+
+          if (item.type === "image_url" || item.type === "image" || item.type === "input_image") mediaCount++;
+          if (item.inlineData || item.fileData) mediaCount++;
+        }
       }
     }
   };
@@ -43,6 +50,18 @@ export function estimateRequestTokens(body) {
 
   const estimated = Math.ceil(textLength / CHARS_PER_TOKEN) + (mediaCount * FIXED_IMAGE_TOKENS);
   return estimated;
+}
+
+/**
+  * Resolve target object and array key for messages in request body
+  */
+function getMessagesTarget(body) {
+  if (!body || typeof body !== "object") return null;
+  if (Array.isArray(body.messages)) return { target: body, key: "messages" };
+  if (Array.isArray(body.input)) return { target: body, key: "input" };
+  if (Array.isArray(body.contents)) return { target: body, key: "contents" };
+  if (Array.isArray(body.request?.contents)) return { target: body.request, key: "contents" };
+  return null;
 }
 
 /**
@@ -94,9 +113,16 @@ export function groupMessageTurns(messages) {
   }
 
   if (groups.length > 0) {
+    // Mark first non-system group as initial (contains system instructions / skills / workspace context — must be preserved)
+    for (let i = 0; i < groups.length; i++) {
+      if (!groups[i].isSystem) {
+        groups[i].isInitial = true;
+        break;
+      }
+    }
     // Mark last non-system group as trailing (must be preserved)
     for (let j = groups.length - 1; j >= 0; j--) {
-      if (!groups[j].isSystem) {
+      if (!groups[j].isSystem && !groups[j].isInitial) {
         groups[j].isTrailing = true;
         break;
       }
@@ -112,16 +138,8 @@ export function groupMessageTurns(messages) {
  */
 export function pruneMessageHistory(body, provider, model) {
   if (!body || typeof body !== "object") return body;
-  const messagesKey = Array.isArray(body.messages)
-    ? "messages"
-    : Array.isArray(body.input)
-    ? "input"
-    : Array.isArray(body.contents)
-    ? "contents"
-    : Array.isArray(body.request?.contents)
-    ? "request.contents"
-    : null;
-  if (!messagesKey) return body;
+  const targetInfo = getMessagesTarget(body);
+  if (!targetInfo) return body;
 
   const caps = getCapabilitiesForModel(provider, model);
   const contextWindow = caps.contextWindow || 200000;
@@ -143,13 +161,15 @@ export function pruneMessageHistory(body, provider, model) {
 
   if (initialEstimate <= budget) return body;
 
-  const originalMessages = body[messagesKey];
+  const originalMessages = targetInfo.target[targetInfo.key];
   const groups = groupMessageTurns(originalMessages);
-  if (groups.length <= 2) return body; // System + trailing turn only — cannot prune middle
 
   const systemGroups = groups.filter(g => g.isSystem);
+  const initialGroups = groups.filter(g => g.isInitial);
   const trailingGroups = groups.filter(g => g.isTrailing);
-  const middleGroups = groups.filter(g => !g.isSystem && !g.isTrailing);
+  const middleGroups = groups.filter(g => !g.isSystem && !g.isInitial && !g.isTrailing);
+
+  if (middleGroups.length === 0) return body;
 
   // Phase 1: Soft AST Summarization of code blocks in middle turns
   const astSummarized = softSummarizeMiddleGroups(middleGroups);
@@ -158,16 +178,23 @@ export function pruneMessageHistory(body, provider, model) {
   }
 
   const softCandidateBody = {
-    ...body,
-    [messagesKey]: [
-      ...systemGroups.flatMap(g => g.messages),
-      ...middleGroups.flatMap(g => g.messages),
-      ...trailingGroups.flatMap(g => g.messages)
-    ]
+    ...body
   };
 
+  const softMessages = [
+    ...systemGroups.flatMap(g => g.messages),
+    ...initialGroups.flatMap(g => g.messages),
+    ...middleGroups.flatMap(g => g.messages),
+    ...trailingGroups.flatMap(g => g.messages)
+  ];
+  if (targetInfo.target === body) {
+    softCandidateBody[targetInfo.key] = softMessages;
+  } else {
+    softCandidateBody.request = { ...body.request, [targetInfo.key]: softMessages };
+  }
+
   if (estimateRequestTokens(softCandidateBody) <= budget) {
-    body[messagesKey] = softCandidateBody[messagesKey];
+    targetInfo.target[targetInfo.key] = softMessages;
     const tokensAfter = estimateRequestTokens(body);
     body._prunerStats.tokensAfter = tokensAfter;
     body._prunerStats.tokensSaved = Math.max(0, initialEstimate - tokensAfter);
@@ -213,14 +240,19 @@ export function pruneMessageHistory(body, provider, model) {
       toolFlags.splice(i, 1);
       omittedCount += removedMsgs;
       // Check if remaining fit in budget
-      const candidateBody = {
-        ...body,
-        [messagesKey]: [
-          ...systemGroups.flatMap((g) => g.messages),
-          ...prunedMiddle.flatMap((g) => g.messages),
-          ...trailingGroups.flatMap((g) => g.messages),
-        ],
-      };
+      const candidateBody = { ...body };
+      const candidateMsgs = [
+        ...systemGroups.flatMap((g) => g.messages),
+        ...initialGroups.flatMap((g) => g.messages),
+        ...prunedMiddle.flatMap((g) => g.messages),
+        ...trailingGroups.flatMap((g) => g.messages),
+      ];
+      if (targetInfo.target === body) {
+        candidateBody[targetInfo.key] = candidateMsgs;
+      } else {
+        candidateBody.request = { ...body.request, [targetInfo.key]: candidateMsgs };
+      }
+
       if (estimateRequestTokens(candidateBody) <= budget) {
         i = prunedMiddle.length; // exit while
         break;
@@ -229,31 +261,66 @@ export function pruneMessageHistory(body, provider, model) {
     }
     // Check if already under budget after pass 1
     if (pass === 0) {
-      const checkBody = {
-        ...body,
-        [messagesKey]: [
-          ...systemGroups.flatMap((g) => g.messages),
-          ...prunedMiddle.flatMap((g) => g.messages),
-          ...trailingGroups.flatMap((g) => g.messages),
-        ],
-      };
+      const checkBody = { ...body };
+      const checkMsgs = [
+        ...systemGroups.flatMap((g) => g.messages),
+        ...initialGroups.flatMap((g) => g.messages),
+        ...prunedMiddle.flatMap((g) => g.messages),
+        ...trailingGroups.flatMap((g) => g.messages),
+      ];
+      if (targetInfo.target === body) {
+        checkBody[targetInfo.key] = checkMsgs;
+      } else {
+        checkBody.request = { ...body.request, [targetInfo.key]: checkMsgs };
+      }
       if (estimateRequestTokens(checkBody) <= budget) break;
     }
   }
 
-  const tombstoneMsg = {
-    role: "user",
-    content: `[earlier ${omittedCount || 1} history turns omitted for context limit]`
-  };
-
-  const finalMessages = [
-    ...systemGroups.flatMap(g => g.messages),
-    ...(omittedCount > 0 ? [tombstoneMsg] : []),
-    ...prunedMiddle.flatMap(g => g.messages),
-    ...trailingGroups.flatMap(g => g.messages)
+  const tombstoneText = `[earlier ${omittedCount || 1} history turns omitted for context limit]`;
+  const remainingMiddleAndTrailing = [
+    ...prunedMiddle.flatMap((g) => g.messages),
+    ...trailingGroups.flatMap((g) => g.messages),
   ];
 
-  body[messagesKey] = finalMessages;
+  let finalMessages = [];
+  const leadingMsgs = [
+    ...systemGroups.flatMap((g) => g.messages),
+    ...initialGroups.flatMap((g) => g.messages),
+  ];
+
+  if (omittedCount > 0) {
+    if (remainingMiddleAndTrailing.length > 0 && remainingMiddleAndTrailing[0].role === "user") {
+      // Avoid consecutive user messages: merge tombstone text directly into the first user message
+      const firstMsg = { ...remainingMiddleAndTrailing[0] };
+      if (typeof firstMsg.content === "string") {
+        firstMsg.content = `${tombstoneText}\n\n${firstMsg.content}`;
+      } else if (Array.isArray(firstMsg.content)) {
+        firstMsg.content = [{ type: "text", text: `${tombstoneText}\n\n` }, ...firstMsg.content];
+      } else {
+        firstMsg.content = tombstoneText;
+      }
+      finalMessages = [
+        ...leadingMsgs,
+        firstMsg,
+        ...remainingMiddleAndTrailing.slice(1),
+      ];
+    } else {
+      // First remaining message is assistant or tool (or empty): insert standalone user tombstone
+      finalMessages = [
+        ...leadingMsgs,
+        { role: "user", content: tombstoneText },
+        ...remainingMiddleAndTrailing,
+      ];
+    }
+  } else {
+    finalMessages = [
+      ...leadingMsgs,
+      ...remainingMiddleAndTrailing,
+    ];
+  }
+
+  targetInfo.target[targetInfo.key] = finalMessages;
   const tokensAfter = estimateRequestTokens(body);
   const tokensSaved = Math.max(0, initialEstimate - tokensAfter);
   body._prunerStats = {
@@ -270,3 +337,4 @@ export function pruneMessageHistory(body, provider, model) {
   }
   return body;
 }
+

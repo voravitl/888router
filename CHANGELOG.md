@@ -1,3 +1,11 @@
+# v0.11.1 (2026-07-30)
+
+## Fixes & Enhancements (Context Pruner Hardening)
+- **Initial System Instructions & Skills Protection**: marked initial conversation turn group (`isInitial`) to ensure system prompt, skills (`<skills>`), tool definitions (`<tools>`), and workspace context are NEVER dropped during history pruning.
+- **Tool Result Token Estimation**: updated `estimateRequestTokens` to recursively count `item.content` and `item.output` strings (including 50,000+ char tool outputs), preventing false under-estimates that caused upstream 400 Context Length Exceeded errors.
+- **Consecutive Role Alternation Safety**: prepended tombstone notice directly into first remaining `user` message turn, avoiding standalone `user` -> `user` role duplication that triggered Anthropic & Gemini 400 Bad Request errors.
+- **Nested Payload Target Support**: resolved target array accessor for nested `request.contents` (Google AI SDK / Gemini format), ensuring nested request bodies are correctly pruned.
+
 # v0.11.0 (2026-07-30)
 
 ## Features & Improvements
