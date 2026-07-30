@@ -113,10 +113,12 @@ export async function POST(request) {
       isAnthropicCompatibleProvider(provider) ||
       isCustomEmbeddingProvider(provider);
 
-    if (!provider || !isValidProvider) {
-      return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
-    }
-    if (!apiKey && provider !== "ollama-local") {
+    const allowsNoAuth = !!AI_PROVIDERS[provider]?.noAuth ||
+      !!AI_PROVIDERS[provider]?.hasFree ||
+      !!AI_PROVIDERS[provider]?.authModes?.includes("noauth") ||
+      provider === "ollama-local";
+
+    if (!apiKey && !allowsNoAuth) {
       return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
     }
     const connectionName = name || displayName || AI_PROVIDERS[provider]?.name;
