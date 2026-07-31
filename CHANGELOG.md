@@ -1,3 +1,9 @@
+# v0.13.8 (2026-07-31)
+
+## Governance & CI/CD Cleanliness
+- **Project Rule Governance**: committed `AGENTS.md` and `.agents/` rules (7-Step End-to-End CI/CD Pipeline SSOT & Graphify rules).
+- **Git Hygiene**: added `.squish/` and `Reviewing Past Pull Requests.md` to `.gitignore` to keep working directory clean.
+
 # v0.13.7 (2026-07-31)
 
 ## Fixes (Universal Tool Engine Pipeline Integration)

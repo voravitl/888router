@@ -78,4 +78,6 @@ open-sse.old/
 .graphifyignore
 graphify-out/*
 .serena/
+.squish/
+Reviewing Past Pull Requests.md
 
