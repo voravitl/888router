@@ -1,3 +1,8 @@
+# v0.14.2 (2026-07-31)
+
+## Fixes (Empty Assistant Content Array Prevention)
+- **Empty Assistant Block Prevention**: added safety fallback in `claude.js` so assistant messages with empty content arrays `[]` automatically receive a valid `{ type: "text", text: " " }` block before upstream Anthropic dispatch, preventing `API Error: Content block is not a text block` when filtering out whitespace-only assistant text blocks.
+
 # v0.14.1 (2026-07-31)
 
 ## Fixes (Anthropic Content Block Strict Normalization)

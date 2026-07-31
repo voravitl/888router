@@ -365,6 +365,56 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(userBlock.content).toBeUndefined();
   });
 
+  it("prepareClaudeRequest strictly normalizes edge case content blocks and strips stray content fields", () => {
+    const body = {
+      model: "claude-3-5-sonnet-latest",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "valid text", content: "stray content field" },
+            { type: "text", content: "content only no text field" },
+            { type: "unknown_custom_block", data: "xyz" },
+            { text: "only text field no type" }
+          ]
+        },
+        {
+          role: "user",
+          content: { type: "text", text: "single object content", content: "stray" }
+        }
+      ]
+    };
+
+    prepareClaudeRequest(body, "claude");
+
+    const blocksMsg1 = body.messages[0].content;
+    expect(blocksMsg1.length).toBe(5);
+
+    // Block 0: stray content field removed
+    expect(blocksMsg1[0].type).toBe("text");
+    expect(blocksMsg1[0].text).toBe("valid text");
+    expect(blocksMsg1[0].content).toBeUndefined();
+
+    // Block 1: content converted to text and stray content field removed
+    expect(blocksMsg1[1].type).toBe("text");
+    expect(blocksMsg1[1].text).toBe("content only no text field");
+    expect(blocksMsg1[1].content).toBeUndefined();
+
+    // Block 2: unknown custom block converted to text block
+    expect(blocksMsg1[2].type).toBe("text");
+    expect(typeof blocksMsg1[2].text).toBe("string");
+    expect(blocksMsg1[2].content).toBeUndefined();
+
+    // Block 3: text only converted to text block
+    expect(blocksMsg1[3].type).toBe("text");
+    expect(blocksMsg1[3].text).toBe("only text field no type");
+
+    // Block 4 (from merged adjacent user message): single object normalized to valid text block
+    expect(blocksMsg1[4].type).toBe("text");
+    expect(blocksMsg1[4].text).toBe("single object content");
+    expect(blocksMsg1[4].content).toBeUndefined();
+  });
+
   it("parseUniversalToolCalls parses tool calls with DeepSeek DSML closing tags </｜｜DSML｜｜>", () => {
     const rawDsmlText = `<tool_call>
  {"name": "terminal", "arguments": {"command":"cd /Users/voravit.l/888router && git status"}}
