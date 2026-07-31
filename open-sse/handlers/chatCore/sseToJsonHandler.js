@@ -235,9 +235,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
     }, detailOverrides)).catch(() => {});
 
     // Universal Tool Engine parsing for forced SSE-to-JSON path
-    if ((translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected) && parsed?.choices?.[0]?.message?.content) {
+    const declaredToolsList = translatedBody?._declaredTools
+      || body?._declaredTools
+      || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
+    const hasToolsInRequest = (declaredToolsList && declaredToolsList.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
+
+    if (hasToolsInRequest && parsed?.choices?.[0]?.message?.content) {
       const choice = parsed.choices[0];
-      const declaredNames = getDeclaredToolNames(translatedBody?._declaredTools || body?._declaredTools || []);
+      const declaredNames = getDeclaredToolNames(declaredToolsList);
       const toolParsed = parseUniversalToolCalls(choice.message.content, declaredNames);
       if (toolParsed.hasToolCalls) {
         choice.message.tool_calls = toolParsed.toolCalls;

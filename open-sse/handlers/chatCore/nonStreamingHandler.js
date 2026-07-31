@@ -245,8 +245,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
 
   // Universal Tool Engine non-streaming response parser
-  if (translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected) {
-    const declaredNames = getDeclaredToolNames(translatedBody?._declaredTools || body?._declaredTools || []);
+  const declaredToolsList = translatedBody?._declaredTools
+    || body?._declaredTools
+    || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
+  const hasToolsInRequest = (declaredToolsList && declaredToolsList.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
+
+  if (hasToolsInRequest) {
+    const declaredNames = getDeclaredToolNames(declaredToolsList);
 
     if (isClaudeMessageResponse && Array.isArray(translatedResponse.content)) {
       const newContent = [];
