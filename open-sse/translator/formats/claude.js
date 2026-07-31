@@ -229,9 +229,13 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           ? block
           : (typeof block?.text === "string"
             ? block.text
-            : (block?.text !== undefined
-              ? String(block.text)
-              : (typeof block === "object" && block !== null ? JSON.stringify(block) : String(block || ""))));
+            : (typeof block?.content === "string"
+              ? block.content
+              : (block?.text !== undefined
+                ? String(block.text)
+                : (block?.content !== undefined
+                  ? String(block.content)
+                  : (typeof block === "object" && block !== null ? JSON.stringify(block) : String(block || ""))))));
         const cacheCtrl = i === body.system.length - 1 ? { type: "ephemeral", ttl: "1h" } : undefined;
         return {
           type: CLAUDE_BLOCK.TEXT,
@@ -241,7 +245,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
       }).filter(block => block.text.trim().length > 0);
       if (body.system.length === 0) delete body.system;
     } else if (typeof body.system === "object" && body.system !== null) {
-      const textVal = typeof body.system.text === "string" ? body.system.text : JSON.stringify(body.system);
+      const textVal = typeof body.system.text === "string"
+        ? body.system.text
+        : (typeof body.system.content === "string" ? body.system.content : JSON.stringify(body.system));
       if (textVal.trim()) {
         body.system = [{ type: CLAUDE_BLOCK.TEXT, text: textVal, cache_control: { type: "ephemeral", ttl: "1h" } }];
       } else {
@@ -411,37 +417,58 @@ function normalizeClaudeContentBlock(block) {
     }
   }
 
-  // 3. Tools: filter built-in tools for non-Anthropic providers, then handle cache_control
+  // 3. Tools: normalize tools & tool_choice to Anthropic-native shape for all providers
   if (body.tools && Array.isArray(body.tools)) {
-    // Strip built-in tools (e.g. web_search_20250305) and normalize to Anthropic-native shape
-    // (drop `type` field, fold `function.{name,description,parameters}`) for non-Anthropic providers
-    if (provider !== "claude") {
-      body.tools = body.tools
-        .filter(tool => !tool.type || tool.type === "function")
-        .map(tool => {
-          if (tool.function) {
-            return {
-              name: tool.function.name,
-              description: tool.function.description,
-              input_schema: tool.function.parameters,
-            };
-          }
-          const { type, ...rest } = tool;
-          return rest;
-        });
-    }
+    body.tools = body.tools
+      .filter(tool => tool && typeof tool === "object" && (!tool.type || tool.type === "function" || tool.name || tool.function?.name))
+      .map((tool, i) => {
+        let name = tool.name;
+        let description = tool.description;
+        let input_schema = tool.input_schema || tool.parameters;
 
-    body.tools = body.tools.map((tool, i) => {
-      const { cache_control, ...rest } = tool;
-      if (i === body.tools.length - 1) {
-        return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
-      }
-      return rest;
-    });
+        if (tool.function) {
+          name = name || tool.function.name;
+          description = description || tool.function.description;
+          input_schema = input_schema || tool.function.parameters || tool.function.input_schema;
+        }
+
+        const normalizedTool = {
+          name: String(name || "unknown_tool"),
+          ...(description ? { description: String(description) } : {}),
+          input_schema: (input_schema && typeof input_schema === "object") ? input_schema : { type: "object", properties: {} }
+        };
+
+        if (i === body.tools.length - 1) {
+          normalizedTool.cache_control = { type: "ephemeral", ttl: "1h" };
+        }
+        return normalizedTool;
+      });
 
     // Remove tools array and tool_choice if empty after filtering
     if (body.tools.length === 0) {
       delete body.tools;
+      delete body.tool_choice;
+    }
+  }
+
+  // Normalize tool_choice to Anthropic format
+  if (body.tool_choice) {
+    if (typeof body.tool_choice === "string") {
+      if (body.tool_choice === "auto") body.tool_choice = { type: "auto" };
+      else if (body.tool_choice === "required" || body.tool_choice === "any") body.tool_choice = { type: "any" };
+      else if (body.tool_choice === "none") body.tool_choice = { type: "none" };
+      else delete body.tool_choice;
+    } else if (typeof body.tool_choice === "object" && body.tool_choice !== null) {
+      if (body.tool_choice.type === "function" && body.tool_choice.function?.name) {
+        body.tool_choice = { type: "tool", name: body.tool_choice.function.name };
+      } else if (body.tool_choice.type === "tool" && body.tool_choice.name) {
+        // Already valid Anthropic tool_choice
+      } else if (body.tool_choice.type === "auto" || body.tool_choice.type === "any" || body.tool_choice.type === "none") {
+        // Already valid Anthropic tool_choice
+      } else {
+        delete body.tool_choice;
+      }
+    } else {
       delete body.tool_choice;
     }
   }
