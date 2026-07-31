@@ -1,3 +1,9 @@
+# v0.13.6 (2026-07-31)
+
+## Fixes (DeepSeek DSML & Anthropic Content Block Normalization)
+- **DeepSeek DSML Markup Tool Parsing (`</｜｜DSML｜｜>`)**: updated `parseUniversalToolCalls` and `streamToolShim` regex engines to recognize DeepSeek DSML closing tags (`</｜｜DSML｜｜>`, `</｜｜>`), preventing raw XML/DSML tool call tags from leaking to user responses.
+- **Anthropic Content Block Normalization (`Content block is not a text block`)**: normalized un-typed system objects, `tool_result` internal content arrays, and `ROLE.TOOL` / `ROLE.USER` messages into strict `{ type: "text", text: "..." }` blocks before upstream Anthropic API dispatch.
+
 # v0.13.5 (2026-07-31)
 
 ## Fixes (Multi-Model Code Review: Grok 4.5)
