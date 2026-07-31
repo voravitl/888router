@@ -9,9 +9,18 @@ const MAX_BUFFER_SIZE = 64 * 1024; // 64KB safety cap against memory DoS
 const TAG_PREFIXES = [
   "<tool_call>",
   "<tool_use>",
+  "<function_call>",
   "</tool_call>",
-  "</tool_use>"
+  "</tool_use>",
+  "</function_call>",
+  "</｜｜DSML｜｜>",
+  "</｜｜",
+  "<｜｜DSML｜｜>",
+  "<｜｜>"
 ];
+
+const HAS_OPEN_TOOL_TAG = (text) => text.includes("<tool_call>") || text.includes("<tool_use>") || text.includes("<function_call>");
+const HAS_CLOSE_TOOL_TAG = (text) => text.includes("</tool_call>") || text.includes("</tool_use>") || text.includes("</function_call>") || text.includes("</｜｜DSML｜｜>") || text.includes("</｜｜>");
 
 /**
  * Checks if the trailing characters of `text` match a partial prefix of any XML tool tag.
@@ -30,15 +39,30 @@ function getPartialTagPrefixLength(text) {
 }
 
 /**
- * Inspects `text` for unclosed `<tool_call>`/`<tool_use>` tags or trailing tag prefixes.
+ * Inspects `text` for unclosed `<tool_call>`/`<tool_use>`/`<function_call>` tags or trailing tag prefixes.
  * Preserves unclosed tag portions in `remainingBuffer` so sequential stream chunks are not lost.
  */
 function extractUnclosedBuffer(text) {
   if (!text) return { cleanText: "", remainingBuffer: "", inTag: false };
 
-  const lastOpenCall = Math.max(text.lastIndexOf("<tool_call>"), text.lastIndexOf("<tool_use>"));
-  if (lastOpenCall !== -1) {
-    const lastCloseCall = Math.max(text.lastIndexOf("</tool_call>"), text.lastIndexOf("</tool_use>"));
+  const openIndices = [
+    text.lastIndexOf("<tool_call>"),
+    text.lastIndexOf("<tool_use>"),
+    text.lastIndexOf("<function_call>")
+  ].filter(idx => idx !== -1);
+
+  if (openIndices.length > 0) {
+    const lastOpenCall = Math.max(...openIndices);
+    const closeIndices = [
+      text.lastIndexOf("</tool_call>"),
+      text.lastIndexOf("</tool_use>"),
+      text.lastIndexOf("</function_call>"),
+      text.lastIndexOf("</｜｜DSML｜｜>"),
+      text.lastIndexOf("</｜｜>"),
+      text.lastIndexOf("</｜｜")
+    ].filter(idx => idx !== -1);
+
+    const lastCloseCall = closeIndices.length > 0 ? Math.max(...closeIndices) : -1;
     if (lastCloseCall < lastOpenCall) {
       return {
         cleanText: text.slice(0, lastOpenCall),
@@ -158,12 +182,12 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
           return;
         }
 
-        if (!inToolTag && (textBuffer.includes("<tool_call>") || textBuffer.includes("<tool_use>"))) {
+        if (!inToolTag && HAS_OPEN_TOOL_TAG(textBuffer)) {
           inToolTag = true;
-          log?.debug?.("TOOLSHIM", "Detected <tool_call> tag in stream buffer");
+          log?.debug?.("TOOLSHIM", "Detected tool call tag in stream buffer");
         }
 
-        if (inToolTag && (textBuffer.includes("</tool_call>") || textBuffer.includes("</tool_use>"))) {
+        if (inToolTag && HAS_CLOSE_TOOL_TAG(textBuffer)) {
           const parsed = parseUniversalToolCalls(textBuffer, declaredNames);
           if (parsed.hasToolCalls) {
             const unclosedState = extractUnclosedBuffer(parsed.text || "");

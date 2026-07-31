@@ -5,8 +5,9 @@
 import { repairAndParseJson } from "./jsonAutoRepair.js";
 import { generateToolCallId } from "./toolCall.js";
 
-const XML_TOOL_CALL_REGEX = /<tool_call>([\s\S]*?)<\/tool_call>|<tool_use>([\s\S]*?)<\/tool_use>/gi;
+const XML_TOOL_CALL_REGEX = /<(?:tool_call|tool_use|function_call)>([\s\S]*?)(?:<\/(?:tool_call|tool_use|function_call|｜｜DSML｜｜|｜｜)>|(?=<(?:tool_call|tool_use|function_call)>))/gi;
 const MARKDOWN_JSON_REGEX = /```json\s*(\{[\s\S]*?"name"[\s\S]*?\})\s*```/gi;
+const DSML_MARKUP_REGEX = /<\/(?:｜｜DSML｜｜|｜｜|tool_call|tool_use|function_call)>|<(?:｜｜DSML｜｜|｜｜)>/gi;
 
 /**
  * Extracts declared tool names from body.tools array for Strict Schema Name Matching
@@ -31,13 +32,18 @@ export function parseUniversalToolCalls(text, declaredToolNames = new Set()) {
     return { hasToolCalls: false, text, toolCalls: [] };
   }
 
+  XML_TOOL_CALL_REGEX.lastIndex = 0;
+  MARKDOWN_JSON_REGEX.lastIndex = 0;
+
   const toolCalls = [];
   let cleanText = text;
 
-  // 1. Try matching XML <tool_call> or <tool_use> tags
+  // 1. Try matching XML <tool_call>, <tool_use>, <function_call> tags (supporting DSML closing tags)
   let xmlMatch;
   while ((xmlMatch = XML_TOOL_CALL_REGEX.exec(text)) !== null) {
-    const rawJsonContent = xmlMatch[1] || xmlMatch[2];
+    const rawJsonContent = xmlMatch[1];
+    if (!rawJsonContent || !rawJsonContent.trim()) continue;
+
     const parsed = repairAndParseJson(rawJsonContent);
 
     // Always strip matched XML tag from cleanText
@@ -85,6 +91,9 @@ export function parseUniversalToolCalls(text, declaredToolNames = new Set()) {
       }
     }
   }
+
+  // Strip any lingering DSML / tool tag residue from cleanText
+  cleanText = cleanText.replace(DSML_MARKUP_REGEX, "").trim();
 
   if (toolCalls.length > 0) {
     return {
