@@ -79,8 +79,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   let outputStream = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
-  if (translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected) {
-    const declaredTools = translatedBody?._declaredTools || body?._declaredTools || [];
+  const declaredTools = translatedBody?._declaredTools
+    || body?._declaredTools
+    || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
+  const hasTools = (declaredTools && declaredTools.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
+
+  if (hasTools) {
     outputStream = outputStream.pipeThrough(createStreamToolShimTransformStream(declaredTools, sourceFormat, log));
   }
 
