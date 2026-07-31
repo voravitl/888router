@@ -100,8 +100,8 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
   let toolCallCounter = 0;
   let sawMessageStop = false;
   let textBlockClosed = false;
-  let upstreamClosedBlock0 = false;  // upstream already sent content_block_stop for index 0
-  let upstreamCurrentBlockIndex = -1; // track current open block from upstream
+  let nextBlockIndex = 0;      // monotonic high-water mark for block allocation
+  let openBlockIndex = -1;    // currently open block from upstream (-1 = none)
   let hasEmittedToolCalls = false;
 
   function processLine(line, controller) {
@@ -159,19 +159,14 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         sawMessageStop = true;
       }
 
-      // Track when upstream closes content_block at index 0 (e.g. thinking block)
-      if (json.type === "content_block_stop" && json.index === 0) {
-        upstreamClosedBlock0 = true;
-      }
-
-      // Track current open block index from upstream
+      // Track upstream block lifecycle for monotonic index allocation
       if (json.type === "content_block_start" && json.index !== undefined) {
-        upstreamCurrentBlockIndex = json.index;
+        openBlockIndex = json.index;
+        nextBlockIndex = Math.max(nextBlockIndex, json.index + 1);
       }
       if (json.type === "content_block_stop" && json.index !== undefined) {
-        if (json.index === upstreamCurrentBlockIndex) {
-          upstreamCurrentBlockIndex = -1; // block closed
-        }
+        if (json.index === openBlockIndex) openBlockIndex = -1;
+        nextBlockIndex = Math.max(nextBlockIndex, json.index + 1);
       }
       
       // Extract delta text content across OpenAI or Claude SSE formats
@@ -218,17 +213,18 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
               emitTextChunk(unclosedState.cleanText, json, clientFormat, controller);
             }
 
-            // For Claude format: close any open text block before emitting tool_use blocks
+            // For Claude format: close any open block before emitting tool_use blocks
             if (clientFormat === "claude" && !textBlockClosed) {
-              // If upstream has an open block (e.g. text at index 1 after thinking at index 0), close it
-              if (upstreamCurrentBlockIndex >= 0) {
-                const closeBlock = `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: upstreamCurrentBlockIndex })}\n\n`;
+              if (openBlockIndex >= 0) {
+                // Close the currently open upstream block
+                const closeBlock = `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: openBlockIndex })}\n\n`;
                 controller.enqueue(new TextEncoder().encode(closeBlock));
-                upstreamCurrentBlockIndex = -1;
-              } else if (!upstreamClosedBlock0) {
-                // No open block tracked, close index 0 (original text block)
+                openBlockIndex = -1;
+              } else if (nextBlockIndex === 0) {
+                // No upstream blocks seen — legacy: assume block 0 exists
                 const closeTextBlock = `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`;
                 controller.enqueue(new TextEncoder().encode(closeTextBlock));
+                nextBlockIndex = 1;
               }
               textBlockClosed = true;
             }
@@ -299,9 +295,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
   function emitToolCallChunk(tc, index, format, controller) {
     if (format === "claude") {
-      // Use max(index+1, upstreamCurrentBlockIndex+1) to avoid index collision
-      // If upstream used index 0 (thinking) + index 1 (text), tool_use starts at index 2
-      const blockIndex = Math.max(index + 1, upstreamCurrentBlockIndex + 1, 2);
+      const blockIndex = nextBlockIndex++;
       const toolUseId = tc.id || `toolu_${Date.now()}_${index}`;
 
       const blockStart = `event: content_block_start\ndata: ${JSON.stringify({
@@ -357,7 +351,8 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
     if (format === "claude") {
       // If text block 0 was already closed (tool calls emitted), open a new text block
       if (textBlockClosed) {
-        const newBlockIndex = Math.max(toolCallCounter + 2, upstreamCurrentBlockIndex + 1);
+        const newBlockIndex = nextBlockIndex++;
+        openBlockIndex = newBlockIndex;
         const blockStart = `event: content_block_start\ndata: ${JSON.stringify({
           type: "content_block_start",
           index: newBlockIndex,
