@@ -1,3 +1,8 @@
+# v0.13.1 (2026-07-31)
+
+## Features & UI Improvements
+- **AI Setup Prompt & MCP Configuration in Manual Config Modal**: added a copyable `🤖 AI Setup Prompt` and `~/.mcp.json` configuration block into the Manual Configuration modal under CLI Tools, allowing users to copy a single prompt for their AI Assistant to auto-configure 888router base URL and MCP tools!
+
 # v0.13.0 (2026-07-31)
 
 ## Features & UI/UX Redesign
