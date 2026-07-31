@@ -1,3 +1,8 @@
+# v0.13.7 (2026-07-31)
+
+## Fixes (Universal Tool Engine Pipeline Integration)
+- **Universal Tool Attachment Gate**: updated `streamingHandler.js`, `nonStreamingHandler.js`, and `sseToJsonHandler.js` to attach `createStreamToolShimTransformStream` and `parseUniversalToolCalls` whenever tools exist in the request (`body.tools` or `declaredTools`), ensuring models claiming native tool capability (e.g. DeepSeek V3/R1/V4, Ollama, OpenCode) never leak raw `<tool_call>` / `</｜｜DSML｜｜>` XML markup tags into user responses.
+
 # v0.13.6 (2026-07-31)
 
 ## Fixes (DeepSeek DSML & Anthropic Content Block Normalization)
