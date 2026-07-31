@@ -1,3 +1,8 @@
+# v0.12.5 (2026-07-31)
+
+## Fixes & UI Enhancements
+- **OpenCode Zen Display Name & Shared Logo**: set display name of free OpenCode provider to `OpenCode Zen` (with aliases `oc`, `opencode`, `opencode-zen`, `zen`), removed duplicate registry file, and unified the OpenCode logo image across `OpenCode Zen` (Free) and `OpenCode Go` (API Key).
+
 # v0.12.4 (2026-07-31)
 
 ## Fixes & Model Cleanups
