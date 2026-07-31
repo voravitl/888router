@@ -219,20 +219,28 @@ export default function ClaudeToolCard({
       if (targetModel && model.envKey) env[model.envKey] = targetModel;
     });
 
+    const mcpOrigin = typeof window !== "undefined" && window.location.origin
+      ? window.location.origin
+      : "http://localhost:20128";
+
     const mcpConfig = {
       mcpServers: {
-        "9router-web-search": {
-          url: "http://localhost:20128/api/mcp/9router-web-search/sse",
+        "888router-web-search": {
+          url: `${mcpOrigin}/api/mcp/web-search/sse`,
           headers: { Authorization: "Bearer local" }
         },
-        "9router-web-fetch": {
-          url: "http://localhost:20128/api/mcp/9router-web-fetch/sse",
+        "888router-web-fetch": {
+          url: `${mcpOrigin}/api/mcp/web-fetch/sse`,
           headers: { Authorization: "Bearer local" }
         }
       }
     };
 
-    const aiPrompt = `Please set up 888router base URL and MCP tools in my local environment automatically:
+    const aiPrompt = `Please set up 888router base URL and MCP tools in my local environment automatically.
+
+IMPORTANT MERGE INSTRUCTION:
+Do NOT replace or overwrite existing configuration files completely.
+Read the existing file first, parse the JSON, merge these keys, and write back.
 
 1. Merge environment settings into ~/.claude/settings.json:
 ${JSON.stringify({ hasCompletedOnboarding: true, env }, null, 2)}
