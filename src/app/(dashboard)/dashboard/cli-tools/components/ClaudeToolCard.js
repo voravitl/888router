@@ -219,10 +219,41 @@ export default function ClaudeToolCard({
       if (targetModel && model.envKey) env[model.envKey] = targetModel;
     });
 
+    const mcpConfig = {
+      mcpServers: {
+        "9router-web-search": {
+          url: "http://localhost:20128/api/mcp/9router-web-search/sse",
+          headers: { Authorization: "Bearer local" }
+        },
+        "9router-web-fetch": {
+          url: "http://localhost:20128/api/mcp/9router-web-fetch/sse",
+          headers: { Authorization: "Bearer local" }
+        }
+      }
+    };
+
+    const aiPrompt = `Please set up 888router base URL and MCP tools in my local environment automatically:
+
+1. Merge environment settings into ~/.claude/settings.json:
+${JSON.stringify({ hasCompletedOnboarding: true, env }, null, 2)}
+
+2. Merge MCP tools configuration into ~/.mcp.json:
+${JSON.stringify(mcpConfig, null, 2)}
+
+Please write/merge these configuration files now and verify that 888router MCP tools are ready.`;
+
     return [
       {
-        filename: "~/.claude/settings.json",
+        filename: "🤖 AI Setup Prompt (Copy & Paste to your AI Assistant to Auto-Setup)",
+        content: aiPrompt,
+      },
+      {
+        filename: "~/.claude/settings.json (Base URL & Auth)",
         content: JSON.stringify({ hasCompletedOnboarding: true, env }, null, 2),
+      },
+      {
+        filename: "~/.mcp.json (MCP Tools Server)",
+        content: JSON.stringify(mcpConfig, null, 2),
       },
     ];
   };
