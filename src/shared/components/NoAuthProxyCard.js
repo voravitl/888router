@@ -34,6 +34,9 @@ export default function NoAuthProxyCard({ providerId }) {
   }, [providerId]);
 
   const handleSettingChange = async (updates) => {
+    const prevProxyPoolId = proxyPoolId;
+    const prevRotationStrategy = rotationStrategy;
+
     const nextProxyPoolId = "proxyPoolId" in updates ? updates.proxyPoolId : proxyPoolId;
     const nextRotationStrategy = "rotationStrategy" in updates ? updates.rotationStrategy : rotationStrategy;
 
@@ -44,25 +47,38 @@ export default function NoAuthProxyCard({ providerId }) {
     setSaving(true);
     try {
       const res = await fetch("/api/settings", { cache: "no-store" });
-      const data = res.ok ? await res.json() : {};
+      const data = res.ok ? await res.json().catch(() => ({})) : {};
       const current = data.providerStrategies || {};
       const override = { ...(current[providerId] || {}) };
 
       if (nextProxyPoolId === NONE_PROXY_POOL_VALUE) delete override.proxyPoolId;
       else override.proxyPoolId = nextProxyPoolId;
 
-      override.rotationStrategy = nextRotationStrategy;
+      if (nextRotationStrategy !== "round-robin") override.rotationStrategy = nextRotationStrategy;
+      else delete override.rotationStrategy;
 
-      const updated = { ...current, [providerId]: override };
-      await fetch("/api/settings", {
+      const updated = { ...current };
+      if (Object.keys(override).length === 0) delete updated[providerId];
+      else updated[providerId] = override;
+
+      const patchRes = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerStrategies: updated }),
       });
+
+      if (!patchRes.ok) {
+        throw new Error("Failed to save settings");
+      }
+
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
     } catch (e) {
-      console.log("Save settings error:", e);
+      console.error("Save settings error:", e);
+      // Revert state on error (MEDIUM #3)
+      setProxyPoolId(prevProxyPoolId);
+      setRotationStrategy(prevRotationStrategy);
+      setTestResult({ valid: false, error: "Failed to save settings" });
     } finally {
       setSaving(false);
     }
@@ -80,11 +96,11 @@ export default function NoAuthProxyCard({ providerId }) {
           proxyPoolId: proxyPoolId !== NONE_PROXY_POOL_VALUE ? proxyPoolId : null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.valid) {
         setTestResult({ valid: true });
       } else {
-        setTestResult({ valid: false, error: data.error || "Connection probe failed" });
+        setTestResult({ valid: false, error: data.error || `HTTP ${res.status} error` });
       }
     } catch (err) {
       setTestResult({ valid: false, error: err.message || "Network error" });
@@ -122,7 +138,7 @@ export default function NoAuthProxyCard({ providerId }) {
               ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
             ]}
           />
-          {activePoolsCount > 0 && (
+          {activePoolsCount > 0 && !isSpecificPoolSelected && (
             <p className="mt-1.5 text-xs text-text-muted">
               Pool selector is ignored when rotation is active — all active pools are used.
             </p>
@@ -143,8 +159,8 @@ export default function NoAuthProxyCard({ providerId }) {
           />
         </div>
 
-        {/* Info Box (matches Threads screenshot) */}
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-xs text-text-muted dark:border-red-500/40 dark:bg-red-500/10">
+        {/* Info Box (Neutral styling, matches Threads screenshot) */}
+        <div className="rounded-lg border border-black/10 bg-black/[0.02] px-4 py-3 text-xs text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
           {activePoolsCount > 0 ? (
             isSpecificPoolSelected ? (
               <span>
@@ -157,7 +173,6 @@ export default function NoAuthProxyCard({ providerId }) {
             )
           ) : (
             <span>No active proxy pools configured. Direct connection will be used.</span>
-          )}
         </div>
 
         <div className="flex items-center justify-between gap-3 pt-1">
