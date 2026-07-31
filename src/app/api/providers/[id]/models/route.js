@@ -509,24 +509,21 @@ export async function GET(request, { params }) {
 
     // Ollama Cloud: Fetch models from API
     // OpenCode: Fetch models from Zen Free or Zen Go API depending on API key presence
-    if (connection.provider === "opencode") {
+    if (connection.provider === "opencode" || connection.provider === "opencode-zen") {
       let warning;
       try {
-        const apiKey = (connection.apiKey || connection.accessToken || "").trim();
-        const url = apiKey ? "https://opencode.ai/zen/go/v1/models" : "https://opencode.ai/zen/v1/models";
+        const url = "https://opencode.ai/zen/v1/models";
         const headers = {
           "Content-Type": "application/json",
           "x-opencode-client": "desktop",
+          "Authorization": "Bearer public",
         };
-        if (apiKey) {
-          headers["Authorization"] = `Bearer ${apiKey}`;
-        } else {
-          headers["Authorization"] = "Bearer public";
-        }
         const response = await fetch(url, { headers });
         if (response.ok) {
           const data = await response.json();
-          const models = parseOpenAIStyleModels(data);
+          let models = parseOpenAIStyleModels(data);
+          // Keep only free models for OpenCode / OpenCode Zen
+          models = models.filter((m) => m.id.endsWith("-free"));
           if (models.length > 0) {
             return buildModelsResponse({
               provider: connection.provider,
