@@ -75,7 +75,6 @@ export default function NoAuthProxyCard({ providerId }) {
       setTimeout(() => setSavedFlash(false), 1500);
     } catch (e) {
       console.error("Save settings error:", e);
-      // Revert state on error (MEDIUM #3)
       setProxyPoolId(prevProxyPoolId);
       setRotationStrategy(prevRotationStrategy);
       setTestResult({ valid: false, error: "Failed to save settings" });
@@ -115,67 +114,88 @@ export default function NoAuthProxyCard({ providerId }) {
 
   return (
     <Card>
-      <div className="flex items-center gap-3 mb-4">
-        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-green-500/10 text-green-500">
-          <span className="material-symbols-outlined text-[20px]">lock_open</span>
+      {/* Header */}
+      <div className="flex items-start gap-3 mb-5">
+        <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-green-500/10 text-green-500 shrink-0">
+          <span className="material-symbols-outlined text-[22px]">verified_user</span>
         </div>
         <div className="flex-1">
-          <p className="text-sm font-medium">No authentication required</p>
-          <p className="text-xs text-text-muted">This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.</p>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-text-main">No Authentication Required</h3>
+            <Badge variant="success" size="sm" dot>Free & Ready</Badge>
+          </div>
+          <p className="text-xs text-text-muted mt-0.5">
+            This provider offers free unlimited access. Route requests through Proxy Pools to automatically bypass IP rate limits.
+          </p>
         </div>
         {savedFlash && <Badge variant="success" size="sm">Saved</Badge>}
       </div>
 
       <div className="flex flex-col gap-4">
+        {/* Proxy Pool Selector */}
         <div>
           <Select
-            label="Proxy Pool"
+            label="Proxy Routing Strategy"
             value={proxyPoolId}
             onChange={(e) => handleSettingChange({ proxyPoolId: e.target.value })}
             disabled={saving || testing}
             options={[
-              { value: NONE_PROXY_POOL_VALUE, label: "None (direct)" },
-              ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
-            ]}
-          />
-          {activePoolsCount > 0 && !isSpecificPoolSelected && (
-            <p className="mt-1.5 text-xs text-text-muted">
-              Pool selector is ignored when rotation is active — all active pools are used.
-            </p>
-          )}
-        </div>
-
-        <div>
-          <Select
-            label="Rotation Strategy"
-            value={rotationStrategy}
-            onChange={(e) => handleSettingChange({ rotationStrategy: e.target.value })}
-            disabled={saving || testing}
-            options={[
-              { value: "round-robin", label: "Round-robin" },
-              { value: "random", label: "Random" },
-              { value: "fill-first", label: "Fill-first" },
+              {
+                value: NONE_PROXY_POOL_VALUE,
+                label: activePoolsCount > 0
+                  ? `🔄 Auto-Rotate All Active Pools (${activePoolsCount} pools)`
+                  : "⚡ Direct Connection (No Proxy)",
+              },
+              ...proxyPools.map((pool) => ({
+                value: pool.id,
+                label: `📌 Specific Pool: ${pool.name}`,
+              })),
             ]}
           />
         </div>
 
-        {/* Info Box (Neutral styling, matches Threads screenshot) */}
-        <div className="rounded-lg border border-black/10 bg-black/[0.02] px-4 py-3 text-xs text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
-          {activePoolsCount > 0 ? (
-            isSpecificPoolSelected ? (
-              <span>
-                Using pool &quot;<strong className="text-text-main">{selectedPool?.name || proxyPoolId}</strong>&quot; ({activePoolsCount} active pools available).
-              </span>
+        {/* Rotation Strategy Selector (Only visible when auto-rotating) */}
+        {!isSpecificPoolSelected && activePoolsCount > 0 && (
+          <div className="pl-3 border-l-2 border-primary/30">
+            <Select
+              label="Rotation Algorithm"
+              value={rotationStrategy}
+              onChange={(e) => handleSettingChange({ rotationStrategy: e.target.value })}
+              disabled={saving || testing}
+              options={[
+                { value: "round-robin", label: "Round-robin (Equal sequential load)" },
+                { value: "random", label: "Random (Unpredictable IP distribution)" },
+                { value: "fill-first", label: "Fill-first (Use primary node until capped)" },
+              ]}
+            />
+          </div>
+        )}
+
+        {/* Live Proxy Status Banner */}
+        <div className="rounded-xl border border-black/10 bg-black/[0.02] p-3.5 text-xs text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[16px] text-primary">alt_route</span>
+            <span className="font-medium text-text-main">Current Routing Status:</span>
+          </div>
+
+          <div className="mt-1.5 pl-6 text-text-muted">
+            {activePoolsCount > 0 ? (
+              isSpecificPoolSelected ? (
+                <span>
+                  All requests are routed exclusively through pool &quot;<strong className="text-text-main">{selectedPool?.name || proxyPoolId}</strong>&quot;.
+                </span>
+              ) : (
+                <span>
+                  Automatically rotating requests across all <strong className="text-text-main">{activePoolsCount} active proxy pools</strong> using <strong className="text-text-main">{rotationStrategy}</strong> algorithm.
+                </span>
+              )
             ) : (
-              <span>
-                Rotating through all <strong className="text-text-main">{activePoolsCount} active pools</strong> in order. State is in-memory (resets on restart).
-              </span>
-            )
-          ) : (
-            <span>No active proxy pools configured. Direct connection will be used.</span>
-          )}
+              <span>No active proxy pools configured. Requests will use local server IP directly.</span>
+            )}
+          </div>
         </div>
 
+        {/* Action & Validation Bar */}
         <div className="flex items-center justify-between gap-3 pt-1">
           <Button
             size="sm"
@@ -184,7 +204,7 @@ export default function NoAuthProxyCard({ providerId }) {
             onClick={handleTestConnection}
             disabled={saving || testing}
           >
-            {testing ? "Testing..." : "Test Connection"}
+            {testing ? "Testing Connection..." : "Test Connection"}
           </Button>
 
           {testResult && (
@@ -202,13 +222,13 @@ export default function NoAuthProxyCard({ providerId }) {
           )}
         </div>
 
-        {proxyPools.length === 0 && (
+        {activePoolsCount === 0 && (
           <p className="text-xs text-text-muted">
-            No active proxy pools available. Create one in{" "}
+            💡 Tip: Add proxy nodes in{" "}
             <a href="/dashboard/proxy-pools" className="text-primary underline font-medium">
               Proxy Pools page
             </a>{" "}
-            first.
+            to enable IP rate limit bypassing.
           </p>
         )}
       </div>
