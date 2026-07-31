@@ -1,3 +1,10 @@
+# v0.12.9 (2026-07-31)
+
+## Fixes & Code Review Improvements (Grok 4.5 Verified)
+- **Settings Cleanup & Persistence**: fixed empty override cleanup logic for `rotationStrategy` in `NoAuthProxyCard` so default values do not accumulate stale keys in settings.
+- **UI Error Rollback & Safe Parsing**: added automatic UI state rollback if setting updates fail, and handled JSON parsing safely.
+- **UI Copy Alignment & Neutral Styling**: aligned helper text copy and info box styling with neutral design tokens.
+
 # v0.12.8 (2026-07-31)
 
 ## Features & UI Enhancements
