@@ -698,6 +698,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = !!(data && data.user);
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
+      case "opencode":
+      case "opencode-zen": {
+        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/v1/models", {
+          headers: { "Content-Type": "application/json", "x-opencode-client": "desktop" },
+        }, effectiveProxy);
+        const valid = res.ok;
+        return { valid, error: valid ? null : "Failed to connect to OpenCode Zen API" };
+      }
       case "opencode-go": {
         const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
           method: "POST",

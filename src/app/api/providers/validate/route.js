@@ -393,6 +393,16 @@ export async function POST(request) {
           break;
         }
 
+        case "opencode":
+        case "opencode-zen": {
+          const res = await fetch("https://opencode.ai/zen/v1/models", {
+            headers: { "x-opencode-client": "desktop" },
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = res.ok;
+          break;
+        }
+
         case "opencode-go": {
           const res = await fetch("https://opencode.ai/zen/go/v1/chat/completions", {
             method: "POST",
