@@ -1,3 +1,8 @@
+# v0.14.0 (2026-07-31)
+
+## Fixes (Stream Tool Shim Loose JSON Auto-Repair Integration)
+- **Tool Arguments JSON Auto-Repair**: integrated `repairAndParseJson` into `emitToolCallChunk` inside `streamToolShim.js` to automatically repair loose JSON (trailing commas, unescaped quotes) in streamed tool calls and preserve raw partial JSON arguments on parse error instead of discarding them as `{}`.
+
 # v0.13.9 (2026-07-31)
 
 ## Fixes (DeepSeek DSML Stream Tag Detection & State Preservation)
