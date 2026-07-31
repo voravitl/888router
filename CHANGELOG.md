@@ -1,3 +1,8 @@
+# v0.14.4 (2026-07-31)
+
+## Fixes (Tool Name Fallback & OpenAI Translation Fix)
+- **Tool Name Fallback in Claude-to-OpenAI Translation**: added `tool.function.name` fallback in `claudeToOpenAIRequest` (`claude-to-openai.js`) and `filterToOpenAIFormat` (`openai.js`), preventing tool name loss and 422 errors (`tools[0]: missing field 'name'`) when clients send OpenAI-shaped tools.
+
 # v0.14.3 (2026-07-31)
 
 ## Fixes (Universal Anthropic Request Format Normalization)
