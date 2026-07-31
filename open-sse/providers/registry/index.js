@@ -68,7 +68,6 @@ import p65 from "./ollama.js";
 import p66 from "./openai.js";
 import p67 from "./opencode-go.js";
 import p68 from "./opencode.js";
-import p68_zen from "./opencode-zen.js";
 import p69 from "./openrouter.js";
 import p70 from "./perplexity-web.js";
 import p71 from "./perplexity.js";
@@ -168,7 +167,6 @@ export default [
   p66,
   p67,
   p68,
-  p68_zen,
   p69,
   p70,
   p71,
