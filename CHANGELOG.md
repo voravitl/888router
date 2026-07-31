@@ -1,3 +1,8 @@
+# v0.12.6 (2026-07-31)
+
+## Fixes & OAuth Enhancements
+- **No-Auth Provider OAuth Exclusion**: updated `isOAuth` evaluation logic in provider detail page to exclude `noAuth` free providers (such as OpenCode Zen), preventing accidental OAuth flow triggers that led to `Error: Unknown provider: opencode`.
+
 # v0.12.5 (2026-07-31)
 
 ## Fixes & UI Enhancements
