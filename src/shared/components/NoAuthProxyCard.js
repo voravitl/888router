@@ -77,6 +77,15 @@ export default function NoAuthProxyCard({ providerId }) {
           ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
         ]}
       />
+      {proxyPools.length === 0 && (
+        <p className="mt-2 text-xs text-text-muted">
+          No active proxy pools available. Create one in{" "}
+          <a href="/dashboard/proxy-pools" className="text-primary underline font-medium">
+            Proxy Pools page
+          </a>{" "}
+          first.
+        </p>
+      )}
     </Card>
   );
 }
