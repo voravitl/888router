@@ -1,3 +1,8 @@
+# v0.13.2 (2026-07-31)
+
+## Fixes & Multi-Model Code Review (Grok 4.5 & GLM 5.2 Verified)
+- **Dynamic MCP Origin & SSOT Naming**: dynamically derive MCP SSE URLs from runtime origin, align Server keys to `888router-web-search`, and add explicit JSON key merging instructions to `aiPrompt` to prevent AI assistants from overwriting existing configuration files.
+
 # v0.13.1 (2026-07-31)
 
 ## Features & UI Improvements
