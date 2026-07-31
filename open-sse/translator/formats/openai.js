@@ -92,33 +92,47 @@ export function filterToOpenAIFormat(body, opts = {}) {
   // Normalize tools to OpenAI format (from Claude, Gemini, etc.)
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     body.tools = body.tools.map(tool => {
-      // Already OpenAI format
-      if (tool.type === OPENAI_BLOCK.FUNCTION && tool.function) return tool;
-      
-      // Claude format: {name, description, input_schema}
-      if (tool.name && (tool.input_schema || tool.description)) {
+      if (!tool || typeof tool !== "object") return tool;
+
+      // Already OpenAI format: { type: "function", function: { name, ... } }
+      if (tool.type === OPENAI_BLOCK.FUNCTION && tool.function && tool.function.name) return tool;
+
+      // Unwrapped function format: { function: { name, ... } }
+      if (tool.function && tool.function.name) {
+        return {
+          type: OPENAI_BLOCK.FUNCTION,
+          function: {
+            name: tool.function.name,
+            ...(tool.function.description ? { description: String(tool.function.description) } : {}),
+            parameters: tool.function.parameters || tool.function.input_schema || { type: "object", properties: {} }
+          }
+        };
+      }
+
+      // Claude / generic format: { name, description?, input_schema? | parameters? }
+      if (tool.name) {
         return {
           type: OPENAI_BLOCK.FUNCTION,
           function: {
             name: tool.name,
-            description: String(tool.description || ""),
-            parameters: tool.input_schema || { type: "object", properties: {} }
+            ...(tool.description ? { description: String(tool.description) } : {}),
+            parameters: tool.input_schema || tool.parameters || { type: "object", properties: {} }
           }
         };
       }
-      
-      // Gemini format: {functionDeclarations: [{name, description, parameters}]}
+
+      // Gemini format: { functionDeclarations: [{ name, description, parameters }] }
       if (tool.functionDeclarations && Array.isArray(tool.functionDeclarations)) {
         return tool.functionDeclarations.map(fn => ({
           type: OPENAI_BLOCK.FUNCTION,
           function: {
             name: fn.name,
-            description: String(fn.description || ""),
+            ...(fn.description ? { description: String(fn.description) } : {}),
             parameters: fn.parameters || { type: "object", properties: {} }
           }
         }));
       }
-      
+
       return tool;
     }).flat();
   }
