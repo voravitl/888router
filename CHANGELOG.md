@@ -1,3 +1,8 @@
+# v0.13.0 (2026-07-31)
+
+## Features & UI/UX Redesign
+- **Redesigned NoAuthProxyCard UI/UX**: replaced conflicting dropdowns with clear, intuitive Proxy Routing Strategy controls, contextual algorithm selectors, and a live glassmorphism status banner (`Current Routing Status`).
+
 # v0.12.9 (2026-07-31)
 
 ## Fixes & Code Review Improvements (Grok 4.5 Verified)
