@@ -1,3 +1,9 @@
+# v0.14.1 (2026-07-31)
+
+## Fixes (Anthropic Content Block Strict Normalization)
+- **Stray `content` Field Stripping**: added `normalizeClaudeContentBlock` helper in `claude.js` to ensure `type: "text"` blocks never carry stray `content` fields (e.g. `{ type: "text", text: "...", content: "..." }`) which triggered Anthropic `API Error: Content block is not a text block`.
+- **Unknown Block Fallback**: automatically normalizes any non-standard or unrecognized block objects sent by Claude Code into clean `{ type: "text", text: "..." }` blocks before upstream Anthropic dispatch.
+
 # v0.14.0 (2026-07-31)
 
 ## Fixes (Stream Tool Shim Loose JSON Auto-Repair Integration)
