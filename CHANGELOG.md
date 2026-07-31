@@ -1,3 +1,12 @@
+# v0.12.2 (2026-07-31)
+
+## Features & Enhancements
+- **OpenCode Provider Separation**: separated OpenCode providers into distinct entries:
+  - `opencode` (OpenCode Free / Public mode): `category: "free"`, auto-displays `Ready / Connected` status by default, supports connection testing & proxy pool binding.
+  - `opencode-zen` (OpenCode Zen Free mode): `category: "free"`, auto-displays `Ready / Connected` status.
+  - `opencode-go` (OpenCode Go API Key): `category: "apikey"`, requires OpenCode Go API key.
+- **Connection Test & Validate Probes**: added active probes for `opencode` and `opencode-zen` targeting `https://opencode.ai/zen/v1/models` in `/api/providers/validate` and connection test utils.
+
 # v0.12.1 (2026-07-30)
 
 ## Fixes & Enhancements
