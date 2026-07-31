@@ -33,10 +33,13 @@ export default function ModelSelectModal({
   addedModelValues = [],
   closeOnSelect = true,
 }) {
-  // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
+  // Filter activeProviders by:
+  // 1) Enabled connections only (p.isActive !== false)
+  // 2) serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
-    if (!kindFilter) return activeProviders;
-    return activeProviders.filter((p) => {
+    const enabledOnly = (activeProviders || []).filter((p) => p.isActive !== false);
+    if (!kindFilter) return enabledOnly;
+    return enabledOnly.filter((p) => {
       const info = AI_PROVIDERS[p.provider];
       const kinds = info?.serviceKinds || ["llm"];
       return kinds.includes(kindFilter);
@@ -344,7 +347,7 @@ export default function ModelSelectModal({
         ...(disabledModels[providerId] || []),
       ]);
       if (disabledIds.size === 0) return;
-      group.models = group.models.filter((m) => !disabledIds.has(m.id));
+      group.models = group.models.filter((m) => !disabledIds.has(m.id) && !disabledIds.has(m.value));
       if (group.models.length === 0) delete groups[providerId];
     });
 

@@ -30,22 +30,29 @@ export default function CombosPage() {
     fetchData();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [modelAliases, setModelAliases] = useState({});
+
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes, settingsRes, modelsRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes, modelsRes, aliasesRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
         fetch("/api/settings"),
         fetch("/api/models"),
+        fetch("/api/models/alias"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const aliasesData = aliasesRes.ok ? await aliasesRes.json() : {};
       
       // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
+      }
+      if (aliasesRes.ok) {
+        setModelAliases(aliasesData.aliases || {});
       }
       if (modelsRes.ok) {
         const md = await modelsRes.json();
@@ -195,6 +202,7 @@ export default function CombosPage() {
               modelCaps={modelCaps}
               contextByFullModel={contextByFullModel}
               activeProviders={activeProviders}
+              modelAliases={modelAliases}
               copied={copied}
               onCopy={copy}
               onEdit={() => setEditingCombo(combo)}
@@ -244,7 +252,7 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], modelAliases = {}, copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
@@ -382,6 +390,7 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
         onClose={() => setShowJudgeSelect(false)}
         onSelect={(m) => { onSetStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
         activeProviders={activeProviders}
+        modelAliases={modelAliases}
         title="Select Judge Model"
         addedModelValues={judge ? [judge] : []}
         closeOnSelect={true}
