@@ -12,6 +12,7 @@ const NONE_PROXY_POOL_VALUE = "__none__";
 export default function NoAuthProxyCard({ providerId }) {
   const [proxyPools, setProxyPools] = useState([]);
   const [proxyPoolId, setProxyPoolId] = useState(NONE_PROXY_POOL_VALUE);
+  const [rotationStrategy, setRotationStrategy] = useState("round-robin");
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -27,12 +28,18 @@ export default function NoAuthProxyCard({ providerId }) {
       setProxyPools(poolData.proxyPools || []);
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProxyPoolId(override.proxyPoolId || NONE_PROXY_POOL_VALUE);
+      setRotationStrategy(override.rotationStrategy || "round-robin");
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [providerId]);
 
-  const handleChange = async (newValue) => {
-    setProxyPoolId(newValue);
+  const handleSettingChange = async (updates) => {
+    const nextProxyPoolId = "proxyPoolId" in updates ? updates.proxyPoolId : proxyPoolId;
+    const nextRotationStrategy = "rotationStrategy" in updates ? updates.rotationStrategy : rotationStrategy;
+
+    if ("proxyPoolId" in updates) setProxyPoolId(nextProxyPoolId);
+    if ("rotationStrategy" in updates) setRotationStrategy(nextRotationStrategy);
+
     setTestResult(null);
     setSaving(true);
     try {
@@ -40,11 +47,13 @@ export default function NoAuthProxyCard({ providerId }) {
       const data = res.ok ? await res.json() : {};
       const current = data.providerStrategies || {};
       const override = { ...(current[providerId] || {}) };
-      if (newValue === NONE_PROXY_POOL_VALUE) delete override.proxyPoolId;
-      else override.proxyPoolId = newValue;
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) delete updated[providerId];
-      else updated[providerId] = override;
+
+      if (nextProxyPoolId === NONE_PROXY_POOL_VALUE) delete override.proxyPoolId;
+      else override.proxyPoolId = nextProxyPoolId;
+
+      override.rotationStrategy = nextRotationStrategy;
+
+      const updated = { ...current, [providerId]: override };
       await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -53,7 +62,7 @@ export default function NoAuthProxyCard({ providerId }) {
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
     } catch (e) {
-      console.log("Save proxyPoolId error:", e);
+      console.log("Save settings error:", e);
     } finally {
       setSaving(false);
     }
@@ -84,6 +93,10 @@ export default function NoAuthProxyCard({ providerId }) {
     }
   };
 
+  const activePoolsCount = proxyPools.length;
+  const isSpecificPoolSelected = proxyPoolId !== NONE_PROXY_POOL_VALUE;
+  const selectedPool = proxyPools.find((p) => p.id === proxyPoolId);
+
   return (
     <Card>
       <div className="flex items-center gap-3 mb-4">
@@ -96,54 +109,93 @@ export default function NoAuthProxyCard({ providerId }) {
         </div>
         {savedFlash && <Badge variant="success" size="sm">Saved</Badge>}
       </div>
-      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-        <div className="flex-1">
+
+      <div className="flex flex-col gap-4">
+        <div>
           <Select
             label="Proxy Pool"
             value={proxyPoolId}
-            onChange={(e) => handleChange(e.target.value)}
+            onChange={(e) => handleSettingChange({ proxyPoolId: e.target.value })}
             disabled={saving || testing}
             options={[
               { value: NONE_PROXY_POOL_VALUE, label: "None (direct)" },
               ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
             ]}
           />
-        </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon="sync"
-          onClick={handleTestConnection}
-          disabled={saving || testing}
-          className="shrink-0"
-        >
-          {testing ? "Testing..." : "Test Connection"}
-        </Button>
-      </div>
-
-      {testResult && (
-        <div className="mt-3 flex items-center gap-2">
-          {testResult.valid ? (
-            <Badge variant="success" size="sm" dot>
-              Connected & Valid
-            </Badge>
-          ) : (
-            <Badge variant="danger" size="sm" dot>
-              Connection Failed: {testResult.error}
-            </Badge>
+          {activePoolsCount > 0 && (
+            <p className="mt-1.5 text-xs text-text-muted">
+              Pool selector is ignored when rotation is active — all active pools are used.
+            </p>
           )}
         </div>
-      )}
 
-      {proxyPools.length === 0 && (
-        <p className="mt-2 text-xs text-text-muted">
-          No active proxy pools available. Create one in{" "}
-          <a href="/dashboard/proxy-pools" className="text-primary underline font-medium">
-            Proxy Pools page
-          </a>{" "}
-          first.
-        </p>
-      )}
+        <div>
+          <Select
+            label="Rotation Strategy"
+            value={rotationStrategy}
+            onChange={(e) => handleSettingChange({ rotationStrategy: e.target.value })}
+            disabled={saving || testing}
+            options={[
+              { value: "round-robin", label: "Round-robin" },
+              { value: "random", label: "Random" },
+              { value: "fill-first", label: "Fill-first" },
+            ]}
+          />
+        </div>
+
+        {/* Info Box (matches Threads screenshot) */}
+        <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-xs text-text-muted dark:border-red-500/40 dark:bg-red-500/10">
+          {activePoolsCount > 0 ? (
+            isSpecificPoolSelected ? (
+              <span>
+                Using pool &quot;<strong className="text-text-main">{selectedPool?.name || proxyPoolId}</strong>&quot; ({activePoolsCount} active pools available).
+              </span>
+            ) : (
+              <span>
+                Rotating through all <strong className="text-text-main">{activePoolsCount} active pools</strong> in order. State is in-memory (resets on restart).
+              </span>
+            )
+          ) : (
+            <span>No active proxy pools configured. Direct connection will be used.</span>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <Button
+            size="sm"
+            variant="secondary"
+            icon="sync"
+            onClick={handleTestConnection}
+            disabled={saving || testing}
+          >
+            {testing ? "Testing..." : "Test Connection"}
+          </Button>
+
+          {testResult && (
+            <div>
+              {testResult.valid ? (
+                <Badge variant="success" size="sm" dot>
+                  Connected & Valid
+                </Badge>
+              ) : (
+                <Badge variant="danger" size="sm" dot>
+                  Connection Failed: {testResult.error}
+                </Badge>
+              )}
+            </div>
+          )}
+        </div>
+
+        {proxyPools.length === 0 && (
+          <p className="text-xs text-text-muted">
+            No active proxy pools available. Create one in{" "}
+            <a href="/dashboard/proxy-pools" className="text-primary underline font-medium">
+              Proxy Pools page
+            </a>{" "}
+            first.
+          </p>
+        )}
+      </div>
     </Card>
   );
 }
