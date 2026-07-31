@@ -3,7 +3,7 @@
 import { useParams, notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal } from "@/shared/components";
+import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal, ProviderMcpSetupModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
 
@@ -19,7 +19,7 @@ function getEffectiveStatus(conn) {
   return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
 }
 
-function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) {
+function MediaProviderCard({ provider, kind, connections, isCustom, onToggle, onOpenMcpModal }) {
   const providerInfo = AI_PROVIDERS[provider.id];
   const isNoAuth = !!providerInfo?.noAuth;
 
@@ -49,37 +49,52 @@ function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) 
   };
 
   return (
-    <Link href={`/dashboard/media-providers/${kind}/${provider.id}`} className="group">
-      <Card
-        padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
-      >
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              className="size-8 rounded-lg flex items-center justify-center shrink-0"
-              style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : (provider.color ?? "#888") + "15"}` }}
-            >
-              <ProviderIcon
-                src={`/providers/${provider.id}.png`}
-                alt={provider.name}
-                size={30}
-                className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
-                fallbackText={provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
-                fallbackColor={provider.color}
-              />
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-semibold text-sm">{provider.name}</h3>
-              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                {isCustom && <Badge variant="default" size="sm">Custom</Badge>}
-                {renderStatus()}
-              </div>
+    <Card
+      padding="xs"
+      className={`relative h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors ${allDisabled ? "opacity-50" : ""}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <Link href={`/dashboard/media-providers/${kind}/${provider.id}`} className="flex min-w-0 items-center gap-3 flex-1">
+          <div
+            className="size-8 rounded-lg flex items-center justify-center shrink-0"
+            style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : (provider.color ?? "#888") + "15"}` }}
+          >
+            <ProviderIcon
+              src={`/providers/${provider.id}.png`}
+              alt={provider.name}
+              size={30}
+              className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
+              fallbackText={provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
+              fallbackColor={provider.color}
+            />
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-sm truncate">{provider.name}</h3>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              {isCustom && <Badge variant="default" size="sm">Custom</Badge>}
+              {renderStatus()}
             </div>
           </div>
+        </Link>
+
+        <div className="flex items-center gap-1 shrink-0">
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (onOpenMcpModal) onOpenMcpModal(provider, kind);
+            }}
+            className="text-text-muted hover:text-primary !p-1.5"
+            title={`Setup MCP for ${provider.name}`}
+          >
+            <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+          </Button>
+
           {total > 0 && (
             <div
-              className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+              className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
               onClick={handleToggleClick}
             >
               <Toggle
@@ -91,8 +106,8 @@ function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) 
             </div>
           )}
         </div>
-      </Card>
-    </Link>
+      </div>
+    </Card>
   );
 }
 
@@ -227,6 +242,8 @@ export default function MediaProviderKindPage() {
     }
   };
 
+  const [selectedMcpProvider, setSelectedMcpProvider] = useState(null);
+
   return (
     <div className="flex flex-col gap-6">
       {(isEmbedding || supportsCombo) && (
@@ -259,6 +276,7 @@ export default function MediaProviderKindPage() {
               kind={kind}
               connections={connections}
               onToggle={handleToggleProvider}
+              onOpenMcpModal={(p, k) => setSelectedMcpProvider({ ...p, kind: k })}
             />
           ))}
           {customProviders.map((provider) => (
@@ -269,6 +287,7 @@ export default function MediaProviderKindPage() {
               connections={connections}
               isCustom
               onToggle={handleToggleProvider}
+              onOpenMcpModal={(p, k) => setSelectedMcpProvider({ ...p, kind: k })}
             />
           ))}
         </div>
@@ -284,6 +303,12 @@ export default function MediaProviderKindPage() {
           }}
         />
       )}
+
+      <ProviderMcpSetupModal
+        isOpen={!!selectedMcpProvider}
+        onClose={() => setSelectedMcpProvider(null)}
+        provider={selectedMcpProvider}
+      />
     </div>
   );
 }
