@@ -1,3 +1,8 @@
+# v0.12.7 (2026-07-31)
+
+## Features & UI Enhancements
+- **NoAuthProxyCard Test Connection Button**: added a dedicated `Test Connection` button and real-time status badge (`Connected & Valid` / `Connection Failed`) directly inside `NoAuthProxyCard` for free providers like OpenCode Zen, allowing instant 1-click verification of connection & Proxy Pool IP routing.
+
 # v0.12.6 (2026-07-31)
 
 ## Fixes & OAuth Enhancements
