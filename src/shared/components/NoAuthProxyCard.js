@@ -173,6 +173,7 @@ export default function NoAuthProxyCard({ providerId }) {
             )
           ) : (
             <span>No active proxy pools configured. Direct connection will be used.</span>
+          )}
         </div>
 
         <div className="flex items-center justify-between gap-3 pt-1">
