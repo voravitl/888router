@@ -326,4 +326,55 @@ describe("Universal Tool Call & MCP Engine", () => {
       expect(typeof sys.text).toBe("string");
     }
   });
+
+  it("prepareClaudeRequest normalizes tool_result contents and un-typed message objects", () => {
+    const body = {
+      model: "claude-3-5-sonnet-latest",
+      system: { text: "Single system object" },
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "call_123",
+              content: ["String in tool result array", { text: "Untyped object in tool result" }, { customField: "customVal" }]
+            },
+            { content: "Untyped user block" }
+          ]
+        }
+      ]
+    };
+
+    prepareClaudeRequest(body, "claude");
+
+    expect(body.system[0].type).toBe("text");
+    expect(body.system[0].text).toBe("Single system object");
+
+    const toolResultBlock = body.messages[0].content[0];
+    expect(toolResultBlock.type).toBe("tool_result");
+    expect(Array.isArray(toolResultBlock.content)).toBe(true);
+    for (const item of toolResultBlock.content) {
+      expect(item.type).toBe("text");
+      expect(typeof item.text).toBe("string");
+    }
+
+    const userBlock = body.messages[0].content[1];
+    expect(userBlock.type).toBe("text");
+    expect(userBlock.text).toBe("Untyped user block");
+  });
+
+  it("parseUniversalToolCalls parses tool calls with DeepSeek DSML closing tags </｜｜DSML｜｜>", () => {
+    const rawDsmlText = `<tool_call>
+ {"name": "terminal", "arguments": {"command":"cd /Users/voravit.l/888router && git status"}}
+ </｜｜DSML｜｜>`;
+
+    const parsed = parseUniversalToolCalls(rawDsmlText, new Set(["terminal"]));
+    expect(parsed.hasToolCalls).toBe(true);
+    expect(parsed.toolCalls.length).toBe(1);
+    expect(parsed.toolCalls[0].function.name).toBe("terminal");
+    expect(JSON.parse(parsed.toolCalls[0].function.arguments).command).toContain("git status");
+    expect(parsed.text).toBeNull();
+  });
 });
+

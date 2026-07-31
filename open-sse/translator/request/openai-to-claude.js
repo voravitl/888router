@@ -194,10 +194,38 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
   const blocks = [];
 
   if (msg.role === ROLE.TOOL) {
+    let normalizedContent;
+    if (typeof msg.content === "string") {
+      normalizedContent = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      normalizedContent = msg.content.map(item => {
+        if (typeof item === "string") {
+          return { type: CLAUDE_BLOCK.TEXT, text: item };
+        } else if (item && typeof item === "object") {
+          if (item.type === CLAUDE_BLOCK.TEXT || item.type === CLAUDE_BLOCK.IMAGE) {
+            return {
+              ...item,
+              ...(item.type === CLAUDE_BLOCK.TEXT ? { text: String(item.text ?? "") } : {})
+            };
+          }
+          const textVal = typeof item.text === "string" ? item.text : (item.text !== undefined ? String(item.text) : JSON.stringify(item));
+          return { type: CLAUDE_BLOCK.TEXT, text: textVal };
+        }
+        return { type: CLAUDE_BLOCK.TEXT, text: String(item ?? "") };
+      });
+    } else if (msg.content && typeof msg.content === "object") {
+      if (msg.content.type === CLAUDE_BLOCK.TEXT || msg.content.type === CLAUDE_BLOCK.IMAGE) {
+        normalizedContent = [msg.content];
+      } else {
+        normalizedContent = typeof msg.content.text === "string" ? msg.content.text : JSON.stringify(msg.content);
+      }
+    } else {
+      normalizedContent = String(msg.content ?? "");
+    }
     blocks.push({
       type: CLAUDE_BLOCK.TOOL_RESULT,
       tool_use_id: msg.tool_call_id,
-      content: msg.content
+      content: normalizedContent
     });
   } else if (msg.role === ROLE.USER) {
     if (typeof msg.content === "string") {
@@ -206,40 +234,51 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     } else if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
-        if (part.type === OPENAI_BLOCK.TEXT && part.text) {
-          blocks.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
-        } else if (part.type === CLAUDE_BLOCK.TOOL_RESULT) {
-          blocks.push({
-            type: CLAUDE_BLOCK.TOOL_RESULT,
-            tool_use_id: part.tool_use_id,
-            content: part.content,
-            ...(part.is_error && { is_error: part.is_error })
-          });
-        } else if (part.type === OPENAI_BLOCK.IMAGE_URL) {
-          const url = part.image_url.url;
-          const parsed = parseDataUri(url);
-          if (parsed) {
+        if (typeof part === "string") {
+          if (part.trim()) blocks.push({ type: CLAUDE_BLOCK.TEXT, text: part });
+        } else if (part && typeof part === "object") {
+          if ((part.type === OPENAI_BLOCK.TEXT || !part.type) && (part.text !== undefined || part.content !== undefined)) {
+            const textVal = typeof part.text === "string" ? part.text : (typeof part.content === "string" ? part.content : JSON.stringify(part));
+            if (textVal) blocks.push({ type: CLAUDE_BLOCK.TEXT, text: textVal });
+          } else if (part.type === CLAUDE_BLOCK.TOOL_RESULT) {
             blocks.push({
-              type: CLAUDE_BLOCK.IMAGE,
-              source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 }
+              type: CLAUDE_BLOCK.TOOL_RESULT,
+              tool_use_id: part.tool_use_id,
+              content: part.content,
+              ...(part.is_error && { is_error: part.is_error })
             });
-          } else if (url.startsWith("http://") || url.startsWith("https://")) {
-            blocks.push({
-              type: CLAUDE_BLOCK.IMAGE,
-              source: { type: "url", url }
-            });
-          }
-        } else if (part.type === OPENAI_BLOCK.IMAGE && part.source) {
-          blocks.push({ type: CLAUDE_BLOCK.IMAGE, source: part.source });
-        } else if (part.type === OPENAI_BLOCK.FILE && part.file) {
-          // OpenAI file block -> Claude document (PDF only; Claude rejects other mimes).
-          const fileData = part.file.file_data;
-          const parsed = parseDataUri(fileData);
-          if (parsed && parsed.mimeType === "application/pdf") {
-            blocks.push({
-              type: CLAUDE_BLOCK.DOCUMENT,
-              source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 }
-            });
+          } else if (part.type === OPENAI_BLOCK.IMAGE_URL && part.image_url) {
+            const url = part.image_url.url;
+            const parsed = parseDataUri(url);
+            if (parsed) {
+              blocks.push({
+                type: CLAUDE_BLOCK.IMAGE,
+                source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 }
+              });
+            } else if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+              blocks.push({
+                type: CLAUDE_BLOCK.IMAGE,
+                source: { type: "url", url }
+              });
+            }
+          } else if (part.type === OPENAI_BLOCK.IMAGE && part.source) {
+            blocks.push({ type: CLAUDE_BLOCK.IMAGE, source: part.source });
+          } else if (part.type === "input_audio" && part.input_audio) {
+            const dataStr = typeof part.input_audio === "object" ? JSON.stringify(part.input_audio) : String(part.input_audio);
+            blocks.push({ type: CLAUDE_BLOCK.TEXT, text: `[input_audio: ${dataStr}]` });
+          } else if (part.type === OPENAI_BLOCK.FILE && part.file) {
+            // OpenAI file block -> Claude document (PDF only; Claude rejects other mimes).
+            const fileData = part.file.file_data;
+            const parsed = parseDataUri(fileData);
+            if (parsed && parsed.mimeType === "application/pdf") {
+              blocks.push({
+                type: CLAUDE_BLOCK.DOCUMENT,
+                source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 }
+              });
+            }
+          } else {
+            const fallbackText = typeof part.text === "string" ? part.text : JSON.stringify(part);
+            if (fallbackText) blocks.push({ type: CLAUDE_BLOCK.TEXT, text: fallbackText });
           }
         }
       }

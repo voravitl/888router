@@ -46,7 +46,7 @@ describe("OpenAI → Claude context mapping", () => {
 
   // getContentBlocksFromMessage — no input_audio branch → audio dropped
   // KNOWN BUG
-  it.fails("input_audio content is preserved", () => {
+  it("input_audio content is preserved", () => {
     const out = T({
       messages: [{ role: "user", content: [
         { type: "text", text: "transcribe" },
