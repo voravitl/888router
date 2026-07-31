@@ -1,3 +1,8 @@
+# v0.12.4 (2026-07-31)
+
+## Fixes & Model Cleanups
+- **OpenCode Free Models Filtering**: updated `Available Models` for `OpenCode` and `OpenCode Zen` to display only free models (`*-free`), removing paid subscription models which belong exclusively to `OpenCode Go`.
+
 # v0.12.3 (2026-07-31)
 
 ## Fixes & UI Enhancements
