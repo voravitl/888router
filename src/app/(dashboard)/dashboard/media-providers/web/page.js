@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, Badge, Button } from "@/shared/components";
+import { Card, Badge, Button, ProviderMcpSetupModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
 
@@ -14,7 +14,7 @@ function getEffectiveStatus(conn) {
   return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
 }
 
-function ProviderCard({ provider, kind, connections }) {
+function ProviderCard({ provider, kind, connections, onOpenMcpModal }) {
   const providerInfo = AI_PROVIDERS[provider.id];
   const isNoAuth = !!providerInfo?.noAuth;
   const providerConns = connections.filter((c) => c.provider === provider.id);
@@ -37,9 +37,9 @@ function ProviderCard({ provider, kind, connections }) {
   };
 
   return (
-    <Link href={`/dashboard/media-providers/${kind}/${provider.id}`} className="group">
-      <Card padding="xs" className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}>
-        <div className="flex min-w-0 items-center gap-3">
+    <Card padding="xs" className={`relative h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors ${allDisabled ? "opacity-50" : ""}`}>
+      <div className="flex items-center justify-between gap-2">
+        <Link href={`/dashboard/media-providers/${kind}/${provider.id}`} className="flex min-w-0 items-center gap-3 flex-1">
           <div
             className="size-8 rounded-lg flex items-center justify-center shrink-0"
             style={{ backgroundColor: `${provider.color?.length > 7 ? provider.color : (provider.color ?? "#888") + "15"}` }}
@@ -53,13 +53,27 @@ function ProviderCard({ provider, kind, connections }) {
               fallbackColor={provider.color}
             />
           </div>
-          <div>
-            <h3 className="font-semibold text-sm">{provider.name}</h3>
+          <div className="min-w-0">
+            <h3 className="font-semibold text-sm truncate">{provider.name}</h3>
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">{renderStatus()}</div>
           </div>
-        </div>
-      </Card>
-    </Link>
+        </Link>
+
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onOpenMcpModal(provider, kind);
+          }}
+          className="shrink-0 text-text-muted hover:text-primary !p-1.5"
+          title={`Setup MCP for ${provider.name}`}
+        >
+          <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -107,7 +121,7 @@ function ComboList({ combos }) {
   );
 }
 
-function Section({ title, icon, kind, providers, connections, combos, onCreateCombo }) {
+function Section({ title, icon, kind, providers, connections, combos, onCreateCombo, onOpenMcpModal }) {
   return (
     <div>
       {/* Header — title left, Create Combo right */}
@@ -135,7 +149,7 @@ function Section({ title, icon, kind, providers, connections, combos, onCreateCo
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {providers.map((p) => (
-            <ProviderCard key={p.id} provider={p} kind={kind} connections={connections} />
+            <ProviderCard key={p.id} provider={p} kind={kind} connections={connections} onOpenMcpModal={onOpenMcpModal} />
           ))}
         </div>
       )}
@@ -147,6 +161,7 @@ export default function WebProvidersPage() {
   const router = useRouter();
   const [connections, setConnections] = useState([]);
   const [combos, setCombos] = useState([]);
+  const [selectedMcpProvider, setSelectedMcpProvider] = useState(null);
 
   const fetchAll = async () => {
     try {
@@ -188,12 +203,17 @@ export default function WebProvidersPage() {
     }
   };
 
+  const handleOpenMcpModal = (provider, kind) => {
+    setSelectedMcpProvider({ ...provider, kind });
+  };
+
   return (
     <div className="flex flex-col gap-8">
       <Section
         title="Web Search" icon="search" kind="webSearch"
         providers={searchProviders} connections={connections} combos={searchCombos}
         onCreateCombo={() => handleCreateCombo("webSearch")}
+        onOpenMcpModal={handleOpenMcpModal}
       />
 
       {/* Divider between sections */}
@@ -203,6 +223,13 @@ export default function WebProvidersPage() {
         title="Web Fetch" icon="travel_explore" kind="webFetch"
         providers={fetchProviders} connections={connections} combos={fetchCombos}
         onCreateCombo={() => handleCreateCombo("webFetch")}
+        onOpenMcpModal={handleOpenMcpModal}
+      />
+
+      <ProviderMcpSetupModal
+        isOpen={!!selectedMcpProvider}
+        onClose={() => setSelectedMcpProvider(null)}
+        provider={selectedMcpProvider}
       />
     </div>
   );
