@@ -276,6 +276,8 @@ const PROVIDER_MODELS_CONFIG = {
   kimi: createOpenAIModelsConfig("https://api.kimi.com/coding/v1/models"),
   minimax: createOpenAIModelsConfig("https://api.minimax.io/v1/models"),
   "minimax-cn": createOpenAIModelsConfig("https://api.minimaxi.com/v1/models"),
+  opencode: createOpenAIModelsConfig("https://opencode.ai/zen/v1/models"),
+  "opencode-zen": createOpenAIModelsConfig("https://opencode.ai/zen/v1/models"),
   "opencode-go": createOpenAIModelsConfig("https://opencode.ai/zen/go/v1/models"),
   venice: createOpenAIModelsConfig("https://api.venice.ai/api/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),

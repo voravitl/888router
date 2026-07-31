@@ -16,9 +16,10 @@ export default {
       apiKeyUrl: "https://opencode.ai/auth",
     },
   },
-  category: "apikey",
-  authModes: ["noauth", "apikey"],
-  authHint: "Leave API key empty for OpenCode Free (Zen) mode, or enter your OpenCode Go API key.",
+  noAuth: true,
+  category: "free",
+  authModes: ["noauth"],
+  authHint: "OpenCode Free (Zen) mode - public access.",
   transport: {
     baseUrl: "https://opencode.ai",
     headers: {
