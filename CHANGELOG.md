@@ -1,3 +1,10 @@
+# v0.14.3 (2026-07-31)
+
+## Fixes (Universal Anthropic Request Format Normalization)
+- **Unconditional Tool Schema Folding**: unconditional conversion of all tool definitions (`function.name`, `function.parameters`) into native Anthropic `{ name, description, input_schema }` format for all provider targets (including `claude`).
+- **Tool Choice Normalization**: mapped string `tool_choice="none"` to Anthropic `{ type: "none" }` and OpenAI function objects into `{ type: "tool", name: "..." }`.
+- **System Prompt Text Extraction**: extracted `text` or `content` properties from system prompt objects without JSON stringifying.
+
 # v0.14.2 (2026-07-31)
 
 ## Fixes (Empty Assistant Content Array Prevention)
