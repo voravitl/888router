@@ -319,12 +319,32 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
   function emitTextChunk(text, originalJson, format, controller) {
     if (format === "claude") {
-      const ssePayload = `event: content_block_delta\ndata: ${JSON.stringify({
-        type: "content_block_delta",
-        index: 0,
-        delta: { type: "text_delta", text }
-      })}\n\n`;
-      controller.enqueue(new TextEncoder().encode(ssePayload));
+      // If text block 0 was already closed (tool calls emitted), open a new text block
+      if (textBlockClosed) {
+        const newBlockIndex = toolCallCounter + 1; // next available index
+        const blockStart = `event: content_block_start\ndata: ${JSON.stringify({
+          type: "content_block_start",
+          index: newBlockIndex,
+          content_block: { type: "text", text: "" }
+        })}\n\n`;
+        const blockDelta = `event: content_block_delta\ndata: ${JSON.stringify({
+          type: "content_block_delta",
+          index: newBlockIndex,
+          delta: { type: "text_delta", text }
+        })}\n\n`;
+        const blockStop = `event: content_block_stop\ndata: ${JSON.stringify({
+          type: "content_block_stop",
+          index: newBlockIndex
+        })}\n\n`;
+        controller.enqueue(new TextEncoder().encode(blockStart + blockDelta + blockStop));
+      } else {
+        const ssePayload = `event: content_block_delta\ndata: ${JSON.stringify({
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text }
+        })}\n\n`;
+        controller.enqueue(new TextEncoder().encode(ssePayload));
+      }
     } else {
       const ssePayload = `data: ${JSON.stringify({
         id: originalJson?.id || "chatcmpl-shim-text",
