@@ -331,6 +331,9 @@ function normalizeClaudeContentBlock(block) {
       // Keep final assistant even if empty, otherwise check valid content
       const isFinalAssistant = i === len - 1 && msg.role === "assistant";
       if (isFinalAssistant || hasValidContent(msg)) {
+        if (Array.isArray(msg.content) && msg.content.length === 0) {
+          msg.content = [{ type: CLAUDE_BLOCK.TEXT, text: " " }];
+        }
         filtered.push(msg);
       }
     }
