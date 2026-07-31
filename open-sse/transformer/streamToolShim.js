@@ -19,7 +19,7 @@ const TAG_PREFIXES = [
   "<｜｜>"
 ];
 
-const HAS_OPEN_TOOL_TAG = (text) => text.includes("<tool_call>") || text.includes("<tool_use>") || text.includes("<function_call>");
+const HAS_OPEN_TOOL_TAG = (text) => text.includes("<tool_call>") || text.includes("<tool_use>") || text.includes("<function_call>") || text.includes("<｜｜DSML｜｜>") || text.includes("<｜｜>");
 const HAS_CLOSE_TOOL_TAG = (text) => text.includes("</tool_call>") || text.includes("</tool_use>") || text.includes("</function_call>") || text.includes("</｜｜DSML｜｜>") || text.includes("</｜｜>");
 
 /**
@@ -48,7 +48,9 @@ function extractUnclosedBuffer(text) {
   const openIndices = [
     text.lastIndexOf("<tool_call>"),
     text.lastIndexOf("<tool_use>"),
-    text.lastIndexOf("<function_call>")
+    text.lastIndexOf("<function_call>"),
+    text.lastIndexOf("<｜｜DSML｜｜>"),
+    text.lastIndexOf("<｜｜>")
   ].filter(idx => idx !== -1);
 
   if (openIndices.length > 0) {
@@ -178,6 +180,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
           emitTextChunk(textBuffer, json, clientFormat, controller);
           textBuffer = "";
           inToolTag = false;
+          textBlockClosed = false;
           pendingEventName = "";
           return;
         }
@@ -276,7 +279,7 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
       const blockStart = `event: content_block_start\ndata: ${JSON.stringify({
         type: "content_block_start",
         index: blockIndex,
-        content_block: { type: "tool_use", id: toolUseId, name: tc.function.name, input: {} }
+        content_block: { type: "tool_use", id: toolUseId, name: tc.function.name, input: {}, ...(tc.is_error ? { is_error: true } : {}) }
       })}\n\n`;
 
       let argsObj = {};
