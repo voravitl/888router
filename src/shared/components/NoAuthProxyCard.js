@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import Card from "./Card";
 import Select from "./Select";
 import Badge from "./Badge";
+import Button from "./Button";
 
 const NONE_PROXY_POOL_VALUE = "__none__";
 
@@ -13,6 +14,8 @@ export default function NoAuthProxyCard({ providerId }) {
   const [proxyPoolId, setProxyPoolId] = useState(NONE_PROXY_POOL_VALUE);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +33,7 @@ export default function NoAuthProxyCard({ providerId }) {
 
   const handleChange = async (newValue) => {
     setProxyPoolId(newValue);
+    setTestResult(null);
     setSaving(true);
     try {
       const res = await fetch("/api/settings", { cache: "no-store" });
@@ -55,6 +59,31 @@ export default function NoAuthProxyCard({ providerId }) {
     }
   };
 
+  const handleTestConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/providers/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: providerId,
+          proxyPoolId: proxyPoolId !== NONE_PROXY_POOL_VALUE ? proxyPoolId : null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.valid) {
+        setTestResult({ valid: true });
+      } else {
+        setTestResult({ valid: false, error: data.error || "Connection probe failed" });
+      }
+    } catch (err) {
+      setTestResult({ valid: false, error: err.message || "Network error" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   return (
     <Card>
       <div className="flex items-center gap-3 mb-4">
@@ -67,16 +96,45 @@ export default function NoAuthProxyCard({ providerId }) {
         </div>
         {savedFlash && <Badge variant="success" size="sm">Saved</Badge>}
       </div>
-      <Select
-        label="Proxy Pool"
-        value={proxyPoolId}
-        onChange={(e) => handleChange(e.target.value)}
-        disabled={saving}
-        options={[
-          { value: NONE_PROXY_POOL_VALUE, label: "None (direct)" },
-          ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
-        ]}
-      />
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+        <div className="flex-1">
+          <Select
+            label="Proxy Pool"
+            value={proxyPoolId}
+            onChange={(e) => handleChange(e.target.value)}
+            disabled={saving || testing}
+            options={[
+              { value: NONE_PROXY_POOL_VALUE, label: "None (direct)" },
+              ...proxyPools.map((pool) => ({ value: pool.id, label: pool.name })),
+            ]}
+          />
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="sync"
+          onClick={handleTestConnection}
+          disabled={saving || testing}
+          className="shrink-0"
+        >
+          {testing ? "Testing..." : "Test Connection"}
+        </Button>
+      </div>
+
+      {testResult && (
+        <div className="mt-3 flex items-center gap-2">
+          {testResult.valid ? (
+            <Badge variant="success" size="sm" dot>
+              Connected & Valid
+            </Badge>
+          ) : (
+            <Badge variant="danger" size="sm" dot>
+              Connection Failed: {testResult.error}
+            </Badge>
+          )}
+        </div>
+      )}
+
       {proxyPools.length === 0 && (
         <p className="mt-2 text-xs text-text-muted">
           No active proxy pools available. Create one in{" "}
