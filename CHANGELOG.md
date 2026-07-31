@@ -1,3 +1,10 @@
+# v0.13.5 (2026-07-31)
+
+## Fixes (Multi-Model Code Review: Grok 4.5)
+- **Fusion Judge Model Selector Fix**: pass `modelAliases` to the Judge model select modal so fusion judge picker lists the full model set.
+- **Enabled-Only Provider Filtering**: `ModelSelectModal` now filters to enabled connections only (`isActive !== false`) before applying `kindFilter`.
+- **Disabled Model Matching by `value`**: disabled-model filtering now matches both `m.id` and `m.value`, fixing stale/disabled combo entries still appearing in pickers.
+
 # v0.13.4 (2026-07-31)
 
 ## Per-Provider Dynamic MCP Setup Feature
