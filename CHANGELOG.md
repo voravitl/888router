@@ -1,3 +1,9 @@
+# v0.13.4 (2026-07-31)
+
+## Per-Provider Dynamic MCP Setup Feature
+- **Per-Provider MCP Setup Icon & Modal**: added `smart_toy` MCP Setup button to every Provider card across Media Providers (Web Search, Web Fetch, Text to Speech, Speech to Text, Image, Embedding).
+- **Dedicated Provider AI Prompts**: clicking any provider's MCP button opens `ProviderMcpSetupModal` generating a clean, tailored AI Prompt specifically for THAT provider's MCP server endpoint.
+
 # v0.13.2 (2026-07-31)
 
 ## Fixes & Multi-Model Code Review (Grok 4.5 & GLM 5.2 Verified)
