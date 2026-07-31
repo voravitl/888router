@@ -1,3 +1,9 @@
+# v0.12.3 (2026-07-31)
+
+## Fixes & UI Enhancements
+- **Connections Card & Add Connection UI**: enabled rendering of the Connections Card and `Add Connection` button for no-auth free providers (such as OpenCode Free and OpenCode Zen), allowing users to create multiple connection entries with individual Proxy Pools.
+- **Proxy Pools Page Link**: added a direct hint and link to `/dashboard/proxy-pools` in `NoAuthProxyCard` when no active proxy pools exist.
+
 # v0.12.2 (2026-07-31)
 
 ## Features & Enhancements
