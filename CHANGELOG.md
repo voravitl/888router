@@ -1,3 +1,8 @@
+# v0.12.8 (2026-07-31)
+
+## Features & UI Enhancements
+- **Rotation Strategy & Active Proxy Pools Status Box**: added `Rotation Strategy` dropdown (`Round-robin`, `Random`, `Fill-first`), helper text, and live active proxy pools status box (`Rotating through all X active pools in order`) in `NoAuthProxyCard` to match 9Router upstream UI.
+
 # v0.12.7 (2026-07-31)
 
 ## Features & UI Enhancements
