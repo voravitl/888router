@@ -3,6 +3,7 @@
 // buffers <tool_call> XML tags across chunk boundaries, and emits spec-compliant SSE tool_calls events.
 
 import { parseUniversalToolCalls, getDeclaredToolNames } from "../translator/concerns/universalToolParser.js";
+import { repairAndParseJson } from "../translator/concerns/jsonAutoRepair.js";
 
 const MAX_BUFFER_SIZE = 64 * 1024; // 64KB safety cap against memory DoS
 
@@ -282,13 +283,18 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         content_block: { type: "tool_use", id: toolUseId, name: tc.function.name, input: {}, ...(tc.is_error ? { is_error: true } : {}) }
       })}\n\n`;
 
-      let argsObj = {};
-      try { argsObj = JSON.parse(tc.function.arguments || "{}"); } catch { }
+      let partialJsonStr = "{}";
+      try {
+        const argsObj = repairAndParseJson(tc.function.arguments || "{}");
+        partialJsonStr = JSON.stringify(argsObj);
+      } catch {
+        partialJsonStr = tc.function.arguments || "{}";
+      }
 
       const blockDelta = `event: content_block_delta\ndata: ${JSON.stringify({
         type: "content_block_delta",
         index: blockIndex,
-        delta: { type: "input_json_delta", partial_json: JSON.stringify(argsObj) }
+        delta: { type: "input_json_delta", partial_json: partialJsonStr }
       })}\n\n`;
 
       const blockStop = `event: content_block_stop\ndata: ${JSON.stringify({
