@@ -250,6 +250,62 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     }
   }
 
+function normalizeClaudeContentBlock(block) {
+  if (typeof block === "string") {
+    return { type: CLAUDE_BLOCK.TEXT, text: block };
+  }
+  if (!block || typeof block !== "object") {
+    return { type: CLAUDE_BLOCK.TEXT, text: String(block ?? "") };
+  }
+
+  const { cache_control, ...rest } = block;
+  const VALID_TYPES = new Set([
+    CLAUDE_BLOCK.TEXT,
+    CLAUDE_BLOCK.IMAGE,
+    CLAUDE_BLOCK.TOOL_USE,
+    CLAUDE_BLOCK.TOOL_RESULT,
+    CLAUDE_BLOCK.THINKING,
+    CLAUDE_BLOCK.DOCUMENT || "document",
+    "redacted_thinking"
+  ]);
+
+  if (rest.type === CLAUDE_BLOCK.TOOL_RESULT || rest.tool_use_id) {
+    rest.type = CLAUDE_BLOCK.TOOL_RESULT;
+    if (Array.isArray(rest.content)) {
+      rest.content = rest.content.map(trItem => normalizeClaudeContentBlock(trItem));
+    } else if (rest.content && typeof rest.content === "object") {
+      if (rest.content.type && VALID_TYPES.has(rest.content.type)) {
+        rest.content = [normalizeClaudeContentBlock(rest.content)];
+      } else {
+        const textVal = typeof rest.content.text === "string"
+          ? rest.content.text
+          : (rest.content.content !== undefined ? String(rest.content.content) : JSON.stringify(rest.content));
+        rest.content = textVal;
+      }
+    } else if (rest.content === undefined || rest.content === null) {
+      rest.content = "";
+    }
+    return rest;
+  }
+
+  if (rest.type === CLAUDE_BLOCK.TEXT || (!rest.type && (typeof rest.text === "string" || typeof rest.content === "string"))) {
+    const textVal = typeof rest.text === "string"
+      ? rest.text
+      : (typeof rest.content === "string"
+        ? rest.content
+        : (rest.text !== undefined ? String(rest.text) : (rest.content !== undefined ? String(rest.content) : JSON.stringify(rest))));
+    return { type: CLAUDE_BLOCK.TEXT, text: textVal };
+  }
+
+  if (VALID_TYPES.has(rest.type)) {
+    delete rest.content; // Never leave stray content field on non-tool_result block
+    return rest;
+  }
+
+  const fallbackText = typeof rest.text === "string" ? rest.text : (typeof rest.content === "string" ? rest.content : JSON.stringify(rest));
+  return { type: CLAUDE_BLOCK.TEXT, text: fallbackText };
+}
+
   // 2. Messages: process in optimized passes
   if (body.messages && Array.isArray(body.messages)) {
     const len = body.messages.length;
@@ -261,74 +317,15 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
 
       // Normalize content blocks & remove cache_control
       if (Array.isArray(msg.content)) {
-        const normalizedBlocks = [];
-        for (const block of msg.content) {
-          if (typeof block === "string") {
-            if (block.trim()) normalizedBlocks.push({ type: CLAUDE_BLOCK.TEXT, text: block });
-          } else if (block && typeof block === "object") {
-            const { cache_control, ...rest } = block;
-
-            // Normalize tool_result blocks and their internal content
-            if (rest.type === CLAUDE_BLOCK.TOOL_RESULT || rest.tool_use_id) {
-              rest.type = CLAUDE_BLOCK.TOOL_RESULT;
-              if (Array.isArray(rest.content)) {
-                rest.content = rest.content.map(trItem => {
-                  if (typeof trItem === "string") {
-                    return { type: CLAUDE_BLOCK.TEXT, text: trItem };
-                  } else if (trItem && typeof trItem === "object") {
-                    if (trItem.type === CLAUDE_BLOCK.TEXT || trItem.type === CLAUDE_BLOCK.IMAGE) {
-                      return {
-                        ...trItem,
-                        ...(trItem.type === CLAUDE_BLOCK.TEXT ? { text: String(trItem.text ?? "") } : {})
-                      };
-                    }
-                    const textVal = typeof trItem.text === "string"
-                      ? trItem.text
-                      : (trItem.text !== undefined ? String(trItem.text) : JSON.stringify(trItem));
-                    return { type: CLAUDE_BLOCK.TEXT, text: textVal };
-                  }
-                  return { type: CLAUDE_BLOCK.TEXT, text: String(trItem ?? "") };
-                });
-              } else if (rest.content && typeof rest.content === "object") {
-                if (rest.content.type === CLAUDE_BLOCK.TEXT || rest.content.type === CLAUDE_BLOCK.IMAGE) {
-                  rest.content = [rest.content];
-                } else {
-                  const textVal = typeof rest.content.text === "string" ? rest.content.text : JSON.stringify(rest.content);
-                  rest.content = textVal;
-                }
-              } else if (rest.content === undefined || rest.content === null) {
-                rest.content = "";
-              }
-              normalizedBlocks.push(rest);
-            } else {
-              // Standard content block
-              if (!rest.type) {
-                if (typeof rest.text === "string") {
-                  rest.type = CLAUDE_BLOCK.TEXT;
-                } else if (typeof rest.content === "string") {
-                  rest.type = CLAUDE_BLOCK.TEXT;
-                  rest.text = rest.content;
-                  delete rest.content;
-                } else if (rest.thinking) {
-                  rest.type = CLAUDE_BLOCK.THINKING;
-                } else {
-                  rest.type = CLAUDE_BLOCK.TEXT;
-                  rest.text = rest.text !== undefined ? String(rest.text) : (rest.content !== undefined ? String(rest.content) : JSON.stringify(rest));
-                }
-              } else if (rest.type === CLAUDE_BLOCK.TEXT) {
-                rest.text = typeof rest.text === "string" ? rest.text : (typeof rest.content === "string" ? rest.content : String(rest.text ?? ""));
-              }
-              normalizedBlocks.push(rest);
-            }
-          }
-        }
-        msg.content = normalizedBlocks;
+        msg.content = msg.content
+          .map(block => normalizeClaudeContentBlock(block))
+          .filter(block => block.type !== CLAUDE_BLOCK.TEXT || block.text.trim().length > 0);
       } else if (typeof msg.content === "object" && msg.content !== null) {
-        if (msg.content.type) {
-          msg.content = [msg.content];
-        } else {
-          msg.content = [{ type: CLAUDE_BLOCK.TEXT, text: typeof msg.content.text === "string" ? msg.content.text : JSON.stringify(msg.content) }];
-        }
+        msg.content = [normalizeClaudeContentBlock(msg.content)];
+      } else if (typeof msg.content === "string") {
+        msg.content = [{ type: CLAUDE_BLOCK.TEXT, text: msg.content }];
+      } else if (msg.content === undefined || msg.content === null) {
+        msg.content = [{ type: CLAUDE_BLOCK.TEXT, text: "" }];
       }
 
       // Keep final assistant even if empty, otherwise check valid content

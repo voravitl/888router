@@ -362,6 +362,7 @@ describe("Universal Tool Call & MCP Engine", () => {
     const userBlock = body.messages[0].content[1];
     expect(userBlock.type).toBe("text");
     expect(userBlock.text).toBe("Untyped user block");
+    expect(userBlock.content).toBeUndefined();
   });
 
   it("parseUniversalToolCalls parses tool calls with DeepSeek DSML closing tags </｜｜DSML｜｜>", () => {
