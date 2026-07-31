@@ -232,6 +232,22 @@ export default function ClaudeToolCard({
         "888router-web-fetch": {
           url: `${mcpOrigin}/api/mcp/web-fetch/sse`,
           headers: { Authorization: "Bearer local" }
+        },
+        "888router-searxng": {
+          url: `${mcpOrigin}/api/mcp/searxng/sse`,
+          headers: { Authorization: "Bearer local" }
+        },
+        "888router-opencode-free": {
+          url: `${mcpOrigin}/api/mcp/opencode/sse`,
+          headers: { Authorization: "Bearer local" }
+        },
+        "888router-tts": {
+          url: `${mcpOrigin}/api/mcp/tts/sse`,
+          headers: { Authorization: "Bearer local" }
+        },
+        "888router-stt": {
+          url: `${mcpOrigin}/api/mcp/stt/sse`,
+          headers: { Authorization: "Bearer local" }
         }
       }
     };
