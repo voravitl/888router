@@ -1,3 +1,10 @@
+# v0.13.9 (2026-07-31)
+
+## Fixes (DeepSeek DSML Stream Tag Detection & State Preservation)
+- **DSML Opening Tag Detection (`<｜｜DSML｜｜>`, `<｜｜>`)**: updated `HAS_OPEN_TOOL_TAG` and `extractUnclosedBuffer` in `streamToolShim.js` to detect DeepSeek/Kimi DSML opening tags.
+- **Buffer State Maintenance**: reset `textBlockClosed = false` on text buffer overflow to maintain accurate Claude content block index state.
+- **Error Flag Preservation**: preserved `is_error` flag in `tool_use` content blocks when `tc.is_error` is set.
+
 # v0.13.8 (2026-07-31)
 
 ## Governance & CI/CD Cleanliness
