@@ -369,9 +369,15 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
         })}\n\n`;
         controller.enqueue(new TextEncoder().encode(blockStart + blockDelta + blockStop));
       } else {
+        // Use the currently open upstream block index, or allocate a new one
+        const targetIndex = openBlockIndex >= 0 ? openBlockIndex : (nextBlockIndex === 0 ? 0 : nextBlockIndex++);
+        if (openBlockIndex < 0 && nextBlockIndex === 0) {
+          // No upstream blocks seen, use index 0
+          nextBlockIndex = 1;
+        }
         const ssePayload = `event: content_block_delta\ndata: ${JSON.stringify({
           type: "content_block_delta",
-          index: 0,
+          index: targetIndex,
           delta: { type: "text_delta", text }
         })}\n\n`;
         controller.enqueue(new TextEncoder().encode(ssePayload));
