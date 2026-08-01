@@ -1,6 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText, processStreamThinkingTags } from "../concerns/reasoning.js";
 import { accumulateToolName } from "../concerns/toolCall.js";
@@ -147,7 +148,7 @@ export function openaiToClaudeResponse(chunk, state) {
       results.push({
         type: "content_block_start",
         index: state.thinkingBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "" }
+        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "", signature: DEFAULT_THINKING_CLAUDE_SIGNATURE }
       });
     }
 
@@ -170,7 +171,7 @@ export function openaiToClaudeResponse(chunk, state) {
       results.push({
         type: "content_block_start",
         index: state.thinkingBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "" }
+        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "", signature: DEFAULT_THINKING_CLAUDE_SIGNATURE }
       });
     }
 
