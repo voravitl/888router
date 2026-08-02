@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
+import { resolveSkillsDir } from "@/shared/skillsDir";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -8,28 +9,6 @@ export const revalidate = 0;
 // Scan the repo's ./skills/<id>/SKILL.md directory at request time so the
 // dashboard always reflects the skills actually shipped in the image — no
 // hardcoded catalog list to keep in sync.
-const REPO = "decolua/9router";
-const BRANCH = "master";
-const SKILL_PATH = "skills";
-
-function resolveSkillsDir() {
-  // Explicit env override wins (set in image/entrypoint) — no path guessing.
-  if (process.env.SKILLS_DIR && fs.existsSync(process.env.SKILLS_DIR)) {
-    return process.env.SKILLS_DIR;
-  }
-  // In Next standalone, cwd is the standalone dir; the skills dir ships next
-  // to it. Fall back to repo root for dev.
-  const candidates = [
-    path.join(process.cwd(), "skills"),
-    path.join(process.cwd(), "../../../skills"),
-  ];
-  for (const c of candidates) {
-    try {
-      if (fs.existsSync(c)) return c;
-    } catch { /* ignore */ }
-  }
-  return path.join(process.cwd(), "skills");
-}
 
 // Parse YAML-ish frontmatter minimally: name:, description:, and a one-line
 // endpoint: if present. Full YAML is overkill for these small SKILL.md files.
@@ -77,9 +56,9 @@ export async function GET() {
 
     return NextResponse.json({
       skills,
-      repoUrl: `https://github.com/${REPO}`,
-      rawBase: `https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/${SKILL_PATH}`,
-      blobBase: `https://github.com/${REPO}/blob/${BRANCH}/${SKILL_PATH}`,
+      // Self-hosted: point at THIS gateway, not GitHub. rawBase serves the raw
+      // SKILL.md (for AI copy-paste).
+      rawBase: `/api/skills/raw`,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     // Log the real error server-side; never return internal paths to the client.

@@ -4,13 +4,20 @@ import { useEffect, useState } from "react";
 import { Card, Badge } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
+function absoluteUrl(path) {
+  if (typeof window === "undefined") return path;
+  return `${window.location.origin}${path}`;
+}
+
 function CopyButton({ value, label = "Copy link" }) {
+  // Resolve origin at click-time, not from render state, so even an
+  // immediate click copies an absolute URL agents can fetch.
   const { copied, copy } = useCopyToClipboard(2000);
   return (
     <button
-      onClick={() => copy(value)}
+      onClick={() => copy(absoluteUrl(value))}
       className="px-2 py-1 rounded-md bg-primary text-white text-[11px] font-medium hover:bg-primary/90 transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1"
-      title={value}
+      title={absoluteUrl(value)}
     >
       <span className="material-symbols-outlined text-[12px]">
         {copied ? "check" : "content_copy"}
@@ -20,7 +27,7 @@ function CopyButton({ value, label = "Copy link" }) {
   );
 }
 
-function SkillRow({ skill, rawUrl, blobUrl }) {
+function SkillRow({ skill, rawUrl }) {
   return (
     <div
       className={`flex items-start gap-3 p-4 rounded-[14px] border shadow-[var(--shadow-soft)] transition-colors ${
@@ -51,7 +58,7 @@ function SkillRow({ skill, rawUrl, blobUrl }) {
         </div>
         <p className="text-xs text-text-muted mt-0.5">{skill.description}</p>
         <a
-          href={blobUrl}
+          href={rawUrl}
           target="_blank"
           rel="noreferrer"
           className="text-[11px] text-text-muted hover:text-primary mt-1 inline-flex items-center gap-1 break-all"
@@ -108,16 +115,14 @@ export default function SkillsPage() {
   }
 
   const entrySkill = data.skills?.find((s) => s.isEntry) || data.skills?.[0];
-  const entryRaw = entrySkill
-    ? `${data.rawBase}/${entrySkill.id}/SKILL.md`
-    : "";
+  const entryPath = entrySkill ? `${data.rawBase}/${entrySkill.id}` : "";
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <Card padding="md">
         <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
         <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">
-          {data ? `Read this skill and use it: ${entryRaw}` : "Loading…"}
+          {data ? `Read this skill and use it: ${entryPath}` : "Loading…"}
         </div>
       </Card>
 
@@ -131,8 +136,7 @@ export default function SkillsPage() {
           <SkillRow
             key={skill.id}
             skill={skill}
-            rawUrl={`${data.rawBase}/${skill.id}/SKILL.md`}
-            blobUrl={`${data.blobBase}/${skill.id}/SKILL.md`}
+            rawUrl={`${data.rawBase}/${skill.id}`}
           />
         ))}
       </div>
@@ -140,20 +144,11 @@ export default function SkillsPage() {
       <Card padding="md">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-text-main">More on GitHub</h2>
+            <h2 className="text-sm font-semibold text-text-main">About skills</h2>
             <p className="text-xs text-text-muted mt-0.5">
-              Browse source, README, and examples.
+              Skills are served from this gateway — paste the raw link to your AI to load it.
             </p>
           </div>
-          <a
-            href={`${data?.repoUrl || "#"}/tree/master/skills`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-          >
-            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-            View on GitHub
-          </a>
         </div>
       </Card>
     </div>
