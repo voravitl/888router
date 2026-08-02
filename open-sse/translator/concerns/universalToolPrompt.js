@@ -37,31 +37,35 @@ function escapeXml(str) {
  * the inject gate, the API (GET/PATCH), and the chat hot path so no caller
  * drifts.
  *
- * Precedence: if UNIVERSAL_TOOLS_MODE env var is set, it is authoritative
- * (env-set = source of truth): "off" → "off", any other value → "auto".
- * Otherwise the DB/UI mode applies: "off" → "off", anything else → "auto".
+ * Precedence: if UNIVERSAL_TOOLS_MODE env var is set to a valid value ("off" |
+ * "auto"), it is authoritative. "off" → "off"; any other env value (typos,
+ * "force", "1") is treated as unset. Otherwise the DB/UI mode applies:
+ * "off" → "off", anything else → "auto".
  *
  * @param {string} [dbMode] - value from settings (DB toggle), or null/undefined
  * @returns {"auto"|"off"}
  */
 export function resolveUniversalToolsMode(dbMode) {
   const env = String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase();
-  if (env) return env === "off" ? "off" : "auto";
+  if (env === "off") return "off";
+  if (env === "auto") return "auto";
   const m = String(dbMode || "auto").toLowerCase();
   return m === "off" ? "off" : "auto";
 }
 
 /**
- * True when UNIVERSAL_TOOLS_MODE env var is set (env is authoritative and the
- * UI/DB toggle should be read-only). False otherwise.
+ * True when UNIVERSAL_TOOLS_MODE env var is set to a valid value ("off"|"auto"),
+ * i.e. env is authoritative and the UI/DB toggle should be read-only. Unknown
+ * env values are treated as unset (UI stays editable).
  */
 export function universalToolsLockedByEnv() {
-  return String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase() !== "";
+  const env = String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase();
+  return env === "off" || env === "auto";
 }
 
 /**
  * Determines whether to inject the Universal Tool Call Preamble into the request.
- * Mode: "auto" | "force" | "off" (Default: "auto")
+ * Mode: "auto" | "off" (Default: "auto")
  */
 export function shouldInjectUniversalToolPrompt(body, modelInfo = {}, options = {}) {
   // If request has no tools, do not inject
