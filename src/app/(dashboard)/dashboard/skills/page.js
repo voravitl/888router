@@ -69,8 +69,10 @@ function SkillRow({ skill, rawUrl }) {
 export default function SkillsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [origin, setOrigin] = useState("");
 
   useEffect(() => {
+    setOrigin(window.location.origin);
     const controller = new AbortController();
     fetch("/api/skills", { signal: controller.signal })
       .then(async (res) => {
@@ -108,9 +110,8 @@ export default function SkillsPage() {
   }
 
   const entrySkill = data.skills?.find((s) => s.isEntry) || data.skills?.[0];
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
   const entryRaw = entrySkill
-    ? `${origin}${data.rawBase}/${entrySkill.id}/SKILL.md`
+    ? `${origin}${data.rawBase}/${entrySkill.id}`
     : "";
 
   return (
@@ -132,7 +133,7 @@ export default function SkillsPage() {
           <SkillRow
             key={skill.id}
             skill={skill}
-            rawUrl={`${origin}${data.rawBase}/${skill.id}/SKILL.md`}
+            rawUrl={`${origin}${data.rawBase}/${skill.id}`}
           />
         ))}
       </div>
