@@ -48,3 +48,28 @@ export function formatIncompleteOpenAIResponsesStreamFailure() {
     }
   }, FORMATS.OPENAI_RESPONSES);
 }
+
+// Encoded message_delta + message_stop payload for aborted Claude-format streams.
+// Without a terminal event Claude Code hangs forever on "empty or malformed
+// response" when an upstream (e.g. Kiro, opencode) aborts mid-stream after
+// already returning HTTP 200 + partial SSE. Closing with message_stop lets
+// the client treat the stream as ended instead of waiting indefinitely.
+export function buildAbortedClaudeTerminalBytes(openBlockIndices = null) {
+  // Close any content blocks that are still open (e.g. thinking, text) before
+  // emitting message_delta + message_stop. Without this, Claude Code sees
+  // message_stop while blocks are still open → "Content block not found".
+  let closeBlockEvents = '';
+  if (openBlockIndices && openBlockIndices.size > 0) {
+    // Close in ascending index order (matches typical open order; some Claude
+    // clients expect monotonic closes — closing 0,1,2 rather than Set
+    // insertion order which can be 1,0).
+    for (const index of [...openBlockIndices].sort((a, b) => a - b)) {
+      closeBlockEvents += `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index })}\n\n`;
+    }
+  }
+  return sharedEncoder.encode(
+    closeBlockEvents +
+    `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 0, output_tokens: 0 } })}\n\n` +
+    `event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`
+  );
+}

@@ -99,12 +99,87 @@ export function createDisconnectAwareStream(transformStream, streamController, o
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
 
+  // Track open content_block_start indices from Claude SSE output so we can
+  // close them before synthesizing a terminal event on upstream abort.
+  // Without this, message_stop is emitted while blocks are still open →
+  // Claude Code: "Content block not found"
+  const openBlockIndices = new Set();
+  // Accumulate incomplete SSE lines across chunks so a `data:` JSON payload
+  // split mid-chunk is not mis-parsed (HIGH: chunk-boundary scanning). We only
+  // care about content_block_start/stop events, but the line must be complete
+  // before JSON.parse, otherwise a truncated payload silently misses the block.
+  let scanBuffer = '';
+  // Long-lived decoder so multibyte UTF-8 split across chunks decodes cleanly
+  // (HIGH: per-chunk `new TextDecoder().decode(value)` corrupts split codepoints).
+  const scanDecoder = new TextDecoder();
+  // Cap the scan buffer against slowloris/bad providers that stream without
+  // newlines (MEDIUM: unbounded memory growth).
+  const SCAN_BUFFER_MAX = 1024 * 1024; // 1MB
+
+  // Best-effort parse of any trailing SSE text left in the buffer, so an
+  // abort that lands mid-event still records a block start/stop it may have
+  // missed (HIGH: truncated stop could otherwise leave a stale open index).
+  // Splits on \n exactly like scanForBlockEvents so a `event:\ndata:` pair
+  // without a trailing newline is still parsed (M2: don't trim the whole
+  // buffer and bail because it doesn't start with "data:").
+  const parseDataLine = (line) => {
+    if (!line.startsWith('data:')) return;
+    try {
+      const json = JSON.parse(line.slice(5).trim());
+      if (json.type === 'content_block_start' && typeof json.index === 'number') {
+        openBlockIndices.add(json.index);
+      } else if (json.type === 'content_block_stop' && typeof json.index === 'number') {
+        openBlockIndices.delete(json.index);
+      }
+    } catch { /* not JSON or not a block event */ }
+  };
+
+  const scanBuffered = () => {
+    if (!scanBuffer) return;
+    // Flush any pending multibyte codepoint held by the streaming decoder
+    // before parsing the tail (MEDIUM #12: decode() without stream:true must
+    // be called at end-of-stream/abort to emit a partial trailing codepoint).
+    scanBuffer += scanDecoder.decode();
+    const lines = scanBuffer.split('\n');
+    scanBuffer = '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      parseDataLine(line.trim());
+    }
+  };
+
+  const scanForBlockEvents = (value) => {
+    if (!(value instanceof Uint8Array) && !(value instanceof ArrayBuffer)) return;
+    scanBuffer += scanDecoder.decode(value, { stream: true });
+    if (scanBuffer.length > SCAN_BUFFER_MAX) {
+      // Malformed/no-newline upstream — stop scanning rather than grow forever.
+      // Keep the open-index Set intact (do NOT clear): clearing it would make
+      // the abort terminal emit bare message_stop while client still has open
+      // blocks → reintroduces "Content block not found" (MEDIUM #6). Overflow
+      // means upstream sent garbage, but any block we did track before the
+      // overflow is still legitimately open and must be closed on abort.
+      scanBuffer = '';
+      return;
+    }
+    const lines = scanBuffer.split('\n');
+    // Keep the trailing (possibly incomplete) line in the buffer for the next chunk.
+    scanBuffer = lines.pop() || '';
+    // Only scan Claude SSE events (line starts with "data:")
+    for (const line of lines) {
+      parseDataLine(line.trim());
+    }
+  };
+
   // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
   const emitTerminal = (controller) => {
     if (terminalEmitted || !onAbortTerminal) return;
     terminalEmitted = true;
     try {
-      const bytes = onAbortTerminal();
+      // Flush any partial SSE line in the scan buffer before closing blocks,
+      // so a stop that arrived mid-chunk is not missed (HIGH: truncated stop
+      // would otherwise leave a stale open index → synthesized orphan stop).
+      scanBuffered();
+      const bytes = onAbortTerminal(openBlockIndices);
       if (bytes) controller.enqueue(bytes);
     } catch { /* best-effort terminal */ }
   };
@@ -125,6 +200,10 @@ export function createDisconnectAwareStream(transformStream, streamController, o
           controller.close();
           return;
         }
+        // Only track open blocks when an abort terminal needs them (Claude /
+        // Responses). Avoids pointless scanning for targets without a terminal
+        // (H3: gate the scanner on the terminal builder being installed).
+        if (onAbortTerminal) scanForBlockEvents(value);
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();

@@ -4,7 +4,7 @@ import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger }
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
-import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
+import { buildAbortedResponsesTerminalBytes, buildAbortedClaudeTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -75,18 +75,35 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey });
 
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
-  const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
+  const isClaudeTarget = targetFormat === FORMATS.CLAUDE;
+  const onAbortTerminal = isResponsesPassthrough
+    ? buildAbortedResponsesTerminalBytes
+    : isClaudeTarget
+      ? buildAbortedClaudeTerminalBytes
+      : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  let outputStream = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
-
   const declaredTools = translatedBody?._declaredTools
     || body?._declaredTools
     || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
   const hasTools = (declaredTools && declaredTools.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
 
+  let transform = transformStream;
   if (hasTools) {
-    outputStream = outputStream.pipeThrough(createStreamToolShimTransformStream(declaredTools, sourceFormat, log));
+    // Chain the universal tool shim AFTER the translator transform but BEFORE
+    // pipeWithDisconnect. Composing via readable.pipeThrough(shim) keeps the
+    // disconnect stream's scanForBlockEvents() downstream of the shim, so it
+    // sees the tool_use content blocks the shim allocates. If the shim ran
+    // after pipeWithDisconnect (as a separate downstream pipe), an upstream
+    // abort would synthesize message_stop while those shim-created blocks are
+    // still open → Claude Code: "Content block not found".
+    const shim = createStreamToolShimTransformStream(declaredTools, sourceFormat, log);
+    transform = {
+      readable: transformStream.readable.pipeThrough(shim),
+      writable: transformStream.writable
+    };
   }
+
+  let outputStream = pipeWithDisconnect(providerResponse, transform, streamController, onAbortTerminal, stallTimeoutMs);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId, clientModel,

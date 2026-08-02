@@ -182,7 +182,7 @@ export function openaiToClaudeResponse(chunk, state) {
     });
   }
 
-  if (cleanedText) {
+  if (cleanedText && cleanedText.trim()) {
     stopThinkingBlock(state, results);
 
     if (!state.textBlockStarted) {
@@ -201,6 +201,9 @@ export function openaiToClaudeResponse(chunk, state) {
       index: state.textBlockIndex,
       delta: { type: "text_delta", text: cleanedText }
     });
+  } else if (cleanedText) {
+    // whitespace-only text: don't open a text block, just stop thinking
+    stopThinkingBlock(state, results);
   }
 
   // Tool calls

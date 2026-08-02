@@ -96,6 +96,8 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
   let textBuffer = "";
   let sseLineBuffer = "";
   let pendingEventName = "";
+  let pendingEmptyTextBlockIndex = -1;
+  const droppedBlockIndices = new Set();
   let inToolTag = false;
   let toolCallCounter = 0;
   let sawMessageStop = false;
@@ -216,9 +218,15 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
             // For Claude format: close any open block before emitting tool_use blocks
             if (clientFormat === "claude" && !textBlockClosed) {
               if (openBlockIndex >= 0) {
-                // Close the currently open upstream block
-                const closeBlock = `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: openBlockIndex })}\n\n`;
-                controller.enqueue(new TextEncoder().encode(closeBlock));
+                // Close the currently open upstream block — but skip if its
+                // start was dropped (empty text block): emitting an orphan stop
+                // breaks Claude Code's block state machine and stalls it.
+                if (!droppedBlockIndices.has(openBlockIndex)) {
+                  const closeBlock = `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: openBlockIndex })}\n\n`;
+                  controller.enqueue(new TextEncoder().encode(closeBlock));
+                } else {
+                  droppedBlockIndices.delete(openBlockIndex);
+                }
                 openBlockIndex = -1;
               } else if (nextBlockIndex === 0) {
                 // No upstream blocks seen — legacy: assume block 0 exists
@@ -257,12 +265,14 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
           const holdLen = getPartialTagPrefixLength(textBuffer);
           if (holdLen > 0) {
             const safeText = textBuffer.slice(0, textBuffer.length - holdLen);
-            if (safeText) {
+            if (safeText && safeText.trim()) {
               emitTextChunk(safeText, json, clientFormat, controller);
             }
             textBuffer = textBuffer.slice(textBuffer.length - holdLen);
           } else {
-            emitTextChunk(textBuffer, json, clientFormat, controller);
+            if (textBuffer.trim()) {
+              emitTextChunk(textBuffer, json, clientFormat, controller);
+            }
             textBuffer = "";
           }
         }
@@ -271,12 +281,41 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
       }
 
       // Pass non-text data events (e.g. message_start, content_block_start, ping) through when not inside tool tag
+      // But track empty text blocks: if a text block starts with no content, don't forward it
       if (!inToolTag && !hasEmittedToolCalls) {
+        if (json.type === "content_block_start" && json.content_block?.type === "text" && !json.content_block?.text) {
+          // Empty text block — buffer and skip unless deltas arrive
+          pendingEmptyTextBlockIndex = json.index;
+          droppedBlockIndices.add(json.index);
+          pendingEventName = "";
+          return;
+        }
+        if (pendingEmptyTextBlockIndex >= 0) {
+          if (json.type === "content_block_delta" && json.index === pendingEmptyTextBlockIndex) {
+            // Real content arrived — forward the buffered start then continue
+            controller.enqueue(new TextEncoder().encode(`event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: pendingEmptyTextBlockIndex, content_block: { type: "text", text: "" } })}\n\n`));
+            pendingEmptyTextBlockIndex = -1;
+            droppedBlockIndices.delete(json.index);
+          } else if (json.type === "content_block_stop" && json.index === pendingEmptyTextBlockIndex) {
+            // Empty text block closed with no content — drop entirely
+            pendingEmptyTextBlockIndex = -1;
+            pendingEventName = "";
+            return;
+          } else if (json.type === "content_block_delta" && json.index !== pendingEmptyTextBlockIndex) {
+            // delta for a different block — forward buffered empty start is not needed, drop it
+            pendingEmptyTextBlockIndex = -1;
+          }
+        }
         if (pendingEventName) {
           controller.enqueue(new TextEncoder().encode(`event: ${pendingEventName}\n`));
           pendingEventName = "";
         }
         controller.enqueue(new TextEncoder().encode(line + "\n"));
+      } else if (droppedBlockIndices.has(json.index) && json.type === "content_block_stop") {
+        // A stop for a block whose start was dropped — drop the stop too
+        droppedBlockIndices.delete(json.index);
+        pendingEventName = "";
+        return;
       } else {
         pendingEventName = "";
       }
