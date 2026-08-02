@@ -5,7 +5,7 @@ description: Web search via 9Router /v1/search using the SearXNG provider. Use w
 
 # 9Router — SearXNG Search
 
-Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
+Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See /api/skills/raw/9router for setup.
 
 ## Discover
 
