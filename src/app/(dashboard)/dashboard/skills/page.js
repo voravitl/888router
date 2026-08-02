@@ -20,7 +20,7 @@ function CopyButton({ value, label = "Copy link" }) {
   );
 }
 
-function SkillRow({ skill, rawUrl, blobUrl }) {
+function SkillRow({ skill, rawUrl }) {
   return (
     <div
       className={`flex items-start gap-3 p-4 rounded-[14px] border shadow-[var(--shadow-soft)] transition-colors ${
@@ -51,7 +51,7 @@ function SkillRow({ skill, rawUrl, blobUrl }) {
         </div>
         <p className="text-xs text-text-muted mt-0.5">{skill.description}</p>
         <a
-          href={blobUrl}
+          href={rawUrl}
           target="_blank"
           rel="noreferrer"
           className="text-[11px] text-text-muted hover:text-primary mt-1 inline-flex items-center gap-1 break-all"
@@ -108,8 +108,9 @@ export default function SkillsPage() {
   }
 
   const entrySkill = data.skills?.find((s) => s.isEntry) || data.skills?.[0];
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
   const entryRaw = entrySkill
-    ? `${data.rawBase}/${entrySkill.id}/SKILL.md`
+    ? `${origin}${data.rawBase}/${entrySkill.id}/SKILL.md`
     : "";
 
   return (
@@ -131,8 +132,7 @@ export default function SkillsPage() {
           <SkillRow
             key={skill.id}
             skill={skill}
-            rawUrl={`${data.rawBase}/${skill.id}/SKILL.md`}
-            blobUrl={`${data.blobBase}/${skill.id}/SKILL.md`}
+            rawUrl={`${origin}${data.rawBase}/${skill.id}/SKILL.md`}
           />
         ))}
       </div>
@@ -140,20 +140,11 @@ export default function SkillsPage() {
       <Card padding="md">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h2 className="text-sm font-semibold text-text-main">More on GitHub</h2>
+            <h2 className="text-sm font-semibold text-text-main">About skills</h2>
             <p className="text-xs text-text-muted mt-0.5">
-              Browse source, README, and examples.
+              Skills are served from this gateway — paste the raw link to your AI to load it.
             </p>
           </div>
-          <a
-            href={`${data?.repoUrl || "#"}/tree/master/skills`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-          >
-            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-            View on GitHub
-          </a>
         </div>
       </Card>
     </div>

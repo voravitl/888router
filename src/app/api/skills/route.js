@@ -8,9 +8,6 @@ export const revalidate = 0;
 // Scan the repo's ./skills/<id>/SKILL.md directory at request time so the
 // dashboard always reflects the skills actually shipped in the image — no
 // hardcoded catalog list to keep in sync.
-const REPO = "decolua/9router";
-const BRANCH = "master";
-const SKILL_PATH = "skills";
 
 function resolveSkillsDir() {
   // Explicit env override wins (set in image/entrypoint) — no path guessing.
@@ -77,9 +74,11 @@ export async function GET() {
 
     return NextResponse.json({
       skills,
-      repoUrl: `https://github.com/${REPO}`,
-      rawBase: `https://raw.githubusercontent.com/${REPO}/refs/heads/${BRANCH}/${SKILL_PATH}`,
-      blobBase: `https://github.com/${REPO}/blob/${BRANCH}/${SKILL_PATH}`,
+      // Self-hosted: point at THIS gateway, not GitHub. rawBase serves the raw
+      // SKILL.md (for AI copy-paste); blobBase is the dashboard view link.
+      repoUrl: `${process.env.NEXT_PUBLIC_BASE_URL || ""}`,
+      rawBase: `/api/skills/raw`,
+      blobBase: `/dashboard/skills`,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     // Log the real error server-side; never return internal paths to the client.
