@@ -29,6 +29,23 @@ describe("resolveOrigin", () => {
   it("does not throw on malformed requestUrl", () => {
     expect(resolveOrigin("garbage", {})).toBe("");
   });
+
+  it("fails closed in production when NINEROUTER_PUBLIC_URL is unset", () => {
+    const env = { NODE_ENV: "production" };
+    expect(resolveOrigin("http://evil.example/api/skills/raw/x", env)).toBe("");
+  });
+
+  it("fails closed in production when NINEROUTER_PUBLIC_URL is malformed", () => {
+    const env = { NODE_ENV: "production", NINEROUTER_PUBLIC_URL: "not-a-url" };
+    expect(resolveOrigin("http://evil.example/api/skills/raw/x", env)).toBe("");
+  });
+
+  it("falls back to request URL in dev when NINEROUTER_PUBLIC_URL unset", () => {
+    const env = { NODE_ENV: "development" };
+    expect(resolveOrigin("http://localhost:20128/api/skills/raw/x", env)).toBe(
+      "http://localhost:20128"
+    );
+  });
 });
 
 describe("absolutizeSkillRefs", () => {
