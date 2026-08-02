@@ -15,7 +15,10 @@ export default {
   ],
   noAuth: true,
   searchConfig: {
-    baseUrl: "http://localhost:8888/search",
+    // Base URL for SearXNG, overridable via env so the same provider works both
+    // inside docker-compose (service name `searxng`, internal port 8080) and on
+    // the host (localhost:8888). Compose sets SEARXNG_BASE_URL to the service URL.
+    baseUrl: process.env.SEARXNG_BASE_URL || "http://localhost:8888/search",
     method: "GET",
     authType: "none",
     authHeader: "none",
