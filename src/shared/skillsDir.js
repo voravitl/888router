@@ -25,10 +25,16 @@ export function resolveSkillsDir() {
 // SKILL.md escaping to /etc/passwd etc.
 export function resolveSkillFile(id) {
   if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) return null;
-  const dir = fs.realpathSync(path.resolve(resolveSkillsDir()));
-  const candidate = path.join(dir, id, "SKILL.md");
-  if (!fs.existsSync(candidate)) return null;
-  const filePath = fs.realpathSync(candidate);
-  if (!filePath.startsWith(dir + path.sep)) return null;
-  return filePath;
+  try {
+    const dir = fs.realpathSync(path.resolve(resolveSkillsDir()));
+    const candidate = path.join(dir, id, "SKILL.md");
+    if (!fs.existsSync(candidate)) return null;
+    const filePath = fs.realpathSync(candidate);
+    if (!filePath.startsWith(dir + path.sep)) return null;
+    return filePath;
+  } catch {
+    // realpath throws ENOENT if skills dir missing / SKILLS_DIR misconfigured.
+    // Return null → route serves a clean 404, not an unhandled 500.
+    return null;
+  }
 }

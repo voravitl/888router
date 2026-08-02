@@ -20,6 +20,7 @@ export async function GET(request, { params }) {
       status: 200,
       headers: {
         "Content-Type": "text/markdown; charset=utf-8",
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "no-store",
       },
     });
