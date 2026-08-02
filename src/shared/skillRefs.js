@@ -13,18 +13,16 @@
 let warnedMissingPublicUrl = false;
 
 export function resolveOrigin(requestUrl, env = process.env) {
-  if (env.NINEROUTER_PUBLIC_URL) {
+  const raw = (env.NINEROUTER_PUBLIC_URL || "").trim();
+  if (raw) {
     try {
-      const u = new URL(env.NINEROUTER_PUBLIC_URL);
+      const u = new URL(raw);
       if (u.protocol === "http:" || u.protocol === "https:") return u.origin;
       console.error(
         `[Skills] NINEROUTER_PUBLIC_URL has unsupported protocol: ${u.protocol}`
       );
     } catch {
-      console.error(
-        "[Skills] NINEROUTER_PUBLIC_URL is malformed:",
-        env.NINEROUTER_PUBLIC_URL
-      );
+      console.error("[Skills] NINEROUTER_PUBLIC_URL is malformed:", raw);
     }
     if (env.NODE_ENV === "production") return "";
     // dev: fall through to request URL
