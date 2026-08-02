@@ -19,12 +19,16 @@ export function resolveSkillsDir() {
   return path.join(process.cwd(), "skills");
 }
 
-// Resolve <dir>/<id>/SKILL.md and ensure the result stays inside dir (guards
-// against path traversal / symlink escape).
+// Resolve <dir>/<id>/SKILL.md and ensure the realpath stays inside dir.
+// path.resolve does NOT follow symlinks, but readFileSync does — so we realpath
+// BOTH sides and prefix-check the real path, which blocks a symlinked
+// SKILL.md escaping to /etc/passwd etc.
 export function resolveSkillFile(id) {
   if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) return null;
-  const dir = path.resolve(resolveSkillsDir());
-  const filePath = path.resolve(path.join(dir, id, "SKILL.md"));
+  const dir = fs.realpathSync(path.resolve(resolveSkillsDir()));
+  const candidate = path.join(dir, id, "SKILL.md");
+  if (!fs.existsSync(candidate)) return null;
+  const filePath = fs.realpathSync(candidate);
   if (!filePath.startsWith(dir + path.sep)) return null;
   return filePath;
 }
