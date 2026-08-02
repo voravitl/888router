@@ -4,13 +4,20 @@ import { useEffect, useState } from "react";
 import { Card, Badge } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
+function absoluteUrl(path) {
+  if (typeof window === "undefined") return path;
+  return `${window.location.origin}${path}`;
+}
+
 function CopyButton({ value, label = "Copy link" }) {
+  // Resolve origin at click-time, not from render state, so even an
+  // immediate click copies an absolute URL agents can fetch.
   const { copied, copy } = useCopyToClipboard(2000);
   return (
     <button
-      onClick={() => copy(value)}
+      onClick={() => copy(absoluteUrl(value))}
       className="px-2 py-1 rounded-md bg-primary text-white text-[11px] font-medium hover:bg-primary/90 transition-colors cursor-pointer shrink-0 inline-flex items-center gap-1"
-      title={value}
+      title={absoluteUrl(value)}
     >
       <span className="material-symbols-outlined text-[12px]">
         {copied ? "check" : "content_copy"}
@@ -51,12 +58,12 @@ function SkillRow({ skill, rawUrl }) {
         </div>
         <p className="text-xs text-text-muted mt-0.5">{skill.description}</p>
         <a
-          href={rawUrl}
+          href={absoluteUrl(rawUrl)}
           target="_blank"
           rel="noreferrer"
           className="text-[11px] text-text-muted hover:text-primary mt-1 inline-flex items-center gap-1 break-all"
         >
-          {rawUrl}
+          {absoluteUrl(rawUrl)}
           <span className="material-symbols-outlined text-[12px]">open_in_new</span>
         </a>
       </div>
@@ -69,10 +76,8 @@ function SkillRow({ skill, rawUrl }) {
 export default function SkillsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [origin, setOrigin] = useState("");
 
   useEffect(() => {
-    setOrigin(window.location.origin);
     const controller = new AbortController();
     fetch("/api/skills", { signal: controller.signal })
       .then(async (res) => {
@@ -110,16 +115,14 @@ export default function SkillsPage() {
   }
 
   const entrySkill = data.skills?.find((s) => s.isEntry) || data.skills?.[0];
-  const entryRaw = entrySkill
-    ? `${origin}${data.rawBase}/${entrySkill.id}`
-    : "";
+  const entryPath = entrySkill ? `${data.rawBase}/${entrySkill.id}` : "";
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <Card padding="md">
         <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
         <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">
-          {data ? `Read this skill and use it: ${entryRaw}` : "Loading…"}
+          {data ? `Read this skill and use it: ${absoluteUrl(entryPath)}` : "Loading…"}
         </div>
       </Card>
 
@@ -133,7 +136,7 @@ export default function SkillsPage() {
           <SkillRow
             key={skill.id}
             skill={skill}
-            rawUrl={`${origin}${data.rawBase}/${skill.id}`}
+            rawUrl={`${data.rawBase}/${skill.id}`}
           />
         ))}
       </div>
