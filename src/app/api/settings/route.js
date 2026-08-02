@@ -28,6 +28,10 @@ export async function GET() {
       ...safeSettings, 
       enableRequestLogs,
       enableTranslator,
+      // Effective universal tools mode: DB (UI toggle) wins, else env kill-switch, else "auto".
+      // Lets the UI reflect the value actually in effect (e.g. env=off shows OFF even though
+      // the DB key is unset).
+      universalToolsMode: safeSettings.universalToolsMode || process.env.UNIVERSAL_TOOLS_MODE || "auto",
       hasPassword: !!password
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {

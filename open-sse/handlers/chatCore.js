@@ -43,7 +43,7 @@ import { getCachedResponse } from "../translator/concerns/responseCache.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode }) {
   const requestStartTime = Date.now();
   const detailId = `detail_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   let rtkStats = null;
@@ -267,7 +267,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Universal Tool Call Engine: inject XML preamble & adapt history for non-tool models
   const modelCaps = getCapabilitiesForModel(provider, model);
-  if (shouldInjectUniversalToolPrompt(translatedBody, { provider, model: upstreamModel, capabilities: modelCaps })) {
+  if (shouldInjectUniversalToolPrompt(translatedBody, { provider, model: upstreamModel, capabilities: modelCaps }, { universalToolsMode })) {
     adaptHistoryForUniversalTools(translatedBody, log);
     injectUniversalToolPrompt(translatedBody);
     log?.info?.("TOOLSHIM", `injected universal tool preamble for model ${upstreamModel}`);

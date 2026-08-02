@@ -198,6 +198,27 @@ export default function ProfilePage() {
     }
   };
 
+  const updateUniversalToolsMode = async (mode) => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ universalToolsMode: mode }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+      } else {
+        console.error("Failed to update universal tools mode:", data.error);
+      }
+    } catch (err) {
+      console.error("Failed to update universal tools mode:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handlePasswordChange = async (e) => {
     e.preventDefault();
     if (passwords.new !== passwords.confirm) {
@@ -1087,6 +1108,39 @@ export default function ProfilePage() {
                 {proxyStatus.message}
               </p>
             )}
+          </div>
+        </Card>
+
+        {/* Universal Tools Settings */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">handyman</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Universal Tools</h3>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Universal Tool Calls</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  When ON, non-native-tool models get the XML &lt;tool_call&gt; preamble + shim. When OFF,
+                  tools pass through to the model's native support (use this if you hit "Content block not found").
+                </p>
+              </div>
+              <Toggle
+                checked={settings.universalToolsMode !== "off"}
+                onChange={() => updateUniversalToolsMode(settings.universalToolsMode === "off" ? "auto" : "off")}
+                disabled={loading}
+              />
+            </div>
+            <p className="text-xs sm:text-sm text-text-muted/70 pt-2 border-t border-border/50">
+              Current mode: <code className="bg-border/30 px-1 rounded">{settings.universalToolsMode || "auto"}</code>
+              {settings.universalToolsMode === "off" && (
+                <span className="text-amber-500 ml-2">Universal tools disabled — tool shim path inactive.</span>
+              )}
+            </p>
           </div>
         </Card>
 
