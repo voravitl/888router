@@ -34,6 +34,7 @@ export default function ProfilePage() {
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
   const [universalToolsError, setUniversalToolsError] = useState("");
+  const [universalToolsSaving, setUniversalToolsSaving] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -200,7 +201,7 @@ export default function ProfilePage() {
   };
 
   const updateUniversalToolsMode = async (mode) => {
-    setLoading(true);
+    setUniversalToolsSaving(true);
     setUniversalToolsError("");
     try {
       const res = await fetch("/api/settings", {
@@ -217,7 +218,7 @@ export default function ProfilePage() {
     } catch (err) {
       setUniversalToolsError("Failed to update universal tools mode");
     } finally {
-      setLoading(false);
+      setUniversalToolsSaving(false);
     }
   };
 
@@ -1134,9 +1135,15 @@ export default function ProfilePage() {
               <Toggle
                 checked={settings.universalToolsMode !== "off"}
                 onChange={() => updateUniversalToolsMode(settings.universalToolsMode === "off" ? "auto" : "off")}
-                disabled={loading}
+                disabled={loading || universalToolsSaving || settings.universalToolsLockedByEnv}
               />
             </div>
+            {settings.universalToolsLockedByEnv && (
+              <p className="text-xs sm:text-sm text-text-muted/70 pt-2 border-t border-border/50">
+                <span className="material-symbols-outlined text-[14px] align-text-bottom mr-1">lock</span>
+                Locked by <code className="bg-border/30 px-1 rounded">UNIVERSAL_TOOLS_MODE</code> env var — use the env var to change.
+              </p>
+            )}
             <p className="text-xs sm:text-sm text-text-muted/70 pt-2 border-t border-border/50">
               Mode: <code className="bg-border/30 px-1 rounded">{settings.universalToolsMode || "auto"}</code>
               {settings.universalToolsMode === "off" ? (

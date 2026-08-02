@@ -29,10 +29,12 @@ export async function GET() {
       enableRequestLogs,
       enableTranslator,
       // Effective universal tools mode: env kill-switch WINS (can force-off),
-      // else DB (UI toggle) value, else "auto".
-      universalToolsMode: process.env.UNIVERSAL_TOOLS_MODE === "off"
+      // else DB (UI toggle) value, else "auto". Env normalized lowercase.
+      universalToolsMode: String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase() === "off"
         ? "off"
         : (safeSettings.universalToolsMode || "auto"),
+      // True when env UNIVERSAL_TOOLS_MODE is set — UI toggle should be read-only.
+      universalToolsLockedByEnv: String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase() !== "",
       hasPassword: !!password
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
@@ -125,9 +127,12 @@ export async function PATCH(request) {
 
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
-    // Align PATCH response with GET effective mode so the UI doesn't drift
-    // (DB || env || auto) until a reload.
-    safeSettings.universalToolsMode = safeSettings.universalToolsMode || process.env.UNIVERSAL_TOOLS_MODE || "auto";
+    // Align PATCH response with GET effective mode so the UI doesn't drift:
+    // env kill-switch WINS, else DB value, else "auto". Same expression as GET.
+    safeSettings.universalToolsMode = String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase() === "off"
+      ? "off"
+      : (safeSettings.universalToolsMode || "auto");
+    safeSettings.universalToolsLockedByEnv = String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase() !== "";
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);
