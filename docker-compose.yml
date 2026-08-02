@@ -17,10 +17,11 @@ services:
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
       HEADROOM_URL: http://headroom:8787
-      # Public origin used to absolutize skill markdown links. REQUIRED in
-      # production (skill raw endpoint fails closed without it). Set in .env
-      # e.g. NINEROUTER_PUBLIC_URL=http://localhost:20128 or your tunnel URL.
-      NINEROUTER_PUBLIC_URL: "${NINEROUTER_PUBLIC_URL:?set NINEROUTER_PUBLIC_URL in .env}"
+      # Public origin used to absolutize skill markdown links. Set the public
+      # host in .env when behind a proxy/tunnel (e.g.
+      # NINEROUTER_PUBLIC_URL=https://gateway.example.com). Defaults to the
+      # local dev URL so `docker compose up` never blocks on it.
+      NINEROUTER_PUBLIC_URL: "${NINEROUTER_PUBLIC_URL:-http://localhost:20128}"
       # Point SearXNG provider at the compose service (internal port 8080),
       # not localhost — the gateway is a container and localhost = itself.
       SEARXNG_BASE_URL: http://searxng:8080/search

@@ -17,9 +17,17 @@ export function resolveOrigin(requestUrl, env = process.env) {
     try {
       const u = new URL(env.NINEROUTER_PUBLIC_URL);
       if (u.protocol === "http:" || u.protocol === "https:") return u.origin;
+      console.error(
+        `[Skills] NINEROUTER_PUBLIC_URL has unsupported protocol: ${u.protocol}`
+      );
     } catch {
-      // malformed env → fall through to request origin; do not 500 the route
+      console.error(
+        "[Skills] NINEROUTER_PUBLIC_URL is malformed:",
+        env.NINEROUTER_PUBLIC_URL
+      );
     }
+    if (env.NODE_ENV === "production") return "";
+    // dev: fall through to request URL
   }
   if (env.NODE_ENV === "production") {
     if (!warnedMissingPublicUrl) {

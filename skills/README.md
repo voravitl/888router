@@ -4,7 +4,7 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 
 > Tip: start with the **9router** entry skill — it covers setup and links to all capability skills.
 >
-> URLs below are relative to your 9Router host (e.g. `https://your-host` or `http://localhost:20128`). The dashboard at `/dashboard/skills` shows absolute URLs you can copy directly.
+> The paths below are **API-served only**: they work when fetched from a running 9Router gateway (`<host>/api/skills/raw/<id>`). The dashboard at `/dashboard/skills` shows absolute URLs you can copy directly — use that for production / remote agents. If the gateway is behind a reverse proxy / tunnel, set `NINEROUTER_PUBLIC_URL` (e.g. `https://gateway.example.com`) so served markdown embeds the correct public origin.
 
 ## Skills
 
@@ -19,9 +19,9 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 | Web search | /api/skills/raw/9router-web-search |
 | Web fetch (URL → markdown) | /api/skills/raw/9router-web-fetch |
 
-> **Production note:** the paths above are relative to your gateway host. The
-> dashboard at `/dashboard/skills` renders absolute URLs you can copy directly.
-> If the gateway sits behind a reverse proxy / tunnel, set
+> **Production note:** the paths above are API-served only — fetch them from a
+> running gateway (`<host>/api/skills/raw/<id>`) or copy absolute URLs from the
+> dashboard at `/dashboard/skills`. Behind a reverse proxy / tunnel, set
 > `NINEROUTER_PUBLIC_URL` (e.g. `https://gateway.example.com`) so served
 > markdown embeds the correct public origin.
 
