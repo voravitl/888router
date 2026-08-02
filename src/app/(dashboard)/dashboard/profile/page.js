@@ -33,6 +33,7 @@ export default function ProfilePage() {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
+  const [universalToolsError, setUniversalToolsError] = useState("");
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -200,6 +201,7 @@ export default function ProfilePage() {
 
   const updateUniversalToolsMode = async (mode) => {
     setLoading(true);
+    setUniversalToolsError("");
     try {
       const res = await fetch("/api/settings", {
         method: "PATCH",
@@ -210,10 +212,10 @@ export default function ProfilePage() {
       if (res.ok) {
         setSettings((prev) => ({ ...prev, ...data }));
       } else {
-        console.error("Failed to update universal tools mode:", data.error);
+        setUniversalToolsError(data.error || "Failed to update universal tools mode");
       }
     } catch (err) {
-      console.error("Failed to update universal tools mode:", err);
+      setUniversalToolsError("Failed to update universal tools mode");
     } finally {
       setLoading(false);
     }
@@ -1125,8 +1127,8 @@ export default function ProfilePage() {
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm sm:text-base">Universal Tool Calls</p>
                 <p className="text-xs sm:text-sm text-text-muted">
-                  When ON, non-native-tool models get the XML &lt;tool_call&gt; preamble + shim. When OFF,
-                  tools pass through to the model's native support (use this if you hit "Content block not found").
+                  AUTO: inject the XML &lt;tool_call&gt; preamble for models without native tool support.
+                  OFF: disable the shim path (use this if you hit "Content block not found").
                 </p>
               </div>
               <Toggle
@@ -1136,11 +1138,16 @@ export default function ProfilePage() {
               />
             </div>
             <p className="text-xs sm:text-sm text-text-muted/70 pt-2 border-t border-border/50">
-              Current mode: <code className="bg-border/30 px-1 rounded">{settings.universalToolsMode || "auto"}</code>
-              {settings.universalToolsMode === "off" && (
-                <span className="text-amber-500 ml-2">Universal tools disabled — tool shim path inactive.</span>
+              Mode: <code className="bg-border/30 px-1 rounded">{settings.universalToolsMode || "auto"}</code>
+              {settings.universalToolsMode === "off" ? (
+                <span className="text-amber-500 ml-2">Disabled — tool shim path inactive.</span>
+              ) : (
+                <span className="text-green-500 ml-2">Auto — shim active for non-tool models.</span>
               )}
             </p>
+            {universalToolsError && (
+              <p className="text-xs sm:text-sm text-red-500 pt-1">{universalToolsError}</p>
+            )}
           </div>
         </Card>
 
