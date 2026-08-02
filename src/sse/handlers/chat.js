@@ -12,6 +12,7 @@ import { getSettings, updateProviderConnection } from "@/lib/localDb";
 import { isAccountQualityFailure, updateHealthEma } from "open-sse/services/accountScoring.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
+import { resolveUniversalToolsMode } from "open-sse/translator/concerns/universalToolPrompt.js";
 import { DEFAULT_HEADROOM_URL, resolveHeadroomUrl } from "@/lib/headroom/detect";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
@@ -275,13 +276,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       outboundProxyEnabled: !!chatSettings.outboundProxyEnabled,
       outboundProxyUrl: chatSettings.outboundProxyUrl || "",
       outboundNoProxy: chatSettings.outboundNoProxy || "",
-      // Universal tools: env kill-switch WINS (force-off for ops), else the
-      // UI/DB toggle value, else "auto". "off" disables the XML tool preamble
-      // + shim path (avoids "Content block not found" while the shim is being
-      // worked on). Env value normalized to lowercase for case-insensitivity.
-      universalToolsMode: String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase() === "off"
-        ? "off"
-        : (chatSettings.universalToolsMode || "auto"),
+      // Universal tools: resolveUniversalToolsMode is the single source of
+      // truth (env set = authoritative; else DB/UI toggle, default "auto").
+      // "off" disables the XML tool preamble + shim path (avoids "Content
+      // block not found" while the shim is being worked on).
+      universalToolsMode: resolveUniversalToolsMode(chatSettings.universalToolsMode),
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {

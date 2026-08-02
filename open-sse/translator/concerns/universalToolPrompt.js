@@ -33,6 +33,33 @@ function escapeXml(str) {
 }
 
 /**
+ * Resolve the effective universal tools mode. Single source of truth used by
+ * the inject gate, the API (GET/PATCH), and the chat hot path so no caller
+ * drifts.
+ *
+ * Precedence: if UNIVERSAL_TOOLS_MODE env var is set, it is authoritative
+ * (env-set = source of truth): "off" → "off", any other value → "auto".
+ * Otherwise the DB/UI mode applies: "off" → "off", anything else → "auto".
+ *
+ * @param {string} [dbMode] - value from settings (DB toggle), or null/undefined
+ * @returns {"auto"|"off"}
+ */
+export function resolveUniversalToolsMode(dbMode) {
+  const env = String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase();
+  if (env) return env === "off" ? "off" : "auto";
+  const m = String(dbMode || "auto").toLowerCase();
+  return m === "off" ? "off" : "auto";
+}
+
+/**
+ * True when UNIVERSAL_TOOLS_MODE env var is set (env is authoritative and the
+ * UI/DB toggle should be read-only). False otherwise.
+ */
+export function universalToolsLockedByEnv() {
+  return String(process.env.UNIVERSAL_TOOLS_MODE || "").toLowerCase() !== "";
+}
+
+/**
  * Determines whether to inject the Universal Tool Call Preamble into the request.
  * Mode: "auto" | "force" | "off" (Default: "auto")
  */
@@ -42,7 +69,9 @@ export function shouldInjectUniversalToolPrompt(body, modelInfo = {}, options = 
     return false;
   }
 
-  const mode = String(options.universalToolsMode || process.env.UNIVERSAL_TOOLS_MODE || "auto").toLowerCase();
+  // Env kill-switch is the final injection gate: resolveUniversalToolsMode
+  // forces "off" when env is set to off, regardless of the caller's mode.
+  const mode = resolveUniversalToolsMode(options.universalToolsMode);
 
   if (mode === "off") {
     return false;
