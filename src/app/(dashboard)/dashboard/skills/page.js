@@ -1,13 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card, Badge } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import {
-  SKILLS,
-  SKILLS_REPO_URL,
-  getSkillRawUrl,
-  getSkillBlobUrl,
-} from "@/shared/constants/skills";
 
 function CopyButton({ value, label = "Copy link" }) {
   const { copied, copy } = useCopyToClipboard(2000);
@@ -25,8 +20,7 @@ function CopyButton({ value, label = "Copy link" }) {
   );
 }
 
-function SkillRow({ skill }) {
-  const url = getSkillRawUrl(skill.id);
+function SkillRow({ skill, rawUrl, blobUrl }) {
   return (
     <div
       className={`flex items-start gap-3 p-4 rounded-[14px] border shadow-[var(--shadow-soft)] transition-colors ${
@@ -57,34 +51,89 @@ function SkillRow({ skill }) {
         </div>
         <p className="text-xs text-text-muted mt-0.5">{skill.description}</p>
         <a
-          href={getSkillBlobUrl(skill.id)}
+          href={blobUrl}
           target="_blank"
           rel="noreferrer"
           className="text-[11px] text-text-muted hover:text-primary mt-1 inline-flex items-center gap-1 break-all"
         >
-          {url}
+          {rawUrl}
           <span className="material-symbols-outlined text-[12px]">open_in_new</span>
         </a>
       </div>
 
-      <CopyButton value={url} />
+      <CopyButton value={rawUrl} />
     </div>
   );
 }
 
 export default function SkillsPage() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/skills", { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+        return res.json();
+      })
+      .then((d) => {
+        if (d.error) throw new Error(d.error);
+        setData(d);
+      })
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e.message);
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (error) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Card padding="md">
+          <p className="text-sm text-red-500">Failed to load skills: {error}</p>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Card padding="md">
+          <p className="text-sm text-text-muted">Loading skills…</p>
+        </Card>
+      </div>
+    );
+  }
+
+  const entrySkill = data.skills?.find((s) => s.isEntry) || data.skills?.[0];
+  const entryRaw = entrySkill
+    ? `${data.rawBase}/${entrySkill.id}/SKILL.md`
+    : "";
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <Card padding="md">
         <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
         <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">
-          Read this skill and use it: {getSkillRawUrl("9router")}
+          {data ? `Read this skill and use it: ${entryRaw}` : "Loading…"}
         </div>
       </Card>
 
       <div className="space-y-2">
-        {SKILLS.map((skill) => (
-          <SkillRow key={skill.id} skill={skill} />
+        {!data && !error && (
+          <Card padding="md">
+            <p className="text-sm text-text-muted">Loading skills…</p>
+          </Card>
+        )}
+        {data?.skills?.map((skill) => (
+          <SkillRow
+            key={skill.id}
+            skill={skill}
+            rawUrl={`${data.rawBase}/${skill.id}/SKILL.md`}
+            blobUrl={`${data.blobBase}/${skill.id}/SKILL.md`}
+          />
         ))}
       </div>
 
@@ -97,7 +146,7 @@ export default function SkillsPage() {
             </p>
           </div>
           <a
-            href={`${SKILLS_REPO_URL}/tree/master/skills`}
+            href={`${data?.repoUrl || "#"}/tree/master/skills`}
             target="_blank"
             rel="noreferrer"
             className="text-sm text-primary hover:underline inline-flex items-center gap-1"
