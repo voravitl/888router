@@ -1,3 +1,15 @@
+# v0.14.9 (2026-08-02)
+
+## Features (Dynamic Skills Catalog + SearXNG Skill)
+- **Dynamic skills catalog**: `/dashboard/skills` now fetches `/api/skills` which scans `./skills/<id>/SKILL.md` at request time — no hardcoded list to keep in sync. YAML frontmatter parsed (name/description/endpoint), entry-first then alphabetical; `SKILLS_DIR` env override + cwd fallback; errors don't leak internal paths.
+- **SearXNG skill**: added `skills/searxng/SKILL.md` (self-hosted SearXNG search via `/v1/search`).
+
+## DevOps (Reproducible Docker + Compose Healthcheck + CI Hardening)
+- **Reproducible builds**: Dockerfile `npm install` → `npm ci`; commit `package-lock.json` (removed from `.gitignore`).
+- **Compose**: liveness healthcheck for 888router (via `/api/version`); add SearXNG service, point `SEARXNG_BASE_URL` at the compose service name (fixes localhost-in-container 502).
+- **CI hardening**: concurrency guard + least-privilege permissions; `setup-node cache:npm` + `npm ci`; docker cache → `type=gha`.
+- **Security**: `SEARXNG_SECRET` required (no known-in-git default); SearXNG internal-only (no host port).
+
 # v0.14.8 (2026-08-02)
 
 ## Features (Universal Tools Toggle + Env Kill-Switch)
