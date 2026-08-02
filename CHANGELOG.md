@@ -1,3 +1,20 @@
+# v0.14.8 (2026-08-02)
+
+## Features (Universal Tools Toggle + Env Kill-Switch)
+- **Universal Tools UI Toggle**: Dashboard → Profile → "Universal Tools" toggle (Auto/Off) controls the universal tool shim path at runtime without a restart (persisted to DB settings `universalToolsMode`).
+- **Env Kill-Switch**: `UNIVERSAL_TOOLS_MODE=off` forces the shim path off and locks the UI toggle read-only. Env-set (`off`|`auto`) is authoritative; unknown env values treated as unset. Single source of truth = `resolveUniversalToolsMode()`.
+- **Trust-boundary validation**: PATCH `/api/settings` validates `universalToolsMode` to `auto`|`off`, returns 403 when env kill-switch set.
+
+## Fixes (Close Shim-Allocated Tool Use Blocks on Abort)
+- **"Content block not found" fix**: moved universal tool shim upstream of `pipeWithDisconnect` so the disconnect scanner sees shim-allocated `tool_use` blocks; synthesized Claude abort terminal closes open blocks before `message_stop`.
+- **Chunk-safe abort scanning**: `scanForBlockEvents` uses chunk-boundary line buffer, long-lived `TextDecoder` (`stream:true`), 1MB cap, flushes pending data on abort.
+- Unit tests for abort terminal + universal tools mode precedence.
+
+# v0.14.7 (2026-08-02)
+
+## Fixes (Stream Shim Terminal — Close Open Blocks on Abort)
+- Close shim-allocated `tool_use` blocks before `message_stop` on upstream abort / client disconnect (eliminates "Content block not found").
+
 # v0.14.4 (2026-07-31)
 
 ## Fixes (Tool Name Fallback & OpenAI Translation Fix)
