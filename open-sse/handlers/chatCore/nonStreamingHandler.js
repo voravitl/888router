@@ -200,7 +200,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, log, toolNameMap, trackDone, appendLog, rtkStats = null, prunerStats = null, headroomStats = null, headroomDiagnostics = null, detailId = null, clientModel = null }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, log, toolNameMap, trackDone, appendLog, rtkStats = null, prunerStats = null, headroomStats = null, headroomDiagnostics = null, detailId = null, clientModel = null, universalToolsMode }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -244,13 +244,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
 
-  // Universal Tool Engine non-streaming response parser
+  // Universal Tool Engine non-streaming response parser — gated on mode so
+  // "off" truly disables the whole universal-tools path (matches streaming).
   const declaredToolsList = translatedBody?._declaredTools
     || body?._declaredTools
     || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
   const hasToolsInRequest = (declaredToolsList && declaredToolsList.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
 
-  if (hasToolsInRequest) {
+  if (universalToolsMode !== "off" && hasToolsInRequest) {
     const declaredNames = getDeclaredToolNames(declaredToolsList);
 
     if (isClaudeMessageResponse && Array.isArray(translatedResponse.content)) {

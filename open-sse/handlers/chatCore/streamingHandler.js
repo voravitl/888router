@@ -44,7 +44,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, log, toolNameMap, streamController, onStreamComplete, streamDetailId, prunerStats = null, rtkStats = null, headroomStats = null, headroomDiagnostics = null, clientModel = null }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, log, toolNameMap, streamController, onStreamComplete, streamDetailId, prunerStats = null, rtkStats = null, headroomStats = null, headroomDiagnostics = null, clientModel = null, universalToolsMode }) {
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -88,7 +88,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const hasTools = (declaredTools && declaredTools.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
 
   let transform = transformStream;
-  if (hasTools) {
+  // Gate the tool shim on the effective universal tools mode: when "off", do
+  // NOT run the shim even if tools are present — the shim itself is what
+  // causes "Content block not found" on some clients. Injection (request-side)
+  // is already gated; this closes the response/stream-side gap so "off" truly
+  // disables the whole universal-tools path.
+  const toolsEnabled = universalToolsMode !== "off";
+  if (toolsEnabled && hasTools) {
     // Chain the universal tool shim AFTER the translator transform but BEFORE
     // pipeWithDisconnect. Composing via readable.pipeThrough(shim) keeps the
     // disconnect stream's scanForBlockEvents() downstream of the shim, so it

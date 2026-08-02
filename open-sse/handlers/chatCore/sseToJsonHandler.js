@@ -109,7 +109,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, prunerStats = null, rtkStats = null, headroomStats = null, headroomDiagnostics = null, detailId = null, clientModel = null }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, prunerStats = null, rtkStats = null, headroomStats = null, headroomDiagnostics = null, detailId = null, clientModel = null, universalToolsMode }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -240,7 +240,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
     const hasToolsInRequest = (declaredToolsList && declaredToolsList.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
 
-    if (hasToolsInRequest && parsed?.choices?.[0]?.message?.content) {
+    if (universalToolsMode !== "off" && hasToolsInRequest && parsed?.choices?.[0]?.message?.content) {
       const choice = parsed.choices[0];
       const declaredNames = getDeclaredToolNames(declaredToolsList);
       const toolParsed = parseUniversalToolCalls(choice.message.content, declaredNames);
