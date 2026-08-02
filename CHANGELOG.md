@@ -1,3 +1,12 @@
+# v0.14.10 (2026-08-02)
+
+## Features (Self-Hosted Skill Links)
+- **Skill links served from this gateway**: `/api/skills/raw/<id>` serves SKILL.md directly (no GitHub raw) — dashboard cards + all 10 SKILL.md cross-refs now point at the gateway.
+- **Serve-time absolutization**: SKILL.md stores cross-skill refs relative (portable source); raw route rewrites to absolute URLs using a trusted origin (`NINEROUTER_PUBLIC_URL`), failing closed in production when unset (no Host-header origin trust).
+- **Hardened raw route**: traversal/symlink-safe id resolution (regex whitelist + realpath + path containment), `text/markdown` + `nosniff` + `no-store`.
+- **`.env.example`**: documents `NINEROUTER_PUBLIC_URL` for reverse-proxy/tunnel deploys.
+- **Tests**: `tests/unit/skill-refs.test.js` (16 cases) — rewrite, already-absolute untouched, `$` safety, prod fail-closed, dev fallback.
+
 # v0.14.9 (2026-08-02)
 
 ## Features (Dynamic Skills Catalog + SearXNG Skill)
