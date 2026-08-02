@@ -7,7 +7,11 @@
 // Public base URL override: set NINEROUTER_PUBLIC_URL when the gateway is
 // behind a proxy/tunnel whose external host differs from the request Host.
 // REQUIRED in production/reverse-proxy setups — never trust the raw Host
-// header alone for origin derivation.
+// header alone for origin derivation. In production with the env unset we
+// FAIL CLOSED (no rewrite + loud warning) rather than poison served markdown
+// with attacker-influenced origins.
+let warnedMissingPublicUrl = false;
+
 export function resolveOrigin(requestUrl, env = process.env) {
   if (env.NINEROUTER_PUBLIC_URL) {
     try {
@@ -16,6 +20,17 @@ export function resolveOrigin(requestUrl, env = process.env) {
     } catch {
       // malformed env → fall through to request origin; do not 500 the route
     }
+  }
+  if (env.NODE_ENV === "production") {
+    if (!warnedMissingPublicUrl) {
+      warnedMissingPublicUrl = true;
+      console.warn(
+        "[Skills] NINEROUTER_PUBLIC_URL is not set in production — skill " +
+          "markdown will NOT be rewritten to absolute URLs (fail closed). Set " +
+          "it to the gateway's public origin to enable self-hosted skill links."
+      );
+    }
+    return "";
   }
   try {
     const u = new URL(requestUrl);

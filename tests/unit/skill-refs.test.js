@@ -53,6 +53,27 @@ describe("absolutizeSkillRefs", () => {
     expect(absolutizeSkillRefs(content, origin)).toBe(content);
   });
 
+  it("rewrites markdown link refs", () => {
+    const content = "[entry](/api/skills/raw/9router)";
+    expect(absolutizeSkillRefs(content, origin)).toBe(
+      "[entry](http://localhost:20128/api/skills/raw/9router)"
+    );
+  });
+
+  it("rewrites multiple refs on one line", () => {
+    const content = "a /api/skills/raw/x and /api/skills/raw/y end";
+    expect(absolutizeSkillRefs(content, origin)).toBe(
+      "a http://localhost:20128/api/skills/raw/x and http://localhost:20128/api/skills/raw/y end"
+    );
+  });
+
+  it("rewrites refs in fenced code blocks too (documented policy)", () => {
+    const content = "```\nRead this skill and use it: /api/skills/raw/9router\n```";
+    expect(absolutizeSkillRefs(content, origin)).toContain(
+      "Read this skill and use it: http://localhost:20128/api/skills/raw/9router"
+    );
+  });
+
   it("handles $ in content safely (replacer function, no interpolation)", () => {
     const content = "Run: echo $NINEROUTER_URL /api/skills/raw/9router";
     const out = absolutizeSkillRefs(content, origin);
