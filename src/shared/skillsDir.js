@@ -30,7 +30,10 @@ export function resolveSkillFile(id) {
     const candidate = path.join(dir, id, "SKILL.md");
     if (!fs.existsSync(candidate)) return null;
     const filePath = fs.realpathSync(candidate);
-    if (!filePath.startsWith(dir + path.sep)) return null;
+    // Harden containment: relative path must not escape dir (don't rely on
+    // startsWith, which is defeated by sibling dirs sharing a prefix).
+    const rel = path.relative(dir, filePath);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
     return filePath;
   } catch {
     // realpath throws ENOENT if skills dir missing / SKILLS_DIR misconfigured.
