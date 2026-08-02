@@ -3,10 +3,12 @@
 Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **copy a link** below and paste it to your AI — it will fetch the skill and use 9Router for you.
 
 > Tip: start with the **9router** entry skill — it covers setup and links to all capability skills.
+>
+> URLs below are relative to your 9Router host (e.g. `https://your-host` or `http://localhost:20128`). The dashboard at `/dashboard/skills` shows absolute URLs you can copy directly.
 
 ## Skills
 
-| Capability | Copy link below and paste to your AI |
+| Capability | Path (relative to your host) |
 |---|---|
 | **Entry / Setup** (start here) | /api/skills/raw/9router |
 | Chat / code-gen | /api/skills/raw/9router-chat |
@@ -19,11 +21,13 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 
 ## How to use
 
-Paste to your AI (Claude, Cursor, ChatGPT, …):
+Paste to your AI (Claude, Cursor, ChatGPT, …) — use an absolute URL:
 
 ```
-Read this skill and use it: /api/skills/raw/9router
+Read this skill and use it: http://localhost:20128/api/skills/raw/9router
 ```
+
+(Replace `http://localhost:20128` with your VPS / tunnel URL if you're not on the same machine.)
 
 Then ask normally — *"generate an image of a cat"*, *"transcribe this URL"*, etc.
 
