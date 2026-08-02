@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt, stripPrivateToolFields } from "../../open-sse/translator/concerns/universalToolPrompt.js";
+import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt, stripPrivateToolFields, resolveUniversalToolsMode, universalToolsLockedByEnv } from "../../open-sse/translator/concerns/universalToolPrompt.js";
 import { adaptHistoryForUniversalTools } from "../../open-sse/translator/concerns/historyAdapter.js";
 import { parseUniversalToolCalls } from "../../open-sse/translator/concerns/universalToolParser.js";
 import { repairAndParseJson } from "../../open-sse/translator/concerns/jsonAutoRepair.js";
@@ -416,9 +416,7 @@ describe("Universal Tool Call & MCP Engine", () => {
   });
 
   it("parseUniversalToolCalls parses tool calls with DeepSeek DSML closing tags </｜｜DSML｜｜>", () => {
-    const rawDsmlText = `<tool_call>
- {"name": "terminal", "arguments": {"command":"cd /Users/voravit.l/888router && git status"}}
- </｜｜DSML｜｜>`;
+    const rawDsmlText = `<tool_call>\n {"name": "terminal", "arguments": {"command":"cd /Users/voravit.l/888router && git status"}}\n </｜｜DSML｜｜>`;
 
     const parsed = parseUniversalToolCalls(rawDsmlText, new Set(["terminal"]));
     expect(parsed.hasToolCalls).toBe(true);
@@ -426,6 +424,49 @@ describe("Universal Tool Call & MCP Engine", () => {
     expect(parsed.toolCalls[0].function.name).toBe("terminal");
     expect(JSON.parse(parsed.toolCalls[0].function.arguments).command).toContain("git status");
     expect(parsed.text).toBeNull();
+  });
+});
+
+describe("resolveUniversalToolsMode precedence", () => {
+  const envKey = "UNIVERSAL_TOOLS_MODE";
+  const prior = process.env[envKey];
+
+  afterEach(() => {
+    if (prior === undefined) delete process.env[envKey];
+    else process.env[envKey] = prior;
+  });
+
+  it("env off forces off even when DB mode is auto", () => {
+    process.env[envKey] = "off";
+    expect(resolveUniversalToolsMode("auto")).toBe("off");
+    expect(universalToolsLockedByEnv()).toBe(true);
+  });
+
+  it("env OFF (uppercase) is normalized and forces off", () => {
+    process.env[envKey] = "OFF";
+    expect(resolveUniversalToolsMode("auto")).toBe("off");
+  });
+
+  it("env set to non-off coerces to auto and locks", () => {
+    process.env[envKey] = "auto";
+    expect(resolveUniversalToolsMode("off")).toBe("auto");
+    expect(universalToolsLockedByEnv()).toBe(true);
+  });
+
+  it("no env: DB mode rules", () => {
+    delete process.env[envKey];
+    expect(resolveUniversalToolsMode("off")).toBe("off");
+    expect(resolveUniversalToolsMode("auto")).toBe("auto");
+    expect(resolveUniversalToolsMode(undefined)).toBe("auto");
+    expect(universalToolsLockedByEnv()).toBe(false);
+  });
+
+  it("shouldInjectUniversalToolPrompt respects env off kill-switch", () => {
+    const body = { tools: [{ function: { name: "run_command" } }] };
+    process.env[envKey] = "off";
+    // Even with auto mode and a non-tool provider (would normally inject),
+    // the env kill-switch must force OFF.
+    expect(shouldInjectUniversalToolPrompt(body, { model: "qwen2.5", provider: "ollama", capabilities: { tools: true } }, { universalToolsMode: "auto" })).toBe(false);
   });
 });
 

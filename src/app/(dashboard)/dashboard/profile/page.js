@@ -33,6 +33,8 @@ export default function ProfilePage() {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
+  const [universalToolsError, setUniversalToolsError] = useState("");
+  const [universalToolsSaving, setUniversalToolsSaving] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -195,6 +197,28 @@ export default function ProfilePage() {
       setProxyStatus({ type: "error", message: "An error occurred" });
     } finally {
       setProxyLoading(false);
+    }
+  };
+
+  const updateUniversalToolsMode = async (mode) => {
+    setUniversalToolsSaving(true);
+    setUniversalToolsError("");
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ universalToolsMode: mode }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+      } else {
+        setUniversalToolsError(data.error || "Failed to update universal tools mode");
+      }
+    } catch (err) {
+      setUniversalToolsError("Failed to update universal tools mode");
+    } finally {
+      setUniversalToolsSaving(false);
     }
   };
 
@@ -1086,6 +1110,50 @@ export default function ProfilePage() {
               <p className={`text-xs sm:text-sm ${proxyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
                 {proxyStatus.message}
               </p>
+            )}
+          </div>
+        </Card>
+
+        {/* Universal Tools Settings */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">handyman</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Universal Tools</h3>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Universal Tool Calls</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  AUTO: inject the XML &lt;tool_call&gt; preamble for models without native tool support.
+                  OFF: disable the shim path (use this if you hit "Content block not found").
+                </p>
+              </div>
+              <Toggle
+                checked={settings.universalToolsMode !== "off"}
+                onChange={() => updateUniversalToolsMode(settings.universalToolsMode === "off" ? "auto" : "off")}
+                disabled={loading || universalToolsSaving || settings.universalToolsLockedByEnv}
+              />
+            </div>
+            {settings.universalToolsLockedByEnv && (
+              <p className="text-xs sm:text-sm text-text-muted/70 pt-2 border-t border-border/50">
+                <span className="material-symbols-outlined text-[14px] align-text-bottom mr-1">lock</span>
+                Locked by <code className="bg-border/30 px-1 rounded">UNIVERSAL_TOOLS_MODE</code> env var — use the env var to change.
+              </p>
+            )}
+            <p className="text-xs sm:text-sm text-text-muted/70 pt-2 border-t border-border/50">
+              Mode: <code className="bg-border/30 px-1 rounded">{settings.universalToolsMode || "auto"}</code>
+              {settings.universalToolsMode === "off" ? (
+                <span className="text-amber-500 ml-2">Disabled — tool shim path inactive.</span>
+              ) : (
+                <span className="text-green-500 ml-2">Auto — shim active for non-tool models.</span>
+              )}
+            </p>
+            {universalToolsError && (
+              <p className="text-xs sm:text-sm text-red-500 pt-1">{universalToolsError}</p>
             )}
           </div>
         </Card>
