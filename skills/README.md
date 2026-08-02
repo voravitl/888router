@@ -8,7 +8,7 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 
 ## Skills
 
-| Capability | Path (relative to your host) |
+| Capability | Path (relative to your host — dashboard shows absolute) |
 |---|---|
 | **Entry / Setup** (start here) | /api/skills/raw/9router |
 | Chat / code-gen | /api/skills/raw/9router-chat |
@@ -18,6 +18,12 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 | Embeddings | /api/skills/raw/9router-embeddings |
 | Web search | /api/skills/raw/9router-web-search |
 | Web fetch (URL → markdown) | /api/skills/raw/9router-web-fetch |
+
+> **Production note:** the paths above are relative to your gateway host. The
+> dashboard at `/dashboard/skills` renders absolute URLs you can copy directly.
+> If the gateway sits behind a reverse proxy / tunnel, set
+> `NINEROUTER_PUBLIC_URL` (e.g. `https://gateway.example.com`) so served
+> markdown embeds the correct public origin.
 
 ## How to use
 

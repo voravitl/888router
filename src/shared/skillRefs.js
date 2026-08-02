@@ -6,14 +6,23 @@
 
 // Public base URL override: set NINEROUTER_PUBLIC_URL when the gateway is
 // behind a proxy/tunnel whose external host differs from the request Host.
-// Never trust the raw Host header alone for origin derivation.
+// REQUIRED in production/reverse-proxy setups — never trust the raw Host
+// header alone for origin derivation.
 export function resolveOrigin(requestUrl, env = process.env) {
   if (env.NINEROUTER_PUBLIC_URL) {
-    const u = new URL(env.NINEROUTER_PUBLIC_URL);
-    if (u.protocol === "http:" || u.protocol === "https:") return u.origin;
+    try {
+      const u = new URL(env.NINEROUTER_PUBLIC_URL);
+      if (u.protocol === "http:" || u.protocol === "https:") return u.origin;
+    } catch {
+      // malformed env → fall through to request origin; do not 500 the route
+    }
   }
-  const u = new URL(requestUrl);
-  return u.protocol === "http:" || u.protocol === "https:" ? u.origin : "";
+  try {
+    const u = new URL(requestUrl);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.origin : "";
+  } catch {
+    return "";
+  }
 }
 
 // Replaces path-only refs, leaves absolute URLs (scheme present) untouched.

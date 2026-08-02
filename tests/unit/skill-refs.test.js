@@ -18,6 +18,17 @@ describe("resolveOrigin", () => {
   it("rejects non-http(s) schemes", () => {
     expect(resolveOrigin("file:///etc/passwd", {})).toBe("");
   });
+
+  it("does not throw on malformed NINEROUTER_PUBLIC_URL", () => {
+    const env = { NINEROUTER_PUBLIC_URL: "not-a-url" };
+    expect(resolveOrigin("http://localhost:20128/api/skills/raw/x", env)).toBe(
+      "http://localhost:20128"
+    );
+  });
+
+  it("does not throw on malformed requestUrl", () => {
+    expect(resolveOrigin("garbage", {})).toBe("");
+  });
 });
 
 describe("absolutizeSkillRefs", () => {
