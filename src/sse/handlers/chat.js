@@ -275,10 +275,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       outboundProxyEnabled: !!chatSettings.outboundProxyEnabled,
       outboundProxyUrl: chatSettings.outboundProxyUrl || "",
       outboundNoProxy: chatSettings.outboundNoProxy || "",
-      // Universal tools: UI toggle (DB) wins; falls back to env, then "auto".
-      // "off" disables the XML tool preamble + shim path (avoids "Content
-      // block not found" while the shim is being worked on).
-      universalToolsMode: chatSettings.universalToolsMode || process.env.UNIVERSAL_TOOLS_MODE || "auto",
+      // Universal tools: env kill-switch WINS (force-off for ops), else the
+      // UI/DB toggle value, else "auto". "off" disables the XML tool preamble
+      // + shim path (avoids "Content block not found" while the shim is being
+      // worked on).
+      universalToolsMode: process.env.UNIVERSAL_TOOLS_MODE === "off"
+        ? "off"
+        : (chatSettings.universalToolsMode || "auto"),
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {

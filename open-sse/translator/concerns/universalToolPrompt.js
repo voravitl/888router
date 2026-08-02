@@ -42,7 +42,7 @@ export function shouldInjectUniversalToolPrompt(body, modelInfo = {}, options = 
     return false;
   }
 
-  const mode = (options.universalToolsMode || process.env.UNIVERSAL_TOOLS_MODE || "auto").toLowerCase();
+  const mode = String(options.universalToolsMode || process.env.UNIVERSAL_TOOLS_MODE || "auto").toLowerCase();
 
   if (mode === "off") {
     return false;

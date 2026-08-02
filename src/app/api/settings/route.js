@@ -28,10 +28,11 @@ export async function GET() {
       ...safeSettings, 
       enableRequestLogs,
       enableTranslator,
-      // Effective universal tools mode: DB (UI toggle) wins, else env kill-switch, else "auto".
-      // Lets the UI reflect the value actually in effect (e.g. env=off shows OFF even though
-      // the DB key is unset).
-      universalToolsMode: safeSettings.universalToolsMode || process.env.UNIVERSAL_TOOLS_MODE || "auto",
+      // Effective universal tools mode: env kill-switch WINS (can force-off),
+      // else DB (UI toggle) value, else "auto".
+      universalToolsMode: process.env.UNIVERSAL_TOOLS_MODE === "off"
+        ? "off"
+        : (safeSettings.universalToolsMode || "auto"),
       hasPassword: !!password
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
@@ -81,6 +82,17 @@ export async function PATCH(request) {
       }
     }
 
+    // Validate universal tools mode at the trust boundary: only "auto" | "off".
+    // Reject anything else instead of persisting a value that would break the
+    // runtime type checks downstream.
+    if (Object.prototype.hasOwnProperty.call(body, "universalToolsMode")) {
+      const mode = String(body.universalToolsMode).toLowerCase();
+      if (mode !== "auto" && mode !== "off") {
+        return NextResponse.json({ error: "universalToolsMode must be 'auto' or 'off'" }, { status: 400 });
+      }
+      body.universalToolsMode = mode;
+    }
+
     const settings = await updateSettings(body);
 
     // Apply outbound proxy settings immediately (no restart required)
@@ -113,6 +125,9 @@ export async function PATCH(request) {
 
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    // Align PATCH response with GET effective mode so the UI doesn't drift
+    // (DB || env || auto) until a reload.
+    safeSettings.universalToolsMode = safeSettings.universalToolsMode || process.env.UNIVERSAL_TOOLS_MODE || "auto";
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);

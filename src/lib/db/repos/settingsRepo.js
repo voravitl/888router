@@ -44,6 +44,8 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  // Universal tools mode: "auto" (cap-based inject) | "off" (disable shim path)
+  universalToolsMode: "auto",
 };
 
 async function readRaw() {
