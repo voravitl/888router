@@ -71,13 +71,20 @@ export default function SkillsPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    fetch("/api/skills")
-      .then((res) => res.json())
+    const controller = new AbortController();
+    fetch("/api/skills", { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+        return res.json();
+      })
       .then((d) => {
         if (d.error) throw new Error(d.error);
         setData(d);
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (e.name !== "AbortError") setError(e.message);
+      });
+    return () => controller.abort();
   }, []);
 
   if (error) {
@@ -90,7 +97,17 @@ export default function SkillsPage() {
     );
   }
 
-  const entrySkill = data?.skills?.find((s) => s.isEntry) || data?.skills?.[0];
+  if (!data) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Card padding="md">
+          <p className="text-sm text-text-muted">Loading skills…</p>
+        </Card>
+      </div>
+    );
+  }
+
+  const entrySkill = data.skills?.find((s) => s.isEntry) || data.skills?.[0];
   const entryRaw = entrySkill
     ? `${data.rawBase}/${entrySkill.id}/SKILL.md`
     : "";

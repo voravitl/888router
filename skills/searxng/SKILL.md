@@ -10,7 +10,7 @@ Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://ra
 ## Discover
 
 ```bash
-curl $NINEROUTER_URL/v1/models/web | jq '.data[] | select(.id=="searxng") | .id'
+curl "$NINEROUTER_URL/v1/models/web" | jq '.data[] | select(.id=="searxng") | .id'
 curl "$NINEROUTER_URL/v1/models/info?id=searxng"   # searchTypes, maxResults, timeout
 ```
 

@@ -13,12 +13,15 @@ const BRANCH = "master";
 const SKILL_PATH = "skills";
 
 function resolveSkillsDir() {
+  // Explicit env override wins (set in image/entrypoint) — no path guessing.
+  if (process.env.SKILLS_DIR && fs.existsSync(process.env.SKILLS_DIR)) {
+    return process.env.SKILLS_DIR;
+  }
   // In Next standalone, cwd is the standalone dir; the skills dir ships next
   // to it. Fall back to repo root for dev.
   const candidates = [
     path.join(process.cwd(), "skills"),
     path.join(process.cwd(), "../../../skills"),
-    path.join(__dirname, "../../../../../../skills"),
   ];
   for (const c of candidates) {
     try {
@@ -42,7 +45,6 @@ function parseFrontmatter(content) {
     else if (k[1] === "description") meta.description = val.replace(/^["']|["']$/g, "");
     else if (k[1] === "endpoint") meta.endpoint = val;
   }
-  meta.isEntry = meta.name === "9Router (Entry)" || meta.name === "9router";
   return meta;
 }
 
@@ -66,7 +68,7 @@ export async function GET() {
         description: meta.description || "",
         endpoint: meta.endpoint || null,
         icon,
-        isEntry: meta.isEntry,
+        isEntry: entry.name === "9router",
       });
     }
 
@@ -80,8 +82,9 @@ export async function GET() {
       blobBase: `https://github.com/${REPO}/blob/${BRANCH}/${SKILL_PATH}`,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    // Log the real error server-side; never return internal paths to the client.
     console.error("[Skills] error scanning skills dir:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "Failed to scan skills" }, { status: 500 });
   }
 }
 
