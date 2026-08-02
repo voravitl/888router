@@ -8,6 +8,14 @@ on:
       - master
   workflow_dispatch:
 
+# Prevent wasted/racing builds: cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
     name: unit-smoke
@@ -20,11 +28,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          # Repo does not commit package-lock.json — skip npm cache/lock-based ci.
+          cache: npm
+          # cache reads package-lock.json — now committed (reproducible build).
 
       # Root deps first — tests import from src/ and open-sse/
       - name: Install root dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Install test dependencies
         working-directory: tests

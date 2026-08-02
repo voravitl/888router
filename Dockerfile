@@ -7,10 +7,13 @@ FROM base AS builder
 
 RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
 
-COPY package.json ./
+# Reproducible deps: commit package-lock.json + use npm ci (deterministic),
+# NOT npm install (resolves ranges → image changes every build). Copy lock
+# before source so dependency layer only invalidates when the lock changes.
+COPY package.json package-lock.json ./
 ARG BUILD_VERSION=""
 RUN --mount=type=cache,target=/root/.npm \
-  npm install
+  npm ci
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1

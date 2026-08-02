@@ -60,7 +60,8 @@ PUBLIC.md
 Thanks.md
 PUBLIC.en.md
 PR/*
-package-lock.json
+# package-lock.json is committed (NOT ignored) so `npm ci` builds deterministically.
+# Removing it from ignore enables reproducible installs in CI + Dockerfile.
 
 
 #Ignore vscode AI rules

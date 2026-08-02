@@ -8,6 +8,15 @@ on:
       - "v*"
   workflow_dispatch:
 
+# Prevent race: only one build-and-push per ref at a time.
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
 env:
   GHCR_IMAGE: ghcr.io/${{ github.repository }}
   DOCKERHUB_IMAGE: voravitl/888router
@@ -25,10 +34,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          # Repo does not commit package-lock.json — skip npm cache/lock-based ci.
+          cache: npm
 
       - name: Install root dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Install test dependencies
         working-directory: tests
@@ -48,9 +57,6 @@ jobs:
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - uses: actions/checkout@v4
@@ -97,8 +103,8 @@ jobs:
             BUILD_VERSION=${{ steps.meta.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           platforms: linux/arm64
           provenance: false
           sbom: false

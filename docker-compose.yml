@@ -17,8 +17,20 @@ services:
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
       HEADROOM_URL: http://headroom:8787
+      # Point SearXNG provider at the compose service (internal port 8080),
+      # not localhost — the gateway is a container and localhost = itself.
+      SEARXNG_BASE_URL: http://searxng:8080/search
     depends_on:
       - headroom
+      - searxng
+    # Liveness via the version API — tells orchestration when the gateway is
+    # actually serving (not just the container started).
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:20128/api/version').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   headroom:
     image: ghcr.io/chopratejas/headroom:latest
@@ -35,6 +47,28 @@ services:
       retries: 3
       start_period: 20s
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    volumes:
+      - searxng-data:/etc/searxng
+    environment:
+      SEARXNG_BASE_URL: http://localhost:8888
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-tntYDeNMAuLTnpEALpGE216sIwgACM9}"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    # Search engines may be flaky; a full readiness gate would flap the app.
+    # Liveness ("is SearXNG up") is enough for the gateway to route queries.
+
 volumes:
   888router-data:
     name: 888router-data
+  searxng-data:
+    name: searxng-data
