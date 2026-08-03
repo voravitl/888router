@@ -11,7 +11,10 @@
 use_default_settings: true
 
 server:
-  secret_key: ""            # overwritten from SEARXNG_SECRET env
+  # Non-empty placeholder; SearXNG overrides from SEARXNG_SECRET env at runtime
+  # (settings_defaults.py environ_name='SEARXNG_SECRET'). Non-empty so a failed
+  # override is visible (never silently empty).
+  secret_key: "change-me-from-SEARXNG_SECRET"
   image_proxy: true
   limiter: false
 
