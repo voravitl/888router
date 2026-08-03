@@ -62,11 +62,14 @@ services:
     # via a separate override. The gateway reaches it by service name.
     # ports:
     #   - "8888:8080"
+    # Config is mounted from the repo (reproducible) instead of a Docker
+    # volume. Read-only: the app must not rewrite settings.yml.
     volumes:
-      - searxng-data:/etc/searxng
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:
       SEARXNG_BASE_URL: http://searxng:8080
       # Require the secret — never ship a known-in-git default (CSRF/session risk).
+      # SearXNG overrides secret_key from this env at runtime.
       SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}"
     healthcheck:
       # Image ships wget (not curl); --spider fails on non-2xx.
@@ -81,5 +84,3 @@ services:
 volumes:
   888router-data:
     name: 888router-data
-  searxng-data:
-    name: searxng-data
