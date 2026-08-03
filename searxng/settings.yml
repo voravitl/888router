@@ -1,0 +1,24 @@
+# SearXNG configuration for 9Router.
+# Docs: https://docs.searxng.org/admin/settings/
+#
+# Mounted read-only into the searxng container at /etc/searxng/settings.yml.
+# This file replaces the default volume so config is reproducible from the repo.
+#
+# secret_key is intentionally NOT hardcoded here: SearXNG overrides it from the
+# SEARXNG_SECRET environment variable at runtime (see settings_defaults.py
+# environ_name='SEARXNG_SECRET'). Never put a real secret in this file.
+
+use_default_settings: true
+
+server:
+  # Non-empty placeholder; SearXNG overrides from SEARXNG_SECRET env at runtime
+  # (settings_defaults.py environ_name='SEARXNG_SECRET'). Non-empty so a failed
+  # override is visible (never silently empty).
+  secret_key: "change-me-from-SEARXNG_SECRET"
+  image_proxy: true
+  limiter: false
+
+search:
+  formats:
+    - html
+    - json
