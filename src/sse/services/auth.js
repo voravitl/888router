@@ -1,5 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { getProxyPools } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
@@ -34,29 +35,96 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
 
-    // Helper to build virtual connection for free / no-auth providers with proxy pool from settings
-    async function getVirtualNoAuthConnection() {
+    // Resolve the NEXT eligible virtual noAuth connection (single pool resolve).
+    // Auto-rotate: no specific proxyPoolId → pick the first active pool not yet
+    // excluded, resolve only that one (avoids N+1 sequential resolves).
+    // Specific pool → legacy "noauth" id. Returns null when none eligible.
+    async function pickVirtualNoAuthConnection(providerId, excludeSet) {
       const settings = await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
-      const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: override.proxyPoolId || "" });
-      return {
-        id: "noauth",
-        connectionName: "Public",
-        isActive: true,
-        accessToken: "public",
-        providerSpecificData: {
-          connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
-          connectionProxyUrl: resolvedProxy.connectionProxyUrl,
-          connectionNoProxy: resolvedProxy.connectionNoProxy,
-          connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
-          vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
-        },
-      };
+      const specificPoolId = override.proxyPoolId || "";
+
+      if (specificPoolId) {
+        const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: specificPoolId });
+        if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {
+          log.warn("AUTH", `Provider ${providerId} specific proxy pool ${specificPoolId} has no proxy/relay URL`);
+          return null;
+        }
+        return {
+          id: "noauth",
+          connectionName: "Public",
+          isActive: true,
+          accessToken: "public",
+          providerSpecificData: {
+            connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
+            connectionProxyUrl: resolvedProxy.connectionProxyUrl,
+            connectionNoProxy: resolvedProxy.connectionNoProxy,
+            connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
+            vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+          },
+        };
+      }
+
+      // Auto-rotate: first active pool not yet excluded.
+      const pools = await getProxyPools({ isActive: true });
+      const exclude = excludeSet instanceof Set ? excludeSet : new Set();
+      for (const pool of pools) {
+        const pid = pool?.id;
+        if (!pid || exclude.has(`noauth:${pid}`)) continue;
+        const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
+        if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {
+          log.warn("AUTH", `Skipping pool ${pid}: no proxy/relay URL`);
+          continue;
+        }
+        return {
+          id: `noauth:${pid}`,
+          connectionName: `Public:${pool.name || pid.slice(0, 8)}`,
+          isActive: true,
+          accessToken: "public",
+          providerSpecificData: {
+            connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
+            connectionProxyUrl: resolvedProxy.connectionProxyUrl,
+            connectionNoProxy: resolvedProxy.connectionNoProxy,
+            connectionProxyPoolId: pid,
+            vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+          },
+        };
+      }
+
+      // No eligible pool used on a first call (no excludes): pools exist but
+      // all lacked URLs, or zero pools configured → fall back to direct
+      // connection (legacy "always can use Public direct"). When mid-rotation
+      // (excludes present), treat as exhausted → null.
+      if (exclude.size === 0) {
+        return {
+          id: "noauth",
+          connectionName: "Public",
+          isActive: true,
+          accessToken: "public",
+          providerSpecificData: {
+            connectionProxyEnabled: false,
+            connectionProxyUrl: "",
+            connectionNoProxy: "",
+            connectionProxyPoolId: null,
+            vercelRelayUrl: "",
+          },
+        };
+      }
+      return null; // all pools excluded / no eligible pools remain
     }
 
-    // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
+    // Inject virtual connection(s) for no-auth free providers.
+    // Picks the NEXT eligible pool (first not excluded) so chat.js's fallback
+    // loop rotates across pools on failure. Returns null when every pool has
+    // been tried (exhausted).
     if (FREE_PROVIDERS[providerId]?.noAuth || AI_PROVIDERS[providerId]?.noAuth) {
-      return await getVirtualNoAuthConnection();
+      const chosen = await pickVirtualNoAuthConnection(providerId, excludeSet);
+      if (!chosen) {
+        log.warn("AUTH", `${provider} | all proxy pools exhausted (or none eligible)`);
+        return null;
+      }
+      log.info("AUTH", `Using ${provider} proxy pool: ${chosen.connectionName}`);
+      return chosen;
     }
 
     const connections = await getProviderConnections({ provider: providerId, isActive: true });
@@ -65,7 +133,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (connections.length === 0) {
       if (AI_PROVIDERS[providerId]?.hasFree || AI_PROVIDERS[providerId]?.noAuth) {
         log.info("AUTH", `No saved credentials for ${provider}, using virtual free mode with proxy pool`);
-        return await getVirtualNoAuthConnection();
+        const chosen = await pickVirtualNoAuthConnection(providerId, excludeSet);
+        if (!chosen) {
+          log.warn("AUTH", `${provider} | all proxy pools exhausted (or none eligible)`);
+          return null;
+        }
+        return chosen;
       }
       log.warn("AUTH", `No credentials for ${provider}`);
       return null;
@@ -239,7 +312,20 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
+  // Bare "noauth" = a fixed single no-auth connection (no pool rotation) — do
+  // not fall back. `noauth:<poolId>` = an auto-rotate virtual pool connection —
+  // fall back so chat.js's loop rotates to the next pool on failure.
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+  if (typeof connectionId === "string" && connectionId.startsWith("noauth:")) {
+    const { shouldFallback: shouldRotate, cooldownMs, modelError } = checkFallbackError(status, errorText, 0);
+    if (shouldRotate) {
+      return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
+    }
+    // Non-rotate 4xx (model error / noFallback): keep the pool, surface the
+    // error. Propagate the real modelError flag so downstream doesn't mis-read
+    // it as a quota/provider failure.
+    return { shouldFallback: false, cooldownMs: 0, modelError: !!modelError };
+  }
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
