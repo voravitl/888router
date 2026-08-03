@@ -1,3 +1,11 @@
+# v0.14.11 (2026-08-03)
+
+## Features (Proxy Pool Auto-Rotate for noAuth Providers)
+- **Auto-rotate proxy pools on failure**: noAuth/free providers (opencode, etc.) now rotate across active proxy pools automatically when a pool returns 429/402/5xx — matching the long-available "Auto-Rotate All Active Pools" UI option that was previously unimplemented.
+- **Root cause**: `markAccountUnavailable` hard-blocked fallback for the `noauth` id, so a rate-limited pool surfaced to the client instead of trying the next pool.
+- **`pickVirtualNoAuthConnection()`**: picks the next non-excluded pool, single-pool resolve (no N+1), distinct `noauth:<poolId>` virtual ids so chat.js's account-fallback loop rotates; specific-pool + direct-fallback modes preserved (backward compatible).
+- **Tests**: `tests/unit/noauth-proxy-rotate.test.js` (13 cases) incl. a full chat-fallback-loop integration (pool A 429 → B success → both fail → null).
+
 # v0.14.10 (2026-08-02)
 
 ## Features (Self-Hosted Skill Links)
