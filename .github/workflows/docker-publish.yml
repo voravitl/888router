@@ -52,7 +52,11 @@ jobs:
             unit/dashboard-guard.test.js \
             unit/capabilities-grok-context.test.js \
             unit/tool-cap.test.js \
-            unit/provider-variance-fixes.test.js
+            unit/provider-variance-fixes.test.js \
+            unit/kiro-models-context.test.js \
+            unit/models-dev-modality.test.js \
+            unit/retry-500-config.test.js \
+            unit/request-details-retention.test.js
 
   build-and-push:
     needs: test
@@ -110,7 +114,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/arm64
+          # Multi-arch: publish both amd64 and arm64 so anyone can self-host on
+          # x86_64 VPS/cloud OR Apple Silicon — a single-arch (arm64-only) image
+          # pulls fine but fails to run on Intel/AMD hosts ("exec format error").
+          # QEMU (setup-qemu-action above) + buildx build a combined manifest;
+          # clients select the arch matching their runtime, so order is cosmetic.
+          platforms: linux/amd64,linux/arm64
           provenance: false
           sbom: false
 

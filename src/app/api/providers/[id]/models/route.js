@@ -85,9 +85,16 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
 
       for (const m of safeModels) {
         const id = m.id;
-        const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.details?.context_length;
-        const vision = m.supportsImages || m.supportsVision || m.vision || m.details?.families?.includes("vision");
-        const reasoning = m.reasoning || m.thinking;
+        // contextLength is the field kiroModels/qoderModels carry for the
+        // upstream context window. Include it so the dashboard path registers
+        // dynamic caps from the live catalog instead of dropping to the static
+        // table (which must be hand-edited per model generation).
+        const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.contextLength || m.details?.context_length;
+        // Use ?? (not ||) so an explicit vision:false from models.dev enrichment
+        // survives — `false || undefined` would drop it and fall back to a static
+        // pattern that may wrongly claim vision:true (→ image_url 400 upstream).
+        const vision = m.vision ?? m.supportsImages ?? m.supportsVision ?? m.details?.families?.includes("vision");
+        const reasoning = m.reasoning ?? m.thinking;
 
         if (ctx || vision !== undefined || reasoning !== undefined) {
           const caps = {};
@@ -525,6 +532,13 @@ export async function GET(request, { params }) {
           // Keep only free models for OpenCode / OpenCode Zen
           models = models.filter((m) => m.id.endsWith("-free"));
           if (models.length > 0) {
+            // opencode /zen/v1/models returns no modality — enrich vision/
+            // reasoning/context from models.dev (authoritative) so text-only
+            // models (e.g. deepseek-v4-flash-free) don't get image_url blocks
+            // forwarded upstream (400 "unknown variant image_url"). Fail-open:
+            // if models.dev is unreachable, models stay as-is (static table).
+            const { enrichModalityFromModelsDev } = await import("open-sse/services/modelsDevModality.js");
+            await enrichModalityFromModelsDev(models, "opencode");
             return buildModelsResponse({
               provider: connection.provider,
               connectionId: connection.id,

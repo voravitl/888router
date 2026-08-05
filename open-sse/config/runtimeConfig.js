@@ -64,8 +64,14 @@ export const RETRY_CONFIG = {
 
 // Default retry config by status code: { attempts, delayMs }
 // Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
+// 500 is included because upstream providers (e.g. Kiro/CodeWhisperer) return
+// 500 "MODEL_TEMPORARILY_UNAVAILABLE" under transient overload. Keep it to a
+// single retry (+3s) so a genuinely broken endpoint doesn't add ~6s latency to
+// every provider — the Kiro-specific retry/classification handles the common
+// case, and one retry still absorbs most transient 5xx.
 export const DEFAULT_RETRY_CONFIG = {
   429: { attempts: 0, delayMs: 0 },
+  500: { attempts: 1, delayMs: 3000 },
   502: { attempts: 3, delayMs: 3000 },
   503: { attempts: 3, delayMs: 2000 },
   504: { attempts: 2, delayMs: 3000 }

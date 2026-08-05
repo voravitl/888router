@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getCapabilitiesForModel, registerDynamicCapabilities, DYNAMIC_CAPABILITIES_CACHE } from "../../open-sse/providers/capabilities.js";
+import { getCapabilitiesForModel, resolveKnownContextWindow, registerDynamicCapabilities, DYNAMIC_CAPABILITIES_CACHE } from "../../open-sse/providers/capabilities.js";
 
 describe("Dynamic Model Capabilities Engine", () => {
   it("resolves dynamic metadata dynamically registered at runtime", () => {
@@ -23,5 +23,16 @@ describe("Dynamic Model Capabilities Engine", () => {
     expect(after.contextWindow).toBe(2500000);
     expect(after.vision).toBe(true);
     expect(after.reasoning).toBe(true);
+  });
+
+  it("resolveKnownContextWindow honours dynamic caps before static patterns", () => {
+    // A synced model the static table doesn't know yet (e.g. kiro live catalog)
+    const syncedId = "kr/brand-new-synced-model";
+    // Before sync: genuinely unknown → undefined (no fabricated floor)
+    expect(resolveKnownContextWindow("kr", "brand-new-synced-model")).toBeUndefined();
+
+    // After sync registers a dynamic contextWindow, combo MIN must honour it
+    registerDynamicCapabilities("brand-new-synced-model", { contextWindow: 1000000 });
+    expect(resolveKnownContextWindow("kr", "brand-new-synced-model")).toBe(1000000);
   });
 });

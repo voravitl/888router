@@ -5,6 +5,11 @@ const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
+// Retention: keep requestDetails for this many days so period reports
+// (24h/7d/30d) have real data. Previously records were pruned by COUNT only,
+// which dropped everything older than ~2 days and made the 30d report return
+// the same data as 7d. Time-based retention fixes that.
+const DEFAULT_RETENTION_DAYS = 30;
 const CONFIG_CACHE_TTL_MS = 5000;
 
 let cachedConfig = null;
@@ -22,6 +27,7 @@ async function getObservabilityConfig() {
     cachedConfig = {
       enabled,
       maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
+      retentionDays: settings.observabilityRetentionDays || parseInt(process.env.OBSERVABILITY_RETENTION_DAYS || String(DEFAULT_RETENTION_DAYS), 10),
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
       flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
       maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
@@ -30,6 +36,7 @@ async function getObservabilityConfig() {
     cachedConfig = {
       enabled: false,
       maxRecords: DEFAULT_MAX_RECORDS,
+      retentionDays: DEFAULT_RETENTION_DAYS,
       batchSize: DEFAULT_BATCH_SIZE,
       flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
       maxJsonSize: DEFAULT_MAX_JSON_SIZE,
@@ -113,12 +120,25 @@ async function flushToDatabase() {
           );
         }
 
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-        if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords]
-          );
+        // Time-based retention: delete records older than retentionDays so
+        // period reports (24h/7d/30d) have real data. Previously this pruned
+        // by COUNT (keep newest N), which dropped everything older than ~2 days
+        // and made the 30d report return the same data as 7d.
+        if (config.retentionDays > 0) {
+          const cutoff = new Date(Date.now() - config.retentionDays * 24 * 60 * 60 * 1000).toISOString();
+          db.run(`DELETE FROM requestDetails WHERE timestamp < ?`, [cutoff]);
+        }
+        // Count cap as a safety net: time-based retention alone can let the
+        // table grow unbounded on high-traffic gateways (each row holds
+        // truncated request/response JSON). Keep the newest maxRecords rows.
+        if (config.maxRecords > 0) {
+          const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+          if (cnt && cnt.c > config.maxRecords) {
+            db.run(
+              `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+              [cnt.c - config.maxRecords]
+            );
+          }
         }
       });
     }

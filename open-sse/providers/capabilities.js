@@ -81,6 +81,8 @@ export const MODEL_CAPABILITIES = {
   "claude-opus-4-8":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4.8-thinking": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4-8-thinking": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  "claude-opus-5": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  "claude-opus-5-thinking": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-sonnet-4.6": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-sonnet-4-6": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-sonnet-5": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
@@ -159,6 +161,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*claude*opus-4.6*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*opus-4.7*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*opus-4.8*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*claude*opus-5*",     caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*opus-4-6*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*opus-4-7*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*opus-4-8*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
@@ -246,8 +249,11 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*glm-4*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
   { pattern: "*glm*",           caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
 
-  // ── DeepSeek (thinking.enabled + reasoning_effort; v4 = vision+1M; r1 = thinking-only) ─
-  { pattern: "*deepseek-v4*",   caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 } },
+  // ── DeepSeek (thinking.enabled + reasoning_effort; v4 = 1M ctx, TEXT-ONLY) ──
+  // DeepSeek V4 (flash/pro) is text-only per models.dev (input=["text"]). Do NOT
+  // set vision:true here — it would let image_url blocks through to upstream,
+  // which rejects them with 400 "unknown variant image_url, expected text".
+  { pattern: "*deepseek-v4*",   caps: { reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 } },
   { pattern: "*reasoner*",      caps: { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 128000 } },
   { pattern: "*deepseek-r*",    caps: { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 128000 } },
   { pattern: "*deepseek-chat*", caps: { contextWindow: 128000 } },
@@ -357,6 +363,11 @@ export function resolveKnownContextWindow(provider, model) {
     return PROVIDER_CAPABILITIES[provider][model].contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   }
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  // Dynamic runtime/DB caps take precedence over static patterns — a synced
+  // model (e.g. kiro live catalog) may carry a contextWindow the static table
+  // doesn't know yet. Without this, combo MIN context ignores live caps.
+  const dyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel) || DYNAMIC_CAPABILITIES_CACHE.get(model);
+  if (dyn && dyn.contextWindow != null) return dyn.contextWindow;
   const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[model];
   if (exact) return exact.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
