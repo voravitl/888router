@@ -65,6 +65,21 @@ describe("OpenAI → Claude context mapping", () => {
     expect(JSON.stringify(out), "remote image dropped").toContain("pic.png");
   });
 
+  it("user message with only an image is not dropped as empty", () => {
+    const out = T({
+      messages: [
+        { role: "system", content: "Describe the image." },
+        { role: "user", content: [
+          { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+        ] },
+      ],
+    });
+    expect(out.messages.length, "image-only user message was dropped").toBeGreaterThan(0);
+    expect(out.messages[0].content).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "image" })])
+    );
+  });
+
   // prepareClaudeRequest reconciles max_tokens vs thinking.budget_tokens.
   // applyThinking runs after adjustMaxTokens caps max_tokens, so a claude-budget
   // model at "max" effort (budget 128000) can exceed the clamped max_tokens and
