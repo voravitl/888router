@@ -22,4 +22,10 @@ describe("TokenRouter Provider Registry & Integration", () => {
       type: "openai",
     });
   });
+
+  it("ensures venice provider is not regressed in provider registry and config", () => {
+    const venice = APIKEY_PROVIDERS.venice;
+    expect(venice).toBeDefined();
+    expect(venice.id).toBe("venice");
+  });
 });
