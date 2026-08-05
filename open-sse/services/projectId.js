@@ -158,7 +158,8 @@ export function removeConnection(connectionId) {
  */
 async function fetchProjectId(accessToken, signal, provider) {
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
-    const response = await fetch(CLOUD_CODE_API.loadCodeAssist, {
+    const api = CLOUD_CODE_API[provider] || CLOUD_CODE_API["gemini-cli"];
+    const response = await fetch(api.loadCodeAssist, {
         method: "POST",
         headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
         body: JSON.stringify({ metadata: LOAD_CODE_ASSIST_METADATA }),
@@ -204,6 +205,7 @@ async function onboardUser(accessToken, tierID, externalSignal, provider) {
 
     const reqBody = { tierId: tierID, metadata: LOAD_CODE_ASSIST_METADATA };
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
+    const api = CLOUD_CODE_API[provider] || CLOUD_CODE_API["gemini-cli"];
     const MAX_ATTEMPTS = 5;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -217,7 +219,7 @@ async function onboardUser(accessToken, tierID, externalSignal, provider) {
         externalSignal?.addEventListener("abort", forwardAbort);
 
         try {
-            const response = await fetch(CLOUD_CODE_API.onboardUser, {
+            const response = await fetch(api.onboardUser, {
                 method: "POST",
                 headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
                 body: JSON.stringify(reqBody),
