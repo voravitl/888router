@@ -1,3 +1,14 @@
+# v0.14.15 (2026-08-05)
+
+## TokenRouter Integration & Multi-Model Review Fixes
+
+- **TokenRouter Provider Integration**: Full support for TokenRouter (`tokenrouter.js`), registered in `APIKEY_PROVIDERS` as category `apikey`, supporting LLM, Embedding, and Image generation with passthrough models.
+- **TokenRouter Live Models Endpoint**: Added `tokenrouter: createOpenAIModelsConfig("https://api.tokenrouter.com/v1/models")` to `PROVIDER_MODELS_CONFIG` in `src/app/api/providers/[id]/models/route.js` for live model sync.
+- **Venice Route Regression Fix**: Restored `venice` mapping in `PROVIDER_MODELS_CONFIG` to resolve live listing regression.
+- **Anthropic-Beta Header Deduplication**: Deduplicated Anthropic-Beta flags using `Set` in `DefaultExecutor.buildHeaders()`.
+- **TokenRouter Logo Asset Optimization**: Added official TokenRouter logo asset at `public/providers/tokenrouter.png` optimized to 256x256 (10.6 KB).
+- **Automated Verification**: Created `tests/unit/tokenrouter-provider.test.js` unit test suite (48/48 tests PASS 100%).
+
 # v0.14.14 (2026-08-05)
 
 ## Upstream 9Router (v0.5.50) Enhancements & Bug Fixes
