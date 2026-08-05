@@ -153,12 +153,14 @@ export function removeConnection(connectionId) {
  *
  * @param {string}      accessToken
  * @param {AbortSignal} signal
+ * @param {string}      [provider]
  * @returns {Promise<string|null>}
  */
-async function fetchProjectId(accessToken, signal) {
+async function fetchProjectId(accessToken, signal, provider) {
+    const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
     const response = await fetch(CLOUD_CODE_API.loadCodeAssist, {
         method: "POST",
-        headers: { ...LOAD_CODE_ASSIST_HEADERS, "Authorization": `Bearer ${accessToken}` },
+        headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
         body: JSON.stringify({ metadata: LOAD_CODE_ASSIST_METADATA }),
         signal
     });
@@ -185,7 +187,7 @@ async function fetchProjectId(accessToken, signal) {
         }
     }
 
-    return onboardUser(accessToken, tierID, signal);
+    return onboardUser(accessToken, tierID, signal, provider);
 }
 
 /**
@@ -194,12 +196,14 @@ async function fetchProjectId(accessToken, signal) {
  * @param {string}      accessToken
  * @param {string}      tierID
  * @param {AbortSignal} externalSignal  – propagated from the connection's AbortController
+ * @param {string}      [provider]
  * @returns {Promise<string|null>}
  */
-async function onboardUser(accessToken, tierID, externalSignal) {
+async function onboardUser(accessToken, tierID, externalSignal, provider) {
     console.log(`[ProjectId] Onboarding user with tier: ${tierID}`);
 
     const reqBody = { tierId: tierID, metadata: LOAD_CODE_ASSIST_METADATA };
+    const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
     const MAX_ATTEMPTS = 5;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -215,7 +219,7 @@ async function onboardUser(accessToken, tierID, externalSignal) {
         try {
             const response = await fetch(CLOUD_CODE_API.onboardUser, {
                 method: "POST",
-                headers: { ...LOAD_CODE_ASSIST_HEADERS, "Authorization": `Bearer ${accessToken}` },
+                headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
                 body: JSON.stringify(reqBody),
                 signal: localCtrl.signal
             });
