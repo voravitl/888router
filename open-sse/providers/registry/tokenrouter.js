@@ -3,7 +3,7 @@ export default {
   priority: 88,
   display: {
     name: "TokenRouter",
-    icon: "router",
+    icon: "tokenrouter",
     color: "#6366F1",
     website: "https://tokenrouter.com",
     notice: {
