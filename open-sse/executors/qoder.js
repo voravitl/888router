@@ -34,7 +34,7 @@ import {
   QODER_CHAT_URL_ENCODED,
   QODER_MODEL_MAP,
 } from "../shared/qoder/constants.js";
-import { getQoderModelConfig, resolveQoderModels } from "../services/qoderModels.js";
+import { getQoderModelConfig, resolveQoderModels, resolveQoderCredentials } from "../services/qoderModels.js";
 
 /**
  * Hoist role:"system" messages out of the messages array (Qoder rejects
@@ -337,8 +337,10 @@ export class QoderExecutor extends BaseExecutor {
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.buildUrl();
+    const resolvedCreds = await resolveQoderCredentials(credentials, proxyOptions, signal);
+    const activeCreds = resolvedCreds || credentials;
 
-    const psd = credentials?.providerSpecificData || {};
+    const psd = activeCreds?.providerSpecificData || {};
     if (!psd.userId) {
       // No user id → no way to sign. Surface a 401 so the dashboard nudges
       // the user back to OAuth.
@@ -348,7 +350,7 @@ export class QoderExecutor extends BaseExecutor {
       );
       return { response: fakeResp, url, headers: {}, transformedBody: body };
     }
-    if (!credentials?.accessToken) {
+    if (!activeCreds?.accessToken) {
       // Same shape as the userId guard — clean 401 so chatCore reports
       // "reconnect" rather than bubbling cosy.js's synchronous throw as 500.
       const fakeResp = new Response(
@@ -361,7 +363,7 @@ export class QoderExecutor extends BaseExecutor {
     let qoderKey;
     let payload;
     try {
-      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }));
+      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials: activeCreds, log, proxyOptions, signal }));
     } catch (err) {
       const fakeResp = new Response(
         JSON.stringify({ error: { message: err.message } }),
@@ -381,9 +383,9 @@ export class QoderExecutor extends BaseExecutor {
         url,
         {
           userId: psd.userId,
-          authToken: credentials.accessToken,
-          name: credentials.displayName || "",
-          email: credentials.email || "",
+          authToken: activeCreds.accessToken,
+          name: activeCreds.displayName || "",
+          email: activeCreds.email || "",
           machineId: psd.machineId || "",
         },
       );

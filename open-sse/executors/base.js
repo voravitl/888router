@@ -42,7 +42,7 @@ export class BaseExecutor {
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
 
-  buildHeaders(credentials, stream = true, context = null, model = "") {
+  buildHeaders(credentials, stream = true, model = "") {
     const headers = {
       "Content-Type": "application/json",
       ...this.config.headers
