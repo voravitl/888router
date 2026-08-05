@@ -170,13 +170,10 @@ export class DefaultExecutor extends BaseExecutor {
 
     if (model && (this.provider === "claude" || this.provider?.startsWith?.("anthropic-compatible-"))) {
       const dynamicBeta = selectAnthropicBeta(model);
-      if (headers["Anthropic-Beta"]) {
-        headers["Anthropic-Beta"] = `${headers["Anthropic-Beta"]},${dynamicBeta}`;
-      } else if (headers["anthropic-beta"]) {
-        headers["anthropic-beta"] = `${headers["anthropic-beta"]},${dynamicBeta}`;
-      } else {
-        headers["Anthropic-Beta"] = dynamicBeta;
-      }
+      const key = headers["Anthropic-Beta"] ? "Anthropic-Beta" : headers["anthropic-beta"] ? "anthropic-beta" : "Anthropic-Beta";
+      const existing = headers[key] ? headers[key].split(",").map(s => s.trim()).filter(Boolean) : [];
+      const incoming = dynamicBeta.split(",").map(s => s.trim()).filter(Boolean);
+      headers[key] = Array.from(new Set([...existing, ...incoming])).join(",");
     }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams

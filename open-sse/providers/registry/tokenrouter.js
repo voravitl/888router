@@ -10,6 +10,7 @@ export default {
       signupUrl: "https://tokenrouter.com",
     },
   },
+  category: "apikey",
   auth: {
     type: "apikey",
     fields: [
@@ -22,9 +23,9 @@ export default {
       },
     ],
   },
-  api: {
+  transport: {
     baseUrl: "https://api.tokenrouter.com/v1/chat/completions",
-    authHeader: "bearer",
+    auth: { combined: true, header: "Authorization", scheme: "bearer" },
   },
   models: [
     { id: "MiniMax-Hailuo-2.3", name: "Minimax Hailuo 2.3", kind: "video" },
