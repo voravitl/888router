@@ -1,3 +1,17 @@
+# v0.14.14 (2026-08-05)
+
+## Upstream 9Router (v0.5.50) Enhancements & Bug Fixes
+
+- **Preserve Image-Only Messages (`a7941dda`)**: Updated `hasValidContent()` in `claude.js` to accept `IMAGE` and `DOCUMENT` content blocks so vision turns without accompanying prompt text are preserved rather than dropped.
+- **Antigravity IDE OAuth Header Fingerprint (`35f86e58`)**: Scoped `ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS` to Antigravity's `loadCodeAssist` and `onboardUser` endpoints to prevent Google anti-abuse systems from blocking `cloudaicompanionProject` provisioning.
+- **Gemini 3.6 Flash Quota Tracker (`42c691b3` + `b11be8be`)**: Added `gemini-3.6-flash-high/medium/low` to `importantModels` in Google usage tracker and registered in Antigravity provider registry so usage bars render on dashboard.
+- **Codex TUI & Desktop Passthrough Detection (`cd13d904`)**: Updated User-Agent regex in `clientDetector.js` to recognize `codex-tui` and `Codex Desktop` native Codex clients without touching NoAuth proxy rotation.
+- **Model-Scoped Anthropic-Beta Headers (`13ed1456`)**: Added `selectAnthropicBeta(model)` helper in shared provider utils and wired dynamic beta headers across BaseExecutor and DefaultExecutor.
+- **TokenRouter Provider Support (`41588bea` + `b4808929`)**: Added `tokenrouter.js` provider registry, pricing definitions, thinking config, and registered in registry index.
+- **Qoder PAT Support (`d433c0b2` + `1eb37db3`)**: Wired `resolveQoderCredentials` into `qoderModels.js` and `QoderExecutor.execute` to support PAT (`pt-...`) exchange to job tokens.
+- **`ENABLE_REQUEST_LOGS` Env Var Override (`3fab15ae`)**: Made filesystem request logging check `process.env.ENABLE_REQUEST_LOGS` dynamically in `requestLogger.js` without clobbering SQLite dual retention.
+- **Tests**: Added `antigravity-quota-gemini-3.6.test.js`, extended `bugs-toClaude-context.test.js`, verified 100% PASS across full 43-test suite.
+
 # v0.14.13 (2026-08-05)
 
 ## Fixes & Polish (Grok Review Feedback)
