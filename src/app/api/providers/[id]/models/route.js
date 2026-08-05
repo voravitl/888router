@@ -529,6 +529,13 @@ export async function GET(request, { params }) {
           // Keep only free models for OpenCode / OpenCode Zen
           models = models.filter((m) => m.id.endsWith("-free"));
           if (models.length > 0) {
+            // opencode /zen/v1/models returns no modality — enrich vision/
+            // reasoning/context from models.dev (authoritative) so text-only
+            // models (e.g. deepseek-v4-flash-free) don't get image_url blocks
+            // forwarded upstream (400 "unknown variant image_url"). Fail-open:
+            // if models.dev is unreachable, models stay as-is (static table).
+            const { enrichModalityFromModelsDev } = await import("open-sse/services/modelsDevModality.js");
+            await enrichModalityFromModelsDev(models, "opencode");
             return buildModelsResponse({
               provider: connection.provider,
               connectionId: connection.id,
