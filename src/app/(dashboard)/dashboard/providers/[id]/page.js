@@ -1234,7 +1234,7 @@ export default function ProviderDetailPage() {
           onDeleteAlias={(modelId) => {
             const row = customModelRows.find((r) => r.id === modelId);
             if (!row) return;
-            if (row.source === "custom") {
+            if (row.source === "custom" || row.source === "synced") {
               handleDeleteCustomModel(row.id, "llm", providerStorageAlias);
             } else {
               handleDeleteAlias(row.alias);
