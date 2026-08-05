@@ -1158,30 +1158,52 @@ pm2 startup
 
 Published images (multi-platform `linux/amd64` + `linux/arm64`):
 
-- Docker Hub: [`decolua/9router`](https://hub.docker.com/r/decolua/9router)
-- GHCR: [`ghcr.io/decolua/9router`](https://github.com/decolua/9router/pkgs/container/9router)
+- Docker Hub: [`voravitl/888router`](https://hub.docker.com/r/voravitl/888router)
+- GHCR: [`ghcr.io/voravitl/888router`](https://github.com/voravitl/888router/pkgs/container/888router)
 
-**Quick start (use published image):**
+**Quick Start with Docker Compose (Recommended 3-service stack):**
+
+```bash
+# 1. Clone repository
+git clone https://github.com/voravitl/888router.git
+cd 888router
+
+# 2. Copy and configure .env
+cp .env.example .env
+
+# Edit .env — set required secrets:
+# JWT_SECRET, INITIAL_PASSWORD, and SEARXNG_SECRET
+# (SearXNG secret required: openssl rand -hex 32)
+
+# 3. Start containers
+docker compose up -d
+```
+
+→ Open `http://localhost:20128`
+
+**Standalone Docker Run:**
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name 888router \
   -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
+  -v "$HOME/.888router:/app/data" \
   -e DATA_DIR=/app/data \
-  decolua/9router:latest
+  -e SEARXNG_SECRET=$(openssl rand -hex 32) \
+  voravitl/888router:latest
 ```
-
-→ Open http://localhost:20128
 
 **Build from source (dev):**
 
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
-docker build -t 9router .
-docker run -d --name 9router -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data 9router
+git clone https://github.com/voravitl/888router.git
+cd 888router
+docker build -t 888router .
+docker run -d --name 888router -p 20128:20128 \
+  -v "$HOME/.888router:/app/data" \
+  -e DATA_DIR=/app/data \
+  -e SEARXNG_SECRET=$(openssl rand -hex 32) \
+  888router
 ```
 
 **Container defaults:**
@@ -1192,13 +1214,13 @@ docker run -d --name 9router -p 20128:20128 \
 **Useful commands:**
 
 ```bash
-docker logs -f 9router
-docker restart 9router
-docker stop 9router && docker rm 9router
-docker pull decolua/9router:latest   # update to latest
+docker logs -f 888router
+docker restart 888router
+docker stop 888router && docker rm 888router
+docker pull voravitl/888router:latest   # update to latest
 ```
 
-**Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
+**Data persistence:** `$HOME/.888router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
 
 ### Environment Variables
 
