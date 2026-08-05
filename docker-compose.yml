@@ -1,6 +1,18 @@
 services:
   888router:
+    # Published by CI (.github/workflows/docker-publish.yml): every master push
+    # builds :latest, releases tag semver (v0.14.11 → 0.14.11), plus sha-<hash>.
+    # The image is multi-arch (linux/amd64 + linux/arm64).
+    #
+    # To build from this repo instead of pulling the published image (e.g. a
+    # fork or a local change), uncomment `build:` — compose then builds from
+    # ./Dockerfile and tags it locally. If both image: and build: are set,
+    # compose builds the image and tags it as the image: name (no pull needed).
     image: voravitl/888router:latest
+    # build:
+    #   context: .
+    #   args:
+    #     BUILD_VERSION: "0.14.11"
     container_name: 888router
     restart: always
     ports:

@@ -110,7 +110,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/arm64
+          # Multi-arch: publish both amd64 and arm64 so anyone can self-host on
+          # x86_64 VPS/cloud OR Apple Silicon — a single-arch (arm64-only) image
+          # pulls fine but fails to run on Intel/AMD hosts ("exec format error").
+          # QEMU (setup-qemu-action above) + buildx build a combined manifest.
+          # arm64 must come LAST: it's the primary/lean arch; keep amd64 first so
+          # the digest ordering matches the platform list order in the manifest.
+          platforms: linux/amd64,linux/arm64
           provenance: false
           sbom: false
 
