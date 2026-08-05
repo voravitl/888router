@@ -40,8 +40,47 @@ const inflight = new Map();
  */
 function cacheKey(credentials) {
   const psd = credentials?.providerSpecificData || {};
-  const seed = psd.userId || credentials?.refreshToken || credentials?.accessToken || "anonymous";
+  const seed = psd.userId || credentials?.refreshToken || credentials?.accessToken || credentials?.apiKey || "anonymous";
   return createHash("sha256").update(`qoder:${seed}`).digest("hex");
+}
+
+/**
+ * Exchange Qoder PAT (pt-...) for job token (jt-...).
+ */
+async function exchangePatToJobToken(patKey, proxyOptions = null, signal = null) {
+  try {
+    const res = await proxyAwareFetch("https://openapi.qoder.sh/algo/api/v2/auth/exchangePat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${patKey}` },
+      body: JSON.stringify({ patKey }),
+      signal
+    }, proxyOptions);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.code === 0 && data.data?.jobToken) {
+      return {
+        accessToken: data.data.jobToken,
+        apiKey: patKey,
+        providerSpecificData: { userId: data.data.userId || "pat-user", patKey }
+      };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Resolve Qoder connection credentials (handling PAT pt-... exchange).
+ */
+export async function resolveQoderCredentials(credentials, proxyOptions = null, signal = null) {
+  if (!credentials) return null;
+  const rawToken = credentials.apiKey || credentials.accessToken;
+  if (rawToken && rawToken.startsWith("pt-")) {
+    const exchanged = await exchangePatToJobToken(rawToken, proxyOptions, signal);
+    if (exchanged) return exchanged;
+  }
+  return credentials;
 }
 
 /**

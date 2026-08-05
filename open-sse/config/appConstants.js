@@ -127,9 +127,11 @@ export const AG_DEFAULT_TOOLS = new Set([
   "write_to_file"
 ]);
 
+export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/1.107.0 ${platform()}/${arch()}`;
+
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": `antigravity/1.107.0 ${platform()}/${arch()}`
+  "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
 };
 
 // Cloud Code Assist API

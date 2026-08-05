@@ -76,7 +76,11 @@ function mergeWithDefaults(raw) {
 
 export async function getSettings() {
   const raw = await readRaw();
-  return mergeWithDefaults(raw);
+  const settings = mergeWithDefaults(raw);
+  if (process.env.ENABLE_REQUEST_LOGS !== undefined) {
+    settings.enableObservability = process.env.ENABLE_REQUEST_LOGS === "true";
+  }
+  return settings;
 }
 
 // Atomic read-merge-write inside transaction (prevents losing concurrent updates)

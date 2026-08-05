@@ -1,6 +1,7 @@
 import { platform, arch } from "os";
 import { ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
-import { ANTIGRAVITY_IDE_USER_AGENT } from "../../config/appConstants.js";
+
+const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/1.107.0 ${platform()}/${arch()}`;
 
 export default {
   id: "antigravity",

@@ -29,6 +29,16 @@ export const CLAUDE_API_HEADERS = {
   "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
 };
 
+// Dynamically select Anthropic-Beta flags per model capability
+export function selectAnthropicBeta(model = "") {
+  const baseFlags = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05";
+  const m = String(model).toLowerCase();
+  if (m.includes("opus-5") || m.includes("sonnet-5") || m.includes("opus-4.8") || m.includes("opus-4-8")) {
+    return `${baseFlags},advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28`;
+  }
+  return baseFlags;
+}
+
 // Full Claude CLI fingerprint — required by providers that gate on client identity (e.g. agentrouter)
 export const CLAUDE_CLI_SPOOF_HEADERS = {
   "Anthropic-Version": ANTHROPIC_API_VERSION,

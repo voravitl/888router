@@ -2,7 +2,7 @@ import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FET
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -42,7 +42,7 @@ export class BaseExecutor {
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, context = null, model = "") {
     const headers = {
       "Content-Type": "application/json",
       ...this.config.headers
@@ -57,6 +57,9 @@ export class BaseExecutor {
       }
       if (!headers["anthropic-version"]) {
         headers["anthropic-version"] = ANTHROPIC_API_VERSION;
+      }
+      if (!headers["anthropic-beta"]) {
+        headers["anthropic-beta"] = selectAnthropicBeta(model);
       }
     } else {
       // Standard Bearer token auth for other providers
