@@ -78,4 +78,16 @@ describe("combo modelError fallback rules", () => {
     expect(rateLimit.shouldFallback).toBe(true);
     expect(rateLimit.modelError).toBeUndefined();
   });
+
+  it("classifies Kiro MODEL_TEMPORARILY_UNAVAILABLE as a model-level error (not account fallback)", async () => {
+    const { checkFallbackError } = await import("../../open-sse/services/accountFallback.js");
+
+    // Kiro 500 returns {"message":"...high load...","reason":"MODEL_TEMPORARILY_UNAVAILABLE"}
+    // The executor already retries the 500 a couple times; account rotation is pointless
+    // (the model is overloaded for everyone), so it must NOT mark accounts for fallback.
+    const overloaded = checkFallbackError(500, '{"message":"Encountered unexpectedly high load when processing the request, please try again.","reason":"MODEL_TEMPORARILY_UNAVAILABLE"}');
+    expect(overloaded.shouldFallback).toBe(false);
+    expect(overloaded.modelError).toBe(true);
+    expect(overloaded.cooldownMs).toBe(0);
+  });
 });

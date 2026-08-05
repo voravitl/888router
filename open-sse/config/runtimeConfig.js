@@ -64,8 +64,12 @@ export const RETRY_CONFIG = {
 
 // Default retry config by status code: { attempts, delayMs }
 // Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
+// 500 is included because upstream providers (e.g. Kiro/CodeWhisperer) return
+// 500 "MODEL_TEMPORARILY_UNAVAILABLE" under transient overload — retrying beats
+// surfacing a raw 500 to the client. 5xx are all transient-safe to retry.
 export const DEFAULT_RETRY_CONFIG = {
   429: { attempts: 0, delayMs: 0 },
+  500: { attempts: 2, delayMs: 3000 },
   502: { attempts: 3, delayMs: 3000 },
   503: { attempts: 3, delayMs: 2000 },
   504: { attempts: 2, delayMs: 3000 }

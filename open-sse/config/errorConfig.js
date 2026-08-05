@@ -73,6 +73,13 @@ export const ERROR_RULES = [
   { text: "does not exist",   modelError: true },
   { text: "invalid model",    modelError: true },
   { text: "not available in", modelError: true },
+  // Model-level transient overload (e.g. Kiro 500 "reason": "MODEL_TEMPORARILY_UNAVAILABLE").
+  // Retrying with another account of the same provider is pointless — the model
+  // is overloaded for everyone. Model-level: combo skips to next model, and a
+  // single-model request surfaces the error (after the executor's couple of
+  // in-place 500 retries, see DEFAULT_RETRY_CONFIG.500). Matched on the
+  // lowercased error text, so use the underscore spelling of Kiro's exact reason.
+  { text: "model_temporarily_unavailable", modelError: true },
 
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
