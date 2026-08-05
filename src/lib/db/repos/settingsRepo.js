@@ -26,7 +26,7 @@ const DEFAULT_SETTINGS = {
   oidcScopes: "openid profile email",
   oidcLoginLabel: "Sign in with OIDC",
   enableObservability: true,
-  observabilityMaxRecords: 1000,
+  observabilityMaxRecords: 50000,
   observabilityRetentionDays: 30,
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,
