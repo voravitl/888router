@@ -71,6 +71,15 @@ async function exchangePatToJobToken(patKey, proxyOptions = null, signal = null)
 }
 
 /**
+ * Check if credentials use PAT (Personal Access Token) auth.
+ */
+export function isQoderPat(credentials) {
+  if (!credentials) return false;
+  const rawToken = credentials.apiKey || credentials.accessToken;
+  return typeof rawToken === "string" && rawToken.startsWith("pt-");
+}
+
+/**
  * Resolve Qoder connection credentials (handling PAT pt-... exchange).
  */
 export async function resolveQoderCredentials(credentials, proxyOptions = null, signal = null) {

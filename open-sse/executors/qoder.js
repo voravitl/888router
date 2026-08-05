@@ -32,9 +32,11 @@ import { SSE_DONE } from "../utils/sseConstants.js";
 import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import {
   QODER_CHAT_URL_ENCODED,
+  QODER_CHAT_BASE_ALT,
+  QODER_CHAT_SIG_PATH,
   QODER_MODEL_MAP,
 } from "../shared/qoder/constants.js";
-import { getQoderModelConfig, resolveQoderModels, resolveQoderCredentials } from "../services/qoderModels.js";
+import { getQoderModelConfig, resolveQoderModels, resolveQoderCredentials, isQoderPat } from "../services/qoderModels.js";
 
 /**
  * Hoist role:"system" messages out of the messages array (Qoder rejects
@@ -127,7 +129,7 @@ function truncate(s, n) {
  */
 async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
-  
+
   // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
   // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
   let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal });
@@ -228,17 +230,21 @@ function wrapQoderSSE(response, model) {
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
+
+  // Refactored from TransformStream to ReadableStream with start()+loop
+  // pattern. Uses reader.read() in a loop instead of TransformStream, and
+  // cancels the reader + closes stream on terminal events to prevent
+  // hanging on non-streaming clients.
+  const reader = response.body.getReader();
   let buffer = "";
   let doneEmitted = false;
+  let readerDone = false;
 
-  // Process one already-extracted SSE line (no trailing newline). Returns
-  // false when the line indicated end-of-stream so the caller can stop
-  // forwarding any remaining chunks after [DONE].
   const processLine = (line, controller) => {
     const trimmed = line.replace(/\r$/, "").trim();
     if (!trimmed) return;
     if (!trimmed.startsWith("data:")) return;
-    if (doneEmitted) return; // never forward chunks past stream end
+    if (doneEmitted) return;
 
     const data = trimmed.slice(5).trimStart();
     if (data === "[DONE]") {
@@ -271,47 +277,63 @@ function wrapQoderSSE(response, model) {
       doneEmitted = true;
       return;
     }
-    // Inner is an OpenAI-shaped chunk. Strip any embedded newlines so the
-    // SSE frame stays a single event (a literal "\n" inside `inner` would
-    // otherwise split the frame across multiple data: lines and downstream
-    // parsers would reassemble them as separate events).
     const sanitized = inner.replace(/\r?\n/g, "");
     controller.enqueue(encoder.encode(`data: ${sanitized}\n\n`));
   };
 
-  const transform = new TransformStream({
-    transform(chunk, controller) {
-      buffer += decoder.decode(chunk, { stream: true });
-      let nl;
-      while ((nl = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, nl);
-        buffer = buffer.slice(nl + 1);
-        processLine(line, controller);
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            readerDone = true;
+            // Drain any trailing data in buffer
+            buffer += decoder.decode();
+            if (buffer.length > 0) {
+              processLine(buffer, controller);
+              buffer = "";
+            }
+            if (!doneEmitted) {
+              controller.enqueue(encoder.encode(SSE_DONE));
+              doneEmitted = true;
+            }
+            controller.close();
+            return;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          let nl;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl);
+            buffer = buffer.slice(nl + 1);
+            processLine(line, controller);
+          }
+          // If a terminal event was emitted, cancel the upstream reader
+          // and close the output stream to prevent hanging.
+          if (doneEmitted) {
+            reader.cancel();
+            controller.close();
+            return;
+          }
+        }
+      } catch (err) {
+        // On error, emit SSE_DONE if not already done, then close
+        if (!doneEmitted) {
+          controller.enqueue(encoder.encode(SSE_DONE));
+          doneEmitted = true;
+        }
+        controller.close();
       }
     },
-    flush(controller) {
-      // Finalize the decoder so any pending multi-byte sequence is
-      // released into `buffer` instead of being silently dropped.
-      buffer += decoder.decode();
-      // Drain any trailing line that arrived without a terminating newline
-      // (e.g. upstream closed the socket immediately after the last write,
-      // or a CDN stripped the final CRLF). Without this, the chunk that
-      // carries finish_reason is silently lost.
-      if (buffer.length > 0) {
-        processLine(buffer, controller);
-        buffer = "";
-      }
-      if (!doneEmitted) {
-        controller.enqueue(encoder.encode(SSE_DONE));
-        doneEmitted = true;
+    cancel() {
+      // If the downstream consumer cancels, clean up the upstream reader
+      if (!readerDone) {
+        reader.cancel();
       }
     },
   });
 
-  const transformed = response.body.pipeThrough(transform);
-  // Build a Response with passable headers; the streaming handler reads
-  // `.body` as a ReadableStream regardless of Content-Type.
-  return new Response(transformed, {
+  return new Response(stream, {
     status: response.status,
     statusText: response.statusText,
     headers: {
@@ -326,7 +348,10 @@ export class QoderExecutor extends BaseExecutor {
     super("qoder", PROVIDERS.qoder);
   }
 
-  buildUrl() {
+  buildUrl(useAltBase = false) {
+    if (useAltBase) {
+      return `${QODER_CHAT_BASE_ALT}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
+    }
     return QODER_CHAT_URL_ENCODED;
   }
 
@@ -336,9 +361,11 @@ export class QoderExecutor extends BaseExecutor {
   //   - COSY headers built from the *encoded* body bytes
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const url = this.buildUrl();
     const resolvedCreds = await resolveQoderCredentials(credentials, proxyOptions, signal);
     const activeCreds = resolvedCreds || credentials;
+
+    const useAltBase = isQoderPat(activeCreds);
+    const url = this.buildUrl(useAltBase);
 
     const psd = activeCreds?.providerSpecificData || {};
     if (!psd.userId) {

@@ -393,6 +393,32 @@ export async function POST(request) {
           break;
         }
 
+        case "qoder": {
+          // Qoder PAT (pt-...) validation: exchange PAT for job token
+          if (apiKey && apiKey.startsWith("pt-")) {
+            const patRes = await fetch("https://openapi.qoder.sh/algo/api/v2/auth/exchangePat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+              body: JSON.stringify({ patKey: apiKey }),
+              signal: AbortSignal.timeout(8000),
+            });
+            if (patRes.ok) {
+              const data = await patRes.json();
+              isValid = data.code === 0 && !!data.data?.jobToken;
+            } else {
+              isValid = false;
+            }
+          } else {
+            // OAuth device flow: probe model list (COSY-signed)
+            const res = await fetch(PROVIDERS.qoder?.baseUrl || "https://api3.qoder.sh/algo/api/v2/model/list", {
+              headers: { "Authorization": `Bearer ${apiKey}` },
+              signal: AbortSignal.timeout(8000),
+            });
+            isValid = res.ok;
+          }
+          break;
+        }
+
         case "opencode":
         case "opencode-zen": {
           const res = await fetch("https://opencode.ai/zen/v1/models", {
