@@ -1,3 +1,9 @@
+# v0.14.16 (2026-08-05)
+
+## Maintenance & Code Style Refactoring
+
+- **TokenRouter Named Variable Export**: Refactored `tokenrouter.js` provider registry from anonymous default export to named variable binding export (`const tokenrouter = { ... }; export default tokenrouter;`), eliminating ESLint `import/no-anonymous-default-export` warning.
+
 # v0.14.15 (2026-08-05)
 
 ## TokenRouter Integration & Multi-Model Review Fixes
