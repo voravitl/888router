@@ -1,3 +1,13 @@
+# v0.14.12 (2026-08-05)
+
+## Fixes (Model Capability Sync + Transient 500 + Multi-arch Deploy + Savings Retention)
+
+- **Kiro context sync drops upstream window**: `resolveKiroModels` now surfaces `capabilities.contextWindow` on every variant (mirrors kimchi), and the dashboard dynamic-cap extractor reads `contextLength` — so new model generations (e.g. `kr/claude-opus-5` = 1M) resolve correctly without a per-model static-table patch. Static `claude-opus-5` entry added as safety net. (#194)
+- **Kiro 500 `MODEL_TEMPORARILY_UNAVAILABLE` not retried**: added `500` to `DEFAULT_RETRY_CONFIG` (2 attempts) and classified the Kiro reason as a model-level error so combos skip to the next model instead of futilely rotating accounts. (#195)
+- **Docker image was arm64-only**: `docker-publish.yml` now builds `linux/amd64,linux/arm64` (multi-arch manifest) so anyone can self-host on x86_64 VPS/cloud, not just Apple Silicon. Compose + `.env.example` + deployment docs updated (SEARXNG_SECRET required, build-from-source option). (#196)
+- **Savings report 30d returned same data as 7d**: requestDetails retention was COUNT-based (dropped everything older than ~2 days). Changed to **time-based** (keep `OBSERVABILITY_RETENTION_DAYS`, default 30) so 24h/7d/30d reports have real data.
+- **Tests**: `kiro-models-context`, `retry-500-config`, `request-details-retention` (new); extended `capabilities-opus-context`, `combo-routing`.
+
 # v0.14.11 (2026-08-03)
 
 ## Features (Proxy Pool Auto-Rotate for noAuth Providers)
