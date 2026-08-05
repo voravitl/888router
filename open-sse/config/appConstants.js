@@ -1,4 +1,5 @@
 import { platform, arch } from "os";
+import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
 
 // === Gemini CLI === derive từ registry gemini-cli.transport
@@ -59,7 +60,7 @@ export function getPlatformEnum() {
 }
 
 export function getPlatformUserAgent() {
-  return `antigravity/1.104.0 ${platform()}/${arch()}`;
+  return ANTIGRAVITY_IDE_USER_AGENT;
 }
 
 export const CLIENT_METADATA = {
