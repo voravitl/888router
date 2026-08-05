@@ -1,4 +1,4 @@
-export default {
+const tokenrouter = {
   id: "tokenrouter",
   priority: 88,
   display: {
@@ -72,3 +72,5 @@ export default {
   modelsFetcher: { url: "https://api.tokenrouter.com/v1/models", type: "openai" },
   passthroughModels: true,
 };
+
+export default tokenrouter;
