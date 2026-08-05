@@ -299,6 +299,15 @@ export async function resolveKiroModels(credentials, options = {}) {
         // Carry over context window + raw upstream metadata so the caller
         // (e.g. the dashboard models endpoint) can render it.
         contextLength: ctx,
+        // Surface the upstream context window as a capability so /v1/models
+        // resolves it dynamically instead of falling back to the static table
+        // (which must be hand-edited per model generation). Mirrors
+        // kimchiModels.normalizeKimchiModel. When the upstream omits token
+        // limits, ctx already fell back to 200_000 above.
+        capabilities: {
+          ...(v.capabilities || {}),
+          contextWindow: ctx,
+        },
         rateMultiplier: Number.isFinite(Number(m.rateMultiplier)) ? Number(m.rateMultiplier) : 1.0,
         upstreamModelId: upstreamId,
         description: m.description || ""

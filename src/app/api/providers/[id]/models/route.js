@@ -85,7 +85,11 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
 
       for (const m of safeModels) {
         const id = m.id;
-        const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.details?.context_length;
+        // contextLength is the field kiroModels/qoderModels carry for the
+        // upstream context window. Include it so the dashboard path registers
+        // dynamic caps from the live catalog instead of dropping to the static
+        // table (which must be hand-edited per model generation).
+        const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.contextLength || m.details?.context_length;
         const vision = m.supportsImages || m.supportsVision || m.vision || m.details?.families?.includes("vision");
         const reasoning = m.reasoning || m.thinking;
 
