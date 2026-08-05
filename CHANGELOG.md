@@ -1,3 +1,12 @@
+# v0.14.13 (2026-08-05)
+
+## Fixes & Polish (Grok Review Feedback)
+
+- **`models.dev` Stale-on-Error Cache**: `loadModelsDevIndex` now returns stale cached data on network/HTTP errors with soft TTL backoff, preventing fallback to static tables during temporary network outages.
+- **Throttled Observability Time Prune**: `requestDetailsRepo` time-based retention pruning is now throttled to at most once per 5 minutes to eliminate SQLite write amplification on high-frequency flush paths.
+- **Config `0` Value Support**: Replaced `||` with `parseNum` helper so `0` / `"0"` retention & maxRecords settings are respected instead of falling back to default values.
+- **Tests**: Extended `models-dev-modality.test.js` and `request-details-retention.test.js` with stale-on-error and prune throttling test cases.
+
 # v0.14.12 (2026-08-05)
 
 ## Fixes (Model Capability Sync + Transient 500 + Multi-arch Deploy + Savings Retention)

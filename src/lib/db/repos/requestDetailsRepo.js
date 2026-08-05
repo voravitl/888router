@@ -5,15 +5,25 @@ const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
-// Retention: keep requestDetails for this many days so period reports
-// (24h/7d/30d) have real data. Previously records were pruned by COUNT only,
-// which dropped everything older than ~2 days and made the 30d report return
-// the same data as 7d. Time-based retention fixes that.
 const DEFAULT_RETENTION_DAYS = 30;
+const PRUNE_THROTTLE_MS = 5 * 60 * 1000; // 5 min
+let lastPruneTs = 0;
 const CONFIG_CACHE_TTL_MS = 5000;
-
 let cachedConfig = null;
 let cachedConfigTs = 0;
+
+function parseNum(val, fallback) {
+  if (typeof val === "number" && Number.isFinite(val)) return val;
+  if (typeof val === "string" && val.trim() !== "") {
+    const parsed = parseInt(val, 10);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+export function resetPruneThrottle() {
+  lastPruneTs = 0;
+}
 
 async function getObservabilityConfig() {
   if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
@@ -26,11 +36,11 @@ async function getObservabilityConfig() {
       : envEnabled;
     cachedConfig = {
       enabled,
-      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-      retentionDays: settings.observabilityRetentionDays || parseInt(process.env.OBSERVABILITY_RETENTION_DAYS || String(DEFAULT_RETENTION_DAYS), 10),
-      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+      maxRecords: parseNum(settings.observabilityMaxRecords, parseNum(process.env.OBSERVABILITY_MAX_RECORDS, DEFAULT_MAX_RECORDS)),
+      retentionDays: parseNum(settings.observabilityRetentionDays, parseNum(process.env.OBSERVABILITY_RETENTION_DAYS, DEFAULT_RETENTION_DAYS)),
+      batchSize: parseNum(settings.observabilityBatchSize, parseNum(process.env.OBSERVABILITY_BATCH_SIZE, DEFAULT_BATCH_SIZE)),
+      flushIntervalMs: parseNum(settings.observabilityFlushIntervalMs, parseNum(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS, DEFAULT_FLUSH_INTERVAL_MS)),
+      maxJsonSize: parseNum(settings.observabilityMaxJsonSize, parseNum(process.env.OBSERVABILITY_MAX_JSON_SIZE, 5)) * 1024,
     };
   } catch {
     cachedConfig = {
@@ -120,13 +130,16 @@ async function flushToDatabase() {
           );
         }
 
-        // Time-based retention: delete records older than retentionDays so
-        // period reports (24h/7d/30d) have real data. Previously this pruned
-        // by COUNT (keep newest N), which dropped everything older than ~2 days
-        // and made the 30d report return the same data as 7d.
-        if (config.retentionDays > 0) {
-          const cutoff = new Date(Date.now() - config.retentionDays * 24 * 60 * 60 * 1000).toISOString();
+        // Time-based retention (throttled to at most once per 5 minutes):
+        // delete records older than retentionDays so period reports (24h/7d/30d)
+        // have real data. Previously this pruned by COUNT (keep newest N), which
+        // dropped everything older than ~2 days and made the 30d report return
+        // the same data as 7d.
+        const nowMs = Date.now();
+        if (config.retentionDays > 0 && (nowMs - lastPruneTs >= PRUNE_THROTTLE_MS)) {
+          const cutoff = new Date(nowMs - config.retentionDays * 24 * 60 * 60 * 1000).toISOString();
           db.run(`DELETE FROM requestDetails WHERE timestamp < ?`, [cutoff]);
+          lastPruneTs = nowMs;
         }
         // Count cap as a safety net: time-based retention alone can let the
         // table grow unbounded on high-traffic gateways (each row holds

@@ -37,10 +37,14 @@ async function loadModelsDevIndex() {
   let data;
   try {
     const res = await fetch(MODELS_DEV_URL, { signal: controller.signal });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (cache) cache.ts = now; // soft backoff
+      return cache?.byId || null;
+    }
     data = await res.json();
   } catch {
-    return null;
+    if (cache) cache.ts = now; // soft backoff
+    return cache?.byId || null;
   } finally {
     clearTimeout(timer);
   }

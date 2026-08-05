@@ -5,16 +5,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // sync doesn't forward image_url to text-only models (400 "unknown variant
 // image_url"). This is the MECHANISM fix — new models get correct modality
 // automatically instead of a per-model static-table patch.
-const mocks = vi.hoisted(() => ({ fetch: vi.fn() }));
-
-vi.mock("../../open-sse/services/modelsDevModality.js", async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    // keep the real module; we only control global fetch below
-  };
-});
-
 import {
   enrichModalityFromModelsDev,
   clearModelsDevCache,
@@ -41,6 +31,8 @@ const MODELS_DEV = {
     },
   },
 };
+
+const mocks = { fetch: vi.fn() };
 
 describe("enrichModalityFromModelsDev", () => {
   beforeEach(() => {
@@ -85,11 +77,31 @@ describe("enrichModalityFromModelsDev", () => {
     expect(models[0].vision).toBe(true);
   });
 
-  it("fails open (returns models unchanged) when models.dev is unreachable", async () => {
+  it("fails open (returns models unchanged) when models.dev is unreachable initially", async () => {
     clearModelsDevCache(); // ensure a fresh fetch attempt
     mocks.fetch.mockResolvedValue({ ok: false, status: 500 });
     const models = [{ id: "deepseek-v4-flash-free" }];
     await enrichModalityFromModelsDev(models, "opencode");
     expect(models[0].vision).toBeUndefined();
+  });
+
+  it("returns stale cache data if subsequent fetch fails after TTL", async () => {
+    // 1. Initial success populates cache
+    const models1 = [{ id: "deepseek-v4-flash-free" }];
+    await enrichModalityFromModelsDev(models1, "opencode");
+    expect(models1[0].vision).toBe(false);
+
+    // 2. Advance time past 6h TTL
+    const realNow = Date.now;
+    vi.spyOn(Date, "now").mockReturnValue(realNow() + 7 * 60 * 60 * 1000);
+
+    // 3. Subsequent fetch fails
+    mocks.fetch.mockResolvedValue({ ok: false, status: 503 });
+    const models2 = [{ id: "deepseek-v4-flash-free" }];
+    await enrichModalityFromModelsDev(models2, "opencode");
+
+    // Stale data is preserved instead of reverting to undefined
+    expect(models2[0].vision).toBe(false);
+    vi.restoreAllMocks();
   });
 });

@@ -33,10 +33,11 @@ vi.mock("../../src/lib/db/repos/settingsRepo.js", () => ({
   })),
 }));
 
-import { saveRequestDetail } from "../../src/lib/db/repos/requestDetailsRepo.js";
+import { saveRequestDetail, resetPruneThrottle } from "../../src/lib/db/repos/requestDetailsRepo.js";
 
 describe("requestDetails time-based retention", () => {
   beforeEach(() => {
+    resetPruneThrottle();
     vi.clearAllMocks();
     // saveRequestDetail flushes immediately when token-saver stats present
     mocks.get.mockReturnValue({ c: 0 });
@@ -103,5 +104,34 @@ describe("requestDetails time-based retention", () => {
       String(sql).toLowerCase().includes("order by timestamp asc")
     );
     expect(countDelete).toBeUndefined();
+  });
+
+  it("throttling: skips time-based DELETE on second flush within 5 minutes", async () => {
+    // First flush runs time-based DELETE
+    await saveRequestDetail({
+      id: "t1",
+      timestamp: new Date().toISOString(),
+      model: "m",
+      provider: "p",
+      rtkStats: { bytesBefore: 100, bytesAfter: 50 },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    mocks.run.mockClear();
+
+    // Second flush within 5 min interval does NOT run time-based DELETE
+    await saveRequestDetail({
+      id: "t2",
+      timestamp: new Date().toISOString(),
+      model: "m",
+      provider: "p",
+      rtkStats: { bytesBefore: 100, bytesAfter: 50 },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const deleteCall = mocks.run.mock.calls.find(([sql]) =>
+      String(sql).toLowerCase().includes("delete from requestdetails") &&
+      String(sql).toLowerCase().includes("timestamp")
+    );
+    expect(deleteCall).toBeUndefined();
   });
 });
