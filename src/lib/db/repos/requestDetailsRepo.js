@@ -128,6 +128,18 @@ async function flushToDatabase() {
           const cutoff = new Date(Date.now() - config.retentionDays * 24 * 60 * 60 * 1000).toISOString();
           db.run(`DELETE FROM requestDetails WHERE timestamp < ?`, [cutoff]);
         }
+        // Count cap as a safety net: time-based retention alone can let the
+        // table grow unbounded on high-traffic gateways (each row holds
+        // truncated request/response JSON). Keep the newest maxRecords rows.
+        if (config.maxRecords > 0) {
+          const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+          if (cnt && cnt.c > config.maxRecords) {
+            db.run(
+              `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+              [cnt.c - config.maxRecords]
+            );
+          }
+        }
       });
     }
   } catch (e) {

@@ -363,6 +363,11 @@ export function resolveKnownContextWindow(provider, model) {
     return PROVIDER_CAPABILITIES[provider][model].contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   }
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  // Dynamic runtime/DB caps take precedence over static patterns — a synced
+  // model (e.g. kiro live catalog) may carry a contextWindow the static table
+  // doesn't know yet. Without this, combo MIN context ignores live caps.
+  const dyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel) || DYNAMIC_CAPABILITIES_CACHE.get(model);
+  if (dyn && dyn.contextWindow != null) return dyn.contextWindow;
   const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[model];
   if (exact) return exact.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {

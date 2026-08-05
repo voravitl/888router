@@ -12,7 +12,7 @@ services:
     # build:
     #   context: .
     #   args:
-    #     BUILD_VERSION: "0.14.11"
+    #     BUILD_VERSION: "0.14.12"
     container_name: 888router
     restart: always
     ports:

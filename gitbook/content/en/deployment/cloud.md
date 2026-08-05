@@ -40,7 +40,7 @@ The gateway is served at `http://localhost:20128` (dashboard at
 
 ```bash
 curl http://localhost:20128/api/version
-# → {"name":"9router","version":"0.14.11",...}
+# → {"name":"9router","version":"0.14.12",...}
 ```
 
 ---

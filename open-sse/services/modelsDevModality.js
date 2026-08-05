@@ -23,14 +23,6 @@ const FETCH_TIMEOUT_MS = 10_000;
 /** @type {{ ts: number, byId: Map<string, {vision:boolean, reasoning:boolean, contextWindow?:number}> } | null} */
 let cache = null;
 
-function capForModalities(input) {
-  const arr = Array.isArray(input) ? input : [];
-  return {
-    vision: arr.includes("image"),
-    reasoning: false, // set below from the model entry
-  };
-}
-
 /**
  * Fetch + index models.dev once (cached). Returns a Map keyed by model id
  * (both bare and provider-prefixed) → { vision, reasoning, contextWindow }.
@@ -64,10 +56,14 @@ async function loadModelsDevIndex() {
         reasoning: info.reasoning === true,
         contextWindow: info.limit?.context,
       };
-      // index by bare id (deepseek-v4-flash-free) and prefixed (opencode/deepseek-v4-flash-free)
+      // index by bare id (deepseek-v4-flash-free), prefixed (opencode/deepseek-v4-flash-free),
+      // and provider-scoped (opencode:deepseek-v4-flash-free) so lookups can prefer
+      // the provider-scoped entry and avoid bare-id collisions across providers.
       byId.set(mid, entry);
       const slash = mid.indexOf("/");
       if (slash > 0) byId.set(mid.slice(slash + 1), entry);
+      byId.set(`${provider}:${mid}`, entry);
+      if (slash > 0) byId.set(`${provider}:${mid.slice(slash + 1)}`, entry);
     }
   }
 
@@ -91,7 +87,11 @@ export async function enrichModalityFromModelsDev(models, provider = "") {
 
   for (const m of models) {
     if (!m || typeof m.id !== "string") continue;
-    const entry = index.get(m.id) || (provider ? index.get(`${provider}/${m.id}`) : null);
+    // Prefer provider-scoped lookup (opencode:deepseek-v4-flash-free) to avoid
+    // bare-id collisions across providers; fall back to bare id.
+    const entry = provider
+      ? (index.get(`${provider}:${m.id}`) || index.get(m.id))
+      : index.get(m.id);
     if (!entry) continue;
     // Only set when the live sync didn't already provide it (upstream wins).
     if (m.vision === undefined) m.vision = entry.vision;

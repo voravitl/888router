@@ -44,7 +44,7 @@ describe("requestDetails time-based retention", () => {
     mocks.run.mockReturnValue({ changes: 0 });
   });
 
-  it("deletes records older than retentionDays using a timestamp cutoff (not count)", async () => {
+  it("deletes records older than retentionDays using a timestamp cutoff", async () => {
     await saveRequestDetail({
       id: "x",
       timestamp: new Date().toISOString(),
@@ -58,7 +58,8 @@ describe("requestDetails time-based retention", () => {
 
     // The retention DELETE must be time-based: WHERE timestamp < cutoff
     const deleteCall = mocks.run.mock.calls.find(([sql]) =>
-      String(sql).toLowerCase().includes("delete from requestdetails")
+      String(sql).toLowerCase().includes("delete from requestdetails") &&
+      String(sql).toLowerCase().includes("timestamp")
     );
     expect(deleteCall).toBeTruthy();
     const [sql, params] = deleteCall;
@@ -69,9 +70,28 @@ describe("requestDetails time-based retention", () => {
     expect(Math.abs(cutoff - expected)).toBeLessThan(60_000);
   });
 
-  it("does NOT prune by count (no ORDER BY timestamp ASC LIMIT delete)", async () => {
+  it("keeps a count cap as a safety net (ORDER BY timestamp ASC LIMIT delete)", async () => {
+    // count > maxRecords → the count-based prune also runs
+    mocks.get.mockReturnValue({ c: 1001 }); // > maxRecords 1000
     await saveRequestDetail({
       id: "y",
+      timestamp: new Date().toISOString(),
+      model: "m",
+      provider: "p",
+      rtkStats: { bytesBefore: 100, bytesAfter: 50 },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const countDelete = mocks.run.mock.calls.find(([sql]) =>
+      String(sql).toLowerCase().includes("order by timestamp asc")
+    );
+    expect(countDelete).toBeTruthy();
+  });
+
+  it("does not run the count prune when under maxRecords", async () => {
+    mocks.get.mockReturnValue({ c: 500 }); // < maxRecords 1000
+    await saveRequestDetail({
+      id: "z",
       timestamp: new Date().toISOString(),
       model: "m",
       provider: "p",
