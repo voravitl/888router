@@ -83,7 +83,7 @@ startCacheCleanup();
  * @param {string} accessToken  - Valid OAuth access token
  * @returns {Promise<string|null>} Real project ID or null
  */
-export async function getProjectIdForConnection(connectionId, accessToken) {
+export async function getProjectIdForConnection(connectionId, accessToken, provider = "antigravity") {
     if (!connectionId || !accessToken) return null;
 
     // Return cached value if still fresh
@@ -102,7 +102,7 @@ export async function getProjectIdForConnection(connectionId, accessToken) {
 
     const promise = (async () => {
         try {
-            const projectId = await fetchProjectId(accessToken, controller.signal);
+            const projectId = await fetchProjectId(accessToken, controller.signal, provider);
             if (projectId) {
                 projectIdCache.set(connectionId, {projectId, fetchedAt: Date.now()});
                 return projectId;
