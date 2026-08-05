@@ -537,12 +537,12 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleAddCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias) => {
+  const handleAddCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias, source = "custom") => {
     try {
       const res = await fetch("/api/models/custom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerAlias: providerAliasOverride, id: modelId, type }),
+        body: JSON.stringify({ providerAlias: providerAliasOverride, id: modelId, type, source }),
       });
       if (res.ok) {
         await fetchCustomModels();
@@ -606,7 +606,7 @@ export default function ProviderDetailPage() {
           continue;
         }
 
-        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
+        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias, "synced");
         importedCount += 1;
       }
       

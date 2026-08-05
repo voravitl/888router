@@ -38,4 +38,18 @@ describe("TokenRouter Provider Registry & Integration", () => {
     const uniqueFlags = new Set(flags);
     expect(flags.length).toBe(uniqueFlags.size);
   });
+
+  it("preserves source field in getProviderCustomModelRows for synced vs custom badges", async () => {
+    const { getProviderCustomModelRows } = await import("../../src/shared/utils/providerCustomModels.js");
+    const rows = getProviderCustomModelRows({
+      customModels: [
+        { id: "synced-1", providerAlias: "tokenrouter", source: "synced" },
+        { id: "custom-1", providerAlias: "tokenrouter" },
+      ],
+      providerAlias: "tokenrouter",
+    });
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.id === "synced-1").source).toBe("synced");
+    expect(rows.find((r) => r.id === "custom-1").source).toBe("custom");
+  });
 });

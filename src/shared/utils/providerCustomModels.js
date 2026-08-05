@@ -27,7 +27,7 @@ export function getProviderCustomModelRows({
       id: model.id,
       name: model.name || model.id,
       fullModel,
-      source: "custom",
+      source: model.source || "custom",
       type: rowType,
     });
   }

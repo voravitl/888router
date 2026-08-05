@@ -211,11 +211,15 @@ export default function ModelsTable({
                           >
                             {fullModel}
                           </code>
-                          {isCustom && (
+                          {model.source === "synced" || model.source === "legacyAlias" ? (
+                            <span className="rounded bg-blue-500/10 border border-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                              synced
+                            </span>
+                          ) : isCustom ? (
                             <span className="rounded bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
                               custom
                             </span>
-                          )}
+                          ) : null}
                         </div>
                         <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-text-muted/80 pl-0.5">
                           {model.name && <span className="truncate italic">{model.name}</span>}
