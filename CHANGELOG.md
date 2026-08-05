@@ -1,3 +1,10 @@
+# v0.14.17 (2026-08-05)
+
+## UI & Data Model Enhancements (Synced Model Badge & Persistence)
+
+- **Synced Model Badge (Blue Badge)**: Updated provider model table UI (`ModelsTable.js`) to display a distinct blue `synced` badge (`bg-blue-500/10`) for models automatically imported from upstream provider endpoints. Manual custom models retain the amber `custom` badge (`bg-amber-500/10`).
+- **Database Persistence & Delete Handler Fix**: Persisted `source` field in `addCustomModel` (`aliasRepo.js`) and updated `page.js` delete handler branching to support deletion of synced custom model rows.
+
 # v0.14.16 (2026-08-05)
 
 ## Maintenance & Code Style Refactoring
