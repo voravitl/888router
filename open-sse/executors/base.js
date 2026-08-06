@@ -109,10 +109,21 @@ export class BaseExecutor {
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
 
-    // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
+    // Schedule retry (retryConfig[statusKey]). Returns true when caller should `urlIndex--; continue`
     // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
+    //
+    // Proxy-pool fast path: when this request goes through a proxy pool (noAuth
+    // virtual connection carries connectionProxyPoolId / vercelRelayUrl), the
+    // 5xx retry is redundant — chat.js already excludes the failed pool and
+    // rotates to the next one (markAccountUnavailable → shouldFallback →
+    // continue). Retrying the SAME pool up to 3× in-executor adds ~4-9s per
+    // error before rotation can happen. For pool requests, surface 5xx to the
+    // account loop immediately (attempts=0) so rotation kicks in ~1s.
+    const throughProxyPool = !!(proxyOptions?.connectionProxyPoolId || proxyOptions?.vercelRelayUrl);
+    const isServerError5xx = typeof statusKey === "number" && statusKey >= 500 && statusKey < 600;
     const tryRetry = async (urlIndex, statusKey, reason, response = null) => {
-      const { attempts, delayMs } = resolveRetryEntry(retryConfig[statusKey]);
+      const skipForPool = throughProxyPool && isServerError5xx;
+      const { attempts, delayMs } = resolveRetryEntry(skipForPool ? undefined : retryConfig[statusKey]);
       if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
       // Hook: subclass may derive delay from the response (headers/body). null → skip retry, use fallback.
       let waitMs = delayMs;
