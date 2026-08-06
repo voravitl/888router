@@ -1,3 +1,10 @@
+# v0.15.2 (2026-08-07)
+
+## Performance: Combo Latency (Executable Proxy-Pool Retry)
+
+- **Skip in-executor 5xx retry for proxy-pool requests** (PR #216): when a request goes through a proxy pool and the pool returns 503/502/504/500, the executor no longer retries the SAME pool up to 3x (~4-9s wasted) — the error surfaces to chat.js immediately so pool rotation kicks in ~1s instead of ~9s. Non-pool (saved-connection) providers keep the normal retry behavior.
+- Expected latency: ~8s saved per 503, worst-case combo requests ~109s → ~77s.
+
 # v0.15.1 (2026-08-06)
 
 ## Fix: Proxy Pool Rotation (Combo)
