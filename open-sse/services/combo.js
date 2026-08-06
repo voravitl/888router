@@ -2,7 +2,8 @@
  * Shared combo (model combo) handling with fallback support
  */
 
-import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { checkFallbackError, formatRetryAfter, getUnavailableUntil } from "./accountFallback.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -291,6 +292,22 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs, modelError } = checkFallbackError(result.status, errorText);
 
+      // A model is quota/rate-limit limited when the upstream returned 429, or
+      // when the error text is an explicit quota/rate-limit signal (even if no
+      // retryAfter field came back — e.g. ollama's FreeUsageLimitError). Layer
+      // below (chat.js + auth.js) has already rotated through every eligible
+      // proxy pool/account before this error reached the combo loop, so a
+      // quota-limited combo should STOP and return 429+retry-after rather than
+      // switch to a model that shares the same exhausted quota/pool.
+      if (result.status === 429 ||
+          /rate.?limit|usage.?limit|quota|too many requests|overloaded|capacity/i.test(errorText || "")) {
+        // Prefer an explicit retryAfter; else derive a cooldown from the
+        // fallback classifier so the client gets a usable retry window.
+        if (!retryAfter && cooldownMs && cooldownMs > 0) {
+          earliestRetryAfter = getUnavailableUntil(cooldownMs);
+        }
+      }
+
       if (!shouldFallback && !modelError) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
@@ -331,8 +348,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);
-    log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
-    return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+    log.warn("COMBO", `All models quota-limited, returning 429 retry-after (${retryHuman}) | ${msg}`);
+    // Quota-limited (every model hit a rate limit and layer below already
+    // rotated through all proxy pools/accounts): return 429 so the client
+    // retries after the reset window rather than combo switching to a model
+    // that shares the same exhausted quota/pool. The layer below (chat.js +
+    // auth.js) has already tried every eligible proxy pool before this 429.
+    return unavailableResponse(HTTP_STATUS.RATE_LIMITED, msg, earliestRetryAfter, retryHuman);
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);

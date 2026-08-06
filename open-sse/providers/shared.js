@@ -64,6 +64,10 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
+// Antigravity IDE version and user agent (from upstream decolua/9router v0.5.50)
+export const ANTIGRAVITY_IDE_VERSION = "2.1.1";
+export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
+
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)
 export const ANTIGRAVITY_OAUTH_CLIENT = {
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",

@@ -37,7 +37,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       : `${base}/chat/completions`;
   }
 
-  buildHeaders(credentials, stream = true, model = null) {
+  buildHeaders(credentials, stream = true, url = "", model = null) {
     const rawKey = credentials?.apiKey || credentials?.accessToken;
     const key = typeof rawKey === "string" ? rawKey.trim() : null;
     const isFreeModel = typeof model === "string" && model.endsWith("-free");

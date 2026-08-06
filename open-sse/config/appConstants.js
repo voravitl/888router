@@ -1,4 +1,6 @@
-import { platform, arch } from "os";
+import { platform, arch, hostname } from "os";
+import { createRequire } from "module";
+import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
 
 // === Gemini CLI === derive từ registry gemini-cli.transport
@@ -59,7 +61,7 @@ export function getPlatformEnum() {
 }
 
 export function getPlatformUserAgent() {
-  return `antigravity/1.104.0 ${platform()}/${arch()}`;
+  return ANTIGRAVITY_IDE_USER_AGENT;
 }
 
 export const CLIENT_METADATA = {
@@ -134,10 +136,16 @@ export const ANTIGRAVITY_HEADERS = {
   "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
 };
 
-// Cloud Code Assist API
+// Cloud Code Assist API — per-client structure
 export const CLOUD_CODE_API = {
-  loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-  onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  "gemini-cli": {
+    loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+    onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  },
+  antigravity: {
+    loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+    onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  },
 };
 
 export const LOAD_CODE_ASSIST_HEADERS = {
@@ -179,12 +187,24 @@ export const OAUTH_ENDPOINTS = {
   github:    { token: PROVIDER_OAUTH["github"]?.tokenUrl, auth: PROVIDER_OAUTH["github"]?.authorizeUrl, deviceCode: PROVIDER_OAUTH["github"]?.deviceCodeUrl },
 };
 
+// Read app version from package.json
+const _require = createRequire(import.meta.url);
+function getAppPackageVersion() {
+  try {
+    return _require("../../package.json").version;
+  } catch {
+    return "0.0.0";
+  }
+}
+
 // Generate Kimi OAuth custom headers
-export function buildKimiHeaders() {
+export function buildKimiHeaders(deviceId) {
+  const deviceName = hostname();
   return {
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
+    "X-Msh-Version": getAppPackageVersion(),
     "X-Msh-Device-Model": typeof process !== "undefined" ? `${process.platform} ${process.arch}` : "unknown",
-    "X-Msh-Device-Id": `kimi-${Date.now()}`
+    "X-Msh-Device-Id": deviceId || `kimi-${Date.now()}`,
+    "X-Msh-Device-Name": deviceName,
   };
 }
