@@ -83,6 +83,7 @@ describe("noAuth proxy pool auto-rotate", () => {
     proxyPools.push(POOL_A, POOL_B);
     const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
     expect(creds.id).toBe("noauth:poolA"); // first pool picked
+    expect(creds.connectionId).toBe("noauth:poolA"); // must carry connectionId so chat.js can rotate pools on error
     expect(creds.connectionName).toContain("A");
   });
 
@@ -165,6 +166,7 @@ describe("noAuth proxy pool auto-rotate", () => {
     // Hop 1 → pool A
     const c1 = await getProviderCredentials("opencode", exclude, "deepseek-v4-flash-free");
     expect(c1.id).toBe("noauth:poolA");
+    expect(c1.connectionId).toBe("noauth:poolA"); // rotation relies on connectionId for markAccountUnavailable
     exclude.add(c1.id); // A failed (429)
 
     // Hop 2 → pool B

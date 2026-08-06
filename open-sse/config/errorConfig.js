@@ -91,6 +91,7 @@ export const ERROR_RULES = [
   { text: "content_length_exceeds_threshold", noFallback: true },
   { text: "rate limit",               backoff: true },
   { text: "usage limit",              backoff: true },
+  { text: "usage_exceeded",           cooldownMs: COOLDOWN.short }, // Deno/vercel relay suspend (503 USAGE_EXCEEDED)
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
   { text: "capacity",                 backoff: true },
@@ -103,6 +104,11 @@ export const ERROR_RULES = [
   // 404 = model not found → don't cycle accounts, let combo skip to next model
   { status: 404, modelError: true },
   { status: 429, backoff: true },
+  // 503/502/504 transient — shouldFallback so account layer rotates pools,
+  // but short cooldown so combo doesn't stall on one exhausted proxy relay.
+  { status: 503, cooldownMs: COOLDOWN.short },
+  { status: 502, cooldownMs: COOLDOWN.short },
+  { status: 504, cooldownMs: COOLDOWN.short },
 ];
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
