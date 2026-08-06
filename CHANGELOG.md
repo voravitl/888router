@@ -1,3 +1,10 @@
+# v0.15.1 (2026-08-06)
+
+## Fix: Proxy Pool Rotation (Combo)
+
+- **Rotate proxy pools on 503 before combo switches provider** (PR #212): virtual noAuth proxy-pool connections now carry `connectionId` so the account layer rotates through remaining pools when one relay returns 503/429 (e.g. Deno relay USAGE_EXCEEDED) instead of combo switching to the next provider while other pools are idle.
+- **errorConfig**: added status 503/502/504 + text `usage_exceeded` rules with 5s cooldown so transient relay-suspend errors rotate quickly instead of a 30s default stall.
+
 # v0.15.0 (2026-08-06)
 
 ## Upstream Port & Combo Reliability
