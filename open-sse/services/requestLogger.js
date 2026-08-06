@@ -1,4 +1,4 @@
-import { getSettings } from "../../src/lib/db/repos/settingsRepo.js";
+import { getSettings } from "@/lib/db/repos/settingsRepo.js";
 
 let envOverride = null;
 

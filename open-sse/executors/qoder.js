@@ -317,7 +317,9 @@ function wrapQoderSSE(response, model) {
           }
         }
       } catch (err) {
-        // On error, emit SSE_DONE if not already done, then close
+        // On error, emit SSE_DONE if not already done, then close. Log the
+        // error so a truncated stream is observable (don't swallow silently).
+        console.warn(`[Qoder] SSE stream error: ${err?.message || err}`);
         if (!doneEmitted) {
           controller.enqueue(encoder.encode(SSE_DONE));
           doneEmitted = true;
