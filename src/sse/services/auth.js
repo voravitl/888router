@@ -52,6 +52,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         }
         return {
           id: "noauth",
+          connectionId: "noauth",
           connectionName: "Public",
           isActive: true,
           accessToken: "public",
@@ -78,6 +79,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         }
         return {
           id: `noauth:${pid}`,
+          connectionId: `noauth:${pid}`,
           connectionName: `Public:${pool.name || pid.slice(0, 8)}`,
           isActive: true,
           accessToken: "public",
@@ -98,6 +100,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (exclude.size === 0) {
         return {
           id: "noauth",
+          connectionId: "noauth",
           connectionName: "Public",
           isActive: true,
           accessToken: "public",
