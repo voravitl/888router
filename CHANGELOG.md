@@ -1,3 +1,18 @@
+# v0.15.0 (2026-08-06)
+
+## Upstream Port & Combo Reliability
+
+- **Port 8 upstream features** from decolua/9router v0.5.50 (PR #207):
+  - Antigravity: preserve image-only user messages, Gemini 3.6 Flash quota bars, IDE constants (ANTIGRAVITY_IDE_VERSION/USER_AGENT)
+  - Codex-tui/Codex Desktop client detection
+  - TokenRouter provider with accurate pricing (120+ models)
+  - Remove global Claude header cache, gate anthropic-beta per model
+  - Qoder PAT (Personal Access Token) support + SSE stream hang fix
+  - ENABLE_REQUEST_LOGS env override
+  - Video endpoint path fix (/v1/videos/generations)
+- **Combo 429 fix**: when all combo models are quota-limited, return 429+retry-after instead of switching to a shared-quota model (PR #207)
+- **Fix Docker build**: remove duplicate ANTIGRAVITY_IDE_USER_AGENT declaration (PR #208)
+
 # v0.14.17 (2026-08-05)
 
 ## UI & Data Model Enhancements (Synced Model Badge & Persistence)
