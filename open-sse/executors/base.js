@@ -120,8 +120,11 @@ export class BaseExecutor {
     // error before rotation can happen. For pool requests, surface 5xx to the
     // account loop immediately (attempts=0) so rotation kicks in ~1s.
     const throughProxyPool = !!(proxyOptions?.connectionProxyPoolId || proxyOptions?.vercelRelayUrl);
-    const isServerError5xx = typeof statusKey === "number" && statusKey >= 500 && statusKey < 600;
     const tryRetry = async (urlIndex, statusKey, reason, response = null) => {
+      // isServerError5xx must be evaluated INSIDE tryRetry — statusKey is a
+      // per-call param (response.status or network-error 502), not an outer
+      // constant. (Fix from agy review: was computed outside, always false.)
+      const isServerError5xx = typeof statusKey === "number" && statusKey >= 500 && statusKey < 600;
       const skipForPool = throughProxyPool && isServerError5xx;
       const { attempts, delayMs } = resolveRetryEntry(skipForPool ? undefined : retryConfig[statusKey]);
       if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
