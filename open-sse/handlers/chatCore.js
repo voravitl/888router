@@ -84,7 +84,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       timestamp: new Date().toISOString(),
       latency: { ttft: 0, total: 0 },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
-      request: { messages: body.messages || [], model, stream: body.stream },
+      request: extractRequestConfig(body, body.stream),
       status: "success",
       cacheHit: true,
       cacheKey: cachedHit.cacheKey,

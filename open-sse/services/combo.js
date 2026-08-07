@@ -12,6 +12,25 @@ import { extractTextContent } from "../translator/formats/gemini.js";
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 
+// Reasoning models (deepseek, kimi, etc.) can burn the whole max_tokens budget on
+// the thinking phase and return content: "" with finish_reason: "length". When that
+// happens we retry once with a raised budget. Pure function, exported for tests.
+export function isReasoningEmptyContent(finishReason, content, reasoningContent) {
+  return (
+    finishReason === "length" &&
+    !content &&
+    !!(reasoningContent || "").length
+  );
+}
+
+// Raise max_tokens for the retry: original x3 or +512 (whichever is larger), capped
+// at 65536. Returns a new body object, never mutates the original.
+function withRaisedMaxTokens(body) {
+  const original = Number.isFinite(body?.max_tokens) ? body.max_tokens : 0;
+  const raised = Math.min(Math.max(original * 3, original + 512), 65536);
+  return { ...body, max_tokens: raised };
+}
+
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
 const TOOL_RESULT_PREFIX = "[Tool result: ";
@@ -264,6 +283,49 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       
       // Success (2xx) - return response
       if (result.ok) {
+        // A 2xx with no usable body (stalled upstream / empty proxy-pool stream)
+        // is a failure, not a success — fall through to the next combo model
+        // instead of piping an empty response to the client. Best-effort check:
+        // explicit Content-Length: 0 or a null body; chunked streams have no
+        // content-length header and stay on the normal path.
+        const emptyBody = result.headers?.get('content-length') === '0' || result.body === null;
+        if (emptyBody) {
+          log.warn("COMBO", `Model ${modelStr} returned ${result.status} with empty body, trying next`);
+          lastError = `empty body (${result.status})`;
+          if (!lastStatus) lastStatus = result.status;
+          continue;
+        }
+        // ponytail: reasoning models (deepseek, kimi, ...) can exhaust max_tokens
+        // on the thinking phase and return content: "" with finish_reason: "length"
+        // and reasoning_content filled. Retry once with a raised budget. Only the
+        // non-stream (JSON body) case is handled — the stream:true SSE case needs
+        // per-chunk finish_reason inspection; add when reasoning models are used
+        // with streaming.
+        if (!body.stream && result.headers?.get('content-type')?.includes('application/json')) {
+          let completion = null;
+          try {
+            completion = await result.clone().json();
+          } catch {
+            // not JSON — leave completion null
+          }
+          const choice = completion?.choices?.[0];
+          const msg = choice?.message;
+          if (msg && isReasoningEmptyContent(
+            choice.finish_reason,
+            msg.content,
+            msg.reasoning_content ?? msg.reasoning ?? msg.reasoningContent,
+          )) {
+            log.warn("COMBO", `Model ${modelStr} exhausted max_tokens on reasoning, retrying once with raised budget`);
+            const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr);
+            if (retried.ok) {
+              log.info("COMBO", `Model ${modelStr} succeeded after reasoning-budget retry`);
+              return retried;
+            }
+            lastError = `reasoning-empty-content retry failed (${retried.status})`;
+            if (!lastStatus) lastStatus = retried.status;
+            continue;
+          }
+        }
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }

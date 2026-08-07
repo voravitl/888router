@@ -31,7 +31,7 @@ function SavingsCard({ title, icon, color, stats, children }) {
           </div>
           <div className="col-span-2">
             <span className="text-text-muted">Saved</span>
-            <span className={`block font-mono font-bold ${stats.savedPct > 0 ? "text-success" : "text-text-muted"}`}>
+            <span className={`block font-mono font-bold ${stats.savedPctNum > 0 ? "text-success" : "text-text-muted"}`}>
               {stats.saved} ({stats.savedPct})
             </span>
           </div>
@@ -69,7 +69,7 @@ export default function OptimizationSavings({ period = "7d" }) {
     return <div className="text-text-muted text-sm py-4">No optimization data available.</div>;
   }
 
-  const { rtk, pruner, headroom } = data;
+  const { rtk, pruner, headroom, cache } = data || {};
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,16 +85,17 @@ export default function OptimizationSavings({ period = "7d" }) {
           icon="compress"
           color="text-info"
           stats={{
-            before: fmtBytes(rtk.bytesBefore),
-            after: fmtBytes(rtk.bytesAfter),
-            saved: fmtBytes(rtk.bytesSaved),
-            savedPct: fmtPct(rtk.pctSaved),
+            before: fmtBytes(rtk?.bytesBefore),
+            after: fmtBytes(rtk?.bytesAfter),
+            saved: fmtBytes(rtk?.bytesSaved),
+            savedPct: fmtPct(rtk?.pctSaved),
+            savedPctNum: rtk?.pctSaved,
           }}
         >
           <div className="text-[10px] text-text-muted">
-            {fmt(rtk.requestsWithSavings)}/{fmt(rtk.requestsWithStats)} requests saved
+            {fmt(rtk?.requestsWithSavings)}/{fmt(rtk?.requestsWithStats)} requests saved
           </div>
-          {rtk.topFilters?.length > 0 && (
+          {rtk?.topFilters?.length > 0 && (
             <div className="mt-1">
               <div className="text-[10px] text-text-muted mb-1">Top patterns:</div>
               <div className="flex flex-wrap gap-1">
@@ -115,15 +116,16 @@ export default function OptimizationSavings({ period = "7d" }) {
           icon="account_tree"
           color="text-warning"
           stats={{
-            before: fmt(pruner.tokensBefore),
-            after: fmt(pruner.tokensAfter),
-            saved: fmt(pruner.tokensSaved),
-            savedPct: fmtPct(pruner.pctSaved),
+            before: fmt(pruner?.tokensBefore),
+            after: fmt(pruner?.tokensAfter),
+            saved: fmt(pruner?.tokensSaved),
+            savedPct: fmtPct(pruner?.pctSaved),
+            savedPctNum: pruner?.pctSaved,
           }}
         >
           <div className="text-[10px] text-text-muted">
-            {fmt(pruner.requestsWithSavings)}/{fmt(pruner.requestsWithStats)} requests saved
-            {pruner.omittedMessages > 0 && ` · ${fmt(pruner.omittedMessages)} msgs omitted`}
+            {fmt(pruner?.requestsWithSavings)}/{fmt(pruner?.requestsWithStats)} requests saved
+            {pruner?.omittedMessages > 0 && ` · ${fmt(pruner?.omittedMessages)} msgs omitted`}
           </div>
         </SavingsCard>
 
@@ -133,16 +135,17 @@ export default function OptimizationSavings({ period = "7d" }) {
           icon="router"
           color="text-primary"
           stats={{
-            before: fmtBytes(headroom.bytesBefore),
-            after: fmtBytes(headroom.bytesAfter),
-            saved: fmtBytes(headroom.bytesSaved),
-            savedPct: fmtPct(headroom.pctBytesSaved),
+            before: fmtBytes(headroom?.bytesBefore),
+            after: fmtBytes(headroom?.bytesAfter),
+            saved: fmtBytes(headroom?.bytesSaved),
+            savedPct: fmtPct(headroom?.pctBytesSaved),
+            savedPctNum: headroom?.pctBytesSaved,
           }}
         >
           <div className="text-[10px] text-text-muted">
-            {fmt(headroom.requestsWithSavings)}/{fmt(headroom.requestsWithStats)} requests saved
+            {fmt(headroom?.requestsWithSavings)}/{fmt(headroom?.requestsWithStats)} requests saved
           </div>
-          {headroom.topSkipReasonsRecent24h?.length > 0 && (
+          {headroom?.topSkipReasonsRecent24h?.length > 0 && (
             <div className="mt-1">
               <div className="text-[10px] text-text-muted mb-1">Skip reasons (24h):</div>
               <div className="flex flex-wrap gap-1">
@@ -156,23 +159,41 @@ export default function OptimizationSavings({ period = "7d" }) {
             </div>
           )}
         </SavingsCard>
+
+        {/* Response Cache */}
+        <SavingsCard
+          title="Response Cache"
+          icon="cached"
+          color="text-success"
+          stats={{
+            before: fmt(cache?.requests),
+            after: fmt(cache?.hits),
+            saved: `${fmtPct(cache?.hitRate)} hit rate`,
+            savedPct: fmtPct(cache?.hitRate),
+            savedPctNum: cache?.hitRate,
+          }}
+        >
+          <div className="text-[10px] text-text-muted">
+            {fmt(cache?.hits)} hits from {fmt(cache?.requests)} requests
+          </div>
+        </SavingsCard>
       </div>
 
       {/* Summary bar */}
       <Card className="px-4 py-2">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
           <span className="text-text-muted">
-            <span className="font-semibold text-info">{fmtBytes(rtk.bytesSaved)}</span> saved by RTK
+            <span className="font-semibold text-info">{fmtBytes(rtk?.bytesSaved)}</span> saved by RTK
           </span>
           <span className="text-text-muted">
-            <span className="font-semibold text-warning">{fmt(pruner.tokensSaved)}</span> tokens pruned
+            <span className="font-semibold text-warning">{fmt(pruner?.tokensSaved)}</span> tokens pruned
           </span>
           <span className="text-text-muted">
-            <span className="font-semibold text-primary">{fmtBytes(headroom.bytesSaved)}</span> via Headroom
+            <span className="font-semibold text-primary">{fmtBytes(headroom?.bytesSaved)}</span> via Headroom
           </span>
           <span className="text-text-muted">
-            Scanned <span className="font-semibold">{fmt(data.period.scanned)}</span> requests
-            {data.period.truncated && " (truncated)"}
+            Scanned <span className="font-semibold">{fmt(data?.period?.scanned)}</span> requests
+            {data?.period?.truncated && " (truncated)"}
           </span>
         </div>
       </Card>

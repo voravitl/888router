@@ -54,6 +54,22 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   }
 
   const upstreamContentType = (providerResponse.headers.get('content-type') || '').toLowerCase();
+  // Upstream returned 200 with an empty/stalled body (proxy-pool stream with
+  // Content-Length: 0 or a null body). Do not pipe an empty stream to the
+  // client — synthesise an error so the caller can fall through / re-rotate.
+  const upstreamContentLength = providerResponse.headers.get('content-length');
+  if (providerResponse.status >= 200 && providerResponse.status < 300 && (upstreamContentLength === '0' || providerResponse.body === null)) {
+    console.warn(`[STREAM] ${provider} | ${model} | empty body (content-length: ${upstreamContentLength || '0'}, status ${providerResponse.status}), treating as failure`);
+    streamController?.handleError?.(new Error(`upstream empty body: ${providerResponse.status}`));
+    return {
+      success: false,
+      response: new Response(JSON.stringify({ error: { message: `Upstream returned an empty response (${providerResponse.status})` } }), {
+        status: providerResponse.status || 502,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      }),
+    };
+  }
+
   if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json')) {
     const bodyText = await providerResponse.text().catch(() => '');
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
