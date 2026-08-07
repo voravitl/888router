@@ -1,3 +1,9 @@
+# v0.15.5 (2026-08-07)
+
+## Fix: Proxy-Pool Retry Scope (PR #231)
+
+- **isServerError5xx scope fix**: the proxy-pool 5xx retry-skip (from #216) was computing the check outside `tryRetry` where `statusKey` is undefined → always false → the optimization never fired (in-executor 5xx retries still ran, ~9s per 503). Found by agy (Claude Opus) review. Now evaluated per-call inside `tryRetry` — pool rotation happens immediately (~8s saved per 503 as intended).
+
 # v0.15.4 (2026-08-07)
 
 ## Performance & Dependency Updates
