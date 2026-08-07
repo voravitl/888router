@@ -1,3 +1,10 @@
+# v0.15.4 (2026-08-07)
+
+## Performance & Dependency Updates
+
+- **Savings report DBA fix** (PR #227): hot stats extracted to real columns at write time + covering index — report query index-only, ~6.2s → <1s.
+- **Next.js 16.3.0** (PR #225): ~90% less dev memory, faster builds/rendering, LTS security fixes.
+
 # v0.15.3 (2026-08-07)
 
 ## Fix: Combo Empty-Body & Reasoning Budget (PR #221)
