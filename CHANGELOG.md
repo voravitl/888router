@@ -1,3 +1,10 @@
+# v0.15.3 (2026-08-07)
+
+## Fix: Combo Empty-Body & Reasoning Budget (PR #221)
+
+- **HTTP 200 empty/malformed response fix** (issue #219): when a proxy-pool upstream returns 200 with an empty/stalled body, combo.js now treats it as failure (falls through to next model) and streamingHandler.js synthesises an error instead of piping an empty stream — stops Claude Code 'API returned an empty or malformed response (HTTP 200)'.
+- **Reasoning max_tokens exhaust fix** (issue #220): reasoning models (deepseek/kimi) that burn the whole budget on thinking now retry once with a raised max_tokens before falling through.
+
 # v0.15.2 (2026-08-07)
 
 ## Performance: Combo Latency (Executable Proxy-Pool Retry)
