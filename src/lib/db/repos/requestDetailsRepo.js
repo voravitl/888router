@@ -102,6 +102,12 @@ async function flushToDatabase() {
           if (!item.timestamp) item.timestamp = new Date().toISOString();
           if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
 
+          // Denormalized hot stats (DBA fix): extracted at write time so
+          // getTokenSaveSummary reads these columns instead of the data blob.
+          const ps = item.prunerStats;
+          const rtkStats = item.rtkStats;
+          const hs = item.headroomStats;
+          const hd = item.headroomDiagnostics;
           const record = {
             id: item.id,
             provider: item.provider || null,
@@ -118,15 +124,33 @@ async function flushToDatabase() {
             providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
             response: truncateField(item.response, config.maxJsonSize),
             // Token-saver benchmark fields (must survive flush — dropped previously)
-            prunerStats: item.prunerStats || null,
-            rtkStats: item.rtkStats || null,
-            headroomStats: item.headroomStats || null,
+            prunerStats: ps || null,
+            rtkStats: rtkStats || null,
+            headroomStats: hs || null,
             headroomDiagnostics: item.headroomDiagnostics || null,
+            prunerTokensBefore: ps?.tokensBefore ?? null,
+            prunerTokensAfter: ps?.tokensAfter ?? null,
+            prunerTokensSaved: ps?.tokensSaved ?? null,
+            prunerOmitted: ps?.omittedMessages ?? null,
+            rtkBytesBefore: rtkStats?.bytesBefore ?? null,
+            rtkBytesAfter: rtkStats?.bytesAfter ?? null,
+            rtkBytesSaved: typeof rtkStats?.bytesBefore === "number" && typeof rtkStats?.bytesAfter === "number"
+              ? Math.max(0, rtkStats.bytesBefore - rtkStats.bytesAfter)
+              : null,
+            // Real producer (compressWithHeadroom) emits snake_case tokens_saved;
+            // older UI/test fixtures used savedTokens — honor both.
+            headroomTokensSaved: hs?.tokens_saved ?? hs?.savedTokens ?? null,
+            headroomBytesSaved: typeof hs?.bytesBefore === "number" && typeof hs?.bytesAfter === "number"
+              ? Math.max(0, hs.bytesBefore - hs.bytesAfter)
+              : typeof hd?.beforeBytes === "number" && typeof hd?.afterBytes === "number"
+                ? Math.max(0, hd.beforeBytes - hd.afterBytes)
+                : null,
+            cacheHit: item.cacheHit === true ? 1 : 0,
           };
 
           db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
+            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data, prunerTokensBefore, prunerTokensAfter, prunerTokensSaved, prunerOmitted, rtkBytesBefore, rtkBytesAfter, rtkBytesSaved, headroomTokensSaved, headroomBytesSaved, cacheHit) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data, prunerTokensBefore = excluded.prunerTokensBefore, prunerTokensAfter = excluded.prunerTokensAfter, prunerTokensSaved = excluded.prunerTokensSaved, prunerOmitted = excluded.prunerOmitted, rtkBytesBefore = excluded.rtkBytesBefore, rtkBytesAfter = excluded.rtkBytesAfter, rtkBytesSaved = excluded.rtkBytesSaved, headroomTokensSaved = excluded.headroomTokensSaved, headroomBytesSaved = excluded.headroomBytesSaved, cacheHit = excluded.cacheHit`,
+            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record), record.prunerTokensBefore, record.prunerTokensAfter, record.prunerTokensSaved, record.prunerOmitted, record.rtkBytesBefore, record.rtkBytesAfter, record.rtkBytesSaved, record.headroomTokensSaved, record.headroomBytesSaved, record.cacheHit]
           );
         }
 
@@ -249,7 +273,7 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
   const totalInWindow = cntRow ? cntRow.c : 0;
 
   const rows = db.all(
-    `SELECT data FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
+    `SELECT data, prunerTokensSaved, rtkBytesSaved, headroomTokensSaved, prunerTokensBefore, prunerTokensAfter, prunerOmitted, rtkBytesBefore, rtkBytesAfter, headroomBytesSaved, cacheHit FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
     [...params, safeLimit],
   );
 
@@ -304,12 +328,42 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
   }
 
   for (const row of rows) {
-    const detail = parseJson(row.data, {});
-    const ps = detail?.prunerStats;
-    const rtkStats = detail?.rtkStats;
-    const hs = detail?.headroomStats;
-    const diag = detail?.headroomDiagnostics || {};
-    const isCacheHit = detail?.cacheHit === true;
+    // New rows: numeric aggregates come from extracted columns (no blob parse).
+    // Old rows: columns are null → parse the data blob as before (COALESCE fallback).
+    const hasColumns = row.prunerTokensBefore != null || row.prunerTokensSaved != null ||
+      row.rtkBytesBefore != null || row.rtkBytesSaved != null ||
+      row.headroomTokensSaved != null || row.headroomBytesSaved != null;
+    const detail = hasColumns ? {} : parseJson(row.data, {});
+    if (row.prunerTokensBefore == null && row.prunerTokensSaved == null && row.prunerOmitted == null) {
+      const ps = detail?.prunerStats;
+      if (ps && typeof ps.tokensBefore === "number") {
+        row.prunerTokensBefore = ps.tokensBefore || 0;
+        row.prunerTokensAfter = ps.tokensAfter ?? 0;
+        row.prunerTokensSaved = ps.tokensSaved || 0;
+        row.prunerOmitted = ps.omittedMessages || 0;
+      }
+    }
+    if (row.rtkBytesBefore == null && row.rtkBytesSaved == null) {
+      const rtkStats = detail?.rtkStats;
+      if (rtkStats && typeof rtkStats.bytesBefore === "number" && typeof rtkStats.bytesAfter === "number") {
+        row.rtkBytesBefore = rtkStats.bytesBefore;
+        row.rtkBytesAfter = rtkStats.bytesAfter;
+        row.rtkBytesSaved = Math.max(0, rtkStats.bytesBefore - rtkStats.bytesAfter);
+      }
+    }
+    if (row.headroomTokensSaved == null && row.headroomBytesSaved == null) {
+      const hs = detail?.headroomStats;
+      const diag = detail?.headroomDiagnostics || {};
+      if (hs && typeof hs.savedTokens === "number" && hs.savedTokens > 0) {
+        row.headroomTokensSaved = hs.savedTokens;
+      } else if (diag && (diag.beforeBytes != null || diag.bytesBefore != null)) {
+        const before = diag.beforeBytes ?? diag.bytesBefore ?? 0;
+        const after = diag.afterBytes ?? diag.bytesAfter ?? 0;
+        row.headroomBytesSaved = Math.max(0, before - after);
+      }
+      if (diag.reason) noteSkipReason(diag.reason, detail.timestamp);
+    }
+    const isCacheHit = row.cacheHit != null ? row.cacheHit === 1 : detail?.cacheHit === true;
     const dayKey = (detail.timestamp && String(detail.timestamp).slice(0, 10)) || "unknown";
 
     // Track response cache hits
@@ -317,34 +371,34 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     if (isCacheHit) cache.hits += 1;
 
     let prunerTokensSaved = 0;
-    if (ps && typeof ps.tokensBefore === "number") {
+    if (row.prunerTokensBefore != null) {
       pruner.requestsWithStats += 1;
-      pruner.tokensBefore += ps.tokensBefore || 0;
-      pruner.tokensAfter += ps.tokensAfter || 0;
-      prunerTokensSaved = ps.tokensSaved || 0;
+      pruner.tokensBefore += row.prunerTokensBefore || 0;
+      pruner.tokensAfter += row.prunerTokensAfter || 0;
+      prunerTokensSaved = row.prunerTokensSaved || 0;
       if (prunerTokensSaved > 0) {
         pruner.requestsWithSavings += 1;
         pruner.tokensSaved += prunerTokensSaved;
       }
-      pruner.omittedMessages += ps.omittedMessages || 0;
+      pruner.omittedMessages += row.prunerOmitted || 0;
     }
 
     let rtkSaved = 0;
     let rtkPct = 0;
-    if (rtkStats && typeof rtkStats.bytesBefore === "number" && typeof rtkStats.bytesAfter === "number") {
+    if (row.rtkBytesBefore != null && row.rtkBytesAfter != null) {
       rtk.requestsWithStats += 1;
-      rtk.bytesBefore += rtkStats.bytesBefore;
-      rtk.bytesAfter += rtkStats.bytesAfter;
-      rtkSaved = Math.max(0, rtkStats.bytesBefore - rtkStats.bytesAfter);
+      rtk.bytesBefore += row.rtkBytesBefore;
+      rtk.bytesAfter += row.rtkBytesAfter;
+      rtkSaved = row.rtkBytesSaved != null ? row.rtkBytesSaved : Math.max(0, row.rtkBytesBefore - row.rtkBytesAfter);
       if (rtkSaved > 0) {
         rtk.requestsWithSavings += 1;
         rtk.bytesSaved += rtkSaved;
       }
-      if (rtkStats.bytesBefore > 0) {
-        rtkPct = Math.round((rtkSaved / rtkStats.bytesBefore) * 100);
+      if (row.rtkBytesBefore > 0) {
+        rtkPct = Math.round((rtkSaved / row.rtkBytesBefore) * 100);
       }
-      if (Array.isArray(rtkStats.hits)) {
-        for (const hit of rtkStats.hits) {
+      if (Array.isArray(detail?.rtkStats?.hits)) {
+        for (const hit of detail.rtkStats.hits) {
           const key = hit?.filter || hit?.shape || "other";
           rtk.filterHits[key] = (rtk.filterHits[key] || 0) + 1;
         }
@@ -352,33 +406,24 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
       if (!byDay[dayKey]) {
         byDay[dayKey] = { date: dayKey, before: 0, after: 0, saved: 0, requests: 0 };
       }
-      byDay[dayKey].before += rtkStats.bytesBefore;
-      byDay[dayKey].after += rtkStats.bytesAfter;
+      byDay[dayKey].before += row.rtkBytesBefore;
+      byDay[dayKey].after += row.rtkBytesAfter;
       byDay[dayKey].saved += rtkSaved;
       byDay[dayKey].requests += 1;
     }
 
     let hrTokens = 0;
     let hrBytesSaved = 0;
-    if (hs && typeof hs.savedTokens === "number" && hs.savedTokens > 0) {
+    if (row.headroomTokensSaved != null && row.headroomTokensSaved > 0) {
       headroom.requestsWithStats += 1;
       headroom.requestsWithSavings += 1;
-      headroom.tokensSaved += hs.savedTokens;
-      hrTokens = hs.savedTokens;
-    } else if (diag && (diag.beforeBytes != null || diag.bytesBefore != null)) {
+      headroom.tokensSaved += row.headroomTokensSaved;
+      hrTokens = row.headroomTokensSaved;
+    } else if (row.headroomBytesSaved != null && row.headroomBytesSaved > 0) {
       headroom.requestsWithStats += 1;
-      const before = diag.beforeBytes ?? diag.bytesBefore ?? 0;
-      const after = diag.afterBytes ?? diag.bytesAfter ?? 0;
-      headroom.bytesBefore += before;
-      headroom.bytesAfter += after;
-      hrBytesSaved = Math.max(0, before - after);
-      if (hrBytesSaved > 0) {
-        headroom.requestsWithSavings += 1;
-        headroom.bytesSaved += hrBytesSaved;
-      }
-      if (diag.reason) noteSkipReason(diag.reason, detail.timestamp);
-    } else if (diag?.reason) {
-      noteSkipReason(diag.reason, detail.timestamp);
+      headroom.requestsWithSavings += 1;
+      headroom.bytesSaved += row.headroomBytesSaved;
+      hrBytesSaved = row.headroomBytesSaved;
     }
 
     if ((rtkSaved > 0 || hrTokens > 0 || hrBytesSaved > 0) && recent.length < 12) {

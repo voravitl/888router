@@ -140,12 +140,27 @@ export const TABLES = {
       connectionId: "TEXT",
       status: "TEXT",
       data: "TEXT NOT NULL",
+      // Denormalized hot stats (DBA fix for savings report — extract at write
+      // time so getTokenSaveSummary reads index-only instead of 436KB blobs).
+      prunerTokensBefore: "INTEGER",
+      prunerTokensAfter: "INTEGER",
+      prunerTokensSaved: "INTEGER",
+      prunerOmitted: "INTEGER",
+      rtkBytesBefore: "INTEGER",
+      rtkBytesAfter: "INTEGER",
+      rtkBytesSaved: "INTEGER",
+      headroomTokensSaved: "INTEGER",
+      headroomBytesSaved: "INTEGER",
+      cacheHit: "INTEGER DEFAULT 0",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_rd_ts ON requestDetails(timestamp DESC)",
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+      // Covering index for the savings-report aggregate (timestamp range +
+      // the hot numeric columns) — query becomes index-only, no blob reads.
+      "CREATE INDEX IF NOT EXISTS idx_rd_ts_stats ON requestDetails(timestamp DESC, prunerTokensSaved, rtkBytesSaved, headroomTokensSaved)",
     ],
   },
 };
