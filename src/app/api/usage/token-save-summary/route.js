@@ -7,10 +7,13 @@ function periodToRange(period) {
   const end = new Date();
   const start = new Date(end);
   const p = String(period || "7d").toLowerCase();
-  if (p === "24h" || p === "1d") start.setHours(start.getHours() - 24);
+  if (p === "today") start.setHours(start.getHours() - 24);
+  else if (p === "24h" || p === "1d") start.setHours(start.getHours() - 24);
   else if (p === "30d") start.setDate(start.getDate() - 30);
+  else if (p === "60d") start.setDate(start.getDate() - 60);
   else start.setDate(start.getDate() - 7); // default 7d
-  return { startDate: start.toISOString(), endDate: end.toISOString(), period: p === "30d" ? "30d" : p === "24h" || p === "1d" ? "24h" : "7d" };
+  const label = p === "today" ? "24h" : p === "30d" ? "30d" : p === "60d" ? "60d" : p === "24h" || p === "1d" ? "24h" : "7d";
+  return { startDate: start.toISOString(), endDate: end.toISOString(), period: label };
 }
 
 /**

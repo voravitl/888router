@@ -49,6 +49,7 @@ function makeResponse(status, body) {
     status,
     ok: status >= 200 && status < 300,
     statusText: JSON.stringify(body),
+    headers: { get: (name) => (name === "content-type" ? "application/json" : null) },
     clone: () => ({
       json: async () => body,
     }),
@@ -120,5 +121,57 @@ describe("combo 429 → proxy pool exhausted (quota-limited)", () => {
 
     expect(handleSingleModel).toHaveBeenCalledTimes(2); // model-a error → model-b success
     expect(result.status).toBe(200);
+  });
+});
+
+describe("combo reasoning empty-content retry", () => {
+  it("retries once with a raised max_tokens when a reasoning model returns empty content with finish_reason length", async () => {
+    const models = ["openai/deepseek-reasoner"];
+    const handleSingleModel = vi.fn(async (body) =>
+      body.max_tokens === 200
+        // first attempt: burned budget on reasoning, empty content
+        ? makeResponse(200, {
+            choices: [{ finish_reason: "length", message: { content: "", reasoning_content: "lots of thinking..." } }],
+          })
+        // retry with raised budget: real answer
+        : makeResponse(200, {
+            choices: [{ finish_reason: "stop", message: { content: "final answer" } }],
+          })
+    );
+
+    const result = await handleComboChat({
+      body: { model: "my-combo", max_tokens: 200, stream: false },
+      models,
+      handleSingleModel,
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+      comboName: "my-combo",
+    });
+
+    expect(result.status).toBe(200);
+    // first attempt (empty reasoning) + one retry with raised max_tokens
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(handleSingleModel).toHaveBeenLastCalledWith(
+      expect.objectContaining({ max_tokens: expect.any(Number) }),
+      "openai/deepseek-reasoner"
+    );
+  });
+
+  it("does not retry when content is present", async () => {
+    const handleSingleModel = vi.fn(async () =>
+      makeResponse(200, {
+        choices: [{ finish_reason: "stop", message: { content: "ok" } }],
+      })
+    );
+
+    const result = await handleComboChat({
+      body: { model: "my-combo", max_tokens: 200, stream: false },
+      models: ["openai/deepseek-reasoner"],
+      handleSingleModel,
+      log: { info: () => {}, warn: () => {}, error: () => {} },
+      comboName: "my-combo",
+    });
+
+    expect(result.status).toBe(200);
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
   });
 });

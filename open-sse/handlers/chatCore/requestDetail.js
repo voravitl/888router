@@ -82,6 +82,8 @@ export function buildRequestDetail(base, overrides = {}) {
     rtkStats: base.rtkStats || null,
     headroomStats: base.headroomStats || null,
     headroomDiagnostics: base.headroomDiagnostics || null,
+    cacheHit: base.cacheHit || false,
+    cacheKey: base.cacheKey || null,
     ...overrides
   };
 }
