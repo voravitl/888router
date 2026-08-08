@@ -7,6 +7,7 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { createComboStreamGuard } from "./comboStreamGuard.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -294,6 +295,49 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           lastError = `empty body (${result.status})`;
           if (!lastStatus) lastStatus = result.status;
           continue;
+        }
+        // Reasoning models (deepseek, kimi, ...) can exhaust max_tokens on the
+        // thinking phase and end the stream with finish_reason "length" and
+        // zero text content. The client would get a 200 SSE with nothing
+        // usable. Inspect the stream head via comboStreamGuard and fall through
+        // when it ends empty (the non-stream JSON path below already handles
+        // the same condition via isReasoningEmptyContent).
+        if (body.stream === true && !emptyBody && result.body && typeof result.body.getReader === "function") {
+          const contentType = result.headers?.get('content-type') || "";
+          if (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson')) {
+            const guard = createComboStreamGuard();
+            const reader = result.body.getReader();
+            let head = Buffer.alloc(0);
+            let decided = false;
+            // Read the SSE head until the guard has a verdict: first content
+            // delta OR the terminal finish event. Cap at ~64KB of reasoning
+            // preamble; past that we assume live and forward immediately.
+            while (!decided) {
+              const { done, value } = await reader.read();
+              if (done) {
+                guard.feedEnd();
+                decided = true;
+                break;
+              }
+              guard.feed(value);
+              head = Buffer.concat([head, value]);
+              if (guard.hasDecision() || head.length > 65536) {
+                decided = true;
+              }
+            }
+            if (guard.isEmpty()) {
+              log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
+              await reader.cancel().catch(() => {});
+              lastError = "empty stream content";
+              if (!lastStatus) lastStatus = 502;
+              continue;
+            }
+            // Release the buffered head and continue the stream to the client.
+            return new Response(pipeStreamWithHead(reader, head), {
+              status: result.status,
+              headers: result.headers,
+            });
+          }
         }
         // ponytail: reasoning models (deepseek, kimi, ...) can exhaust max_tokens
         // on the thinking phase and return content: "" with finish_reason: "length"
@@ -664,4 +708,29 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
   return handleSingleModel(judgeBody, judge);
+}
+
+/**
+ * Rebuild a ReadableStream from a reader that already had `head` bytes pulled
+ * (by comboStreamGuard) plus the rest of the stream.
+ */
+function pipeStreamWithHead(reader, head) {
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        if (head && head.length > 0) controller.enqueue(head);
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          controller.enqueue(value);
+        }
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel() {
+      reader.cancel().catch(() => {});
+    },
+  });
 }
