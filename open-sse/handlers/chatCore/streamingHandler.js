@@ -196,7 +196,12 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
 
-    saveUsageStats({ provider, model, tokens: streamUsage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE" });
+    // An empty stream (reasoning budget exhausted, no text) is a failure from
+    // the client's perspective — don't record it as a normal billable STREAM
+    // USAGE row.
+    if (hasText) {
+      saveUsageStats({ provider, model, tokens: streamUsage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE" });
+    }
   };
 
   return { onStreamComplete, streamDetailId };

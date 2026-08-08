@@ -79,8 +79,8 @@ export function createComboStreamGuard() {
         // MAX_BUFFER_BYTES) decides "live" — the head is released as-is and
         // the empty-detection is skipped for this model only. The alternative
         // (waiting for text with no cap) could stall a genuine long-thinking
-        // response forever. Upgrade path: keep reading to terminal while
-        // forwarding the already-buffered head in parallel.
+        // response forever. Upgrade path: tee the stream to keep inspecting
+        // while forwarding (needs a TransformStream tee, non-trivial).
         if (!capWarned) {
           console.warn("[combo] stream guard cap hit — releasing head without empty verdict (model may still reply)");
           capWarned = true;
