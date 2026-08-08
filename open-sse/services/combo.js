@@ -321,7 +321,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             if (guard.isEmpty()) {
               log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
               await reader.cancel().catch(() => {});
-              lastError = "empty stream content";
+              lastError = lastError ? `${lastError}; empty stream content` : "empty stream content";
               if (!lastStatus) lastStatus = 502;
               continue;
             }
@@ -721,8 +721,6 @@ function pipeStreamWithHead(reader, head) {
       } catch (err) {
         console.error("[combo] pipeStreamWithHead failed:", err?.message || err);
         controller.error(err);
-      } finally {
-        reader.releaseLock?.();
       }
     },
     cancel() {

@@ -29,10 +29,13 @@ export function createComboStreamGuard() {
   let pending = "";
   /** Once any real (non-empty) content delta is seen, forward instantly. */
   let sawText = false;
-  /** Seen terminal event (finish_reason "[DONE]" / done). */
+  /** Seen an explicit terminal marker (finish_reason / [DONE] / done). */
   let sawTerminal = false;
+  /** Reader reached end-of-stream (may be a clean finish OR a mid-stream cut). */
+  let sawEos = false;
   /** Reasoning preambles can be long; past this we assume live and release. */
   const MAX_BUFFER_BYTES = 64 * 1024;
+  let capWarned = false;
   const dec = new TextDecoder();
 
   const consume = (text) => {
@@ -78,14 +81,18 @@ export function createComboStreamGuard() {
         // (waiting for text with no cap) could stall a genuine long-thinking
         // response forever. Upgrade path: keep reading to terminal while
         // forwarding the already-buffered head in parallel.
+        if (!capWarned) {
+          console.warn("[combo] stream guard cap hit — releasing head without empty verdict (model may still reply)");
+          capWarned = true;
+        }
         sawText = true;
       }
       return { sawText, sawTerminal };
     },
 
-    /** Enough bytes to decide: either text seen or terminal seen. */
+    /** Enough bytes to decide: text, explicit terminal, or end-of-stream. */
     hasDecision() {
-      return sawText || sawTerminal;
+      return sawText || sawTerminal || sawEos;
     },
 
     /** Concatenated bytes buffered so far (caller enqueues before forwarding). */
@@ -106,17 +113,20 @@ export function createComboStreamGuard() {
       return out;
     },
 
-    /** True = stream ENDED (terminal seen) with zero text content. */
+    /** True = stream ENDED with an EXPLICIT terminal marker and zero text. */
     isEmpty() {
       return !sawText && sawTerminal;
     },
 
-    /** Explicit end-of-stream signal (reader done). */
+    /** Reader reached end-of-stream. Only a clean finish marker counts as
+     *  terminal for the empty verdict — a mid-stream cut (network error)
+     *  must NOT be treated as "model returned empty" (it may have had
+     *  content that was truncated). */
     feedEnd() {
       consume(dec.decode());
       if (pending.trim()) consume("\n"); // force the last partial line through
-      sawTerminal = true;
-      return { sawText, sawTerminal };
+      sawEos = true;
+      return { sawText, sawTerminal, sawEos };
     },
   };
 }

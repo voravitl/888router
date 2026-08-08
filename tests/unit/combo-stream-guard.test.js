@@ -88,4 +88,21 @@ describe("comboStreamGuard", () => {
     expect(g.hasDecision()).toBe(true);
     expect(g.isEmpty()).toBe(true);
   });
+
+  it("does NOT treat a mid-stream cut (EOF without terminal) as empty", () => {
+    const g = createComboStreamGuard();
+    // Reader done WITHOUT any finish marker — could be a network cut mid-content.
+    g.feed(enc("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n"));
+    g.feedEnd();
+    expect(g.hasDecision()).toBe(true); // sawEos only
+    expect(g.isEmpty()).toBe(false);    // no explicit terminal → not empty verdict
+  });
+
+  it("treats clean [DONE] without content as empty", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n"));
+    g.feed(enc("data: [DONE]\n\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+  });
 });
