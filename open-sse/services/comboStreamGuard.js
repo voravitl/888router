@@ -66,12 +66,15 @@ export function createComboStreamGuard() {
       consume(dec.decode(value, { stream: true }));
       // Buffer the raw chunk regardless of whether it carried content: the
       // caller replays everything up to the decision point via release().
-      // (Safety: a huge reasoning preamble flushes the buffer and assumes live.)
       chunks.push(value);
       bufferBytes += sz;
       if (bufferBytes > MAX_BUFFER_BYTES) {
-        chunks = [];
-        bufferBytes = 0;
+        // ponytail: an extremely long reasoning preamble (no text within
+        // MAX_BUFFER_BYTES) decides "live" — the head is released as-is and
+        // the empty-detection is skipped for this model only. The alternative
+        // (waiting for text with no cap) could stall a genuine long-thinking
+        // response forever. Upgrade path: keep reading to terminal while
+        // forwarding the already-buffered head in parallel.
         sawText = true;
       }
       return { sawText, sawTerminal };
@@ -84,7 +87,17 @@ export function createComboStreamGuard() {
 
     /** Concatenated bytes buffered so far (caller enqueues before forwarding). */
     release() {
-      const out = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
+      let out;
+      if (chunks.length === 1) {
+        out = chunks[0];
+      } else {
+        // Manual concat: reader.read() yields Uint8Array; Buffer.concat would
+        // break outside Node (edge/worker runtimes).
+        const total = chunks.reduce((n, c) => n + (c.byteLength || c.length || 0), 0);
+        out = new Uint8Array(total);
+        let off = 0;
+        for (const c of chunks) { out.set(c, off); off += c.byteLength || c.length; }
+      }
       chunks = [];
       bufferBytes = 0;
       return out;
