@@ -47,11 +47,14 @@ export function createComboStreamGuard() {
       if (payload === "[DONE]") { sawTerminal = true; continue; }
       try {
         const json = JSON.parse(payload);
+        // Ollama NDJSON: {"response":"...","done":true,"done_reason":"..."}
         if (json.done === true) sawTerminal = true;
+        const ollamaText = typeof json.response === "string" ? json.response : "";
         const delta = json.choices && json.choices[0] && json.choices[0].delta;
-        const textVal = (delta && (delta.content || delta.text)) || "";
+        const deltaText = (delta && (delta.content || delta.text)) || "";
+        const textVal = ollamaText || deltaText;
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
-        if (json.choices && json.choices[0] && json.choices[0].finish_reason) {
+        if ((json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason) {
           sawTerminal = true;
         }
       } catch { /* incomplete / non-JSON line — not meaningful for the guard */ }

@@ -71,4 +71,21 @@ describe("comboStreamGuard", () => {
     expect(g.hasDecision()).toBe(true);
     expect(g.isEmpty()).toBe(false);
   });
+
+  it("recognizes ollama NDJSON shape (response/done/done_reason)", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("{\"response\":\"Ollama\",\"done\":false}\n"));
+    g.feed(enc("{\"response\":\" answer\",\"done\":false}\n"));
+    g.feed(enc("{\"response\":\"\",\"done\":true,\"done_reason\":\"stop\"}\n"));
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("marks ollama reasoning-only stream as empty", () => {
+    const g = createComboStreamGuard();
+    // Ollama thinking model: response empty, done with length reason.
+    g.feed(enc("{\"response\":\"\",\"done\":true,\"done_reason\":\"length\"}\n"));
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(true);
+  });
 });

@@ -721,6 +721,8 @@ function pipeStreamWithHead(reader, head) {
       } catch (err) {
         console.error("[combo] pipeStreamWithHead failed:", err?.message || err);
         controller.error(err);
+      } finally {
+        reader.releaseLock?.();
       }
     },
     cancel() {
