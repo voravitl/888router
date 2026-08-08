@@ -1,3 +1,9 @@
+# v0.15.6 (2026-08-08)
+
+## Fix: Savings Report OOM (PR #235)
+
+- **Stop SELECTing the 870MB-2.9GB data blob** in getTokenSaveSummary — was materializing the whole blob in the Node heap → FATAL OOM → HTTP 000 + container restart. Now columns-only aggregate (18ms/2000 rows). filterHits/diag/meta dropped from the report (re-add later via targeted query if the dashboard needs chips).
+
 # v0.15.5 (2026-08-07)
 
 ## Fix: Proxy-Pool Retry Scope (PR #231)
