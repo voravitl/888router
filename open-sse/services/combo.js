@@ -326,9 +326,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
               continue;
             }
             // Release the buffered head and continue the stream to the client.
+            // Drop content-length: the original value no longer matches once
+            // the buffered head is prepended — a stale header truncates/hangs
+            // the client.
+            const streamHeaders = new Headers(result.headers);
+            streamHeaders.delete("content-length");
             return new Response(pipeStreamWithHead(reader, guard.release()), {
               status: result.status,
-              headers: result.headers,
+              headers: streamHeaders,
             });
           }
         }
