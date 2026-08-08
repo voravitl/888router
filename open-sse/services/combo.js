@@ -307,23 +307,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           if (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson')) {
             const guard = createComboStreamGuard();
             const reader = result.body.getReader();
-            let head = Buffer.alloc(0);
-            let decided = false;
             // Read the SSE head until the guard has a verdict: first content
-            // delta OR the terminal finish event. Cap at ~64KB of reasoning
-            // preamble; past that we assume live and forward immediately.
-            while (!decided) {
+            // delta OR the terminal finish event. The guard caps its buffer
+            // (MAX_BUFFER_BYTES) and releases the head itself.
+            while (!guard.hasDecision()) {
               const { done, value } = await reader.read();
               if (done) {
                 guard.feedEnd();
-                decided = true;
                 break;
               }
               guard.feed(value);
-              head = Buffer.concat([head, value]);
-              if (guard.hasDecision() || head.length > 65536) {
-                decided = true;
-              }
             }
             if (guard.isEmpty()) {
               log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
@@ -333,7 +326,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
               continue;
             }
             // Release the buffered head and continue the stream to the client.
-            return new Response(pipeStreamWithHead(reader, head), {
+            return new Response(pipeStreamWithHead(reader, guard.release()), {
               status: result.status,
               headers: result.headers,
             });

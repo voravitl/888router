@@ -42,4 +42,33 @@ describe("comboStreamGuard", () => {
     expect(g.hasDecision()).toBe(true);
     expect(g.isEmpty()).toBe(true);
   });
+
+  it("recognizes a content delta split across chunk boundaries", () => {
+    const g = createComboStreamGuard();
+    // "content":"hel"  |  "lo" split mid-line
+    g.feed(enc("data: {\"choices\":[{\"delta\":{\"content\":\"hel"));
+    g.feed(enc("lo\"}}]}\n\n"));
+    g.feed(enc("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"));
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("recognizes bare NDJSON lines (no data: prefix)", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("{\"choices\":[{\"delta\":{\"content\":\"ndjson-ok\"}}]}\n"));
+    g.feed(enc("{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n"));
+    g.feedEnd();
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("flushes pending line on feedEnd", () => {
+    const g = createComboStreamGuard();
+    // Content line without trailing newline, then end-of-stream.
+    g.feed(enc("data: {\"choices\":[{\"delta\":{\"content\":\"final\"}}]}\n\n"));
+    g.feed(enc("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}"));
+    g.feedEnd();
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
 });

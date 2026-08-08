@@ -14,37 +14,47 @@
  * finish event), then releases everything — so the verdict exists before the
  * first byte leaves the router. Latency cost: only up to the first content
  * chunk, identical to what the client would wait anyway.
+ *
+ * The parser keeps a `pending` residual across feed() calls so a `data:` line
+ * split across two upstream chunks is still recognized (a split content delta
+ * must not turn into a false "empty" verdict). NDJSON lines without a `data:`
+ * prefix are parsed as raw JSON so the application/x-ndjson content type is
+ * actually supported.
  */
 export function createComboStreamGuard() {
-  /** Buffered bytes not yet forwarded to the client. */
-  let buffer = [];
+  /** Raw chunk bytes buffered until the verdict. */
+  let chunks = [];
   let bufferBytes = 0;
+  /** Incomplete SSE/NDJSON line carried between feed() calls. */
+  let pending = "";
   /** Once any real (non-empty) content delta is seen, forward instantly. */
   let sawText = false;
   /** Seen terminal event (finish_reason "[DONE]" / done). */
   let sawTerminal = false;
-  /** Cap: reasoning preambles can be long; past this we assume live and release. */
-  const MAX_BUFFER_BYTES = 256 * 1024;
+  /** Reasoning preambles can be long; past this we assume live and release. */
+  const MAX_BUFFER_BYTES = 64 * 1024;
+  const dec = new TextDecoder();
 
-  const parseChunk = (text) => {
-    const lines = text.split("\n");
+  const consume = (text) => {
+    pending += text;
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
     for (const line of lines) {
       const t = line.trim();
-      if (!t.startsWith("data:")) continue;
-      const payload = t.slice(5).trim();
+      if (!t) continue;
+      // SSE `data:` lines and bare NDJSON JSON lines both parse the same way.
+      const payload = t.startsWith("data:") ? t.slice(5).trim() : t;
       if (payload === "[DONE]") { sawTerminal = true; continue; }
       try {
         const json = JSON.parse(payload);
         if (json.done === true) sawTerminal = true;
         const delta = json.choices && json.choices[0] && json.choices[0].delta;
-        const textVal =
-          (delta && typeof delta.content === "string" && delta.content !== "" && delta.content) ||
-          (delta && typeof delta.text === "string" && delta.text !== "" ? delta.text : "");
-        if (textVal) sawText = true;
+        const textVal = (delta && (delta.content || delta.text)) || "";
+        if (typeof textVal === "string" && textVal.length > 0) sawText = true;
         if (json.choices && json.choices[0] && json.choices[0].finish_reason) {
           sawTerminal = true;
         }
-      } catch { /* non-JSON / partial line — not meaningful for the guard */ }
+      } catch { /* incomplete / non-JSON line — not meaningful for the guard */ }
     }
   };
 
@@ -53,16 +63,16 @@ export function createComboStreamGuard() {
     feed(value) {
       const sz = value?.byteLength || value?.length || 0;
       if (sz === 0) return { sawText, sawTerminal };
-      parseChunk(new TextDecoder().decode(value));
-      if (!sawText) {
-        buffer.push(value);
-        bufferBytes += sz;
-        if (bufferBytes > MAX_BUFFER_BYTES) {
-          // Safety release: assume live, drop the head.
-          buffer = [];
-          bufferBytes = 0;
-          sawText = true;
-        }
+      consume(dec.decode(value, { stream: true }));
+      // Buffer the raw chunk regardless of whether it carried content: the
+      // caller replays everything up to the decision point via release().
+      // (Safety: a huge reasoning preamble flushes the buffer and assumes live.)
+      chunks.push(value);
+      bufferBytes += sz;
+      if (bufferBytes > MAX_BUFFER_BYTES) {
+        chunks = [];
+        bufferBytes = 0;
+        sawText = true;
       }
       return { sawText, sawTerminal };
     },
@@ -74,8 +84,8 @@ export function createComboStreamGuard() {
 
     /** Concatenated bytes buffered so far (caller enqueues before forwarding). */
     release() {
-      const out = buffer.length === 1 ? buffer[0] : Buffer.concat(buffer);
-      buffer = [];
+      const out = chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
+      chunks = [];
       bufferBytes = 0;
       return out;
     },
@@ -87,6 +97,8 @@ export function createComboStreamGuard() {
 
     /** Explicit end-of-stream signal (reader done). */
     feedEnd() {
+      consume(dec.decode());
+      if (pending.trim()) consume("\n"); // force the last partial line through
       sawTerminal = true;
       return { sawText, sawTerminal };
     },
