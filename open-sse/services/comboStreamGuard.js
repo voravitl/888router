@@ -113,15 +113,16 @@ export function createComboStreamGuard() {
       return out;
     },
 
-    /** True = stream ENDED with an EXPLICIT terminal marker and zero text. */
+    /** True = stream ENDED with zero text. Either an explicit terminal marker
+     *  or a clean EOF counts — some providers close without a finish marker.
+     *  A mid-stream network cut surfaces through read() rejection, which the
+     *  caller handles via cancel(), not feedEnd(), so EOF here is a clean
+     *  close by construction. */
     isEmpty() {
-      return !sawText && sawTerminal;
+      return !sawText && (sawTerminal || sawEos);
     },
 
-    /** Reader reached end-of-stream. Only a clean finish marker counts as
-     *  terminal for the empty verdict — a mid-stream cut (network error)
-     *  must NOT be treated as "model returned empty" (it may have had
-     *  content that was truncated). */
+    /** Reader reached end-of-stream (clean close). */
     feedEnd() {
       consume(dec.decode());
       if (pending.trim()) consume("\n"); // force the last partial line through
