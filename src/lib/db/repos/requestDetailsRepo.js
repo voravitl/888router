@@ -273,7 +273,7 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
   const totalInWindow = cntRow ? cntRow.c : 0;
 
   const rows = db.all(
-    `SELECT prunerTokensSaved, rtkBytesSaved, headroomTokensSaved, prunerTokensBefore, prunerTokensAfter, prunerOmitted, rtkBytesBefore, rtkBytesAfter, headroomBytesSaved, cacheHit FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
+    `SELECT id, timestamp, model, provider, prunerTokensSaved, rtkBytesSaved, headroomTokensSaved, prunerTokensBefore, prunerTokensAfter, prunerOmitted, rtkBytesBefore, rtkBytesAfter, headroomBytesSaved, cacheHit FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
     [...params, safeLimit],
   );
 
@@ -366,7 +366,7 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
       if (diag.reason) noteSkipReason(diag.reason, detail.timestamp);
     }
     const isCacheHit = row.cacheHit != null ? row.cacheHit === 1 : detail?.cacheHit === true;
-    const dayKey = (detail.timestamp && String(detail.timestamp).slice(0, 10)) || "unknown";
+    const dayKey = (row.timestamp && String(row.timestamp).slice(0, 10)) || (detail.timestamp && String(detail.timestamp).slice(0, 10)) || "unknown";
 
     // Track response cache hits
     cache.requests += 1;
@@ -434,10 +434,10 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
 
     if ((rtkSaved > 0 || hrTokens > 0 || hrBytesSaved > 0) && recent.length < 12) {
       recent.push({
-        id: detail.id || null,
-        timestamp: detail.timestamp || null,
-        model: detail.clientModel || detail.model || null,
-        provider: detail.provider || null,
+        id: row.id || detail.id || null,
+        timestamp: row.timestamp || detail.timestamp || null,
+        model: row.model || detail.clientModel || detail.model || null,
+        provider: row.provider || detail.provider || null,
         rtkBytesSaved: rtkSaved || 0,
         rtkPct,
         headroomTokensSaved: hrTokens || 0,
