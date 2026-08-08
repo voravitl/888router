@@ -1,3 +1,9 @@
+# v0.15.7 (2026-08-08)
+
+## Fix: Savings Report Chart (PR #239)
+
+- **Restore id/timestamp/model/provider in the savings-summary SELECT** — the columns-only OOM fix (#235) dropped them, so dayKey fell to 'unknown' and the daily series chart showed 'No daily series yet' with recent[] nulls. The 4 base columns are lightweight (~240KB/2000 rows) and keep the OOM fix intact (data blob still excluded).
+
 # v0.15.6 (2026-08-08)
 
 ## Fix: Savings Report OOM (PR #235)
