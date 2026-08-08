@@ -273,7 +273,7 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
   const totalInWindow = cntRow ? cntRow.c : 0;
 
   const rows = db.all(
-    `SELECT data, prunerTokensSaved, rtkBytesSaved, headroomTokensSaved, prunerTokensBefore, prunerTokensAfter, prunerOmitted, rtkBytesBefore, rtkBytesAfter, headroomBytesSaved, cacheHit FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
+    `SELECT prunerTokensSaved, rtkBytesSaved, headroomTokensSaved, prunerTokensBefore, prunerTokensAfter, prunerOmitted, rtkBytesBefore, rtkBytesAfter, headroomBytesSaved, cacheHit FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
     [...params, safeLimit],
   );
 
@@ -333,7 +333,9 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     const hasColumns = row.prunerTokensBefore != null || row.prunerTokensSaved != null ||
       row.rtkBytesBefore != null || row.rtkBytesSaved != null ||
       row.headroomTokensSaved != null || row.headroomBytesSaved != null;
-    const detail = hasColumns ? {} : parseJson(row.data, {});
+    // data column is no longer selected (columns-only aggregate) — rows with
+    // null columns (pre-backfill) can't fall back to the blob anymore.
+    const detail = hasColumns ? {} : (row.data ? parseJson(row.data, {}) : {});
     if (row.prunerTokensBefore == null && row.prunerTokensSaved == null && row.prunerOmitted == null) {
       const ps = detail?.prunerStats;
       if (ps && typeof ps.tokensBefore === "number") {
@@ -402,6 +404,10 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
           const key = hit?.filter || hit?.shape || "other";
           rtk.filterHits[key] = (rtk.filterHits[key] || 0) + 1;
         }
+      } else if (row.rtkBytesSaved != null) {
+        // Columns-only path: filterHits live in the data blob (not selected).
+        // Dropped from the aggregate (ponytail: re-add via a targeted
+        // SELECT data for rows WITH hits if the dashboard needs filter chips).
       }
       if (!byDay[dayKey]) {
         byDay[dayKey] = { date: dayKey, before: 0, after: 0, saved: 0, requests: 0 };
