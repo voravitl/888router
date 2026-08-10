@@ -196,7 +196,10 @@ export async function saveRequestDetail(detail) {
   // playground/benchmark UIs can read them without waiting the batch interval.
   const hasTokenSaveStats = Boolean(detail?.prunerStats || detail?.rtkStats || detail?.headroomStats || detail?.headroomDiagnostics);
   const hasUsage = Boolean(detail?.tokens && (detail.tokens.prompt_tokens || detail.tokens.completion_tokens || detail.tokens.input_tokens || detail.tokens.output_tokens));
-  const forceFlush = hasTokenSaveStats || (detail?.status === "success" && hasUsage);
+  // "empty" (reasoning stream ended with zero text content) is a terminal
+  // result like success — flush it promptly so the condition is observable.
+  const isTerminal = detail?.status === "success" || detail?.status === "empty";
+  const forceFlush = hasTokenSaveStats || (isTerminal && hasUsage);
 
   // Trigger immediate flush if batch threshold reached or forceFlush.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.

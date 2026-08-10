@@ -156,23 +156,38 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, detailId = null, prunerStats = null, rtkStats = null, headroomStats = null, headroomDiagnostics = null, clientModel = null }) {
   const streamDetailId = detailId || `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  // Reasoning models (deepseek/kimi/…) can stream ONLY thinking deltas then
+  // end with finish_reason "length" and no text. onStreamComplete then gets an
+  // empty contentObj. When the whole stream ends without a single text chunk,
+  // surface it here: log + label so combos/ops can see it, and downstream
+  // decides (comboStreamGuard already handles the combo path before the head
+  // reaches the client; single-model clients get an accurate status here).
+  const onStreamComplete = (contentObj, streamUsage, ttftAt) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    const hasText = typeof contentObj?.content === "string" && contentObj.content.length > 0;
+    const safeContent = hasText ? contentObj.content : "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
+
+    // An empty streamed reply (reasoning model exhausted budget on thinking)
+    // is a real failure from the client's perspective even though upstream
+    // returned 200. Mark it so single-model requests get an traceable row and
+    // combos observe it (the comboStreamGuard path already prevents this from
+    // reaching the client for combos; single-model requests rely on this log).
+    const status = hasText ? "success" : "empty";
+    const note = hasText ? null : { reason: "empty-stream-content", finishReason: contentObj?.finishReason || null };
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId, clientModel: clientModel || clientRawRequest?.body?.model || null,
       latency,
-      tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+      tokens: streamUsage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
-      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
-      status: "success",
+      response: { content: safeContent, thinking: safeThinking, type: "streaming", note },
+      status,
       prunerStats,
       rtkStats,
       headroomStats,
@@ -181,7 +196,12 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
 
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE" });
+    // An empty stream (reasoning budget exhausted, no text) is a failure from
+    // the client's perspective — don't record it as a normal billable STREAM
+    // USAGE row.
+    if (hasText) {
+      saveUsageStats({ provider, model, tokens: streamUsage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE" });
+    }
   };
 
   return { onStreamComplete, streamDetailId };
