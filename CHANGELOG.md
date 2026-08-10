@@ -1,3 +1,12 @@
+# v0.15.8 (2026-08-10)
+
+## Fix: Streaming reply truncated-to-empty on reasoning models (PR #243)
+
+- **Fall through when a combo model streams reasoning-only then ends empty** — deepseek/kimi models could exhaust max_tokens on the thinking phase and end the SSE stream with `finish_reason: length` + zero text content. handleComboChat treated any 2xx as success, so the client got a 200 SSE with nothing usable ("answer got cut off").
+- **New `comboStreamGuard`** buffers the stream head until it sees real text or a terminal event, then releases it untouched (latency = first-chunk only). Empty streams fall through to the next combo model.
+- **Ollama NDJSON + split-chunk + clean-EOF handling** so combo members in different stream formats are detected correctly; mid-stream network cuts are not misread as empty.
+- **Empty streams no longer recorded as billable STREAM USAGE.**
+
 # v0.15.7 (2026-08-08)
 
 ## Fix: Savings Report Chart (PR #239)
