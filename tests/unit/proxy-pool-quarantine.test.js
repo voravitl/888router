@@ -168,6 +168,32 @@ describe("pool quarantine on failure", () => {
 });
 
 describe("rotation skips parked pools", () => {
+  it("never re-selects a transient-5xx pool before its 30s park elapses", async () => {
+    // The regression this whole feature exists for: a Vercel relay that 504'd
+    // needs ~20s to recover, but with no parkMs on the status rules it was
+    // parked for cooldownMs (5s) and handed straight back — combo burned the
+    // wait, then fell through to the next provider while the relay was still
+    // down. Park the relay, then assert selection skips it for the full window.
+    resetPools(
+      { id: "poolA", name: "A" },
+      { id: "poolB", name: "B" },
+    );
+    await markAccountUnavailable("noauth:poolA", 504, "An error occurred with your deployment", "opencode");
+    await vi.waitFor(() => expect(poolWrites.length).toBe(1));
+
+    const parkedUntil = new Date(poolWrites[0].unavailableUntil).getTime();
+    const windowMs = parkedUntil - Date.now();
+    expect(windowMs).toBeGreaterThanOrEqual(25_000); // ~30s park, not 5s
+
+    // poolA is parked → the FIRST eligible pick must be poolB, and it must
+    // stay that way until the window elapses.
+    for (let i = 0; i < 3; i++) {
+      const creds = await getProviderCredentials("opencode", new Set(["noauth:seed"]), "deepseek-v4-flash-free");
+      expect(creds.id).toBe("noauth:poolB");
+    }
+    expect(proxyPools.find((p) => p.id === "poolA").testStatus).toBe("unavailable");
+  });
+
   it("skips a pool still inside its park window", async () => {
     resetPools(
       { id: "poolDead", name: "Dead", testStatus: "unavailable", unavailableUntil: future(20 * MIN) },
