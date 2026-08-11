@@ -344,7 +344,9 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       if (!poolId) return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
       updateProxyPool(poolId, {
         testStatus: "unavailable",
-        lastError: typeof errorText === "string" ? errorText.slice(0, 300) : String(status),
+        lastError: typeof errorText === "string"
+          ? (errorText.length > 300 ? errorText.slice(0, 297) + "…" : errorText)
+          : String(status),
         unavailableUntil: new Date(Date.now() + (cooldownMs ?? 30000)).toISOString(),
         updatedAt: new Date().toISOString(),
       }).catch((e) => log.warn("AUTH", `failed to mark pool ${poolId} unavailable: ${e.message}`));
