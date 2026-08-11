@@ -1,3 +1,11 @@
+# v0.15.11 (2026-08-11)
+
+## Fix: Combo guard cap-hit stream ending empty (PR #256)
+
+- **A reasoning preamble over 64KB tripped the stream-guard cap.** `comboStreamGuard` set `sawText=true` when the reasoning preamble exceeded `MAX_BUFFER_BYTES` (64KB) and released the head "live" — a don't-stall decision. But a stream whose reasoning alone blew past the cap and then ended with zero real content was thereby classified **non-empty**, so the client got a 200 SSE with nothing usable: `502 empty stream content` on retry loops (`9-deepseek-v4-flash[1m]` retrying 2/10, 3/10...).
+- **The cap release now only means "don't stall a long-thinking model"** — an EOF or terminal marker with no text still classifies as empty, so the combo falls through to the next model instead of shipping an unusable 200.
+- Regression tests cover cap-hit-then-empty, cap-hit-then-text, and cap-hit-then-terminal; caller verified to consult `isEmpty()` before any byte reaches the client.
+
 # v0.15.10 (2026-08-11)
 
 ## Fix: Transient 5xx pools park 30s, not 5s (PR #252)
