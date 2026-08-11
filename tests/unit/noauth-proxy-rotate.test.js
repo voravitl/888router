@@ -24,6 +24,14 @@ vi.mock("@/lib/network/connectionProxy", () => ({
 
 vi.mock("@/lib/db/repos/proxyPoolsRepo", () => ({
   getProxyPools: vi.fn(async () => proxyPools),
+  // markAccountUnavailable/clearAccountError persist pool health on the pool row
+  // (a virtual noauth: connection has no providerConnections row to hold it).
+  getProxyPoolById: vi.fn(async (id) => proxyPools.find((p) => p.id === id) || null),
+  updateProxyPool: vi.fn(async (id, data) => {
+    const p = proxyPools.find((x) => x.id === id);
+    if (p) Object.assign(p, data);
+    return p || null;
+  }),
 }));
 
 vi.mock("open-sse/services/accountFallback.js", () => ({

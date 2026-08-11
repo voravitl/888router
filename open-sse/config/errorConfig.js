@@ -47,6 +47,20 @@ const COOLDOWN = {
   short: 5 * 1000,
 };
 
+// How long a proxy pool is held OUT of rotation after its host suspended the
+// deployment for exceeding a usage quota.
+//
+// This is deliberately separate from checkFallbackError's cooldownMs. Those are
+// two different clocks and conflating them breaks one of the two:
+//   - cooldownMs (short, 5s) paces the hop to the NEXT pool inside a single
+//     request — combo.js waits it out before falling through (see the transient
+//     5xx wait there). Making it long stalls the request.
+//   - POOL_SUSPEND_PARK_MS keeps the dead relay from being handed back on
+//     LATER requests. A suspended relay stays down until its quota window
+//     resets (hours), so parking it for seconds means rotation keeps returning
+//     to it indefinitely.
+export const POOL_SUSPEND_PARK_MS = 30 * 60 * 1000;
+
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
@@ -90,8 +104,17 @@ export const ERROR_RULES = [
   // lock the account — surface the 400 to the client.
   { text: "content_length_exceeds_threshold", noFallback: true },
   { text: "rate limit",               backoff: true },
+  // Relay host suspended the deployment for exceeding its usage quota (Deno
+  // Deploy / Vercel: 503 "(USAGE_EXCEEDED) This application is suspended due to
+  // usage limits being exceeded"). Kept ABOVE the "usage limit" rule below:
+  // that rule's substring also matches this message ("usage limits") and rules
+  // are first-match-wins, so a suspended relay was being classified as an
+  // escalating rate limit instead. cooldownMs stays SHORT on purpose — it only
+  // paces the hop to the next pool within one request; the long quarantine that
+  // keeps a dead relay out of later rotations is POOL_SUSPEND_PARK_MS.
+  { text: "usage_exceeded",           cooldownMs: COOLDOWN.short, parkMs: POOL_SUSPEND_PARK_MS },
+  { text: "is suspended",             cooldownMs: COOLDOWN.short, parkMs: POOL_SUSPEND_PARK_MS },
   { text: "usage limit",              backoff: true },
-  { text: "usage_exceeded",           cooldownMs: COOLDOWN.short }, // Deno/vercel relay suspend (503 USAGE_EXCEEDED)
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
   { text: "capacity",                 backoff: true },
