@@ -1,3 +1,13 @@
+# v0.15.9 (2026-08-11)
+
+## Fix: Rotation kept handing back a proxy relay whose host had suspended it (PR #248)
+
+- **A quota-suspended relay is now parked for 30 minutes instead of 2 seconds.** Deno Deploy / Vercel answer `503 (USAGE_EXCEEDED) This application is suspended due to usage limits being exceeded` when a relay exceeds its quota, and it stays down until the quota window resets (hours). Rotation was handing the same dead relay back within seconds — measured at 754 picks in 3 hours while a healthy pool sat unused, so roughly half of every combo request was spent failing against a relay that could not answer.
+- **Two stacked causes.** (1) `ERROR_RULES` are first-match-wins, and the suspend body also matches `{ text: "usage limit", backoff: true }`, so a suspended relay was classified as an escalating rate limit. (2) `markAccountUnavailable` passed a hardcoded `backoffLevel` of 0 and persisted nothing, so every failure resolved to the level-1 value (2s) forever.
+- **The two clocks are now separate**, which is what conflating them broke: `cooldownMs` stays short (5s) because it only paces the hop to the next pool inside one request — combo waits it out before falling through — while the new `parkMs` (`POOL_SUSPEND_PARK_MS`, 30 min) governs how long the pool is held out of *later* rotations.
+- **Pool health lives on the `proxyPools` row** (park window + backoff level), since a virtual `noauth:` pool connection has no `providerConnections` row to hold it. `clearAccountError` resets it once a request through that pool succeeds, and pool selection is read-only — eligibility is decided by the park window alone, so nothing that writes a status can un-park a relay early.
+- **A failed park write logs at error level**, because an unparked pool is handed straight back on the next request; at warn it blended into normal traffic and the fix could be silently inert under DB pressure.
+
 # v0.15.8 (2026-08-10)
 
 ## Fix: Streaming reply truncated-to-empty on reasoning models (PR #243)
