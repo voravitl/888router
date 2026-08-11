@@ -203,14 +203,20 @@ describe("rotation skips parked pools", () => {
     expect(creds.id).toBe("noauth:poolLive");
   });
 
-  it("re-admits a pool once its park window expires, without writing", async () => {
-    resetPools({ id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) });
+  it("does NOT re-admit a stale-unavailable pool until it is seen working again", async () => {
+    // Window expired but testStatus is still "unavailable" = the pool failed
+    // and has not been observed working since. Re-admitting it here would let
+    // a stale-unavailable pool back into rotation while a single active relay
+    // carries every request (the rotation-stuck-on-relay2 bug). Only
+    // clearAccountError — a successful request through the pool — flips it
+    // back to "active".
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
+      { id: "poolB", name: "B", testStatus: "active" },
+    );
     const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
-    expect(creds.id).toBe("noauth:poolA");
-    // Selecting a pool is a read. The stale testStatus left over from the
-    // failure is reset by clearAccountError once a request through this pool
-    // succeeds — see the reset-on-success cases below.
-    expect(poolWrites).toHaveLength(0);
+    expect(creds.id).toBe("noauth:poolB");
+    expect(poolWrites).toHaveLength(0); // selection is a read
   });
 
   it("returns null when every pool is parked rather than reusing a dead one", async () => {
@@ -244,5 +250,29 @@ describe("pool health reset on success", () => {
     resetPools({ id: "poolA", name: "A", testStatus: "active" });
     await clearAccountError("noauth:poolA", {}, "deepseek-v4-flash-free");
     expect(poolWrites).toHaveLength(0);
+  });
+});
+
+describe("all-stale-unavailable pools", () => {
+  it("re-admits a stale-unavailable pool when no healthy pool remains", async () => {
+    // Review round 2: a stale pool whose window lapsed must be re-admitted
+    // when nothing healthy is left — otherwise clearAccountError can never
+    // fire (the pool is never selected), every relay gets quarantined
+    // forever, and the system hard-outages.
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
+      { id: "poolB", name: "B", testStatus: "unavailable", unavailableUntil: past(MIN) },
+    );
+    const creds = await getProviderCredentials("opencode", new Set(["noauth:seed"]), "deepseek-v4-flash-free");
+    expect(creds.id).toBe("noauth:poolA"); // stale re-admitted, not null
+  });
+
+  it("prefers a healthy pool over stale ones", async () => {
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
+      { id: "poolB", name: "B", testStatus: "active" },
+    );
+    const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
+    expect(creds.id).toBe("noauth:poolB");
   });
 });
