@@ -295,3 +295,24 @@ describe("healthy-URL-fail falls through to stale", () => {
     expect(creds.id).toBe("noauth:poolB");
   });
 });
+
+describe("multiple healthy pools", () => {
+  it("selects each healthy pool across calls (rotation, not sticky)", async () => {
+    // Review (round 4): two healthy pools — first call picks poolA, then
+    // excluding it must yield poolB, proving rotation is not stuck on one.
+    connectionProxyResolve.mockImplementation(async ({ proxyPoolId }) => ({
+      connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "",
+      proxyPoolId: proxyPoolId || null,
+      vercelRelayUrl: proxyPoolId ? `https://relay-${proxyPoolId}.example.com` : "",
+    }));
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "active" },
+      { id: "poolB", name: "B", testStatus: "active" },
+    );
+    const first = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
+    expect(["noauth:poolA", "noauth:poolB"]).toContain(first.id);
+    const second = await getProviderCredentials("opencode", new Set([first.id]), "deepseek-v4-flash-free");
+    expect(second).not.toBeNull();
+    expect(second.id).not.toBe(first.id); // rotated to the other pool
+  });
+});
