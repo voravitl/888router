@@ -129,9 +129,14 @@ export const ERROR_RULES = [
   { status: 429, backoff: true },
   // 503/502/504 transient — shouldFallback so account layer rotates pools,
   // but short cooldown so combo doesn't stall on one exhausted proxy relay.
-  { status: 503, cooldownMs: COOLDOWN.short },
-  { status: 502, cooldownMs: COOLDOWN.short },
-  { status: 504, cooldownMs: COOLDOWN.short },
+  // parkMs = TRANSIENT_COOLDOWN_MS (30s): a transient relay usually recovers in
+  // ~10-30s. Without a parkMs here, the fallback in markAccountUnavailable used
+  // cooldownMs (5s), so a Vercel relay that needed ~20s to recover was handed
+  // straight back within seconds — combo burned the wait then fell through to
+  // the next provider while the relay was still down.
+  { status: 503, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
+  { status: 502, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
+  { status: 504, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
 ];
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
