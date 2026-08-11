@@ -177,15 +177,14 @@ describe("rotation skips parked pools", () => {
     expect(creds.id).toBe("noauth:poolLive");
   });
 
-  it("re-admits a pool once its park window expires, clearing the stale flag", async () => {
+  it("re-admits a pool once its park window expires, without writing", async () => {
     resetPools({ id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) });
     const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
     expect(creds.id).toBe("noauth:poolA");
-    await vi.waitFor(() => {
-      const w = poolWrites.find((x) => x.id === "poolA");
-      expect(w?.testStatus).toBe("active");
-      expect(w?.unavailableUntil).toBeNull();
-    });
+    // Selecting a pool is a read. The stale testStatus left over from the
+    // failure is reset by clearAccountError once a request through this pool
+    // succeeds — see the reset-on-success cases below.
+    expect(poolWrites).toHaveLength(0);
   });
 
   it("returns null when every pool is parked rather than reusing a dead one", async () => {

@@ -80,17 +80,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         // too would let a pool back in early: anything that writes a status
         // (a health check, a manual toggle) would silently un-park a relay
         // whose quota window has not reset yet.
+        //
+        // Nothing is written here — selecting a pool is a read. The stale
+        // testStatus/lastError left behind by the failure is reset by
+        // clearAccountError on the next successful request through this pool.
         const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
         if (parkedUntil > Date.now()) {
           log.info("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
           continue;
-        }
-        // Park window expired → pool is eligible again; clear the stale flag so
-        // its health state is fresh. Fire-and-forget: if the clear fails the
-        // pool is still eligible (the expired window is what gates it), so a
-        // failed write costs nothing but a repeated clear attempt.
-        if (parkedUntil || pool.testStatus === "unavailable") {
-          updateProxyPool(pid, { testStatus: "active", lastError: null, unavailableUntil: null, updatedAt: new Date().toISOString() }).catch(() => {});
         }
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
         if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {
@@ -363,16 +360,25 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       // suspended it for quota stays down for hours, so parking it for the
       // 5s hop cooldown would hand it straight back on the next request.
       const parkMs = rulePark ?? cooldownMs ?? TRANSIENT_COOLDOWN_MS;
-      updateProxyPool(poolId, {
-        testStatus: "unavailable",
-        lastError: typeof errorText === "string"
-          ? (errorText.length > 300 ? errorText.slice(0, 297) + "…" : errorText)
-          : String(status),
-        unavailableUntil: new Date(Date.now() + parkMs).toISOString(),
-        backoffLevel: newBackoffLevel ?? poolBackoff,
-        updatedAt: new Date().toISOString(),
-      }).catch((e) => log.warn("AUTH", `failed to mark pool ${poolId} unavailable: ${e.message}`));
-      log.warn("AUTH", `pool ${poolId} parked ${Math.round(parkMs / 1000)}s [${status}] backoff=${newBackoffLevel ?? poolBackoff}`);
+      const nextLevel = newBackoffLevel ?? poolBackoff;
+      // Awaited, not fire-and-forget: the caller rotates to the next pool the
+      // moment this returns, and the park must be visible to that lookup. It
+      // also keeps the log honest — announcing "parked" before the write lands
+      // would report a park that may never have happened.
+      try {
+        await updateProxyPool(poolId, {
+          testStatus: "unavailable",
+          lastError: typeof errorText === "string"
+            ? (errorText.length > 300 ? errorText.slice(0, 297) + "…" : errorText)
+            : String(status),
+          unavailableUntil: new Date(Date.now() + parkMs).toISOString(),
+          backoffLevel: nextLevel,
+          updatedAt: new Date().toISOString(),
+        });
+        log.warn("AUTH", `pool ${poolId} parked ${Math.round(parkMs / 1000)}s [${status}] backoff=${nextLevel}`);
+      } catch (e) {
+        log.warn("AUTH", `failed to park pool ${poolId}: ${e.message}`);
+      }
       return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
     }
     // Non-rotate 4xx (model error / noFallback): keep the pool, surface the
