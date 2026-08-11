@@ -85,7 +85,11 @@ export function createComboStreamGuard() {
           console.warn("[combo] stream guard cap hit — releasing head without empty verdict (model may still reply)");
           capWarned = true;
         }
-        sawText = true;
+        // NOTE: do NOT set sawText here. The cap release is only a "don't
+        // stall a long-thinking model" decision — if the stream ends with zero
+        // real content anyway, isEmpty() must still classify it as empty
+        // (otherwise the client gets a 200 SSE with nothing usable, surfaced
+        // as "502 empty stream content" on retry loops).
       }
       return { sawText, sawTerminal };
     },
@@ -117,9 +121,14 @@ export function createComboStreamGuard() {
      *  or a clean EOF counts — some providers close without a finish marker.
      *  A mid-stream network cut surfaces through read() rejection, which the
      *  caller handles via cancel(), not feedEnd(), so EOF here is a clean
-     *  close by construction. */
+     *  close by construction.
+     *
+     *  A cap-hit stream (reasoning preamble > MAX_BUFFER_BYTES, released
+     *  "live") that ends without text is STILL empty: the release is only a
+     *  don't-stall decision, not a success blessing. */
     isEmpty() {
-      return !sawText && (sawTerminal || sawEos);
+      if (sawText) return false;
+      return sawTerminal || sawEos;
     },
 
     /** Reader reached end-of-stream (clean close). */

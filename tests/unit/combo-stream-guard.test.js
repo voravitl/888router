@@ -107,3 +107,34 @@ describe("comboStreamGuard", () => {
     expect(g.isEmpty()).toBe(true);
   });
 });
+describe("comboStreamGuard cap-hit regression", () => {
+  it("cap hit (reasoning > 64KB) then EOF with no text is EMPTY, not success", () => {
+    // The bug: on buffer-cap hit the guard set sawText=true ("release live"),
+    // so a stream whose reasoning preamble exceeded 64KB and then ended with
+    // zero real content was classified non-empty → client got a 200 SSE with
+    // nothing usable → "502 empty stream content" on retry loops.
+    const g = createComboStreamGuard();
+    // 65KB of reasoning deltas (no content) — must trip the cap
+    const reasoning = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n";
+    for (let i = 0; i < 400; i++) {
+      g.feed(enc(reasoning));
+      if (g.hasDecision()) break;
+    }
+    // Cap released the head "live" — guard must NOT have a final decision yet
+    // (no text seen, no terminal seen), but after EOF it must classify EMPTY.
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+  });
+
+  it("cap hit then real text arrives is still non-empty", () => {
+    const g = createComboStreamGuard();
+    const reasoning = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n";
+    for (let i = 0; i < 400; i++) {
+      g.feed(enc(reasoning));
+      if (g.hasDecision()) break;
+    }
+    g.feed(enc("data: {\"choices\":[{\"delta\":{\"content\":\"PONG\"}}]}\n\n"));
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+});
