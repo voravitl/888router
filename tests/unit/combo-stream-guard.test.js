@@ -123,6 +123,7 @@ describe("comboStreamGuard cap-hit regression", () => {
     }
     // Cap released the head "live" — guard must NOT have a final decision yet
     // (no text seen, no terminal seen), but after EOF it must classify EMPTY.
+    expect(g.hasDecision()).toBe(false); // cap release is not a verdict
     g.feedEnd();
     expect(g.isEmpty()).toBe(true);
   });
