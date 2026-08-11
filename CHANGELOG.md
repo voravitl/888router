@@ -1,3 +1,12 @@
+# v0.15.10 (2026-08-11)
+
+## Fix: Transient 5xx pools park 30s, not 5s (PR #252)
+
+- **A Vercel relay that returns 504 recovers in ~10-30s, but the status rules carried no `parkMs`** — `markAccountUnavailable` fell back to `cooldownMs` (5s) as the park window, so the relay was handed straight back within seconds. Combo burned the 5s wait, then fell through to the next provider (e.g. ollama, which 429'd) while the relay was still down.
+- **Suspend-class (503 USAGE_EXCEEDED) keeps its 30-min park; transient 5xx (503/502/504) now parks 30s.** `cooldownMs` stays 5s so the hop to the next pool within one request is not stalled.
+- **Load-time invariant enforced:** `parkMs` must exceed `cooldownMs` on the same rule, so a future edit cannot invert them and reintroduce the loop silently.
+- **Behavior test added:** a transient-5xx pool is parked ~30s and selection keeps skipping it for the whole window.
+
 # v0.15.9 (2026-08-11)
 
 ## Fix: Rotation kept handing back a proxy relay whose host had suspended it (PR #248)
