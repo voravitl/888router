@@ -1,6 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { getProxyPools } from "@/lib/db/repos/proxyPoolsRepo";
+import { getProxyPools, updateProxyPool } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
@@ -66,12 +66,26 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         };
       }
 
-      // Auto-rotate: first active pool not yet excluded.
+      // Auto-rotate: first active pool not yet excluded. A pool marked
+      // unavailable by markAccountUnavailable (unavailableUntil in the future)
+      // is skipped for the rest of its cooldown window — otherwise the pool
+      // that just 503'd is picked again immediately on the next request
+      // (relay-suspend rotation bug).
       const pools = await getProxyPools({ isActive: true });
       const exclude = excludeSet instanceof Set ? excludeSet : new Set();
       for (const pool of pools) {
         const pid = pool?.id;
         if (!pid || exclude.has(`noauth:${pid}`)) continue;
+        const cooldownUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
+        if (pool.testStatus === "unavailable" && cooldownUntil > Date.now()) {
+          log.info("AUTH", `Skipping pool ${pid}: unavailable until ${pool.unavailableUntil}`);
+          continue;
+        }
+        // Cooldown expired → pool is eligible again; clear the stale flag so
+        // its health state is fresh.
+        if (pool.testStatus === "unavailable") {
+          updateProxyPool(pid, { testStatus: "active", lastError: null, unavailableUntil: null, updatedAt: new Date().toISOString() }).catch(() => {});
+        }
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
         if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {
           log.warn("AUTH", `Skipping pool ${pid}: no proxy/relay URL`);
@@ -322,6 +336,16 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (typeof connectionId === "string" && connectionId.startsWith("noauth:")) {
     const { shouldFallback: shouldRotate, cooldownMs, modelError } = checkFallbackError(status, errorText, 0);
     if (shouldRotate) {
+      // Persist the failure on the pool row so pickVirtualNoAuthConnection
+      // skips it for the cooldown window (relay-suspend rotation bug: without
+      // this, the pool that just 503'd is picked again on the next request).
+      const poolId = connectionId.slice("noauth:".length);
+      updateProxyPool(poolId, {
+        testStatus: "unavailable",
+        lastError: typeof errorText === "string" ? errorText.slice(0, 300) : String(status),
+        unavailableUntil: new Date(Date.now() + (cooldownMs || 30000)).toISOString(),
+        updatedAt: new Date().toISOString(),
+      }).catch((e) => log.warn("AUTH", `failed to mark pool ${poolId} unavailable: ${e.message}`));
       return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
     }
     // Non-rotate 4xx (model error / noFallback): keep the pool, surface the
