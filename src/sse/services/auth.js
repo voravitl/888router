@@ -2,7 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 import { partitionByQuotaHealth, QUOTA_AVOID_THRESHOLD_PCT, QUOTA_SNAPSHOT_MAX_AGE_MS } from "open-sse/services/quotaSnapshot.js";
 import { pickByScore } from "open-sse/services/accountScoring.js";
@@ -76,15 +76,20 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       for (const pool of pools) {
         const pid = pool?.id;
         if (!pid || exclude.has(`noauth:${pid}`)) continue;
-        const cooldownUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
-        if (pool.testStatus === "unavailable" && cooldownUntil > Date.now()) {
-          log.info("AUTH", `Skipping pool ${pid}: unavailable until ${pool.unavailableUntil}`);
+        // The park window alone decides eligibility. Keying this on testStatus
+        // too would let a pool back in early: anything that writes a status
+        // (a health check, a manual toggle) would silently un-park a relay
+        // whose quota window has not reset yet.
+        const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
+        if (parkedUntil > Date.now()) {
+          log.info("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
           continue;
         }
-        // Cooldown expired → pool is eligible again; clear the stale flag so
+        // Park window expired → pool is eligible again; clear the stale flag so
         // its health state is fresh. Fire-and-forget: if the clear fails the
-        // pool simply stays flagged and is skipped (safe), never re-picked.
-        if (pool.testStatus === "unavailable") {
+        // pool is still eligible (the expired window is what gates it), so a
+        // failed write costs nothing but a repeated clear attempt.
+        if (parkedUntil || pool.testStatus === "unavailable") {
           updateProxyPool(pid, { testStatus: "active", lastError: null, unavailableUntil: null, updatedAt: new Date().toISOString() }).catch(() => {});
         }
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
@@ -357,7 +362,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       // Suspend-class errors carry their own long parkMs — a relay whose host
       // suspended it for quota stays down for hours, so parking it for the
       // 5s hop cooldown would hand it straight back on the next request.
-      const parkMs = rulePark ?? cooldownMs ?? 30000;
+      const parkMs = rulePark ?? cooldownMs ?? TRANSIENT_COOLDOWN_MS;
       updateProxyPool(poolId, {
         testStatus: "unavailable",
         lastError: typeof errorText === "string"

@@ -62,19 +62,6 @@ const COOLDOWN = {
 export const POOL_SUSPEND_PARK_MS = 30 * 60 * 1000;
 
 /**
- * True when an error means "this relay/proxy host has suspended the deployment"
- * (Deno Deploy / Vercel quota suspension), as opposed to a transient 5xx.
- * Used to pick the long park window above; never to decide fallback.
- */
-export function isRelaySuspendError(status, errorText) {
-  const t = typeof errorText === "string"
-    ? errorText.toLowerCase()
-    : (errorText ? String(errorText).toLowerCase() : "");
-  if (!t) return false;
-  return t.includes("usage_exceeded") || t.includes("is suspended");
-}
-
-/**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
  * Each rule: { text?, status?, cooldownMs?, backoff?, noFallback? }
