@@ -1,6 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { getProxyPools, updateProxyPool } from "@/lib/db/repos/proxyPoolsRepo";
+import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
@@ -335,21 +335,39 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   // fall back so chat.js's loop rotates to the next pool on failure.
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   if (typeof connectionId === "string" && connectionId.startsWith("noauth:")) {
-    const { shouldFallback: shouldRotate, cooldownMs, modelError } = checkFallbackError(status, errorText, 0);
+    const poolId = connectionId.slice("noauth:".length);
+    // A virtual pool connection owns no providerConnections row, so its backoff
+    // level lives on the proxyPools row. Reading it here is what lets repeated
+    // failures escalate: passing a hardcoded 0 pinned every pool to the level-1
+    // value (2s) forever, so a failing relay re-entered rotation seconds later
+    // no matter how many times it had already failed.
+    let poolBackoff = 0;
+    if (poolId) {
+      try {
+        const pool = await getProxyPoolById(poolId);
+        poolBackoff = pool?.backoffLevel || 0;
+      } catch { /* unreadable row → treat as first failure */ }
+    }
+    const { shouldFallback: shouldRotate, cooldownMs, parkMs: rulePark, newBackoffLevel, modelError } = checkFallbackError(status, errorText, poolBackoff);
     if (shouldRotate) {
+      if (!poolId) return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
       // Persist the failure on the pool row so pickVirtualNoAuthConnection
       // skips it for the cooldown window (relay-suspend rotation bug: without
       // this, the pool that just 503'd is picked again on the next request).
-      const poolId = connectionId.slice("noauth:".length);
-      if (!poolId) return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
+      // Suspend-class errors carry their own long parkMs — a relay whose host
+      // suspended it for quota stays down for hours, so parking it for the
+      // 5s hop cooldown would hand it straight back on the next request.
+      const parkMs = rulePark ?? cooldownMs ?? 30000;
       updateProxyPool(poolId, {
         testStatus: "unavailable",
         lastError: typeof errorText === "string"
           ? (errorText.length > 300 ? errorText.slice(0, 297) + "…" : errorText)
           : String(status),
-        unavailableUntil: new Date(Date.now() + (cooldownMs ?? 30000)).toISOString(),
+        unavailableUntil: new Date(Date.now() + parkMs).toISOString(),
+        backoffLevel: newBackoffLevel ?? poolBackoff,
         updatedAt: new Date().toISOString(),
       }).catch((e) => log.warn("AUTH", `failed to mark pool ${poolId} unavailable: ${e.message}`));
+      log.warn("AUTH", `pool ${poolId} parked ${Math.round(parkMs / 1000)}s [${status}] backoff=${newBackoffLevel ?? poolBackoff}`);
       return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
     }
     // Non-rotate 4xx (model error / noFallback): keep the pool, surface the
@@ -406,6 +424,29 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
  */
 export async function clearAccountError(connectionId, currentConnection, model = null) {
   if (!connectionId || connectionId === "noauth") return;
+  // Virtual pool connection: health state lives on the proxyPools row, not in
+  // providerConnections (there is no row to update there). Reset it on success
+  // so a recovered relay restarts from a clean backoff level instead of
+  // inheriting the last failure's escalation.
+  if (connectionId.startsWith("noauth:")) {
+    const poolId = connectionId.slice("noauth:".length);
+    if (!poolId) return;
+    try {
+      const pool = await getProxyPoolById(poolId);
+      if (!pool) return;
+      if (pool.testStatus === "active" && !pool.lastError && !pool.unavailableUntil && !pool.backoffLevel) return;
+      await updateProxyPool(poolId, {
+        testStatus: "active",
+        lastError: null,
+        unavailableUntil: null,
+        backoffLevel: 0,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      log.warn("AUTH", `failed to clear pool ${poolId} health state: ${e.message}`);
+    }
+    return;
+  }
   const conn = currentConnection._connection || currentConnection;
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));

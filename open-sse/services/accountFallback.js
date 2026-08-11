@@ -45,7 +45,12 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+      // parkMs (optional, see errorConfig POOL_SUSPEND_PARK_MS): how long the
+      // failing account/pool should be held OUT of rotation, as opposed to
+      // cooldownMs which only paces the hop to the next candidate in THIS
+      // request. Only suspend-class rules set it; callers fall back to
+      // cooldownMs when absent.
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs, parkMs: rule.parkMs };
     }
 
     // Status-based rule: match HTTP status code
@@ -55,7 +60,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs, parkMs: rule.parkMs };
     }
   }
 
