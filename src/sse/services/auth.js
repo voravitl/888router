@@ -82,10 +82,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           continue;
         }
         // Cooldown expired → pool is eligible again; clear the stale flag so
-        // its health state is fresh.
-        if (pool.testStatus === "unavailable") {
-          updateProxyPool(pid, { testStatus: "active", lastError: null, unavailableUntil: null, updatedAt: new Date().toISOString() }).catch(() => {});
-        }
+        // its health state is fresh. This write happens only when the pool
+        // actually passes the guard (post-decision), never on a plain read.
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
         if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {
           log.warn("AUTH", `Skipping pool ${pid}: no proxy/relay URL`);
@@ -343,7 +341,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       updateProxyPool(poolId, {
         testStatus: "unavailable",
         lastError: typeof errorText === "string" ? errorText.slice(0, 300) : String(status),
-        unavailableUntil: new Date(Date.now() + (cooldownMs || 30000)).toISOString(),
+        unavailableUntil: new Date(Date.now() + (cooldownMs ?? 30000)).toISOString(),
         updatedAt: new Date().toISOString(),
       }).catch((e) => log.warn("AUTH", `failed to mark pool ${poolId} unavailable: ${e.message}`));
       return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
