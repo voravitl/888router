@@ -73,33 +73,34 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // (relay-suspend rotation bug).
       const pools = await getProxyPools({ isActive: true });
       const exclude = excludeSet instanceof Set ? excludeSet : new Set();
-      let sawUnavailable = false;
+      // Healthy candidates first; stale-unavailable pools (window lapsed, not
+      // yet seen working again) are re-admitted ONLY when no healthy pool
+      // remains. Without this fallback a stale pool could never be selected
+      // again — clearAccountError fires on a successful request through it,
+      // but it is never selected — so every relay ends up quarantined forever
+      // → hard outage.
+      const now = Date.now();
+      const healthy = [];
+      const stale = [];
       for (const pool of pools) {
         const pid = pool?.id;
         if (!pid || exclude.has(`noauth:${pid}`)) continue;
+        const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
         if (pool.testStatus === "unavailable") {
-          sawUnavailable = true;
-          log.debug("AUTH", `Skipping pool ${pid}: unavailable (${(pool.unavailableUntil && new Date(pool.unavailableUntil).getTime() > Date.now()) ? "parked" : "stale, not yet recovered"})`);
+          if (parkedUntil > now) {
+            log.debug("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
+          } else {
+            stale.push(pool); // window lapsed, not yet seen working again
+          }
           continue;
         }
-        // Eligibility:
-        //   - pool inside its park window (unavailableUntil in the future) →
-        //     skip; it is known-bad and must stay out of rotation.
-        //   - pool with testStatus=unavailable but NO window → still skip. This
-        //     is the state left behind by markAccountUnavailable once the
-        //     window lapsed: the pool FAILED recently and has not been seen
-        //     working since. getProxyPools sorts by updatedAt desc, so an
-        //     active pool that gets a request every minute always sorts first
-        //     and a stale-unavailable pool would never be picked — meaning a
-        //     single working relay carries every request (observed: vercel-
-        //     relay2 at 100% while two healthy-eligible pools sat idle).
-        //     clearAccountError flips testStatus back to "active" on the next
-        //     successful request through the pool, which is the only way a
-        //     stale-unavailable pool re-enters rotation.
-        const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
-        if (parkedUntil > Date.now()) {
-          log.debug("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
-          continue;
+        healthy.push(pool);
+      }
+      for (const pool of healthy.length > 0 ? healthy : stale) {
+        const pid = pool?.id;
+        if (!pid) continue;
+        if (pool.testStatus === "unavailable") {
+          log.info("AUTH", `Re-admitting stale-unavailable pool ${pid}: no healthy pool left`);
         }
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
         if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {
@@ -128,11 +129,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       //   - pools exist, none unavailable, but all lack a usable URL → fall
       //     back to direct (config problem, not a pool failure — the tests
       //     pin this: "active pools but all lack relay URL").
-      //   - pools exist but every one is unavailable/stale (sawUnavailable) →
+      //   - pools exist and healthy/stale candidates all lacked URLs →
       //     exhausted, NOT direct. Bypassing to a raw noauth connection is
       //     exactly how a failing relay gets hammered without rotation.
       // When mid-rotation (excludes present), treat as exhausted → null.
-      if (exclude.size === 0 && (!sawUnavailable || pools.length === 0)) {
+      const noHealthy = healthy.length === 0;
+      if (exclude.size === 0 && (pools.length === 0 || noHealthy === false)) {
         return {
           id: "noauth",
           connectionId: "noauth",

@@ -254,15 +254,25 @@ describe("pool health reset on success", () => {
 });
 
 describe("all-stale-unavailable pools", () => {
-  it("returns null (exhausted) instead of bypassing to direct noauth", async () => {
-    // Review finding: with every pool unavailable/stale, falling back to the
-    // bare "noauth" direct connection is exactly how a failing relay gets
-    // hammered without rotation. Exhausted must mean exhausted.
+  it("re-admits a stale-unavailable pool when no healthy pool remains", async () => {
+    // Review round 2: a stale pool whose window lapsed must be re-admitted
+    // when nothing healthy is left — otherwise clearAccountError can never
+    // fire (the pool is never selected), every relay gets quarantined
+    // forever, and the system hard-outages.
     resetPools(
       { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
       { id: "poolB", name: "B", testStatus: "unavailable", unavailableUntil: past(MIN) },
     );
     const creds = await getProviderCredentials("opencode", new Set(["noauth:seed"]), "deepseek-v4-flash-free");
-    expect(creds).toBeNull();
+    expect(creds.id).toBe("noauth:poolA"); // stale re-admitted, not null
+  });
+
+  it("prefers a healthy pool over stale ones", async () => {
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
+      { id: "poolB", name: "B", testStatus: "active" },
+    );
+    const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
+    expect(creds.id).toBe("noauth:poolB");
   });
 });
