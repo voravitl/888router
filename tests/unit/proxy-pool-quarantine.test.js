@@ -316,3 +316,20 @@ describe("multiple healthy pools", () => {
     expect(second.id).not.toBe(first.id); // rotated to the other pool
   });
 });
+
+describe("all-stale-no-URL", () => {
+  it("returns null (exhausted) when stale pools all lack a usable URL", async () => {
+    // Review (final): CHANGELOG claims "all-stale with no usable URL →
+    // exhausted (null), not a silent bypass to direct" — pin it.
+    connectionProxyResolve.mockImplementation(async () => ({
+      connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "",
+      proxyPoolId: null, vercelRelayUrl: "", // every pool URL-less
+    }));
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
+      { id: "poolB", name: "B", testStatus: "unavailable", unavailableUntil: past(MIN) },
+    );
+    const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
+    expect(creds).toBeNull();
+  });
+});
