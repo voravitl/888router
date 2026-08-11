@@ -203,14 +203,20 @@ describe("rotation skips parked pools", () => {
     expect(creds.id).toBe("noauth:poolLive");
   });
 
-  it("re-admits a pool once its park window expires, without writing", async () => {
-    resetPools({ id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) });
+  it("does NOT re-admit a stale-unavailable pool until it is seen working again", async () => {
+    // Window expired but testStatus is still "unavailable" = the pool failed
+    // and has not been observed working since. Re-admitting it here would let
+    // a stale-unavailable pool back into rotation while a single active relay
+    // carries every request (the rotation-stuck-on-relay2 bug). Only
+    // clearAccountError — a successful request through the pool — flips it
+    // back to "active".
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
+      { id: "poolB", name: "B", testStatus: "active" },
+    );
     const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
-    expect(creds.id).toBe("noauth:poolA");
-    // Selecting a pool is a read. The stale testStatus left over from the
-    // failure is reset by clearAccountError once a request through this pool
-    // succeeds — see the reset-on-success cases below.
-    expect(poolWrites).toHaveLength(0);
+    expect(creds.id).toBe("noauth:poolB");
+    expect(poolWrites).toHaveLength(0); // selection is a read
   });
 
   it("returns null when every pool is parked rather than reusing a dead one", async () => {

@@ -76,15 +76,25 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       for (const pool of pools) {
         const pid = pool?.id;
         if (!pid || exclude.has(`noauth:${pid}`)) continue;
-        // The park window alone decides eligibility. Keying this on testStatus
-        // too would let a pool back in early: anything that writes a status
-        // (a health check, a manual toggle) would silently un-park a relay
-        // whose quota window has not reset yet.
-        //
-        // Nothing is written here — selecting a pool is a read. The stale
-        // testStatus/lastError left behind by the failure is reset by
-        // clearAccountError on the next successful request through this pool.
+        // Eligibility:
+        //   - pool inside its park window (unavailableUntil in the future) →
+        //     skip; it is known-bad and must stay out of rotation.
+        //   - pool with testStatus=unavailable but NO window → still skip. This
+        //     is the state left behind by markAccountUnavailable once the
+        //     window lapsed: the pool FAILED recently and has not been seen
+        //     working since. getProxyPools sorts by updatedAt desc, so an
+        //     active pool that gets a request every minute always sorts first
+        //     and a stale-unavailable pool would never be picked — meaning a
+        //     single working relay carries every request (observed: vercel-
+        //     relay2 at 100% while two healthy-eligible pools sat idle).
+        //     clearAccountError flips testStatus back to "active" on the next
+        //     successful request through the pool, which is the only way a
+        //     stale-unavailable pool re-enters rotation.
         const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
+        if (pool.testStatus === "unavailable") {
+          log.info("AUTH", `Skipping pool ${pid}: unavailable (${parkedUntil > Date.now() ? "parked" : "stale, not yet recovered"})`);
+          continue;
+        }
         if (parkedUntil > Date.now()) {
           log.info("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
           continue;
