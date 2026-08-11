@@ -276,3 +276,60 @@ describe("all-stale-unavailable pools", () => {
     expect(creds.id).toBe("noauth:poolB");
   });
 });
+
+describe("healthy-URL-fail falls through to stale", () => {
+  it("tries stale pool when healthy pool has no usable URL", async () => {
+    // Review finding (round 3): `healthy.length > 0 ? healthy : stale`
+    // skipped stale entirely when healthy pools existed but all failed URL
+    // resolution → returned null instead of trying the stale pool that may
+    // have a good URL. The merged single pass fixes it.
+    const healthyNoUrl = { id: "poolA", name: "A", testStatus: "active" };
+    const staleGoodUrl = { id: "poolB", name: "B", testStatus: "unavailable", unavailableUntil: past(MIN) };
+    resetPools(healthyNoUrl, staleGoodUrl);
+    connectionProxyResolve.mockImplementation(async ({ proxyPoolId }) => ({
+      connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "",
+      proxyPoolId: proxyPoolId || null,
+      vercelRelayUrl: proxyPoolId === "poolB" ? "https://relay-poolB.example.com" : "",
+    }));
+    const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
+    expect(creds.id).toBe("noauth:poolB");
+  });
+});
+
+describe("multiple healthy pools", () => {
+  it("selects each healthy pool across calls (rotation, not sticky)", async () => {
+    // Review (round 4): two healthy pools — first call picks poolA, then
+    // excluding it must yield poolB, proving rotation is not stuck on one.
+    connectionProxyResolve.mockImplementation(async ({ proxyPoolId }) => ({
+      connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "",
+      proxyPoolId: proxyPoolId || null,
+      vercelRelayUrl: proxyPoolId ? `https://relay-${proxyPoolId}.example.com` : "",
+    }));
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "active" },
+      { id: "poolB", name: "B", testStatus: "active" },
+    );
+    const first = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
+    expect(["noauth:poolA", "noauth:poolB"]).toContain(first.id);
+    const second = await getProviderCredentials("opencode", new Set([first.id]), "deepseek-v4-flash-free");
+    expect(second).not.toBeNull();
+    expect(second.id).not.toBe(first.id); // rotated to the other pool
+  });
+});
+
+describe("all-stale-no-URL", () => {
+  it("returns null (exhausted) when stale pools all lack a usable URL", async () => {
+    // Review (final): CHANGELOG claims "all-stale with no usable URL →
+    // exhausted (null), not a silent bypass to direct" — pin it.
+    connectionProxyResolve.mockImplementation(async () => ({
+      connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "",
+      proxyPoolId: null, vercelRelayUrl: "", // every pool URL-less
+    }));
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
+      { id: "poolB", name: "B", testStatus: "unavailable", unavailableUntil: past(MIN) },
+    );
+    const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
+    expect(creds).toBeNull();
+  });
+});

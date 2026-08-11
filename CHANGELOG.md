@@ -1,3 +1,12 @@
+# v0.15.12 (2026-08-12)
+
+## Fix: Proxy rotation stuck on one relay — stale-unavailable pools (PR #260)
+
+- **A single working relay carried every request** while two eligible pools sat idle with `testStatus=unavailable` but no park window. `getProxyPools` sorts by `updatedAt` desc, and an active pool gets its `updatedAt` bumped by every request, so it always sorted first — the loop always picked it. Observed as a 300s stream then client timeouts (retry 6/10).
+- **Selection is now healthy-first**, and a stale-unavailable pool (window lapsed, not yet seen working again) is re-admitted **only when no healthy pool remains** — otherwise `clearAccountError` could never fire (the pool is never selected) and every relay would end up quarantined forever → hard outage.
+- **Fallback matrix:** zero pools configured → direct; healthy-but-URL-less → direct (config problem); all-stale with no usable URL → exhausted (`null`), not a silent bypass to a raw noauth connection.
+- Review-driven over 3 rounds (opus + kr): CRITICAL deadlock closed, invariant verified (`clearAccountError` clears `unavailableUntil`/`testStatus`/`backoffLevel`).
+
 # v0.15.11 (2026-08-11)
 
 ## Fix: Combo guard cap-hit stream ending empty (PR #256)
