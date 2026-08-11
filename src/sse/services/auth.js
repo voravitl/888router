@@ -100,7 +100,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         const pid = pool?.id;
         if (!pid) continue;
         if (pool.testStatus === "unavailable") {
-          log.info("AUTH", `Re-admitting stale-unavailable pool ${pid}: no healthy pool left`);
+          log.debug("AUTH", `Re-admitting stale-unavailable pool ${pid}: no healthy pool left`);
         }
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
         if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {
@@ -133,8 +133,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       //     exhausted, NOT direct. Bypassing to a raw noauth connection is
       //     exactly how a failing relay gets hammered without rotation.
       // When mid-rotation (excludes present), treat as exhausted → null.
-      const noHealthy = healthy.length === 0;
-      if (exclude.size === 0 && (pools.length === 0 || noHealthy === false)) {
+      if (exclude.size === 0 && (pools.length === 0 || healthy.length > 0)) {
         return {
           id: "noauth",
           connectionId: "noauth",
