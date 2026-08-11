@@ -360,6 +360,12 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       // suspended it for quota stays down for hours, so parking it for the
       // 5s hop cooldown would hand it straight back on the next request.
       const parkMs = rulePark ?? cooldownMs ?? TRANSIENT_COOLDOWN_MS;
+      // Suspend-class rules return no newBackoffLevel, so the stored level is
+      // carried over unchanged. That is intended: a quota window resets on the
+      // host's own schedule, so a fixed park is the honest wait — doubling it
+      // per failure would only push a recovered relay further out. The level
+      // still belongs on the row so a later rate limit resumes escalating from
+      // where it left off.
       const nextLevel = newBackoffLevel ?? poolBackoff;
       // Awaited, not fire-and-forget: the caller rotates to the next pool the
       // moment this returns, and the park must be visible to that lookup. It
@@ -377,7 +383,11 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
         });
         log.warn("AUTH", `pool ${poolId} parked ${Math.round(parkMs / 1000)}s [${status}] backoff=${nextLevel}`);
       } catch (e) {
-        log.warn("AUTH", `failed to park pool ${poolId}: ${e.message}`);
+        // Logged at error, not warn: an unparked pool is handed straight back
+        // on the next request, which is exactly the rotation loop this whole
+        // path exists to stop. Under DB pressure the fix is silently inert, so
+        // this needs to be loud enough to notice.
+        log.error("AUTH", `pool ${poolId} NOT parked (${e.message}) — it stays in rotation and may keep failing`);
       }
       return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
     }
