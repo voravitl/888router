@@ -96,7 +96,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         }
         healthy.push(pool);
       }
-      for (const pool of healthy.length > 0 ? healthy : stale) {
+      for (const pool of [...healthy, ...stale]) {
         const pid = pool?.id;
         if (!pid) continue;
         if (pool.testStatus === "unavailable") {
