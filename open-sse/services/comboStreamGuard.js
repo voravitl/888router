@@ -121,14 +121,11 @@ export function createComboStreamGuard() {
      *  or a clean EOF counts — some providers close without a finish marker.
      *  A mid-stream network cut surfaces through read() rejection, which the
      *  caller handles via cancel(), not feedEnd(), so EOF here is a clean
-     *  close by construction.
-     *
-     *  A cap-hit stream (reasoning preamble > MAX_BUFFER_BYTES, released
-     *  "live") that ends without text is STILL empty: the release is only a
-     *  don't-stall decision, not a success blessing. */
+     *  close by construction. A cap-hit stream that ends with no text is STILL
+     *  empty: the cap release only means "don't stall a long-thinking model",
+     *  never "bless an all-reasoning stream as a success". */
     isEmpty() {
-      if (sawText) return false;
-      return sawTerminal || sawEos;
+      return !sawText && (sawTerminal || sawEos);
     },
 
     /** Reader reached end-of-stream (clean close). */

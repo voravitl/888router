@@ -114,7 +114,8 @@ describe("comboStreamGuard cap-hit regression", () => {
     // zero real content was classified non-empty → client got a 200 SSE with
     // nothing usable → "502 empty stream content" on retry loops.
     const g = createComboStreamGuard();
-    // 65KB of reasoning deltas (no content) — must trip the cap
+    // ~28KB of reasoning deltas (no content) — must trip the cap
+    // (MAX_BUFFER_BYTES = 64KB; feed() accumulates into the buffer until cap)
     const reasoning = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n";
     for (let i = 0; i < 400; i++) {
       g.feed(enc(reasoning));
@@ -136,5 +137,21 @@ describe("comboStreamGuard cap-hit regression", () => {
     g.feed(enc("data: {\"choices\":[{\"delta\":{\"content\":\"PONG\"}}]}\n\n"));
     expect(g.hasDecision()).toBe(true);
     expect(g.isEmpty()).toBe(false);
+  });
+});
+
+describe("comboStreamGuard cap-hit + terminal", () => {
+  it("cap hit then finish_reason arrives (no EOS) is empty", () => {
+    // The ADVISORY gap: cap hit, then an explicit terminal marker (no EOF).
+    // isEmpty() must still be true — the cap release never blesses an
+    // all-reasoning stream as success.
+    const g = createComboStreamGuard();
+    const reasoning = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n";
+    for (let i = 0; i < 400; i++) {
+      g.feed(enc(reasoning));
+      if (g.hasDecision()) break;
+    }
+    g.feed(enc("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n"));
+    expect(g.isEmpty()).toBe(true);
   });
 });
