@@ -107,3 +107,52 @@ describe("comboStreamGuard", () => {
     expect(g.isEmpty()).toBe(true);
   });
 });
+describe("comboStreamGuard cap-hit regression", () => {
+  it("cap hit (reasoning > 64KB) then EOF with no text is EMPTY, not success", () => {
+    // The bug: on buffer-cap hit the guard set sawText=true ("release live"),
+    // so a stream whose reasoning preamble exceeded 64KB and then ended with
+    // zero real content was classified non-empty → client got a 200 SSE with
+    // nothing usable → "502 empty stream content" on retry loops.
+    const g = createComboStreamGuard();
+    // ~28KB of reasoning deltas (no content) — must trip the cap
+    // (MAX_BUFFER_BYTES = 64KB; feed() accumulates into the buffer until cap)
+    const reasoning = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n";
+    for (let i = 0; i < 400; i++) {
+      g.feed(enc(reasoning));
+      if (g.hasDecision()) break;
+    }
+    // Cap released the head "live" — guard must NOT have a final decision yet
+    // (no text seen, no terminal seen), but after EOF it must classify EMPTY.
+    expect(g.hasDecision()).toBe(false); // cap release is not a verdict
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+  });
+
+  it("cap hit then real text arrives is still non-empty", () => {
+    const g = createComboStreamGuard();
+    const reasoning = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n";
+    for (let i = 0; i < 400; i++) {
+      g.feed(enc(reasoning));
+      if (g.hasDecision()) break;
+    }
+    g.feed(enc("data: {\"choices\":[{\"delta\":{\"content\":\"PONG\"}}]}\n\n"));
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+});
+
+describe("comboStreamGuard cap-hit + terminal", () => {
+  it("cap hit then finish_reason arrives (no EOS) is empty", () => {
+    // The ADVISORY gap: cap hit, then an explicit terminal marker (no EOF).
+    // isEmpty() must still be true — the cap release never blesses an
+    // all-reasoning stream as success.
+    const g = createComboStreamGuard();
+    const reasoning = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"x\"}}]}\n\n";
+    for (let i = 0; i < 400; i++) {
+      g.feed(enc(reasoning));
+      if (g.hasDecision()) break;
+    }
+    g.feed(enc("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n"));
+    expect(g.isEmpty()).toBe(true);
+  });
+});
