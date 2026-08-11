@@ -129,10 +129,29 @@ export const ERROR_RULES = [
   { status: 429, backoff: true },
   // 503/502/504 transient — shouldFallback so account layer rotates pools,
   // but short cooldown so combo doesn't stall on one exhausted proxy relay.
-  { status: 503, cooldownMs: COOLDOWN.short },
-  { status: 502, cooldownMs: COOLDOWN.short },
-  { status: 504, cooldownMs: COOLDOWN.short },
+  // parkMs = TRANSIENT_COOLDOWN_MS (30s): a transient relay usually recovers in
+  // ~10-30s. Without a parkMs here, the fallback in markAccountUnavailable used
+  // cooldownMs (5s), so a Vercel relay that needed ~20s to recover was handed
+  // straight back within seconds — combo burned the wait then fell through to
+  // the next provider while the relay was still down.
+  { status: 503, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
+  { status: 502, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
+  { status: 504, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
 ];
+
+// Invariant: a park window must always EXCEED the hop cooldown of the same
+// rule. cooldownMs paces the hop to the next pool within one request; parkMs
+// keeps the pool out of LATER rotations. If park <= cooldown, the pool is
+// handed straight back the moment the hop wait ends — the exact loop this
+// mechanism exists to stop. Enforced at load so a future edit cannot invert
+// them silently.
+for (const rule of ERROR_RULES) {
+  if (rule.parkMs && rule.cooldownMs && rule.parkMs <= rule.cooldownMs) {
+    throw new Error(
+      `errorConfig: rule ${rule.text ? `text:"${rule.text}"` : `status:${rule.status}`} has parkMs (${rule.parkMs}) <= cooldownMs (${rule.cooldownMs}) — park must exceed cooldown`,
+    );
+  }
+}
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
 export const COOLDOWN_MS = {
