@@ -73,9 +73,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // (relay-suspend rotation bug).
       const pools = await getProxyPools({ isActive: true });
       const exclude = excludeSet instanceof Set ? excludeSet : new Set();
+      let sawUnavailable = false;
       for (const pool of pools) {
         const pid = pool?.id;
         if (!pid || exclude.has(`noauth:${pid}`)) continue;
+        if (pool.testStatus === "unavailable") {
+          sawUnavailable = true;
+          log.debug("AUTH", `Skipping pool ${pid}: unavailable (${(pool.unavailableUntil && new Date(pool.unavailableUntil).getTime() > Date.now()) ? "parked" : "stale, not yet recovered"})`);
+          continue;
+        }
         // Eligibility:
         //   - pool inside its park window (unavailableUntil in the future) →
         //     skip; it is known-bad and must stay out of rotation.
@@ -91,12 +97,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         //     successful request through the pool, which is the only way a
         //     stale-unavailable pool re-enters rotation.
         const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
-        if (pool.testStatus === "unavailable") {
-          log.info("AUTH", `Skipping pool ${pid}: unavailable (${parkedUntil > Date.now() ? "parked" : "stale, not yet recovered"})`);
-          continue;
-        }
         if (parkedUntil > Date.now()) {
-          log.info("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
+          log.debug("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
           continue;
         }
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
@@ -120,11 +122,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         };
       }
 
-      // No eligible pool used on a first call (no excludes): pools exist but
-      // all lacked URLs, or zero pools configured → fall back to direct
-      // connection (legacy "always can use Public direct"). When mid-rotation
-      // (excludes present), treat as exhausted → null.
-      if (exclude.size === 0) {
+      // No eligible pool used on a first call (no excludes). Three cases:
+      //   - zero pools configured → fall back to direct (legacy "always can
+      //     use Public direct").
+      //   - pools exist, none unavailable, but all lack a usable URL → fall
+      //     back to direct (config problem, not a pool failure — the tests
+      //     pin this: "active pools but all lack relay URL").
+      //   - pools exist but every one is unavailable/stale (sawUnavailable) →
+      //     exhausted, NOT direct. Bypassing to a raw noauth connection is
+      //     exactly how a failing relay gets hammered without rotation.
+      // When mid-rotation (excludes present), treat as exhausted → null.
+      if (exclude.size === 0 && (!sawUnavailable || pools.length === 0)) {
         return {
           id: "noauth",
           connectionId: "noauth",

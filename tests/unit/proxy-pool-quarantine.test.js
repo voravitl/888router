@@ -252,3 +252,17 @@ describe("pool health reset on success", () => {
     expect(poolWrites).toHaveLength(0);
   });
 });
+
+describe("all-stale-unavailable pools", () => {
+  it("returns null (exhausted) instead of bypassing to direct noauth", async () => {
+    // Review finding: with every pool unavailable/stale, falling back to the
+    // bare "noauth" direct connection is exactly how a failing relay gets
+    // hammered without rotation. Exhausted must mean exhausted.
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: past(MIN) },
+      { id: "poolB", name: "B", testStatus: "unavailable", unavailableUntil: past(MIN) },
+    );
+    const creds = await getProviderCredentials("opencode", new Set(["noauth:seed"]), "deepseek-v4-flash-free");
+    expect(creds).toBeNull();
+  });
+});
