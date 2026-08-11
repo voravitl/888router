@@ -82,8 +82,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           continue;
         }
         // Cooldown expired → pool is eligible again; clear the stale flag so
-        // its health state is fresh. This write happens only when the pool
-        // actually passes the guard (post-decision), never on a plain read.
+        // its health state is fresh. Fire-and-forget: if the clear fails the
+        // pool simply stays flagged and is skipped (safe), never re-picked.
+        if (pool.testStatus === "unavailable") {
+          updateProxyPool(pid, { testStatus: "active", lastError: null, unavailableUntil: null, updatedAt: new Date().toISOString() }).catch(() => {});
+        }
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pid });
         if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {
           log.warn("AUTH", `Skipping pool ${pid}: no proxy/relay URL`);
@@ -338,6 +341,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       // skips it for the cooldown window (relay-suspend rotation bug: without
       // this, the pool that just 503'd is picked again on the next request).
       const poolId = connectionId.slice("noauth:".length);
+      if (!poolId) return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
       updateProxyPool(poolId, {
         testStatus: "unavailable",
         lastError: typeof errorText === "string" ? errorText.slice(0, 300) : String(status),
