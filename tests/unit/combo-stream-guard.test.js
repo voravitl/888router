@@ -156,3 +156,25 @@ describe("comboStreamGuard cap-hit + terminal", () => {
     expect(g.isEmpty()).toBe(true);
   });
 });
+
+describe("comboStreamGuard reasoning-budget signature", () => {
+  it("exposes sawReasoning + finishReason for a reasoning-only stream", () => {
+    // The reasoning_budget_exhausted signature: reasoning deltas then
+    // finish_reason:"length" with zero text. combo.js uses these to RETRY
+    // instead of treating it as a plain empty verdict.
+    const g = createComboStreamGuard();
+    g.feed(enc("data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking...\"}}]}\n\n"));
+    g.feed(enc("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n"));
+    expect(g.sawReasoning()).toBe(true);
+    expect(g.finishReason()).toBe("length");
+    expect(g.isEmpty()).toBe(true); // still empty — combo decides retry
+  });
+
+  it("sawReasoning false when only text flows", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("data: {\"choices\":[{\"delta\":{\"content\":\"PONG\"}}]}\n\n"));
+    expect(g.sawReasoning()).toBe(false);
+    expect(g.finishReason()).toBeNull();
+    expect(g.isEmpty()).toBe(false);
+  });
+});

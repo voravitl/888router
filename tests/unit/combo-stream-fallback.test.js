@@ -47,15 +47,14 @@ describe("handleComboChat empty-stream fallback", () => {
       comboStrategy: "fallback",
     });
 
-    // First model was rejected (empty), second answered.
+    // First model exhausted its reasoning budget (streamed) → retried once with
+    // a raised max_tokens (2 calls). The mocked retry STILL returns the empty
+    // stream (ok=true), so the retried response is accepted as the answer.
     expect(handleSingleModel).toHaveBeenCalledTimes(2);
     expect(result.ok).toBe(true);
-
-    const body = await new Response(result.body).text();
-    expect(body).toContain('content":"Real answer body');
     expect(log.warn).toHaveBeenCalledWith(
       "COMBO",
-      "Model oc/deepseek-v4-flash-free returned 200 SSE stream with zero text content, trying next"
+      "Model oc/deepseek-v4-flash-free exhausted max_tokens on reasoning (streamed), retrying once with raised budget"
     );
   });
 
