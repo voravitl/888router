@@ -1,3 +1,13 @@
+# v0.15.13 (2026-08-12)
+
+## Fix: Streamed reasoning-budget retry & inject min max_tokens (PR #265)
+
+- **MoA Decision on 502 empty stream:** opencode free models (deepseek-v4-flash-free) exhaust max_tokens on reasoning → stream ends `content:""` + `finish_reason:"length"` → `comboStreamGuard` misclassifies as `empty` → combo drops model → client sees 502.
+- **Streamed reasoning-budget retry:** `comboStreamGuard` now exposes `sawReasoning()` + `finishReason()`. When `guard.isEmpty()` AND `sawReasoning` AND `finishReason === "length"`, `combo.js` SSE branch retries ONCE with `withRaisedMaxTokens(body)` (max_tokens x3, capped 65536) before falling through — mirroring the non-stream path.
+- **Min max_tokens injection:** `opencode.js` injects `max_tokens: 2000` in `transformRequest` for `-free` reasoning models when `max_tokens` is absent/undefined from client.
+- **Deep research evidence:** 325 `status='empty'` rows in DB (260 opencode), 323/325 with `output_tokens` 95-794 — model *did* generate thinking but stream ended with zero text. Proxy rotation healthy (345/355 success, 97%).
+- 68/68 proxy+combo tests pass; review findings fixed (duplicate key, test assertions).
+
 # v0.15.12 (2026-08-12)
 
 ## Fix: Proxy rotation stuck on one relay — stale-unavailable pools (PR #260)
