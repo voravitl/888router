@@ -319,6 +319,26 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
               guard.feed(value);
             }
             if (guard.isEmpty()) {
+              // Reasoning-budget exhaustion signature: the stream carried
+              // thinking (sawReasoning) and ended via finish_reason:"length"
+              // with zero text — the model burned its whole max_tokens budget
+              // on the reasoning phase (deepseek/kimi/opencode -free models).
+              // That is a RETRY condition, not a plain empty verdict: mirror
+              // the non-stream path below (isReasoningEmptyContent) and give
+              // the model one more attempt with a raised budget before
+              // falling through to the next combo model.
+              if (guard.sawReasoning() && guard.finishReason() === "length") {
+                log.warn("COMBO", `Model ${modelStr} exhausted max_tokens on reasoning (streamed), retrying once with raised budget`);
+                await reader.cancel().catch(() => {});
+                const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr);
+                if (retried.ok) {
+                  log.info("COMBO", `Model ${modelStr} succeeded after streamed reasoning-budget retry`);
+                  return retried;
+                }
+                lastError = `reasoning budget exhausted; streamed retry failed (${retried.status})`;
+                if (!lastStatus) lastStatus = retried.status;
+                continue;
+              }
               log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
               await reader.cancel().catch(() => {});
               lastError = lastError ? `${lastError}; empty stream content` : "empty stream content";

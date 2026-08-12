@@ -33,6 +33,16 @@ export function createComboStreamGuard() {
   let sawTerminal = false;
   /** Reader reached end-of-stream (may be a clean finish OR a mid-stream cut). */
   let sawEos = false;
+  /**
+   * Reasoning deltas seen during the stream (delta.reasoning_content non-empty
+   * or Ollama response carrying only thinking). Distinct from sawText: a stream
+   * can carry reasoning yet end with zero text — that is the
+   * reasoning_budget_exhausted signature, which combo must RETRY, not drop as
+   * a generic empty verdict.
+   */
+  let sawReasoning = false;
+  /** Terminal finish_reason captured from the final chunk, if any. */
+  let finishReason = null;
   /** Reasoning preambles can be long; past this we assume live and release. */
   const MAX_BUFFER_BYTES = 64 * 1024;
   let capWarned = false;
@@ -57,7 +67,13 @@ export function createComboStreamGuard() {
         const deltaText = (delta && (delta.content || delta.text)) || "";
         const textVal = ollamaText || deltaText;
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
-        if ((json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason) {
+        // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE)
+        // or Ollama's {"response":"","thinking":true,...}-style fields.
+        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent)) || "";
+        if (typeof reasoningVal === "string" && reasoningVal.length > 0) sawReasoning = true;
+        const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || null;
+        if (fr) {
+          finishReason = typeof fr === "string" ? fr : String(fr);
           sawTerminal = true;
         }
       } catch { /* incomplete / non-JSON line — not meaningful for the guard */ }
@@ -97,6 +113,16 @@ export function createComboStreamGuard() {
     /** Enough bytes to decide: text, explicit terminal, or end-of-stream. */
     hasDecision() {
       return sawText || sawTerminal || sawEos;
+    },
+
+    /** Whether reasoning deltas were seen during the stream head. */
+    sawReasoning() {
+      return sawReasoning;
+    },
+
+    /** Terminal finish_reason captured from the final chunk, or null. */
+    finishReason() {
+      return finishReason;
     },
 
     /** Concatenated bytes buffered so far (caller enqueues before forwarding). */

@@ -20,7 +20,15 @@ describe("handleComboChat empty-stream fallback", () => {
     const handleSingleModel = vi.fn(async (body, model) => {
       seen.push(model);
       if (model === "oc/deepseek-v4-flash-free") {
-        // Reasoning-only stream with finish length and zero content.
+        // Retry with raised max_tokens succeeds with real content
+        if (body.max_tokens) {
+          return okResponse(makeStream([
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"Retried real answer\"}}]}\n\n",
+            "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n",
+          ]));
+        }
+        // Initial call: reasoning-only stream with finish length and zero content.
         return okResponse(makeStream([
           "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"deep thinking\"}}]}\n\n",
           "data: {\"choices\":[{\"delta\":{\"content\":\"\"},\"finish_reason\":\"length\"}]}\n\n",
@@ -47,15 +55,16 @@ describe("handleComboChat empty-stream fallback", () => {
       comboStrategy: "fallback",
     });
 
-    // First model was rejected (empty), second answered.
+    // First model exhausted its reasoning budget (streamed) → retried once with
+    // a raised max_tokens (2 calls) and succeeded with real content.
     expect(handleSingleModel).toHaveBeenCalledTimes(2);
     expect(result.ok).toBe(true);
 
-    const body = await new Response(result.body).text();
-    expect(body).toContain('content":"Real answer body');
+    const resBody = await new Response(result.body).text();
+    expect(resBody).toContain('content":"Retried real answer');
     expect(log.warn).toHaveBeenCalledWith(
       "COMBO",
-      "Model oc/deepseek-v4-flash-free returned 200 SSE stream with zero text content, trying next"
+      "Model oc/deepseek-v4-flash-free exhausted max_tokens on reasoning (streamed), retrying once with raised budget"
     );
   });
 
