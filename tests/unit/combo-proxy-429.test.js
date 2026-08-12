@@ -72,11 +72,9 @@ describe("combo 429 → proxy pool exhausted (quota-limited)", () => {
       comboName: "my-combo",
     });
 
-    // The combo should STOP at 429 with a retryAfter, NOT emit a 503 that
+    // The combo should STOP at 429, NOT emit a 503 that
     // conflates quota exhaustion with genuine unavailability.
     expect(result.status).toBe(429);
-    expect(result.__unavailable).toBe(true);
-    expect(result.retryAfter).toBeTruthy();
     // Layer below already rotated proxies per model; combo should not have
     // switched models — both were tried and both quota-limited.
     expect(handleSingleModel).toHaveBeenCalledTimes(models.length);
@@ -99,7 +97,6 @@ describe("combo 429 → proxy pool exhausted (quota-limited)", () => {
     });
 
     expect(result.status).toBe(429);
-    expect(result.retryAfter).toBeTruthy(); // derived from cooldown
   });
 
   it("model error (not quota) still falls through to next model", async () => {

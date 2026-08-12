@@ -103,6 +103,15 @@ export const ERROR_RULES = [
   // accounts is futile (identical payload, same wall), so do not fall back or
   // lock the account — surface the 400 to the client.
   { text: "content_length_exceeds_threshold", noFallback: true },
+  // OpenCode Free Tier rate limit — backoff: true makes it escalate like a
+  // regular 429 (2s→4s→8s…). But opencode free returns 429 *aggressively*
+  // and ALL proxy pools and accounts share the same upstream quota, so
+  // rotation never helps — every opencode request hits the same wall. Give
+  // it a fixed cooldown so the pool is parked long enough that combo moves
+  // on to other providers instead of burning all retries on opencode.
+  // MUST stay ABOVE "rate limit" below — the error text "FreeUsageLimitError:
+  // Rate limit exceeded" also matches the generic rule.
+  { text: "freeusagelimiterror",         cooldownMs: COOLDOWN.short },
   { text: "rate limit",               backoff: true },
   // Relay host suspended the deployment for exceeding its usage quota (Deno
   // Deploy / Vercel: 503 "(USAGE_EXCEEDED) This application is suspended due to
