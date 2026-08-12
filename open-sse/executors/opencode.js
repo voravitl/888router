@@ -67,6 +67,15 @@ export class OpenCodeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
-    return injectReasoningContent({ provider: this.provider, model, body });
+    let nextBody = injectReasoningContent({ provider: this.provider, model, body });
+    // t2: OpenCode free/reasoning models (model ends with "-free") often receive no
+    // max_tokens from clients (e.g. Claude Code). Upstream defaults to a low budget
+    // (~40-150 tokens) which exhausts on reasoning, leaving empty text content.
+    // Inject min max_tokens: 2000 when body.max_tokens is absent/undefined.
+    const isFreeModel = typeof model === "string" && model.endsWith("-free");
+    if (isFreeModel && (nextBody?.max_tokens === undefined || nextBody?.max_tokens === null)) {
+      nextBody = { ...nextBody, max_tokens: 2000 };
+    }
+    return nextBody;
   }
 }
