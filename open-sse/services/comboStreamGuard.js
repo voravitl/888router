@@ -69,7 +69,7 @@ export function createComboStreamGuard() {
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
         // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE)
         // or Ollama's {"response":"","thinking":true,...}-style fields.
-        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoning_content)) || "";
+        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent)) || "";
         if (typeof reasoningVal === "string" && reasoningVal.length > 0) sawReasoning = true;
         const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || null;
         if (fr) {
