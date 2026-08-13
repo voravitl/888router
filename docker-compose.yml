@@ -56,6 +56,11 @@ services:
     restart: always
     ports:
       - "8787:8787"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1024M
     environment:
       OMP_NUM_THREADS: "2"
       OPENBLAS_NUM_THREADS: "2"
