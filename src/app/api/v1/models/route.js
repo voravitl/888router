@@ -563,11 +563,26 @@ export async function buildModelsList(kindFilter) {
           || capabilitiesFromServiceKind(customKind || liveKind)
           || getCapabilitiesForModel(providerId, modelId);
         if (caps) model.capabilities = caps;
-        const resolvedContextWindow = caps?.contextWindow;
-        if (resolvedContextWindow) {
-          model.context_length = resolvedContextWindow;
-          model.context_window = resolvedContextWindow;
-          model.contextWindow = resolvedContextWindow;
+        if (kind === LLM_KIND || allowAsLlm) {
+          let contextWindow = caps?.contextWindow;
+          let maxOutput = caps?.maxOutput;
+          // Live-catalog and service-kind capabilities are usually partial
+          // (often just { tools: true }), so fill the gaps from the static
+          // table rather than emitting null and leaving clients to guess.
+          if (!Number.isFinite(contextWindow) || !Number.isFinite(maxOutput)) {
+            const fallback = getCapabilitiesForModel(providerId, modelId);
+            if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
+            if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
+          }
+          if (Number.isFinite(contextWindow)) {
+            model.context_length = contextWindow;
+            model.context_window = contextWindow;
+            model.contextWindow = contextWindow;
+          }
+          if (Number.isFinite(maxOutput)) {
+            model.max_tokens = maxOutput;
+            model.max_completion_tokens = maxOutput;
+          }
         }
         models.push(model);
       }
