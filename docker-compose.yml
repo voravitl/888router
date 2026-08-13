@@ -56,6 +56,12 @@ services:
     restart: always
     ports:
       - "8787:8787"
+    environment:
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      VECLIB_MAXIMUM_THREADS: "2"
+      NUMEXPR_NUM_THREADS: "2"
     # Image default checks /readyz (includes upstream) with a 5s timeout — flaps
     # unhealthy when Anthropic is slow. Liveness is enough for "is the proxy up".
     healthcheck:
