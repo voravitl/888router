@@ -15,7 +15,6 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { accumulateToolName } from "../concerns/toolCall.js";
 
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -76,6 +75,15 @@ export function kiroToClaudeResponse(chunk, state) {
         ? data.usage.completion_tokens
         : 0;
     state.usage = { input_tokens: promptTokens, output_tokens: outputTokens };
+    // Claude clients read cache_read/cache_creation to price a turn and to size
+    // their prompt cache. Both spellings are accepted because the Kiro executor
+    // emits the Chat shape and passthrough responses use the nested details form.
+    const cacheRead = data.usage.cache_read_input_tokens
+      ?? data.usage.prompt_tokens_details?.cached_tokens;
+    const cacheCreation = data.usage.cache_creation_input_tokens
+      ?? data.usage.prompt_tokens_details?.cache_creation_tokens;
+    if (typeof cacheRead === "number") state.usage.cache_read_input_tokens = cacheRead;
+    if (typeof cacheCreation === "number") state.usage.cache_creation_input_tokens = cacheCreation;
   }
 
   // First chunk → emit message_start.
@@ -142,31 +150,39 @@ export function kiroToClaudeResponse(chunk, state) {
   }
 
   // Tool calls.
-  //
-  // Same late-name hazard as openai-to-claude: some providers open the tool
-  // call with an id and stream the name in a later chunk. Accumulate name +
-  // args across chunks and defer the block emission to finish, so we never
-  // ship a tool_use block with an empty name.
   if (delta.tool_calls) {
     if (!state.toolCalls) state.toolCalls = new Map();
     if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
-      // Provisional slot keyed on index alone so a name/args fragment arriving
-      // before the id is not lost; id/name filled in as fragments arrive.
-      if (!state.toolCalls.has(idx)) {
-        state.toolCalls.set(idx, { id: null, name: "" });
-      }
-      const toolInfo = state.toolCalls.get(idx);
-      if (tc.id) toolInfo.id = toolInfo.id || tc.id;
-      if (tc.function?.name) {
-        toolInfo.name = accumulateToolName(toolInfo.name, tc.function.name);
+      if (tc.id) {
+        stopThinkingBlock(state, results);
+        stopTextBlock(state, results);
+        const toolBlockIndex = state.nextBlockIndex++;
+        state.toolCalls.set(idx, {
+          id: tc.id,
+          name: tc.function?.name || "",
+          blockIndex: toolBlockIndex,
+        });
+        results.push({
+          type: "content_block_start",
+          index: toolBlockIndex,
+          content_block: {
+            type: "tool_use",
+            id: tc.id,
+            name: tc.function?.name || "",
+            input: {},
+          },
+        });
       }
       if (tc.function?.arguments) {
-        state.toolArgBuffers.set(
-          idx,
-          (state.toolArgBuffers.get(idx) || "") + tc.function.arguments
-        );
+        const toolInfo = state.toolCalls.get(idx);
+        if (toolInfo) {
+          state.toolArgBuffers.set(
+            idx,
+            (state.toolArgBuffers.get(idx) || "") + tc.function.arguments
+          );
+        }
       }
     }
   }
@@ -176,54 +192,25 @@ export function kiroToClaudeResponse(chunk, state) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
-    let emittedToolBlocks = 0;
     if (state.toolCalls) {
       for (const [idx, toolInfo] of state.toolCalls) {
-        // A provisional slot missing either the id or the name is not a valid
-        // tool_use — skip it rather than emit a block the Claude client rejects.
-        if (!toolInfo.id || !toolInfo.name) continue;
-        emittedToolBlocks++;
-
-        // Allocate the block index now (deferred from first-sight of the id)
-        // so it follows any text/thinking blocks flushed above.
-        const toolBlockIndex = state.nextBlockIndex++;
-        results.push({
-          type: "content_block_start",
-          index: toolBlockIndex,
-          content_block: {
-            type: "tool_use",
-            id: toolInfo.id,
-            name: toolInfo.name,
-            input: {},
-          },
-        });
-
         const buffered = state.toolArgBuffers?.get(idx);
         if (buffered) {
           results.push({
             type: "content_block_delta",
-            index: toolBlockIndex,
+            index: toolInfo.blockIndex,
             delta: { type: "input_json_delta", partial_json: buffered },
           });
         }
-        results.push({ type: "content_block_stop", index: toolBlockIndex });
+        results.push({ type: "content_block_stop", index: toolInfo.blockIndex });
       }
     }
 
     state.finishReason = choice.finish_reason;
-
-    // If every tool call was dropped (no valid block emitted), a stop_reason of
-    // "tool_use" would tell the client to run tools that don't exist — some
-    // clients hang on that. Downgrade to end_turn.
-    let stopReason = convertFinishReason(choice.finish_reason);
-    if (stopReason === "tool_use" && emittedToolBlocks === 0) {
-      stopReason = "end_turn";
-    }
-
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
     results.push({
       type: "message_delta",
-      delta: { stop_reason: stopReason },
+      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
       usage: finalUsage,
     });
     results.push({ type: "message_stop" });
@@ -276,6 +263,13 @@ export function kiroToClaudeNonStreaming(data) {
     usage: {
       input_tokens: usage.prompt_tokens || 0,
       output_tokens: usage.completion_tokens || 0,
+      // Same cache preservation as the streaming path above.
+      ...(typeof (usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens) === "number"
+        ? { cache_read_input_tokens: usage.cache_read_input_tokens ?? usage.prompt_tokens_details.cached_tokens }
+        : {}),
+      ...(typeof (usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens) === "number"
+        ? { cache_creation_input_tokens: usage.cache_creation_input_tokens ?? usage.prompt_tokens_details.cache_creation_tokens }
+        : {}),
     },
   };
 }
