@@ -672,8 +672,6 @@ export default function TokenSaverClient() {
             </p>
           </div>
           <Toggle
-            // Enabled state is independent of probe — compress is fail-open when down.
-            // Tying the toggle to `running` made Setup look on/off when /health was slow.
             checked={headroomEnabled}
             onChange={() => handleHeadroomEnabled(!headroomEnabled)}
           />
