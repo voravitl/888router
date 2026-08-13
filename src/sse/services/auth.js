@@ -132,7 +132,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       //   - pools exist and healthy/stale candidates all lacked URLs →
       //     exhausted, NOT direct. Bypassing to a raw noauth connection is
       //     exactly how a failing relay gets hammered without rotation.
-      // When mid-rotation (excludes present), treat as exhausted → null.
+      // When mid-rotation (excludes present), treat as exhausted → null,
+      // UNLESS every pool is parked by a rate limit — then return
+      // allRateLimited so chat.js sends 429 + Retry-After (not 404 "No active
+      // credentials"), which makes Claude Code retry after the reset window
+      // instead of showing "model may not exist".
       if (exclude.size === 0 && (pools.length === 0 || healthy.length > 0)) {
         return {
           id: "noauth",
@@ -149,7 +153,39 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           },
         };
       }
-      return null; // all pools excluded / no eligible pools remain
+      // All pools parked (rate-limited) or excluded — check if any are still
+      // in a cooldown window. If so, return allRateLimited with the earliest
+      // reset time so the client gets 429 + Retry-After instead of 404.
+      // Parse the actual upstream status from the pool's lastError (format
+      // "[NNN]: ...") rather than assuming 429 — pools can be parked by 503
+      // (usage_exceeded / suspended relay) too, and the client should see the
+      // real status, not a misleading 429.
+      let earliestReset = null;
+      let earliestPoolError = null;
+      for (const pool of pools) {
+        if (!pool.unavailableUntil) continue;
+        const until = new Date(pool.unavailableUntil).getTime();
+        if (until > now) {
+          if (!earliestReset || until < earliestReset) {
+            earliestReset = until;
+            earliestPoolError = pool.lastError || null;
+          }
+        }
+      }
+      if (earliestReset) {
+        const retryAfter = new Date(earliestReset).toISOString();
+        const statusMatch = earliestPoolError && earliestPoolError.match(/\[(\d{3})\]/);
+        const errorCode = statusMatch ? Number(statusMatch[1]) : 429;
+        log.warn("AUTH", `${providerId} | all proxy pools parked [${errorCode}], retry after ${formatRetryAfter(retryAfter)}`);
+        return {
+          allRateLimited: true,
+          retryAfter,
+          retryAfterHuman: formatRetryAfter(retryAfter),
+          lastError: earliestPoolError || "All proxy pools unavailable",
+          lastErrorCode: errorCode,
+        };
+      }
+      return null; // all pools excluded / no eligible pools remain, none parked
     }
 
     // Inject virtual connection(s) for no-auth free providers.

@@ -219,15 +219,37 @@ describe("rotation skips parked pools", () => {
     expect(poolWrites).toHaveLength(0); // selection is a read
   });
 
-  it("returns null when every pool is parked rather than reusing a dead one", async () => {
+  it("returns allRateLimited when every pool is parked rather than reusing a dead one", async () => {
     // The whole point of the fix: exhausted must mean exhausted. Handing back a
     // pool known to be suspended is what produced the endless retry loop.
+    // Returning allRateLimited (not null) makes chat.js send 429 + Retry-After
+    // so Claude Code retries after the reset window instead of seeing 404
+    // "model may not exist".
     resetPools(
       { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: future(20 * MIN) },
       { id: "poolB", name: "B", testStatus: "unavailable", unavailableUntil: future(20 * MIN) },
     );
     const creds = await getProviderCredentials("opencode", new Set(["noauth:seed"]), "deepseek-v4-flash-free");
-    expect(creds).toBeNull();
+    expect(creds).not.toBeNull();
+    expect(creds.allRateLimited).toBe(true);
+    expect(creds.retryAfter).toBeTruthy();
+    expect(creds.lastErrorCode).toBe(429);
+  });
+
+  it("parses actual upstream status from lastError, not hardcoded 429", async () => {
+    // A pool parked by 503 (usage_exceeded / suspended relay) should report
+    // lastErrorCode 503, not a misleading 429.
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable",
+        unavailableUntil: future(20 * MIN), lastError: "[503]: Service Unavailable (USAGE_EXCEEDED)" },
+      { id: "poolB", name: "B", testStatus: "unavailable",
+        unavailableUntil: future(30 * MIN), lastError: "[429]: Rate limit exceeded" },
+    );
+    const creds = await getProviderCredentials("opencode", new Set(["noauth:seed"]), "deepseek-v4-flash-free");
+    expect(creds.allRateLimited).toBe(true);
+    // earliestReset = poolA (20 min < 30 min) → its error code 503
+    expect(creds.lastErrorCode).toBe(503);
+    expect(creds.lastError).toContain("503");
   });
 });
 
