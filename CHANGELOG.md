@@ -1,3 +1,13 @@
+# v0.15.15 (2026-08-13)
+
+## Fix: OpenCode free models catalog update & endpoint unavailable handling (PR #272)
+
+- **OpenCode Free Catalog Update:** Added `big-pickle`, `hy3-free`, `nemotron-3.5-lightning-free` to OpenCode free model registry; removed stale/unavailable model IDs (`ling-3.0-flash-free`, `north-mini-code-free`, `laguna-s-2.1-free`).
+- **Executor Parameter Resolution:** Fixed `OpenCodeExecutor.buildHeaders` effective model resolution so `Authorization: Bearer public` and Anthropic/OpenAI headers are sent correctly regardless of call signature.
+- **Endpoint Unavailable Fallback:** Added `{ text: "endpoint is unavailable", modelError: true }` rule to `errorConfig.js` so combo automatically skips to available free models when upstream endpoints are unavailable.
+- **Universal Tool Prompt Denylist:** Added `big-pickle` to `universalToolPrompt.js` denylist to ensure XML tool prompt is injected for free non-tool models.
+- **Tests:** 100% tests pass (`tests/unit/opencode-zen-go.test.js`).
+
 # v0.15.14 (2026-08-13)
 
 ## Fix: 429+Retry-After when all proxy pools parked, not 404 (PR #270)
