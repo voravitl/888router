@@ -28,6 +28,7 @@ services:
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
+      RTK_HARD_CAP_BYTES: "65536"
       HEADROOM_URL: http://headroom:8787
       # Public origin used to absolutize skill markdown links. Set it in .env
       # (see .env.example) — e.g. NINEROUTER_PUBLIC_URL=http://localhost:20128

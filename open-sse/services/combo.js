@@ -740,12 +740,12 @@ function pipeStreamWithHead(reader, head) {
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          controller.enqueue(value);
+          try { controller.enqueue(value); } catch { break; }
         }
-        controller.close();
+        try { controller.close(); } catch {}
       } catch (err) {
         console.error("[combo] pipeStreamWithHead failed:", err?.message || err);
-        controller.error(err);
+        try { controller.error(err); } catch {}
       }
     },
     cancel() {
