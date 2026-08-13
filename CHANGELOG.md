@@ -1,3 +1,13 @@
+# v0.15.14 (2026-08-13)
+
+## Fix: 429+Retry-After when all proxy pools parked, not 404 (PR #270)
+
+- **Root cause:** When every OpenCode proxy pool was parked by 429 `FreeUsageLimitError` backoff, `pickVirtualNoAuthConnection` returned `null` → `chat.js` sent 404 NOT_FOUND → Claude Code showed "model may not exist or you may not have access" instead of retrying.
+- **Fix:** `pickVirtualNoAuthConnection` now returns `{ allRateLimited: true, retryAfter }` with the earliest pool reset time → `chat.js` sends 429 + `Retry-After` header → Claude Code retries automatically after the cooldown window.
+- **Review fix (Opus HIGH):** Parses actual upstream status from pool `lastError` format `[NNN]: ...` instead of hardcoding 429 — pools parked by 503 (usage_exceeded/suspended relay) or 401 now report the real status code.
+- **Tests:** 32/32 proxy pool tests pass (added 503-parked pool test case).
+- **Live verified:** 429 + Retry-After: 1200s (was 404 before fix).
+
 # v0.15.13 (2026-08-12)
 
 ## Fix: Streamed reasoning-budget retry & inject min max_tokens (PR #265)
