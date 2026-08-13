@@ -531,7 +531,7 @@ export async function GET(request, { params }) {
           const data = await response.json();
           let models = parseOpenAIStyleModels(data);
           // Keep only free models for OpenCode / OpenCode Zen
-          models = models.filter((m) => m.id.endsWith("-free"));
+          models = models.filter((m) => m.id.endsWith("-free") || m.id === "big-pickle");
           if (models.length > 0) {
             // opencode /zen/v1/models returns no modality — enrich vision/
             // reasoning/context from models.dev (authoritative) so text-only

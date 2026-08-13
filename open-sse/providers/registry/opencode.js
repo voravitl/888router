@@ -18,8 +18,8 @@ export default {
   },
   noAuth: true,
   category: "free",
-  authModes: ["noauth"],
-  authHint: "OpenCode Free (Zen) mode - public access.",
+  authModes: ["noauth", "apikey"],
+  authHint: "OpenCode Free (Zen) mode - public access or OpenCode Go API key.",
   transport: {
     baseUrl: "https://opencode.ai",
     headers: {
@@ -31,9 +31,9 @@ export default {
   models: [
     { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash (Free)" },
     { id: "mimo-v2.5-free", name: "MiMo V2.5 (Free)" },
-    { id: "ling-3.0-flash-free", name: "Ling 3.0 Flash (Free)" },
+    { id: "hy3-free", name: "HY3 (Free)" },
     { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra (Free)" },
-    { id: "north-mini-code-free", name: "North Mini Code (Free)" },
-    { id: "laguna-s-2.1-free", name: "Laguna S 2.1 (Free)" },
+    { id: "nemotron-3.5-lightning-free", name: "Nemotron 3.5 Lightning (Free)" },
+    { id: "big-pickle", name: "Big Pickle (Free)" },
   ],
 };

@@ -6,7 +6,7 @@ const NON_TOOL_PROVIDERS = new Set(["ollama"]);
 const NON_TOOL_DENYLIST_EXACT = new Set([
   "deepseek-v4-flash-free",
   "mimo-v2.5-free",
-  "ling-3.0-flash-free"
+  "big-pickle",
 ]);
 
 const NON_TOOL_DENYLIST_SUFFIXES = [

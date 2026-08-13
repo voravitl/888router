@@ -3,6 +3,8 @@ import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 
+const KNOWN_FREE_OPENCODE_MODELS = new Set(["big-pickle"]);
+
 // Derive Claude format models dynamically from registry metadata
 const getClaudeFormatModels = () => {
   const models = PROVIDERS.opencode?.models || [];
@@ -30,7 +32,7 @@ export class OpenCodeExecutor extends BaseExecutor {
   buildUrl(model, stream = true, urlIndex = 0, credentials = null) {
     const rawKey = credentials?.apiKey || credentials?.accessToken;
     const key = typeof rawKey === "string" ? rawKey.trim() : null;
-    const isFreeModel = typeof model === "string" && model.endsWith("-free");
+    const isFreeModel = typeof model === "string" && (model.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(model));
     const base = (key && !isFreeModel) ? ZEN_GO_BASE : ZEN_FREE_BASE;
     return MESSAGES_FORMAT_MODELS.has(model)
       ? `${base}/messages`
@@ -40,7 +42,8 @@ export class OpenCodeExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, url = "", model = null) {
     const rawKey = credentials?.apiKey || credentials?.accessToken;
     const key = typeof rawKey === "string" ? rawKey.trim() : null;
-    const isFreeModel = typeof model === "string" && model.endsWith("-free");
+    const effectiveModel = model || (typeof url === "string" && !url.startsWith("http") ? url : null);
+    const isFreeModel = typeof effectiveModel === "string" && (effectiveModel.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(effectiveModel));
     const headers = {
       "Content-Type": "application/json",
       "x-opencode-client": "desktop",
@@ -48,7 +51,7 @@ export class OpenCodeExecutor extends BaseExecutor {
 
     if (key && !isFreeModel) {
       // OpenCode Go with API Key
-      if (model && MESSAGES_FORMAT_MODELS.has(model)) {
+      if (effectiveModel && MESSAGES_FORMAT_MODELS.has(effectiveModel)) {
         headers["x-api-key"] = key;
         headers["anthropic-version"] = ANTHROPIC_API_VERSION;
       } else {
@@ -57,7 +60,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     } else {
       // OpenCode Zen Free
       headers["Authorization"] = "Bearer public";
-      if (model && MESSAGES_FORMAT_MODELS.has(model)) {
+      if (effectiveModel && MESSAGES_FORMAT_MODELS.has(effectiveModel)) {
         headers["anthropic-version"] = ANTHROPIC_API_VERSION;
       }
     }
@@ -68,11 +71,11 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body) {
     let nextBody = injectReasoningContent({ provider: this.provider, model, body });
-    // t2: OpenCode free/reasoning models (model ends with "-free") often receive no
+    // t2: OpenCode free/reasoning models (model ends with "-free" or is big-pickle) often receive no
     // max_tokens from clients (e.g. Claude Code). Upstream defaults to a low budget
     // (~40-150 tokens) which exhausts on reasoning, leaving empty text content.
     // Inject min max_tokens: 2000 when body.max_tokens is absent/undefined.
-    const isFreeModel = typeof model === "string" && model.endsWith("-free");
+    const isFreeModel = typeof model === "string" && (model.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(model));
     if (isFreeModel && (nextBody?.max_tokens === undefined || nextBody?.max_tokens === null)) {
       nextBody = { ...nextBody, max_tokens: 2000 };
     }

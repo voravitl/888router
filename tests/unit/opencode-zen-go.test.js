@@ -7,7 +7,7 @@ describe("OpenCode Zen & Go Unified Executor & Registry", () => {
     expect(opencodeRegistry.id).toBe("opencode");
     expect(opencodeRegistry.authModes).toContain("noauth");
     expect(opencodeRegistry.authModes).toContain("apikey");
-    expect(opencodeRegistry.category).toBe("apikey");
+    expect(opencodeRegistry.category).toBe("free");
     expect(opencodeRegistry.hasFree).toBe(true);
     expect(opencodeRegistry.aliases).toContain("oc");
   });
