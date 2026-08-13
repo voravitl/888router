@@ -1,3 +1,11 @@
+# v0.15.17 (2026-08-13)
+
+## Fix: Controller state safety in pipeStreamWithHead & RTK 64KB Hard Cap (PR #278)
+
+- **Root Cause of Empty/Malformed Response (HTTP 200) Error:** When a client disconnected or a stream was aborted mid-flight, `pipeStreamWithHead` called `controller.error(err)` or `controller.close()` on an already closed stream, throwing `Invalid state: Controller is already closed`. This caused Node.js/Next.js to return an empty/malformed HTTP 200 chunk, triggering `API returned an empty or malformed response (HTTP 200)` in Claude Code CLI.
+- **Fix:** Safe `try/catch` wrappers added around `controller.enqueue()`, `controller.close()`, and `controller.error()` inside `pipeStreamWithHead`.
+- **RTK Optimization:** Added `RTK_HARD_CAP_BYTES: "65536"` (64KB) in `docker-compose.yml` for 2x larger tool result context room.
+
 # v0.15.16 (2026-08-13)
 
 ## Fix: Anthropic SSE format support in comboStreamGuard (PR #276)
