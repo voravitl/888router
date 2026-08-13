@@ -1,3 +1,17 @@
+# v0.15.18 (2026-08-13)
+
+## Feature: Add NousResearch Provider Registry (PR #280)
+
+- **New Provider Added:** Added NousResearch (`nousresearch`) as an official first-class provider registry entry in 888router (`open-sse/providers/registry/nousresearch.js`).
+- **Models Included:**
+  - `nousresearch/hermes-4-405b` (Hermes 4 405B)
+  - `nousresearch/hermes-4-70b` (Hermes 4 70B)
+  - `nousresearch/hermes-3-llama-3.1-405b` (Hermes 3 Llama 3.1 405B)
+  - `nousresearch/hermes-3-llama-3.1-70b` (Hermes 3 Llama 3.1 70B)
+  - `nousresearch/deephermes-3-llama-3-8b-preview` (DeepHermes 3 Llama 3 8B)
+  - `nousresearch/hermes-2-pro-llama-3-8b` (Hermes 2 Pro Llama 3 8B)
+  - `nousresearch/nous-hermes-2-mixtral-8x7b-dpo` (Nous Hermes 2 Mixtral 8x7B DPO)
+
 # v0.15.17 (2026-08-13)
 
 ## Fix: Controller state safety in pipeStreamWithHead & RTK 64KB Hard Cap (PR #278)
