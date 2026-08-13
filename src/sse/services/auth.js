@@ -156,25 +156,33 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // All pools parked (rate-limited) or excluded — check if any are still
       // in a cooldown window. If so, return allRateLimited with the earliest
       // reset time so the client gets 429 + Retry-After instead of 404.
+      // Parse the actual upstream status from the pool's lastError (format
+      // "[NNN]: ...") rather than assuming 429 — pools can be parked by 503
+      // (usage_exceeded / suspended relay) too, and the client should see the
+      // real status, not a misleading 429.
       let earliestReset = null;
-      let lastPoolError = null;
+      let earliestPoolError = null;
       for (const pool of pools) {
         if (!pool.unavailableUntil) continue;
         const until = new Date(pool.unavailableUntil).getTime();
         if (until > now) {
-          if (!earliestReset || until < earliestReset) earliestReset = until;
-          if (pool.lastError) lastPoolError = pool.lastError;
+          if (!earliestReset || until < earliestReset) {
+            earliestReset = until;
+            earliestPoolError = pool.lastError || null;
+          }
         }
       }
       if (earliestReset) {
         const retryAfter = new Date(earliestReset).toISOString();
-        log.warn("AUTH", `${providerId} | all proxy pools rate-limited, retry after ${formatRetryAfter(retryAfter)}`);
+        const statusMatch = earliestPoolError && earliestPoolError.match(/\[(\d{3})\]/);
+        const errorCode = statusMatch ? Number(statusMatch[1]) : 429;
+        log.warn("AUTH", `${providerId} | all proxy pools parked [${errorCode}], retry after ${formatRetryAfter(retryAfter)}`);
         return {
           allRateLimited: true,
           retryAfter,
           retryAfterHuman: formatRetryAfter(retryAfter),
-          lastError: lastPoolError || "All proxy pools rate-limited",
-          lastErrorCode: 429,
+          lastError: earliestPoolError || "All proxy pools unavailable",
+          lastErrorCode: errorCode,
         };
       }
       return null; // all pools excluded / no eligible pools remain, none parked

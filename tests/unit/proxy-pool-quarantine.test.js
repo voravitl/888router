@@ -235,6 +235,22 @@ describe("rotation skips parked pools", () => {
     expect(creds.retryAfter).toBeTruthy();
     expect(creds.lastErrorCode).toBe(429);
   });
+
+  it("parses actual upstream status from lastError, not hardcoded 429", async () => {
+    // A pool parked by 503 (usage_exceeded / suspended relay) should report
+    // lastErrorCode 503, not a misleading 429.
+    resetPools(
+      { id: "poolA", name: "A", testStatus: "unavailable",
+        unavailableUntil: future(20 * MIN), lastError: "[503]: Service Unavailable (USAGE_EXCEEDED)" },
+      { id: "poolB", name: "B", testStatus: "unavailable",
+        unavailableUntil: future(30 * MIN), lastError: "[429]: Rate limit exceeded" },
+    );
+    const creds = await getProviderCredentials("opencode", new Set(["noauth:seed"]), "deepseek-v4-flash-free");
+    expect(creds.allRateLimited).toBe(true);
+    // earliestReset = poolA (20 min < 30 min) → its error code 503
+    expect(creds.lastErrorCode).toBe(503);
+    expect(creds.lastError).toContain("503");
+  });
 });
 
 describe("pool health reset on success", () => {
