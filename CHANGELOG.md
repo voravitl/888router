@@ -1,3 +1,13 @@
+# v0.15.19 (2026-08-14)
+
+## Feature: Add Gemini 3.7 Flash Support to Antigravity Provider
+
+- **Antigravity Registry:** Added `gemini-3.7-flash-high`, `gemini-3.7-flash-medium`, and `gemini-3.7-flash-low` to Antigravity provider model registry (`open-sse/providers/registry/antigravity.js`).
+- **Quota Tracking:** Included Gemini 3.7 Flash model tiers in Antigravity usage tracker (`open-sse/services/usage/google.js`) for dashboard quota bars.
+- **Pricing & Routing:** Added canonical pricing and glob pattern fallbacks for Gemini 3.7 Flash variants (`open-sse/providers/pricing.js`).
+- **CLI & MITM Support:** Added Gemini 3.7 Flash model aliases and synonym mappings to CLI menus (`cli/src/cli/menus/providers.js`), MITM constants (`src/shared/constants/cliTools.js`), and MITM config (`src/mitm/config.js`).
+- **Unit Tests:** Added full test suite in `tests/unit/antigravity-quota-gemini-3.7.test.js`.
+
 # v0.15.18 (2026-08-13)
 
 ## Feature: Add NousResearch Provider Registry (PR #280)
