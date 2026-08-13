@@ -219,15 +219,21 @@ describe("rotation skips parked pools", () => {
     expect(poolWrites).toHaveLength(0); // selection is a read
   });
 
-  it("returns null when every pool is parked rather than reusing a dead one", async () => {
+  it("returns allRateLimited when every pool is parked rather than reusing a dead one", async () => {
     // The whole point of the fix: exhausted must mean exhausted. Handing back a
     // pool known to be suspended is what produced the endless retry loop.
+    // Returning allRateLimited (not null) makes chat.js send 429 + Retry-After
+    // so Claude Code retries after the reset window instead of seeing 404
+    // "model may not exist".
     resetPools(
       { id: "poolA", name: "A", testStatus: "unavailable", unavailableUntil: future(20 * MIN) },
       { id: "poolB", name: "B", testStatus: "unavailable", unavailableUntil: future(20 * MIN) },
     );
     const creds = await getProviderCredentials("opencode", new Set(["noauth:seed"]), "deepseek-v4-flash-free");
-    expect(creds).toBeNull();
+    expect(creds).not.toBeNull();
+    expect(creds.allRateLimited).toBe(true);
+    expect(creds.retryAfter).toBeTruthy();
+    expect(creds.lastErrorCode).toBe(429);
   });
 });
 

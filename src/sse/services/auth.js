@@ -132,7 +132,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       //   - pools exist and healthy/stale candidates all lacked URLs →
       //     exhausted, NOT direct. Bypassing to a raw noauth connection is
       //     exactly how a failing relay gets hammered without rotation.
-      // When mid-rotation (excludes present), treat as exhausted → null.
+      // When mid-rotation (excludes present), treat as exhausted → null,
+      // UNLESS every pool is parked by a rate limit — then return
+      // allRateLimited so chat.js sends 429 + Retry-After (not 404 "No active
+      // credentials"), which makes Claude Code retry after the reset window
+      // instead of showing "model may not exist".
       if (exclude.size === 0 && (pools.length === 0 || healthy.length > 0)) {
         return {
           id: "noauth",
@@ -149,7 +153,31 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           },
         };
       }
-      return null; // all pools excluded / no eligible pools remain
+      // All pools parked (rate-limited) or excluded — check if any are still
+      // in a cooldown window. If so, return allRateLimited with the earliest
+      // reset time so the client gets 429 + Retry-After instead of 404.
+      let earliestReset = null;
+      let lastPoolError = null;
+      for (const pool of pools) {
+        if (!pool.unavailableUntil) continue;
+        const until = new Date(pool.unavailableUntil).getTime();
+        if (until > now) {
+          if (!earliestReset || until < earliestReset) earliestReset = until;
+          if (pool.lastError) lastPoolError = pool.lastError;
+        }
+      }
+      if (earliestReset) {
+        const retryAfter = new Date(earliestReset).toISOString();
+        log.warn("AUTH", `${providerId} | all proxy pools rate-limited, retry after ${formatRetryAfter(retryAfter)}`);
+        return {
+          allRateLimited: true,
+          retryAfter,
+          retryAfterHuman: formatRetryAfter(retryAfter),
+          lastError: lastPoolError || "All proxy pools rate-limited",
+          lastErrorCode: 429,
+        };
+      }
+      return null; // all pools excluded / no eligible pools remain, none parked
     }
 
     // Inject virtual connection(s) for no-auth free providers.
