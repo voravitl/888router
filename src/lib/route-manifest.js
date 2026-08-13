@@ -222,6 +222,12 @@ export const ROUTE_MANIFEST = [
     description: "OIDC start/callback/test; bootstrap auth flow.",
   },
   {
+    path: "/api/auth/saml",
+    authType: "none",
+    methods: ["*"],
+    description: "SAML start/callback/metadata; bootstrap auth flow.",
+  },
+  {
     path: "/api/version",
     authType: "none",
     methods: ["GET"],
