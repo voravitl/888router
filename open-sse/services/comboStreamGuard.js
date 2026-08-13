@@ -62,16 +62,31 @@ export function createComboStreamGuard() {
         const json = JSON.parse(payload);
         // Ollama NDJSON: {"response":"...","done":true,"done_reason":"..."}
         if (json.done === true) sawTerminal = true;
+        // Anthropic SSE: {"type":"message_stop"} or {"type":"message_delta","delta":{"stop_reason":"end_turn"}}
+        if (json.type === "message_stop") sawTerminal = true;
+        if (json.delta && json.delta.stop_reason) {
+          finishReason = String(json.delta.stop_reason);
+          sawTerminal = true;
+        }
+
         const ollamaText = typeof json.response === "string" ? json.response : "";
         const delta = json.choices && json.choices[0] && json.choices[0].delta;
         const deltaText = (delta && (delta.content || delta.text)) || "";
-        const textVal = ollamaText || deltaText;
+        // Anthropic SSE: delta.text or delta.partial_json inside content_block_delta
+        const anthropicText = (json.delta && typeof json.delta.text === "string") ? json.delta.text
+          : (json.delta && typeof json.delta.partial_json === "string") ? json.delta.partial_json
+          : "";
+
+        const textVal = ollamaText || deltaText || anthropicText;
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
+
         // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE)
-        // or Ollama's {"response":"","thinking":true,...}-style fields.
-        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent)) || "";
+        // or Anthropic delta.thinking (Claude 3.7/Kiro thinking delta)
+        const anthropicReasoning = (json.delta && typeof json.delta.thinking === "string") ? json.delta.thinking : "";
+        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent)) || anthropicReasoning;
         if (typeof reasoningVal === "string" && reasoningVal.length > 0) sawReasoning = true;
-        const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || null;
+
+        const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || (json.delta && json.delta.stop_reason) || null;
         if (fr) {
           finishReason = typeof fr === "string" ? fr : String(fr);
           sawTerminal = true;

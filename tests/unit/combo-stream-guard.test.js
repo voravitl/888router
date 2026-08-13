@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createComboStreamGuard } from "../open-sse/services/comboStreamGuard.js";
+import { createComboStreamGuard } from "open-sse/services/comboStreamGuard.js";
 
 const enc = (s) => new TextEncoder().encode(s);
 
@@ -105,6 +105,23 @@ describe("comboStreamGuard", () => {
     g.feed(enc("data: [DONE]\n\n"));
     g.feedEnd();
     expect(g.isEmpty()).toBe(true);
+  });
+
+  it("recognizes Anthropic SSE format (content_block_delta text_delta)", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("event: content_block_delta\n"));
+    g.feed(enc("data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello Anthropic\"}}\n\n"));
+    g.feed(enc("event: message_stop\n"));
+    g.feed(enc("data: {\"type\":\"message_stop\"}\n\n"));
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("recognizes Anthropic SSE thinking delta", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("event: content_block_delta\n"));
+    g.feed(enc("data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"thinking step 1\"}}\n\n"));
+    expect(g.sawReasoning()).toBe(true);
   });
 });
 describe("comboStreamGuard cap-hit regression", () => {
