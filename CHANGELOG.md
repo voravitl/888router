@@ -1,3 +1,14 @@
+# v0.15.16 (2026-08-13)
+
+## Fix: Anthropic SSE format support in comboStreamGuard (PR #276)
+
+- **Root cause of Combo stream drop bug:** `comboStreamGuard` previously only parsed OpenAI format (`choices[0].delta.content`) and Ollama format (`json.response`). When Anthropic SSE format events (`content_block_delta` with `delta.text` / `delta.partial_json`) flowed through, `comboStreamGuard` failed to parse text deltas → `sawText` remained `false` → `comboStreamGuard.isEmpty()` evaluated `true` → combo misclassified stream as empty and dropped the model or failed.
+- **Anthropic SSE Format Support:** Added native support for Anthropic SSE format events in `comboStreamGuard`:
+  - `delta.text` and `delta.partial_json` inside `content_block_delta` → sets `sawText = true`
+  - `delta.thinking` inside `content_block_delta` → sets `sawReasoning = true`
+  - `message_stop` and `delta.stop_reason` → sets `sawTerminal = true` and records `finishReason`
+- **Tests:** Added Anthropic SSE format stream guard tests in `tests/unit/combo-stream-guard.test.js` (18/18 passed 100%).
+
 # v0.15.15 (2026-08-13)
 
 ## Fix: OpenCode free models catalog update & endpoint unavailable handling (PR #272)
