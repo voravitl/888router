@@ -10,9 +10,10 @@ describe("kimchi registry entry", () => {
     kimchiEntry = (await import("../../open-sse/providers/registry/kimchi.js")).default;
   });
 
-  it("is an oauth provider auto-listed via byCategory", () => {
+  it("supports dual auth (oauth + apikey) in freeTier category", () => {
     expect(kimchiEntry.id).toBe("kimchi");
-    expect(kimchiEntry.category).toBe("oauth");
+    expect(kimchiEntry.category).toBe("freeTier");
+    expect(kimchiEntry.authModes).toEqual(["oauth", "apikey"]);
   });
 
   it("points at the OpenAI-compatible gateway with an authenticated UA", () => {

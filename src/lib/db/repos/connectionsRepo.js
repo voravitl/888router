@@ -65,7 +65,11 @@ export async function getProviderConnections(filter = {}) {
   const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
   const rows = db.all(sql, params);
   const list = rows.map(rowToConn);
-  list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  list.sort((a, b) => {
+    const pDiff = (a.priority || 999) - (b.priority || 999);
+    if (pDiff !== 0) return pDiff;
+    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+  });
   return list;
 }
 

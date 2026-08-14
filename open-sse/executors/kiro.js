@@ -10,7 +10,9 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { shrinkKiroPayload } from "../translator/request/openai-to-kiro.js";
 
+const KIRO_MAX_SHRINK_RETRIES = 5;
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
 const KIRO_SHORT_FINAL_MAX_CHARS = 800;
@@ -342,7 +344,32 @@ export class KiroExecutor extends BaseExecutor {
    * classify the status, and trigger account fallback/cooldown.
    */
   async execute(args) {
-    const result = await super.execute(args);
+    let result = await super.execute(args);
+
+    let attempts = 0;
+    while (
+      result?.response &&
+      !result.response.ok &&
+      result.response.status === 400 &&
+      attempts < KIRO_MAX_SHRINK_RETRIES
+    ) {
+      let bodyText = "";
+      try {
+        bodyText = await result.response.clone().text();
+      } catch {
+        break;
+      }
+      if (!/content_length_exceeds_threshold/i.test(bodyText)) break;
+
+      if (!shrinkKiroPayload(args.body)) break;
+
+      try { await result.response.body?.cancel?.(); } catch { /* best-effort */ }
+
+      attempts++;
+      args.log?.info?.("KIRO", `content-length 400 — shrank payload, retry ${attempts}/${KIRO_MAX_SHRINK_RETRIES}`);
+      result = await super.execute(args);
+    }
+
     if (result?.response?.ok) this.attachIntegrityGate(result, args);
     return result;
   }

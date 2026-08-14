@@ -441,4 +441,83 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   return payload;
 }
 
+// Smallest the current user message is shrunk to before we give up (chars).
+const KIRO_SHRINK_MIN_CONTENT = 4000;
+
+/**
+ * Truncate a large text keeping head + tail, dropping the middle.
+ */
+function truncateContentHeadTail(text, target) {
+  if (text.length <= target) return text;
+  const marker = "\n\n... [truncated by 9router to fit Kiro input limit] ...\n\n";
+  const keep = target - marker.length;
+  if (keep <= 0) return text.slice(0, Math.max(0, target));
+  const head = Math.ceil(keep * 0.6);
+  const tail = keep - head;
+  return text.slice(0, head) + marker + text.slice(text.length - tail);
+}
+
+export function shrinkKiroPayload(payload) {
+  const state = payload?.conversationState;
+  if (!state) return false;
+
+  const history = state.history;
+  const currentMessage = state.currentMessage;
+
+  // Strategy 1: drop oldest history turn pairs
+  if (Array.isArray(history) && history.length > 0) {
+    let drop = Math.floor(history.length / 2);
+    if (drop % 2 === 1) drop += 1;
+    if (drop < 2) drop = 2;
+    history.splice(0, Math.min(drop, history.length));
+    if (history.length > 0 && !history[0].userInputMessage) {
+      history.splice(0, 1);
+    }
+
+    // Reconcile orphaned toolResults
+    const activeToolUseIds = new Set();
+    for (const item of history) {
+      if (item.assistantResponseMessage?.toolUses) {
+        for (const tu of item.assistantResponseMessage.toolUses) {
+          if (tu.toolUseId) activeToolUseIds.add(tu.toolUseId);
+        }
+      }
+    }
+    for (const item of history) {
+      const ctx = item.userInputMessage?.userInputMessageContext;
+      if (ctx?.toolResults && Array.isArray(ctx.toolResults)) {
+        const validResults = [];
+        const orphanedTexts = [];
+        for (const tr of ctx.toolResults) {
+          if (activeToolUseIds.has(tr.toolUseId)) {
+            validResults.push(tr);
+          } else {
+            const txt = (tr.content || []).map((c) => c.text || "").join("\n");
+            if (txt) orphanedTexts.push(txt);
+          }
+        }
+        ctx.toolResults = validResults;
+        if (orphanedTexts.length > 0) {
+          item.userInputMessage.content = [
+            item.userInputMessage.content,
+            ...orphanedTexts,
+          ].filter(Boolean).join("\n");
+        }
+      }
+    }
+    return true;
+  }
+
+  // Strategy 2: truncate current-turn content
+  const uim = currentMessage?.userInputMessage;
+  const content = uim?.content;
+  if (typeof content === "string" && content.length > KIRO_SHRINK_MIN_CONTENT) {
+    const target = Math.max(KIRO_SHRINK_MIN_CONTENT, Math.floor(content.length / 2));
+    uim.content = truncateContentHeadTail(content, target);
+    return true;
+  }
+
+  return false;
+}
+
 register(FORMATS.OPENAI, FORMATS.KIRO, openaiToKiroRequest, null);

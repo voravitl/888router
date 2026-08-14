@@ -88,6 +88,7 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
     expect(transformSpy).toHaveBeenCalledWith(
       expect.objectContaining({ status: 200, ok: true }),
       "kr/gpt-5.6-terra",
+      expect.any(Object),
     );
   });
 
@@ -173,6 +174,7 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
     expect(transformSpy).toHaveBeenCalledWith(
       expect.objectContaining({ status: 200, ok: true }),
       "kr/x",
+      expect.any(Object),
     );
   });
 });

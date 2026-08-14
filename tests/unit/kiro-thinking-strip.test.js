@@ -1,6 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { KiroExecutor } from "../../open-sse/executors/kiro.js";
 
+const CRC32_TABLE = Uint32Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit++) {
+    value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+  }
+  return value >>> 0;
+});
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
 function createMockFrame(eventType, payloadObj) {
   const payloadStr = JSON.stringify(payloadObj);
   const payloadBytes = new TextEncoder().encode(payloadStr);
@@ -18,6 +31,7 @@ function createMockFrame(eventType, payloadObj) {
 
   view.setUint32(0, totalLength, false);
   view.setUint32(4, headerLength, false);
+  view.setUint32(8, crc32(buffer.slice(0, 8)), false);
 
   let offset = 12;
   buffer[offset++] = headerNameBytes.length;
@@ -31,6 +45,8 @@ function createMockFrame(eventType, payloadObj) {
   offset += headerValueBytes.length;
 
   buffer.set(payloadBytes, offset);
+
+  view.setUint32(totalLength - 4, crc32(buffer.slice(0, totalLength - 4)), false);
   
   return buffer;
 }
