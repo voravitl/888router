@@ -1,3 +1,11 @@
+# v0.15.24 (2026-08-14)
+
+## Fix: Kiro AWS IAM Identity Center (IDC) Region Resolution & Target Headers
+
+- **AWS CodeWhisperer Region Resolution:** Fixed `KiroExecutor.getOrderedBaseUrls` to extract endpoint regions from `profileArn` and validate against available CodeWhisperer regions (`us-east-1`, `us-west-2`, `eu-central-1`). When an enterprise SSO/IDC portal is configured in non-CodeWhisperer regions (such as `ap-southeast-1`), requests safely default to `us-east-1`, preventing 20-second DNS hangs and fallback 400 errors on social gateways.
+- **Header Matching (`X-Amz-Target`):** Attached `X-Amz-Target: AmazonCodeWhispererStreamingService.GenerateAssistantResponse` to all AWS surfaces (`codewhisperer.*.amazonaws.com` and `q.*.amazonaws.com`).
+- **Snapshot Test Stabilization:** Sanitized dynamic `agentContinuationId` in golden snapshot tests.
+
 # v0.15.23 (2026-08-14)
 
 ## Fix: Restore Kiro Category to OAuth and Configure Dual-Auth Modes in Provider Registry
