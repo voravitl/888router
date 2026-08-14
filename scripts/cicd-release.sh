@@ -38,7 +38,7 @@ if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
   git tag -a "v${VERSION}" -m "Release v${VERSION}"
 fi
 git push origin master
-git push origin "v${VERSION}"
+git push origin "v${VERSION}" --force
 
 # Step 6: Local Container Redeploy & Liveness Check
 echo "➡️ [Step 6] Redeploying Local Container..."
