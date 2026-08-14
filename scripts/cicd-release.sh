@@ -33,13 +33,12 @@ echo "➡️ [Step 5] Pushing Docker Images to Registry..."
 docker push "voravitl/888router:v${VERSION}"
 docker push "voravitl/888router:latest"
 
-echo "➡️ [Step 5] Creating Git Release Tag v${VERSION}..."
-if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-  echo "Tag v${VERSION} already exists locally, skipping creation."
-else
+echo "➡️ [Step 5] Creating Git Release Tag v${VERSION} & Pushing to Remote..."
+if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
   git tag -a "v${VERSION}" -m "Release v${VERSION}"
-  git push origin "v${VERSION}"
 fi
+git push origin master
+git push origin "v${VERSION}"
 
 # Step 6: Local Container Redeploy & Liveness Check
 echo "➡️ [Step 6] Redeploying Local Container..."
