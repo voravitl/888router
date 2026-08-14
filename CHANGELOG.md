@@ -1,3 +1,11 @@
+# v0.15.23 (2026-08-14)
+
+## Fix: Restore Kiro Category to OAuth and Configure Dual-Auth Modes in Provider Registry
+
+- **Kiro Provider Category & Dual-Auth Modes:** Restored `category: "oauth"` (previously `free`) and configured `authType: "oauth"` with `authModes: ["oauth", "apikey"]` in `open-sse/providers/registry/kiro.js`.
+- **Dashboard UI & OAuth Modal:** Restored Kiro under the **OAuth Providers** group on `/dashboard/providers` and fixed `/dashboard/providers/kiro` to properly display the **Login with Kiro (OAuth)** action and `KiroOAuthWrapper` modal (AWS Builder ID, Social login Google/GitHub, CLI auto-import, and Profile ARN configuration).
+- **Invariants & Automated Tests:** 100% test suite passing (202 test files, 1,907 tests), valid request format snapshots preserved.
+
 # v0.15.22 (2026-08-14)
 
 ## Feature: Port Upstream v0.5.50–v0.5.55 Features, Enterprise SAML 2.0 SSO & Security Hardening
