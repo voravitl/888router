@@ -1,4 +1,4 @@
-export default {
+const elevenlabsConfig = {
   id: "elevenlabs",
   alias: "el",
   display: {
@@ -33,3 +33,5 @@ export default {
     ]
   }
 };
+
+export default elevenlabsConfig;

@@ -1,4 +1,4 @@
-export default {
+const nousresearchConfig = {
   id: "nousresearch",
   priority: 65,
   alias: "nous",
@@ -29,3 +29,5 @@ export default {
   ],
   serviceKinds: ["llm"],
 };
+
+export default nousresearchConfig;

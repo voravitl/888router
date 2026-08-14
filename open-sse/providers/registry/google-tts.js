@@ -1,4 +1,4 @@
-export default {
+const google_ttsConfig = {
   id: "google-tts",
   alias: "google-tts",
   display: {
@@ -22,3 +22,5 @@ export default {
     models: []
   }
 };
+
+export default google_ttsConfig;

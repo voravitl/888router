@@ -1,4 +1,4 @@
-export default {
+const cohereConfig = {
   id: "cohere",
   priority: 90,
   alias: "cohere",
@@ -23,3 +23,5 @@ export default {
     { id: "command-a-03-2025", name: "Command A (Mar 2025)" },
   ],
 };
+
+export default cohereConfig;

@@ -1,4 +1,4 @@
-export default {
+const searxngConfig = {
   id: "searxng",
   alias: "searxng",
   display: {
@@ -34,3 +34,5 @@ export default {
     cacheTTLMs: 180000
   }
 };
+
+export default searxngConfig;

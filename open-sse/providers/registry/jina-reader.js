@@ -1,4 +1,4 @@
-export default {
+const jina_readerConfig = {
   id: "jina-reader",
   alias: "jina-reader",
   display: {
@@ -32,3 +32,5 @@ export default {
     timeoutMs: 30000
   }
 };
+
+export default jina_readerConfig;

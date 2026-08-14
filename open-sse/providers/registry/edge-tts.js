@@ -1,4 +1,4 @@
-export default {
+const edge_ttsConfig = {
   id: "edge-tts",
   alias: "edge-tts",
   display: {
@@ -22,3 +22,5 @@ export default {
     models: []
   }
 };
+
+export default edge_ttsConfig;

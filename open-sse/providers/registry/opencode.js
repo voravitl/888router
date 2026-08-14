@@ -1,4 +1,4 @@
-export default {
+const opencodeConfig = {
   id: "opencode",
   priority: 210,
   hasFree: true,
@@ -37,3 +37,5 @@ export default {
     { id: "big-pickle", name: "Big Pickle (Free)" },
   ],
 };
+
+export default opencodeConfig;

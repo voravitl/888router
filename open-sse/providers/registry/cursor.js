@@ -1,4 +1,4 @@
-export default {
+const cursorConfig = {
   id: "cursor",
   priority: 50,
   alias: "cu",
@@ -56,3 +56,5 @@ export default {
     },
   },
 };
+
+export default cursorConfig;

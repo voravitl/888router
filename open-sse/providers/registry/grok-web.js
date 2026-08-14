@@ -1,4 +1,4 @@
-export default {
+const grok_webConfig = {
   id: "grok-web",
   priority: 150,
   alias: "grok-web",
@@ -37,3 +37,5 @@ export default {
   ],
   passthroughModels: true,
 };
+
+export default grok_webConfig;

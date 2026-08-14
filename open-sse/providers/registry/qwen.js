@@ -1,4 +1,4 @@
-export default {
+const qwenConfig = {
   id: "qwen",
   hidden: true,
   priority: 130,
@@ -31,3 +31,5 @@ export default {
     refreshLeadMs: 1200000,
   },
 };
+
+export default qwenConfig;

@@ -1,4 +1,4 @@
-export default {
+const githubConfig = {
   id: "github",
   priority: 40,
   alias: "gh",
@@ -81,3 +81,5 @@ export default {
     usage: true,
   },
 };
+
+export default githubConfig;

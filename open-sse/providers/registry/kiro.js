@@ -1,4 +1,4 @@
-export default {
+const kiroConfig = {
   id: "kiro",
   priority: 10,
   alias: "kr",
@@ -117,3 +117,5 @@ export default {
     usageApikey: true,
   },
 };
+
+export default kiroConfig;

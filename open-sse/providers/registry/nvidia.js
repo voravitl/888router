@@ -1,4 +1,4 @@
-export default {
+const nvidiaConfig = {
   id: "nvidia",
   priority: 20,
   hasFree: true,
@@ -41,3 +41,5 @@ export default {
   },
   embeddingConfig: { baseUrl: "https://integrate.api.nvidia.com/v1/embeddings", authType: "apikey", authHeader: "bearer" },
 };
+
+export default nvidiaConfig;

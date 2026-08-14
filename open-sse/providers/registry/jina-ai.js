@@ -1,4 +1,4 @@
-export default {
+const jina_aiConfig = {
   id: "jina-ai",
   alias: "jina",
   display: {
@@ -40,3 +40,5 @@ export default {
     ]
   }
 };
+
+export default jina_aiConfig;

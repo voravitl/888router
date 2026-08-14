@@ -1,6 +1,6 @@
 import { CLAUDE_API_HEADERS } from "../shared.js";
 
-export default {
+const xiaomi_mimoConfig = {
   id: "xiaomi-mimo",
   priority: 290,
   alias: "xiaomi-mimo",
@@ -44,3 +44,5 @@ export default {
     { id: "mimo-v2-flash", name: "MiMo V2 Flash" },
   ],
 };
+
+export default xiaomi_mimoConfig;

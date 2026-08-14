@@ -1,4 +1,4 @@
-export default {
+const brave_searchConfig = {
   id: "brave-search",
   alias: "brave",
   display: {
@@ -33,3 +33,5 @@ export default {
     cacheTTLMs: 300000
   }
 };
+
+export default brave_searchConfig;

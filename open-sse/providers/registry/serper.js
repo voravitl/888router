@@ -1,4 +1,4 @@
-export default {
+const serperConfig = {
   id: "serper",
   alias: "serper",
   display: {
@@ -33,3 +33,5 @@ export default {
     cacheTTLMs: 300000
   }
 };
+
+export default serperConfig;

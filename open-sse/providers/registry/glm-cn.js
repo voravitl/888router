@@ -1,4 +1,4 @@
-export default {
+const glm_cnConfig = {
   id: "glm-cn",
   priority: 130,
   alias: "glm-cn",
@@ -33,3 +33,5 @@ export default {
     usageApikey: true,
   },
 };
+
+export default glm_cnConfig;

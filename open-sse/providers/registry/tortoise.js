@@ -1,4 +1,4 @@
-export default {
+const tortoiseConfig = {
   id: "tortoise",
   alias: "tortoise",
   display: {
@@ -28,3 +28,5 @@ export default {
   },
   hidden: true
 };
+
+export default tortoiseConfig;

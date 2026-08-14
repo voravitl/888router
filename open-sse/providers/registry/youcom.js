@@ -1,4 +1,4 @@
-export default {
+const youcomConfig = {
   id: "youcom",
   alias: "youcom",
   display: {
@@ -33,3 +33,5 @@ export default {
     cacheTTLMs: 300000
   }
 };
+
+export default youcomConfig;
