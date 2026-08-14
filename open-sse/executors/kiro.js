@@ -234,7 +234,7 @@ export class KiroExecutor extends BaseExecutor {
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4()
     };
-    if (url.includes("://codewhisperer.")) {
+    if (url.includes("amazonaws.com") || url.includes("://codewhisperer.") || url.includes("://q.")) {
       headers["X-Amz-Target"] = KIRO_CODEWHISPERER_TARGET;
     } else {
       delete headers["X-Amz-Target"];
@@ -291,7 +291,18 @@ export class KiroExecutor extends BaseExecutor {
       authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
     if (!isCodeWhispererSurface) return baseUrls;
 
-    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
+    const profileArn = credentials?.providerSpecificData?.profileArn;
+    const profileRegion = (typeof profileArn === "string" && profileArn.startsWith("arn:aws:"))
+      ? profileArn.split(":")[3]
+      : null;
+    const specifiedRegion = (credentials?.providerSpecificData?.region || "").trim();
+    // Valid CodeWhisperer runtime endpoint regions. SSO portals in ap-southeast-1, etc.
+    // route their CodeWhisperer streaming requests to the profile region or us-east-1.
+    const validCwRegions = new Set(["us-east-1", "us-west-2", "eu-central-1"]);
+    const region = (profileRegion && validCwRegions.has(profileRegion))
+      ? profileRegion
+      : (validCwRegions.has(specifiedRegion) ? specifiedRegion : "us-east-1");
+
     const regionalize = (u) =>
       region && region !== "us-east-1" && u.includes("amazonaws.com")
         ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)
