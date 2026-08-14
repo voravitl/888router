@@ -14,7 +14,9 @@ const kiroConfig = {
     deprecated: true,
     deprecationNotice: "RISK_NOTICE",
   },
-  category: "free",
+  category: "oauth",
+  authType: "oauth",
+  authModes: ["oauth", "apikey"],
   transport: {
     baseUrl: "https://runtime.us-east-1.kiro.dev/generateAssistantResponse",
     baseUrls: [
