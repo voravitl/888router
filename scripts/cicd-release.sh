@@ -18,7 +18,8 @@ echo "====================================================="
 
 # Step 2: Automated Verification
 echo "➡️ [Step 2] Running Automated Unit Tests..."
-npx vitest run tests/unit/universal-tool-engine.test.js tests/unit/pruner.test.js tests/unit/kimchi.test.js tests/unit/kimchi-strip-reasoning.test.js tests/unit/db-benchmark.test.js --config tests/vitest.config.js
+npx vitest run tests/unit/antigravity-quota-gemini-3.7.test.js tests/unit/universal-tool-engine.test.js tests/unit/pruner.test.js tests/unit/kimchi.test.js tests/unit/kimchi-strip-reasoning.test.js tests/unit/db-benchmark.test.js --config tests/vitest.config.js
+
 
 # Step 4: Production & Docker Build Gate
 echo "➡️ [Step 4] Building Next.js Production App..."

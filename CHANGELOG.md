@@ -1,3 +1,11 @@
+# v0.15.20 (2026-08-14)
+
+## Fix: Antigravity Gemini 3.7 Flash Upstream Mapping & Anonymous Default Exports
+
+- **Upstream Model Mapping:** Added `upstreamModelId: "gemini-3.6-flash-*"` mapping to `gemini-3.7-flash-*` in `open-sse/providers/registry/antigravity.js` and `open-sse/executors/antigravity.js` so client requests for Gemini 3.7 Flash route seamlessly to Google Cloud Code backend without 404 entity not found errors.
+- **Executor Model Resolution:** Updated `open-sse/handlers/chatCore.js` to dispatch with resolved `effectiveModel` (`upstreamModel || model`) across executor execute and retry calls.
+- **ESLint & ESM Refactor:** Assigned anonymous object literals to named variables before `export default` across all 95+ provider registry files.
+
 # v0.15.19 (2026-08-14)
 
 ## Feature: Add Gemini 3.7 Flash Support to Antigravity Provider
