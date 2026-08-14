@@ -80,34 +80,35 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
       stampMap = await getSyncedModelsMap();
 
       // Extract & persist dynamic capabilities metadata from upstream response
-      const { saveModelDynamicCapabilities } = await import("@/lib/db");
-      const { registerDynamicCapabilities } = await import("open-sse/providers/capabilities.js");
+      try {
+        const { saveModelDynamicCapabilities } = await import("@/lib/db");
+        const { registerDynamicCapabilities } = await import("open-sse/providers/capabilities.js");
 
-      for (const m of safeModels) {
-        const id = m.id;
-        // contextLength is the field kiroModels/qoderModels carry for the
-        // upstream context window. Include it so the dashboard path registers
-        // dynamic caps from the live catalog instead of dropping to the static
-        // table (which must be hand-edited per model generation).
-        const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.contextLength || m.details?.context_length;
-        // Use ?? (not ||) so an explicit vision:false from models.dev enrichment
-        // survives — `false || undefined` would drop it and fall back to a static
-        // pattern that may wrongly claim vision:true (→ image_url 400 upstream).
-        const vision = m.vision ?? m.supportsImages ?? m.supportsVision ?? m.details?.families?.includes("vision");
-        const reasoning = m.reasoning ?? m.thinking;
+        for (const m of safeModels) {
+          const id = m.id;
+          const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.contextLength || m.details?.context_length;
+          const vision = m.vision ?? m.supportsImages ?? m.supportsVision ?? m.details?.families?.includes("vision");
+          const reasoning = m.reasoning ?? m.thinking;
 
-        if (ctx || vision !== undefined || reasoning !== undefined) {
-          const caps = {};
-          if (ctx) caps.contextWindow = Number(ctx);
-          if (vision !== undefined) caps.vision = Boolean(vision);
-          if (reasoning !== undefined) caps.reasoning = Boolean(reasoning);
+          if (ctx || vision !== undefined || reasoning !== undefined) {
+            const caps = {};
+            if (ctx) caps.contextWindow = Number(ctx);
+            if (vision !== undefined) caps.vision = Boolean(vision);
+            if (reasoning !== undefined) caps.reasoning = Boolean(reasoning);
 
-          await saveModelDynamicCapabilities(id, caps);
-          registerDynamicCapabilities(id, caps);
+            if (typeof saveModelDynamicCapabilities === "function") {
+              await saveModelDynamicCapabilities(id, caps);
+            }
+            if (typeof registerDynamicCapabilities === "function") {
+              registerDynamicCapabilities(id, caps);
+            }
+          }
         }
+      } catch (capErr) {
+        console.log("Failed to save dynamic capabilities:", capErr?.message);
       }
     } catch (error) {
-      console.log("Failed to stamp synced models / capabilities:", error?.message);
+      console.log("Failed to stamp synced models:", error?.message);
       stampMap = {};
     }
   }

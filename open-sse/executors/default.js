@@ -8,6 +8,8 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 
+import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
+
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
 const XAPIKEY = { combined: true, header: "x-api-key", scheme: "raw" };
@@ -41,6 +43,25 @@ const HEADER_HOOKS = {
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
+  claudeOverlay: (h) => {
+    const cached = getCachedClaudeHeaders();
+    if (!cached) return;
+    for (const [k, v] of Object.entries(cached)) {
+      if (k === "anthropic-beta") {
+        const existing = (h["Anthropic-Beta"] || h["anthropic-beta"] || "").split(",").map(s => s.trim()).filter(Boolean);
+        const incoming = v.split(",").map(s => s.trim()).filter(Boolean);
+        h["anthropic-beta"] = Array.from(new Set([...existing, ...incoming])).join(",");
+        delete h["Anthropic-Beta"];
+      } else {
+        h[k] = v;
+      }
+      for (const existingKey of Object.keys(h)) {
+        if (existingKey.toLowerCase() === k.toLowerCase() && existingKey !== k) {
+          delete h[existingKey];
+        }
+      }
+    }
+  },
 };
 
 // Config-driven OAuth refresh grants — derived from registry oauth.refresh.

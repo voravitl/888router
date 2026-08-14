@@ -13,40 +13,55 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
   const [machineId, setMachineId] = useState("");
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
-  const [autoDetecting, setAutoDetecting] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
   const [windowsManual, setWindowsManual] = useState(false);
+  const autoDetecting = isOpen && !autoDetected && !windowsManual && !error;
 
-  const runAutoDetect = async () => {
-    setAutoDetecting(true);
+  const runAutoDetect = () => {
     setError(null);
     setAutoDetected(false);
     setWindowsManual(false);
 
-    try {
-      const res = await fetch("/api/oauth/cursor/auto-import");
-      const data = await res.json();
-
-      if (data.found) {
-        setAccessToken(data.accessToken);
-        setMachineId(data.machineId);
-        setAutoDetected(true);
-      } else if (data.windowsManual) {
-        setWindowsManual(true);
-      } else {
-        setError(data.error || "Could not auto-detect tokens");
-      }
-    } catch (err) {
-      setError("Failed to auto-detect tokens");
-    } finally {
-      setAutoDetecting(false);
-    }
+    fetch("/api/oauth/cursor/auto-import")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.found) {
+          setAccessToken(data.accessToken);
+          setMachineId(data.machineId);
+          setAutoDetected(true);
+        } else if (data.windowsManual) {
+          setWindowsManual(true);
+        } else {
+          setError(data.error || "Could not auto-detect tokens");
+        }
+      })
+      .catch(() => {
+        setError("Failed to auto-detect tokens");
+      });
   };
 
   // Auto-detect tokens when modal opens
   useEffect(() => {
     if (!isOpen) return;
-    runAutoDetect();
+    let alive = true;
+    fetch("/api/oauth/cursor/auto-import")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!alive) return;
+        if (data.found) {
+          setAccessToken(data.accessToken);
+          setMachineId(data.machineId);
+          setAutoDetected(true);
+        } else if (data.windowsManual) {
+          setWindowsManual(true);
+        } else {
+          setError(data.error || "Could not auto-detect tokens");
+        }
+      })
+      .catch(() => {
+        if (alive) setError("Failed to auto-detect tokens");
+      });
+    return () => { alive = false; };
   }, [isOpen]);
 
   const handleImportToken = async () => {

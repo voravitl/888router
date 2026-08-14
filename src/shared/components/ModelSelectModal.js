@@ -52,68 +52,28 @@ export default function ModelSelectModal({
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
 
-  const fetchCombos = async () => {
-    try {
-      const res = await fetch("/api/combos");
-      if (!res.ok) throw new Error(`Failed to fetch combos: ${res.status}`);
-      const data = await res.json();
-      setCombos(data.combos || []);
-    } catch (error) {
-      console.error("Error fetching combos:", error);
-      setCombos([]);
-    }
-  };
-
   useEffect(() => {
-    if (isOpen) fetchCombos();
-  }, [isOpen]);
+    if (!isOpen) return;
 
-  const fetchProviderNodes = async () => {
-    try {
-      const res = await fetch("/api/provider-nodes");
-      if (!res.ok) throw new Error(`Failed to fetch provider nodes: ${res.status}`);
-      const data = await res.json();
-      setProviderNodes(data.nodes || []);
-    } catch (error) {
-      console.error("Error fetching provider nodes:", error);
-      setProviderNodes([]);
-    }
-  };
+    fetch("/api/combos")
+      .then((res) => (res.ok ? res.json() : { combos: [] }))
+      .then((data) => setCombos(data.combos || []))
+      .catch(() => setCombos([]));
 
-  useEffect(() => {
-    if (isOpen) fetchProviderNodes();
-  }, [isOpen]);
+    fetch("/api/provider-nodes")
+      .then((res) => (res.ok ? res.json() : { nodes: [] }))
+      .then((data) => setProviderNodes(data.nodes || []))
+      .catch(() => setProviderNodes([]));
 
-  const fetchCustomModels = async () => {
-    try {
-      const res = await fetch("/api/models/custom");
-      if (!res.ok) throw new Error(`Failed to fetch custom models: ${res.status}`);
-      const data = await res.json();
-      setCustomModels(data.models || []);
-    } catch (error) {
-      console.error("Error fetching custom models:", error);
-      setCustomModels([]);
-    }
-  };
+    fetch("/api/models/custom")
+      .then((res) => (res.ok ? res.json() : { models: [] }))
+      .then((data) => setCustomModels(data.models || []))
+      .catch(() => setCustomModels([]));
 
-  useEffect(() => {
-    if (isOpen) fetchCustomModels();
-  }, [isOpen]);
-
-  const fetchDisabledModels = async () => {
-    try {
-      const res = await fetch("/api/models/disabled");
-      if (!res.ok) throw new Error(`Failed to fetch disabled models: ${res.status}`);
-      const data = await res.json();
-      setDisabledModels(data.disabled || {});
-    } catch (error) {
-      console.error("Error fetching disabled models:", error);
-      setDisabledModels({});
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) fetchDisabledModels();
+    fetch("/api/models/disabled")
+      .then((res) => (res.ok ? res.json() : { disabled: {} }))
+      .then((data) => setDisabledModels(data.disabled || {}))
+      .catch(() => setDisabledModels({}));
   }, [isOpen]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
@@ -362,16 +322,16 @@ export default function ModelSelectModal({
     return combos.filter(c => c.name.toLowerCase().includes(query));
   }, [combos, searchQuery, kindFilter]);
 
-  // Sort models alphabetically, with added models floated to top
-  const sortModels = (models) => {
-    const added = models.filter(m => addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
-    const rest = models.filter(m => !addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
-    return [...added, ...rest];
-  };
-
   // Filter models by search query
   const filteredGroups = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
+
+    // Sort models alphabetically, with added models floated to top
+    const sortModels = (models) => {
+      const added = models.filter((m) => addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
+      const rest = models.filter((m) => !addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
+      return [...added, ...rest];
+    };
 
     const filtered = {};
     Object.entries(groupedModels).forEach(([providerId, group]) => {

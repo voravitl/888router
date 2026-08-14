@@ -53,11 +53,32 @@ export function useModelContextWindows() {
 
   useEffect(() => {
     let alive = true;
-    const invalidate = () => { cache = null; setMap(null); setReady(false); loadContextWindows().then((m) => { if (alive && m) { setMap(m); setReady(true); } }); };
-    if (cache) { setMap(cache); setReady(true); }
-    else loadContextWindows().then((m) => { if (alive && m) { setMap(m); setReady(true); } });
+    const invalidate = () => {
+      cache = null;
+      setMap(null);
+      setReady(false);
+      loadContextWindows().then((m) => {
+        if (alive && m) {
+          setMap(m);
+          setReady(true);
+        }
+      });
+    };
+
+    if (!cache) {
+      loadContextWindows().then((m) => {
+        if (alive && m) {
+          setMap(m);
+          setReady(true);
+        }
+      });
+    }
+
     window.addEventListener("customModelChanged", invalidate);
-    return () => { alive = false; window.removeEventListener("customModelChanged", invalidate); };
+    return () => {
+      alive = false;
+      window.removeEventListener("customModelChanged", invalidate);
+    };
   }, []);
 
   return { contextByFullModel: map || {}, ready };

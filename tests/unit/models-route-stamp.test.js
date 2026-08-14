@@ -28,6 +28,7 @@ vi.mock("next/server", () => ({
 vi.mock("@/lib/db", () => ({
   getSyncedModelsMap: getMapMock,
   stampSyncedModels: stampMock,
+  saveModelDynamicCapabilities: vi.fn(),
 }));
 
 // Stub heavy deps so the route module loads cleanly without provider wiring.

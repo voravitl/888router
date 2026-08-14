@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { LOCALES, LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { reloadTranslations } from "@/i18n/runtime";
@@ -56,24 +56,20 @@ const getLocaleInfo = (locale) => {
 };
 
 export default function LanguageSwitcher({ className = "", isOpen: controlledOpen, onClose, hideTrigger = false }) {
-  const [locale, setLocale] = useState("en");
-  const [isPending, setIsPending] = useState(false);
+  const [locale, setLocale] = useState(getLocaleFromCookie);
   const [internalOpen, setInternalOpen] = useState(false);
+  const [isPending, setIsPending] = useState(false);
   const modalRef = useRef(null);
 
-  const isControlled = typeof controlledOpen === "boolean";
+  const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled ? controlledOpen : internalOpen;
-  const setIsOpen = (value) => {
+  const setIsOpen = useCallback((value) => {
     if (isControlled) {
       if (!value && onClose) onClose(locale);
     } else {
       setInternalOpen(value);
     }
-  };
-
-  useEffect(() => {
-    setLocale(getLocaleFromCookie());
-  }, []);
+  }, [isControlled, onClose, locale]);
 
   // Close modal when clicking outside
   useEffect(() => {
@@ -86,7 +82,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
-  }, [isOpen]);
+  }, [isOpen, setIsOpen]);
 
   const handleSetLocale = async (nextLocale) => {
     if (nextLocale === locale || isPending) return;

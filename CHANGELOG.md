@@ -1,3 +1,12 @@
+# v0.15.21 (2026-08-14)
+
+## Fix: Test Suite Stabilization, DBA Retention & React 19 Compiler Lint Warnings
+
+- **DBA Batch Flush & Retention:** Added `flushPromise` mutex in `src/lib/db/repos/requestDetailsRepo.js` to ensure parallel calls to `flushToDatabase()` / `flushRequestDetailsBuffer()` reliably await in-flight batch writes. Updated unit test timestamps dynamically to prevent premature retention pruning.
+- **SQLite Concurrency & Deduplication:** Conditioned `existing` duplicate query in `src/lib/db/repos/usageRepo.js` on `(entry.dedup || entry.dedupKey)`, boosting write throughput and eliminating dropped writes under heavy concurrent load.
+- **React 19 Hooks & Compiler Lint Cleanups:** Refactored state synchronization and derived loading states in `PricingModal`, `RequestLogger`, `ModelSelectModal`, `OAuthModal`, `DonateModal`, `EditConnectionModal`, `LanguageSwitcher`, `AddCustomEmbeddingModal`, `CursorAuthModal`, `ChangelogModal`, `McpMarketplaceModal`, `useModelContextWindows`, and `pricing/page.js`.
+- **Unit & Build Gates:** 100% test suite passing (185 test files, 1,773 unit tests), 0 ESLint errors across components, and full Next.js production build passing.
+
 # v0.15.20 (2026-08-14)
 
 ## Fix: Antigravity Gemini 3.7 Flash Upstream Mapping & Anonymous Default Exports

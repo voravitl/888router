@@ -8,7 +8,7 @@ describe("TokenRouter Provider Registry & Integration", () => {
     expect(tokenrouter.id).toBe("tokenrouter");
     expect(tokenrouter.category).toBe("apikey");
     expect(tokenrouter.display.name).toBe("TokenRouter");
-    expect(tokenrouter.display.icon).toBe("router");
+    expect(tokenrouter.display.icon).toBe("hub");
     expect(tokenrouter.transport.baseUrl).toBe("https://api.tokenrouter.com/v1/chat/completions");
   });
 

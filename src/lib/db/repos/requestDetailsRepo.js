@@ -31,9 +31,11 @@ async function getObservabilityConfig() {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
     const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
-    const enabled = typeof settings.enableObservability2 === "boolean"
-      ? settings.enableObservability2
-      : envEnabled;
+    const enabled = typeof settings.enableObservability === "boolean"
+      ? settings.enableObservability
+      : (typeof settings.enableObservability2 === "boolean"
+        ? settings.enableObservability2
+        : envEnabled);
     cachedConfig = {
       enabled,
       maxRecords: parseNum(settings.observabilityMaxRecords, parseNum(process.env.OBSERVABILITY_MAX_RECORDS, DEFAULT_MAX_RECORDS)),
@@ -85,105 +87,114 @@ function truncateField(obj, maxSize) {
   return obj || {};
 }
 
+let flushPromise = null;
+
 async function flushToDatabase() {
-  if (isFlushing) return;
+  if (flushPromise) return flushPromise;
   if (writeBuffer.length === 0) return;
-  isFlushing = true;
-  try {
-    // Drain entire buffer (loop in case more pushed during await)
-    while (writeBuffer.length > 0) {
-      const items = writeBuffer.splice(0, writeBuffer.length);
-      const db = await getAdapter();
-      const config = await getObservabilityConfig();
+  flushPromise = (async () => {
+    try {
+      // Drain entire buffer (loop in case more pushed during await)
+      while (writeBuffer.length > 0) {
+        const items = writeBuffer.splice(0, writeBuffer.length);
+        const db = await getAdapter();
+        const config = await getObservabilityConfig();
 
-      db.transaction(() => {
-        for (const item of items) {
-          if (!item.id) item.id = generateDetailId(item.model);
-          if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+        db.transaction(() => {
+          for (const item of items) {
+            if (!item.id) item.id = generateDetailId(item.model);
+            if (!item.timestamp) item.timestamp = new Date().toISOString();
+            if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
 
-          // Denormalized hot stats (DBA fix): extracted at write time so
-          // getTokenSaveSummary reads these columns instead of the data blob.
-          const ps = item.prunerStats;
-          const rtkStats = item.rtkStats;
-          const hs = item.headroomStats;
-          const hd = item.headroomDiagnostics;
-          const record = {
-            id: item.id,
-            provider: item.provider || null,
-            model: item.model || null,
-            // Client-facing model (combo/alias) before upstream expansion
-            clientModel: item.clientModel || item.request?.model || null,
-            connectionId: item.connectionId || null,
-            timestamp: item.timestamp,
-            status: item.status || null,
-            latency: item.latency || {},
-            tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-            // Token-saver benchmark fields (must survive flush — dropped previously)
-            prunerStats: ps || null,
-            rtkStats: rtkStats || null,
-            headroomStats: hs || null,
-            headroomDiagnostics: item.headroomDiagnostics || null,
-            prunerTokensBefore: ps?.tokensBefore ?? null,
-            prunerTokensAfter: ps?.tokensAfter ?? null,
-            prunerTokensSaved: ps?.tokensSaved ?? null,
-            prunerOmitted: ps?.omittedMessages ?? null,
-            rtkBytesBefore: rtkStats?.bytesBefore ?? null,
-            rtkBytesAfter: rtkStats?.bytesAfter ?? null,
-            rtkBytesSaved: typeof rtkStats?.bytesBefore === "number" && typeof rtkStats?.bytesAfter === "number"
-              ? Math.max(0, rtkStats.bytesBefore - rtkStats.bytesAfter)
-              : null,
-            // Real producer (compressWithHeadroom) emits snake_case tokens_saved;
-            // older UI/test fixtures used savedTokens — honor both.
-            headroomTokensSaved: hs?.tokens_saved ?? hs?.savedTokens ?? null,
-            headroomBytesSaved: typeof hs?.bytesBefore === "number" && typeof hs?.bytesAfter === "number"
-              ? Math.max(0, hs.bytesBefore - hs.bytesAfter)
-              : typeof hd?.beforeBytes === "number" && typeof hd?.afterBytes === "number"
-                ? Math.max(0, hd.beforeBytes - hd.afterBytes)
+            // Denormalized hot stats (DBA fix): extracted at write time so
+            // getTokenSaveSummary reads these columns instead of the data blob.
+            const ps = item.prunerStats;
+            const rtkStats = item.rtkStats;
+            const hs = item.headroomStats;
+            const hd = item.headroomDiagnostics;
+            const record = {
+              id: item.id,
+              provider: item.provider || null,
+              model: item.model || null,
+              // Client-facing model (combo/alias) before upstream expansion
+              clientModel: item.clientModel || item.request?.model || null,
+              connectionId: item.connectionId || null,
+              timestamp: item.timestamp,
+              status: item.status || null,
+              latency: item.latency || {},
+              tokens: item.tokens || {},
+              request: truncateField(item.request, config.maxJsonSize),
+              providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
+              providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
+              response: truncateField(item.response, config.maxJsonSize),
+              // Token-saver benchmark fields (must survive flush — dropped previously)
+              prunerStats: ps || null,
+              rtkStats: rtkStats || null,
+              headroomStats: hs || null,
+              headroomDiagnostics: item.headroomDiagnostics || null,
+              prunerTokensBefore: ps?.tokensBefore ?? null,
+              prunerTokensAfter: ps?.tokensAfter ?? null,
+              prunerTokensSaved: ps?.tokensSaved ?? null,
+              prunerOmitted: ps?.omittedMessages ?? null,
+              rtkBytesBefore: rtkStats?.bytesBefore ?? null,
+              rtkBytesAfter: rtkStats?.bytesAfter ?? null,
+              rtkBytesSaved: typeof rtkStats?.bytesBefore === "number" && typeof rtkStats?.bytesAfter === "number"
+                ? Math.max(0, rtkStats.bytesBefore - rtkStats.bytesAfter)
                 : null,
-            cacheHit: item.cacheHit === true ? 1 : 0,
-          };
+              // Real producer (compressWithHeadroom) emits snake_case tokens_saved;
+              // older UI/test fixtures used savedTokens — honor both.
+              headroomTokensSaved: hs?.tokens_saved ?? hs?.savedTokens ?? null,
+              headroomBytesSaved: typeof hs?.bytesBefore === "number" && typeof hs?.bytesAfter === "number"
+                ? Math.max(0, hs.bytesBefore - hs.bytesAfter)
+                : typeof hd?.beforeBytes === "number" && typeof hd?.afterBytes === "number"
+                  ? Math.max(0, hd.beforeBytes - hd.afterBytes)
+                  : null,
+              cacheHit: item.cacheHit === true ? 1 : 0,
+            };
 
-          db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data, prunerTokensBefore, prunerTokensAfter, prunerTokensSaved, prunerOmitted, rtkBytesBefore, rtkBytesAfter, rtkBytesSaved, headroomTokensSaved, headroomBytesSaved, cacheHit) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data, prunerTokensBefore = excluded.prunerTokensBefore, prunerTokensAfter = excluded.prunerTokensAfter, prunerTokensSaved = excluded.prunerTokensSaved, prunerOmitted = excluded.prunerOmitted, rtkBytesBefore = excluded.rtkBytesBefore, rtkBytesAfter = excluded.rtkBytesAfter, rtkBytesSaved = excluded.rtkBytesSaved, headroomTokensSaved = excluded.headroomTokensSaved, headroomBytesSaved = excluded.headroomBytesSaved, cacheHit = excluded.cacheHit`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record), record.prunerTokensBefore, record.prunerTokensAfter, record.prunerTokensSaved, record.prunerOmitted, record.rtkBytesBefore, record.rtkBytesAfter, record.rtkBytesSaved, record.headroomTokensSaved, record.headroomBytesSaved, record.cacheHit]
-          );
-        }
-
-        // Time-based retention (throttled to at most once per 5 minutes):
-        // delete records older than retentionDays so period reports (24h/7d/30d)
-        // have real data. Previously this pruned by COUNT (keep newest N), which
-        // dropped everything older than ~2 days and made the 30d report return
-        // the same data as 7d.
-        const nowMs = Date.now();
-        if (config.retentionDays > 0 && (nowMs - lastPruneTs >= PRUNE_THROTTLE_MS)) {
-          const cutoff = new Date(nowMs - config.retentionDays * 24 * 60 * 60 * 1000).toISOString();
-          db.run(`DELETE FROM requestDetails WHERE timestamp < ?`, [cutoff]);
-          lastPruneTs = nowMs;
-        }
-        // Count cap as a safety net: time-based retention alone can let the
-        // table grow unbounded on high-traffic gateways (each row holds
-        // truncated request/response JSON). Keep the newest maxRecords rows.
-        if (config.maxRecords > 0) {
-          const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-          if (cnt && cnt.c > config.maxRecords) {
             db.run(
-              `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-              [cnt.c - config.maxRecords]
+              `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data, prunerTokensBefore, prunerTokensAfter, prunerTokensSaved, prunerOmitted, rtkBytesBefore, rtkBytesAfter, rtkBytesSaved, headroomTokensSaved, headroomBytesSaved, cacheHit) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data, prunerTokensBefore = excluded.prunerTokensBefore, prunerTokensAfter = excluded.prunerTokensAfter, prunerTokensSaved = excluded.prunerTokensSaved, prunerOmitted = excluded.prunerOmitted, rtkBytesBefore = excluded.rtkBytesBefore, rtkBytesAfter = excluded.rtkBytesAfter, rtkBytesSaved = excluded.rtkBytesSaved, headroomTokensSaved = excluded.headroomTokensSaved, headroomBytesSaved = excluded.headroomBytesSaved, cacheHit = excluded.cacheHit`,
+              [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record), record.prunerTokensBefore, record.prunerTokensAfter, record.prunerTokensSaved, record.prunerOmitted, record.rtkBytesBefore, record.rtkBytesAfter, record.rtkBytesSaved, record.headroomTokensSaved, record.headroomBytesSaved, record.cacheHit]
             );
           }
-        }
-      });
+
+          // Time-based retention (throttled to at most once per 5 minutes):
+          // delete records older than retentionDays so period reports (24h/7d/30d)
+          // have real data. Previously this pruned by COUNT (keep newest N), which
+          // dropped everything older than ~2 days and made the 30d report return
+          // the same data as 7d.
+          const nowMs = Date.now();
+          if (config.retentionDays > 0 && (nowMs - lastPruneTs >= PRUNE_THROTTLE_MS)) {
+            const cutoff = new Date(nowMs - config.retentionDays * 24 * 60 * 60 * 1000).toISOString();
+            db.run(`DELETE FROM requestDetails WHERE timestamp < ?`, [cutoff]);
+            lastPruneTs = nowMs;
+          }
+          // Count cap as a safety net: time-based retention alone can let the
+          // table grow unbounded on high-traffic gateways (each row holds
+          // truncated request/response JSON). Keep the newest maxRecords rows.
+          if (config.maxRecords > 0) {
+            const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+            if (cnt && cnt.c > config.maxRecords) {
+              db.run(
+                `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+                [cnt.c - config.maxRecords]
+              );
+            }
+          }
+        });
+      }
+    } catch (e) {
+      console.error("[requestDetailsRepo] Batch write failed:", e);
+    } finally {
+      flushPromise = null;
     }
-  } catch (e) {
-    console.error("[requestDetailsRepo] Batch write failed:", e);
-  } finally {
-    isFlushing = false;
-  }
+  })();
+  return flushPromise;
+}
+
+export async function flushRequestDetailsBuffer() {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  await flushToDatabase();
 }
 
 export async function saveRequestDetail(detail) {

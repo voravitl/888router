@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleComboChat } from "../open-sse/services/combo.js";
+import { handleComboChat } from "../../open-sse/services/combo.js";
 
 const enc = (s) => new TextEncoder().encode(s);
 

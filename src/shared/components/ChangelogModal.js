@@ -10,22 +10,25 @@ marked.setOptions({ gfm: true, breaks: true });
 
 export default function ChangelogModal({ isOpen, onClose }) {
   const [html, setHtml] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const modalRef = useRef(null);
+  const loading = isOpen && !html && !error;
 
   useEffect(() => {
     if (!isOpen || html) return;
-    setLoading(true);
-    setError("");
+    let alive = true;
     fetch(GITHUB_CONFIG.changelogUrl)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.text();
       })
-      .then((md) => setHtml(marked.parse(md)))
-      .catch((err) => setError(err.message || "Failed to load"))
-      .finally(() => setLoading(false));
+      .then((md) => {
+        if (alive) setHtml(marked.parse(md));
+      })
+      .catch((err) => {
+        if (alive) setError(err.message || "Failed to load");
+      });
+    return () => { alive = false; };
   }, [isOpen, html]);
 
   useEffect(() => {

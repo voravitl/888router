@@ -7,22 +7,25 @@ import { GITHUB_CONFIG } from "@/shared/constants/config";
 
 export default function DonateModal({ isOpen, onClose }) {
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const modalRef = useRef(null);
+  const loading = isOpen && !data && !error;
 
   useEffect(() => {
     if (!isOpen || data) return;
-    setLoading(true);
-    setError("");
+    let alive = true;
     fetch(GITHUB_CONFIG.donateUrl, { cache: "no-store" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
-      .then((json) => setData(json))
-      .catch((err) => setError(err.message || "Failed to load"))
-      .finally(() => setLoading(false));
+      .then((json) => {
+        if (alive) setData(json);
+      })
+      .catch((err) => {
+        if (alive) setError(err.message || "Failed to load");
+      });
+    return () => { alive = false; };
   }, [isOpen, data]);
 
   useEffect(() => {

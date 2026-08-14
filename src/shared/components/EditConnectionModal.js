@@ -12,56 +12,63 @@ import Select from "@/shared/components/Select";
 const NONE_PROXY_POOL_VALUE = "__none__";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
+  const [prevConnectionId, setPrevConnectionId] = useState(connection?.id);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
   const [formData, setFormData] = useState({
-    name: "",
-    priority: 1,
+    name: connection?.name || "",
+    priority: connection?.priority || 1,
     apiKey: "",
-    proxyPoolId: NONE_PROXY_POOL_VALUE,
+    proxyPoolId: connection?.providerSpecificData?.proxyPoolId || NONE_PROXY_POOL_VALUE,
   });
   const [azureData, setAzureData] = useState({
-    azureEndpoint: "",
-    apiVersion: "2024-10-01-preview",
-    deployment: "",
-    organization: "",
+    azureEndpoint: connection?.providerSpecificData?.azureEndpoint || "",
+    apiVersion: connection?.providerSpecificData?.apiVersion || "2024-10-01-preview",
+    deployment: connection?.providerSpecificData?.deployment || "",
+    organization: connection?.providerSpecificData?.organization || "",
   });
-  const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
-  const [region, setRegion] = useState("");
+  const [cloudflareData, setCloudflareData] = useState({
+    accountId: connection?.providerSpecificData?.accountId || "",
+  });
+  const [region, setRegion] = useState(() => {
+    const providerCfg = AI_PROVIDERS?.[connection?.provider];
+    return connection?.providerSpecificData?.region || providerCfg?.defaultRegion || providerCfg?.regions?.[0]?.id || "";
+  });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (connection) {
-      setFormData({
-        name: connection.name || "",
-        priority: connection.priority || 1,
-        apiKey: "",
-        proxyPoolId: connection.providerSpecificData?.proxyPoolId || NONE_PROXY_POOL_VALUE,
+  if ((isOpen && !prevIsOpen) || (connection && connection.id !== prevConnectionId)) {
+    setPrevIsOpen(isOpen);
+    setPrevConnectionId(connection?.id);
+    setFormData({
+      name: connection?.name || "",
+      priority: connection?.priority || 1,
+      apiKey: "",
+      proxyPoolId: connection?.providerSpecificData?.proxyPoolId || NONE_PROXY_POOL_VALUE,
+    });
+    if (connection?.provider === "azure" && connection?.providerSpecificData) {
+      setAzureData({
+        azureEndpoint: connection.providerSpecificData.azureEndpoint || "",
+        apiVersion: connection.providerSpecificData.apiVersion || "2024-10-01-preview",
+        deployment: connection.providerSpecificData.deployment || "",
+        organization: connection.providerSpecificData.organization || "",
       });
-      // Load Azure-specific data if present
-      if (connection.provider === "azure" && connection.providerSpecificData) {
-        setAzureData({
-          azureEndpoint: connection.providerSpecificData.azureEndpoint || "",
-          apiVersion: connection.providerSpecificData.apiVersion || "2024-10-01-preview",
-          deployment: connection.providerSpecificData.deployment || "",
-          organization: connection.providerSpecificData.organization || "",
-        });
-      }
-      if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
-        setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
-      }
-      // Load region for providers that support it (e.g. xiaomi-tokenplan)
-      const providerCfg = AI_PROVIDERS?.[connection.provider];
-      if (providerCfg?.regions) {
-        const savedRegion = connection.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg.regions[0]?.id || "";
-        setRegion(savedRegion);
-      }
-      setTestResult(null);
-      setValidationResult(null);
     }
-  }, [connection]);
+    if (connection?.provider === "cloudflare-ai" && connection?.providerSpecificData) {
+      setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
+    }
+    const providerCfg = AI_PROVIDERS?.[connection?.provider];
+    if (providerCfg?.regions) {
+      const savedRegion = connection?.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg?.regions[0]?.id || "";
+      setRegion(savedRegion);
+    }
+    setTestResult(null);
+    setValidationResult(null);
+  } else if (!isOpen && prevIsOpen) {
+    setPrevIsOpen(false);
+  }
 
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";

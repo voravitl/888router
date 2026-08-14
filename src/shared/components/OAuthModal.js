@@ -23,20 +23,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const openedRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
-  // State for client-only values to avoid hydration mismatch
-  const [isLocalhost, setIsLocalhost] = useState(false);
-  const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
   const callbackProcessedRef = useRef(false);
-
-  // Detect if running on localhost (client-side only)
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsLocalhost(
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-      );
-      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
-    }
-  }, []);
+  const isLocalhost = typeof window !== "undefined"
+    ? (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    : false;
+  const placeholderUrl = typeof window !== "undefined"
+    ? `${window.location.origin}/callback?code=...`
+    : "/callback?code=...";
 
   // Define all useCallback hooks BEFORE the useEffects that reference them
 

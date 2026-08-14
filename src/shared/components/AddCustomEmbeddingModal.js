@@ -9,23 +9,26 @@ const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 // Dual-mode modal: edit when `node` provided, add otherwise
 export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, onSaved, node }) {
   const isEdit = !!node;
-  const [formData, setFormData] = useState({
-    name: "",
-    prefix: "",
-    baseUrl: DEFAULT_BASE_URL,
-  });
+  const [prevNodeId, setPrevNodeId] = useState(node?.id);
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  const [formData, setFormData] = useState(() => ({
+    name: node?.name || "",
+    prefix: node?.prefix || "",
+    baseUrl: node?.baseUrl || DEFAULT_BASE_URL,
+  }));
   const [submitting, setSubmitting] = useState(false);
   const [checkKey, setCheckKey] = useState("");
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  if (isOpen !== prevIsOpen || node?.id !== prevNodeId) {
+    setPrevIsOpen(isOpen);
+    setPrevNodeId(node?.id);
     setValidationResult(null);
     setCheckKey("");
     setCheckModelId("");
-    if (isEdit) {
+    if (isEdit && node) {
       setFormData({
         name: node.name || "",
         prefix: node.prefix || "",
@@ -34,7 +37,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
     } else {
       setFormData({ name: "", prefix: "", baseUrl: DEFAULT_BASE_URL });
     }
-  }, [isOpen, isEdit, node]);
+  }
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
