@@ -3,7 +3,7 @@ import { ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
 const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/1.107.0 ${platform()}/${arch()}`;
 
-export default {
+const antigravityConfig = {
   id: "antigravity",
   priority: 20,
   alias: "ag",
@@ -50,9 +50,9 @@ export default {
     clientSecret: "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",
   },
   models: [
-    { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)" },
-    { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)" },
-    { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)" },
+    { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)", upstreamModelId: "gemini-3.6-flash-high" },
+    { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)", upstreamModelId: "gemini-3.6-flash-medium" },
+    { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)", upstreamModelId: "gemini-3.6-flash-low" },
     { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)" },
     { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)" },
     { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)" },
@@ -90,3 +90,5 @@ export default {
     usage: true,
   },
 };
+
+export default antigravityConfig;

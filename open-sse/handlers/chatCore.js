@@ -331,8 +331,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
   const upstreamPayload = stripPrivateToolFields(JSON.parse(JSON.stringify(translatedBody)));
+  const effectiveModel = upstreamModel || model;
   try {
-    const result = await executor.execute({ model, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executor.execute({ model: effectiveModel, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -375,7 +376,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
-          const retryResult = await executor.execute({ model, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
+          const retryResult = await executor.execute({ model: effectiveModel, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
           if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {

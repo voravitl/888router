@@ -78,4 +78,14 @@ describe("Antigravity quota tracker: Gemini 3.7 Flash usage bars", () => {
       "gemini-3.6-flash-high",
     ]);
   });
+
+  it("resolves upstreamModelId for Gemini 3.7 Flash variants to Gemini 3.6 Flash", async () => {
+    const { getModelUpstreamId } = await import("../../open-sse/config/providerModels.js");
+
+    expect(getModelUpstreamId("ag", "gemini-3.7-flash-high")).toBe("gemini-3.6-flash-high");
+    expect(getModelUpstreamId("ag", "gemini-3.7-flash-medium")).toBe("gemini-3.6-flash-medium");
+    expect(getModelUpstreamId("ag", "gemini-3.7-flash-low")).toBe("gemini-3.6-flash-low");
+    expect(getModelUpstreamId("ag", "gemini-3.6-flash-high")).toBe("gemini-3.6-flash-high");
+  });
 });
+

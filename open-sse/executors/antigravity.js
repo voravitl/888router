@@ -242,10 +242,17 @@ export class AntigravityExecutor extends BaseExecutor {
 
     this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
 
+    // Google Antigravity backend model name fallback (defensive if model has not been mapped earlier)
+    let upstreamModel = model;
+    if (upstreamModel.startsWith("gemini-3.7-flash-high")) upstreamModel = "gemini-3.6-flash-high";
+    else if (upstreamModel.startsWith("gemini-3.7-flash-medium")) upstreamModel = "gemini-3.6-flash-medium";
+    else if (upstreamModel.startsWith("gemini-3.7-flash-low")) upstreamModel = "gemini-3.6-flash-low";
+    else if (upstreamModel === "gemini-3.7-flash") upstreamModel = "gemini-3.6-flash-medium";
+
     return {
       ...body,
       project: projectId,
-      model: model,
+      model: upstreamModel,
       userAgent: "antigravity",
       requestType: "agent",
       requestId: `agent-${crypto.randomUUID()}`,
