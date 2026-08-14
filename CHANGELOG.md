@@ -1,3 +1,14 @@
+# v0.15.22 (2026-08-14)
+
+## Feature: Port Upstream v0.5.50–v0.5.55 Features, Enterprise SAML 2.0 SSO & Security Hardening
+
+- **Enterprise SAML 2.0 SSO:** Added end-to-end SAML 2.0 single sign-on integration with SP metadata generation (`/api/auth/saml/metadata`), assertion signature verification, `InResponseTo` replay validation, encrypted state cookies, rate-limiting brute-force lock on ACS (`/api/auth/saml/acs`), and flexible claim/attribute mappings (`pickSamlEmail`, `pickSamlDisplayName`).
+- **Socket Peer Token Proof Hardening:** Added cryptographically random boot secrets and trusted peer token validation (`custom-server.js`, `src/lib/auth/trustedPeer.js`) to prevent reverse proxy and header spoofing (`x-9r-real-ip`, `x-9r-peer-token`, `x-9r-via-proxy`) on loopback dashboard guard checks.
+- **Kiro Executor Hardening & Session Replay:** Implemented reactive HTTP 400 `content_length_exceeds_threshold` shrink-retry loop with geometric history turn dropping and current-turn head+tail truncation. Added `kiroSessionReplay` store for deterministic `msg0` caching and preserved valid tool turn pairings.
+- **OpenCode Executor Unified Routing:** Consolidated Zen and Go transports inside `OpenCodeExecutor` with dynamic URL routing, automatic model mapping between Anthropic `/messages` and OpenAI `/chat/completions`, official client headers, and token injection on free reasoning models.
+- **Provider & Model Catalog Enhancements:** Added GLM-5.3, Alibaba Token Plan (`alitp-intl`), Fish Audio TTS, Kimchi dual-authentication support, Claude 1-hour quota caching and force refreshing, and Hermes vision detection.
+- **Invariants Preservation & Verification:** 100% test suite passing (202 test files, 1,907 unit tests), zero regressions on RTK Token Saver, and safe SQLite single-writer batch concurrency mutex.
+
 # v0.15.21 (2026-08-14)
 
 ## Fix: Test Suite Stabilization, DBA Retention & React 19 Compiler Lint Warnings
