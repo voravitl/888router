@@ -36,6 +36,10 @@ describe("9router alias context capabilities (#275)", () => {
     });
   });
 
+  it("advertises 9-haiku limits via resolveKnownContextWindow", () => {
+    expect(resolveKnownContextWindow(null, "9-haiku")).toBe(200000);
+  });
+
   // Guard against the tempting-but-wrong fix: a broad `*-opus*` / `*-sonnet*`
   // pattern would also swallow the older 200k Claude ids.
   it("leaves older Claude ids on their existing 200k caps", () => {
