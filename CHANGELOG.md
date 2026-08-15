@@ -1,3 +1,11 @@
+# v0.15.26 (2026-08-15)
+
+## Fix: `9-opus` / `9-sonnet` / `9-haiku` context limits missing from `/v1/models` (#275)
+
+- **`open-sse/providers/capabilities.js`:** Added exact `MODEL_CAPABILITIES` entries for the 9router aliases — `9-opus` and `9-sonnet` at `contextWindow: 1000000` / `maxOutput: 128000` / `claude-adaptive`, `9-haiku` at `200000` / `claude-budget`, all three with `vision`, `reasoning`, and `search`. These ids carry no `claude` substring, so every `PATTERN_CAPABILITIES` entry missed them and `resolveKnownContextWindow()` returned `undefined`, leaving `/v1/models` and `/v1/models/info` with no limits to advertise. Downstream clients then fell through to their own fallback default — Hermes showed `9-opus │ 170K/256K` instead of 1M.
+- **Why exact ids, not a broad pattern:** the obvious-looking fix (a generic `*-opus*` / `*-sonnet*` pattern) was measured and rejected. Because `PATTERN_CAPABILITIES` is first-match-wins and the new entries would sort ahead of the specific ones, it silently promoted `claude-3-opus-20240229` and `claude-opus-4.1` from 200k/budget to 1M/adaptive. An exact-id entry has no blast radius beyond the three aliases.
+- **Regression guard (`tests/unit/capabilities-9router-alias-context.test.js`):** 6 new tests pin the resolved capabilities for all three aliases, assert `resolveKnownContextWindow()` now reports 1M for the two large ones, and add an explicit guard that the older 200k Claude ids (`claude-3-opus-20240229`, `claude-opus-4.1`, `claude-opus-4-5-20251101`) keep their existing caps — so the rejected broad-pattern fix cannot be reintroduced silently.
+
 # v0.15.25 (2026-08-15)
 
 ## Fix: DeepSeek V4 is text-only on codebuddy-cn (drop wrong `vision: true`)

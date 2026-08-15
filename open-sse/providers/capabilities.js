@@ -92,6 +92,13 @@ export const MODEL_CAPABILITIES = {
   // kr/auto = Krutrim auto-router (routes to best available model; safe floor = 1M)
   "auto": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 128000 },
 
+  // 9router's own Claude-backed aliases. They carry no "claude" substring, so no
+  // PATTERN below can match them — without these exact entries /v1/models omits
+  // the limits and clients fall through to their own fallback default (#275).
+  "9-opus":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  "9-sonnet": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
+  "9-haiku":  { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 200000 },
+
   // Gemini image-gen / OpenAI image / xai image variants
   "gpt-image-1":       { imageOutput: true, tools: false },
 
