@@ -8,17 +8,19 @@ on:
       - "v*"
   workflow_dispatch:
 
-# Prevent race: only one build-and-push per COMMIT at a time. Keyed on
-# github.sha, not github.ref — a release pushes master and then the v* tag, which
-# are two different refs pointing at the SAME commit, so a ref-keyed group put
-# them in separate groups and let both run concurrently. They then raced to
-# publish overlapping tags (:latest / :sha-xxx from the branch event, :X.Y.Z from
-# the tag event) onto the same image. Keying on the commit serialises them.
-# For releases, do NOT cancel an in-flight push — tearing a tag upload mid-way
-# leaves a partial image. The second run is cache-warm (type=gha), so serialising
-# costs far less than a torn manifest.
+# Prevent race: only one build-and-push per ref at a time. For releases, do NOT
+# cancel an in-flight push — tearing a tag upload mid-way leaves a partial image.
+#
+# Keep this keyed on github.ref, NOT github.sha. A release does fire two runs on
+# one commit (master push, then the v* tag), but they publish DISJOINT tag sets —
+# :latest and :sha-xxx are gated on {{is_default_branch}}, and the semver tag only
+# resolves on the tag event — so there is no tag to race over (verified against
+# the v0.15.24 release logs: the tag run pushed :0.15.24 only). Re-keying on the
+# commit would merge those two into one group while SPLITTING consecutive master
+# pushes into separate groups, letting commit A and commit B publish :latest
+# concurrently — an older build finishing last would clobber the newer :latest.
 concurrency:
-  group: docker-publish-${{ github.sha }}
+  group: docker-publish-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -136,7 +138,9 @@ jobs:
           provenance: false
           sbom: false
 
-      # Cleanup: prune build cache and dangling images after every build
+      # Cleanup: prune build cache and dangling images after a SUCCESSFUL build.
+      # Deliberately not `if: always()` — the runner is ephemeral and discarded
+      # either way, so pruning after a failure or a timeout buys nothing.
       - name: Cleanup Docker build cache
         run: |
           docker builder prune -f
