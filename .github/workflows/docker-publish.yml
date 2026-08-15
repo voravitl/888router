@@ -1,5 +1,13 @@
 name: Build and Push Docker Image
 
+# SUPPLY-CHAIN NOTE: a `v*` tag starts a privileged run (Docker Hub secret +
+# packages:write), and the workflow file AT THE TAGGED REVISION is what executes.
+# Anyone who can create tags can therefore publish, even without write access to
+# master. That is not currently exploitable here — this repo has exactly one
+# collaborator (the owner) and no other writers — so it is recorded rather than
+# mitigated. If a second writer is ever added, gate publication behind a
+# protected GitHub Environment and add a ruleset restricting `v*` tag creation;
+# an ancestry check alone is not sufficient, since the tagged workflow is mutable.
 on:
   push:
     branches:
@@ -54,6 +62,11 @@ jobs:
             type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
 
       - name: Require at least one tag per image
+        env:
+          # Via env, never interpolated into the script body: a ref name is
+          # attacker-influenced and may contain shell metacharacters. Same for the
+          # multiline tag list.
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
           for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
@@ -62,9 +75,9 @@ jobs:
               case "$tag" in
                 "$image":*) found=1 ;;
               esac
-            done <<< '${{ steps.meta.outputs.tags }}'
+            done <<< "$TAGS"
             if [ "$found" -eq 0 ]; then
-              echo "::error::ref ${{ github.ref }} resolves no publishable tag for $image — push to the default branch or a v* tag"
+              echo "::error::ref $GITHUB_REF resolves no publishable tag for $image — push to the default branch or a v* tag"
               exit 1
             fi
           done
@@ -245,15 +258,29 @@ jobs:
       # produced nothing — a missing digest must stop the release, not merge a
       # single-arch manifest and call it multi-arch.
       - name: Export digest
+        env:
+          # Select on OUTCOME, not on "first non-empty". A failed attempt can
+          # still have populated its digest output — e.g. it pushed and then died
+          # in a later export — and taking that value would ship the digest of
+          # the run that failed rather than the retry that succeeded.
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+          RETRY_DIGEST: ${{ steps.retry.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          digest="${{ steps.build.outputs.digest || steps.retry.outputs.digest }}"
+          if [ "$BUILD_OUTCOME" = "success" ]; then
+            digest="$BUILD_DIGEST"
+          else
+            digest="$RETRY_DIGEST"
+          fi
           if [ -z "$digest" ]; then
-            echo "::error::no digest for ${{ matrix.platform }} — both build attempts failed"
+            echo "::error::no digest for $PLATFORM — both build attempts failed"
             exit 1
           fi
           mkdir -p /tmp/digests
-          echo -n "$digest" > "/tmp/digests/${{ matrix.arch }}"
+          printf '%s' "$digest" > "/tmp/digests/$ARCH"
           echo "$digest"
 
       - name: Upload digest
@@ -368,6 +395,8 @@ jobs:
       # One manifest list per image name, carrying every tag metadata-action
       # produced for that name, built from THAT registry's own children.
       - name: Create and push manifest
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
           # while-read, not mapfile: keeps this snippet runnable (and therefore
@@ -375,7 +404,7 @@ jobs:
           all_tags=()
           while IFS= read -r line; do
             [ -n "$line" ] && all_tags+=("$line")
-          done <<< '${{ steps.meta.outputs.tags }}'
+          done <<< "$TAGS"
 
           for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
             # Children must come from the destination repository — an index may
@@ -396,34 +425,64 @@ jobs:
               echo "::error::no tags resolved for $image"
               exit 1
             fi
-            echo "publishing $image with ${#tag_args[@]} tag(s)"
+            # tag_args holds "-t" and its value per tag, so its length is twice
+            # the tag count.
+            echo "publishing $image with $(( ${#tag_args[@]} / 2 )) tag(s)"
             docker buildx imagetools create "${tag_args[@]}" "${refs[@]}"
           done
 
-      # Defence in depth: re-read EVERY published tag in BOTH registries and
-      # require both architectures, rather than trusting that the create calls
-      # did what they were asked.
-      - name: Verify every published tag is multi-arch
+      # Defence in depth. Checking only that each tag carries SOME amd64 and SOME
+      # arm64 descriptor is not enough: a stale tag left by an earlier release
+      # would satisfy that even if this run's `imagetools create` never took
+      # effect, and registry read-after-write lag makes exactly that observable.
+      # So require each tag's platform descriptors to be EXACTLY this run's two
+      # digests, with bounded retries to absorb propagation delay.
+      - name: Verify every published tag points at this run's digests
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
+          amd64_digest=$(cat /tmp/digests/amd64)
+          arm64_digest=$(cat /tmp/digests/arm64)
+
           all_tags=()
           while IFS= read -r line; do
             [ -n "$line" ] && all_tags+=("$line")
-          done <<< '${{ steps.meta.outputs.tags }}'
-          checked=0
+          done <<< "$TAGS"
 
+          check_tag() {
+            local tag="$1" raw
+            raw=$(docker buildx imagetools inspect "$tag" --raw) || return 1
+            jq -e \
+              --arg amd "$amd64_digest" \
+              --arg arm "$arm64_digest" \
+              '
+                def digests($arch):
+                  [.manifests[]?
+                    | select(.platform.os == "linux" and .platform.architecture == $arch)
+                    | .digest];
+                digests("amd64") == [$amd] and digests("arm64") == [$arm]
+              ' >/dev/null <<<"$raw"
+          }
+
+          checked=0
           for tag in "${all_tags[@]}"; do
             [ -n "$tag" ] || continue
-            raw=$(docker buildx imagetools inspect "$tag" --raw)
-            for arch in amd64 arm64; do
-              jq -e --arg a "$arch" \
-                'any(.manifests[]?; .platform.os == "linux" and .platform.architecture == $a)' \
-                >/dev/null <<<"$raw" || {
-                  echo "::error::$tag is missing linux/$arch"
-                  exit 1
-                }
+            ok=0
+            for attempt in 1 2 3 4 5; do
+              if check_tag "$tag"; then
+                ok=1
+                break
+              fi
+              echo "  attempt $attempt: $tag does not yet match — waiting"
+              sleep 5
             done
-            echo "ok  $tag carries amd64 + arm64"
+            if [ "$ok" -ne 1 ]; then
+              echo "::error::$tag does not reference this run's digests (amd64=$amd64_digest arm64=$arm64_digest)"
+              docker buildx imagetools inspect "$tag" --raw || true
+              exit 1
+            fi
+            echo "ok  $tag -> amd64=${amd64_digest:0:19}… arm64=${arm64_digest:0:19}…"
             checked=$((checked + 1))
           done
 
