@@ -1,4 +1,8 @@
 node_modules/
+# Intentionally untracked. Because this file never reaches a fresh clone, the
+# workflows MUST use `npm install` here, not `npm ci` — `npm ci` fails with
+# EUSAGE without a lockfile and took master CI red once (#284). If you want
+# `npm ci` for tests/, commit this lockfile in the same change.
 package-lock.json
 .vite/
 coverage/
