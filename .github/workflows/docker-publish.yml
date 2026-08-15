@@ -8,10 +8,17 @@ on:
       - "v*"
   workflow_dispatch:
 
-# Prevent race: only one build-and-push per ref at a time. For releases, do NOT
-# cancel an in-flight push — tearing a tag upload mid-way leaves a partial image.
+# Prevent race: only one build-and-push per COMMIT at a time. Keyed on
+# github.sha, not github.ref — a release pushes master and then the v* tag, which
+# are two different refs pointing at the SAME commit, so a ref-keyed group put
+# them in separate groups and let both run concurrently. They then raced to
+# publish overlapping tags (:latest / :sha-xxx from the branch event, :X.Y.Z from
+# the tag event) onto the same image. Keying on the commit serialises them.
+# For releases, do NOT cancel an in-flight push — tearing a tag upload mid-way
+# leaves a partial image. The second run is cache-warm (type=gha), so serialising
+# costs far less than a torn manifest.
 concurrency:
-  group: docker-publish-${{ github.ref }}
+  group: docker-publish-${{ github.sha }}
   cancel-in-progress: false
 
 permissions:
@@ -61,6 +68,12 @@ jobs:
   build-and-push:
     needs: test
     runs-on: ubuntu-latest
+    # Bound the run. Without this the job inherits the 360-minute default, so a
+    # hung multi-arch build (QEMU arm64 emulation + a stalled `npm ci`) sat
+    # in_progress for hours and, with cancel-in-progress:false, blocked the
+    # concurrency group behind it. Healthy multi-arch builds measured 12-18 min
+    # across the last 8 successful runs, so 45 min leaves ~2.5x headroom.
+    timeout-minutes: 45
     # Least privilege: only this job needs registry + cache write access.
     permissions:
       contents: read

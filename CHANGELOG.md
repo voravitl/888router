@@ -1,3 +1,11 @@
+## Unreleased
+
+### Fix: `docker-publish` ran twice per release and its build job had no timeout (#277)
+
+- **`.github/workflows/docker-publish.yml`:** `concurrency.group` is now keyed on `github.sha` instead of `github.ref`. A release pushes master and then the `v*` tag — two different refs pointing at the **same commit** — so the ref-keyed group placed them in separate groups and let both builds run concurrently, racing to publish overlapping tags onto one image (`:latest` / `:sha-xxx` from the branch event, `:X.Y.Z` from the tag event). Keying on the commit serialises them; the second run is cache-warm (`type=gha`), so serialising costs far less than a torn manifest. `cancel-in-progress` stays `false` — cancelling mid-upload is what leaves a partial image.
+- **Added `timeout-minutes: 45` to the `build-and-push` job.** It previously inherited the 360-minute default (the `test` job already had 20), so a stalled multi-arch build sat `in_progress` for hours and, combined with `cancel-in-progress: false`, blocked the concurrency group behind it. Three such zombie runs were found and cancelled by hand. The last 8 successful builds measured 12-18 minutes, leaving ~2.5x headroom.
+- **Not the same defect as the failed v0.15.26 build**, which died on `npm error code ETIMEDOUT` — a transient runner network failure, cleared by a re-run. The timeout added here is what bounds that class of hang instead of letting it idle for 6 hours.
+
 # v0.15.26 (2026-08-15)
 
 ## Fix: `9-opus` / `9-sonnet` / `9-haiku` context limits missing from `/v1/models` (#275)
