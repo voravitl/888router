@@ -323,24 +323,23 @@ export function registerDynamicCapabilities(modelId, caps) {
  * @param {string} model
  * @returns {object} full capabilities object
  */
-function staticCapabilitiesFor(provider, model, baseModel) {
-  // 1. Provider-specific override
-  if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
-    return PROVIDER_CAPABILITIES[provider][model];
-  }
-
-  // 2. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
+/**
+ * Catalogue-wide static entry for a model, ignoring provider-specific overrides.
+ * Those are applied separately, LAST, because they must also outrank dynamic caps.
+ */
+function catalogueCapabilitiesFor(model, baseModel) {
+  // 1. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
   if (MODEL_CAPABILITIES[baseModel]) return MODEL_CAPABILITIES[baseModel];
   if (MODEL_CAPABILITIES[model]) return MODEL_CAPABILITIES[model];
 
-  // 3. Pattern match (first match wins)
+  // 2. Pattern match (first match wins)
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
       return caps;
     }
   }
 
-  // 4. Nothing known
+  // 3. Nothing known
   return null;
 }
 
@@ -348,9 +347,18 @@ export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
-  const staticCaps = staticCapabilitiesFor(provider, model, baseModel);
+  const catalogueCaps = catalogueCapabilitiesFor(model, baseModel);
 
-  // Dynamic caps (upstream sync / DB) LAYER OVER the static entry — they must
+  // Provider-specific overrides are applied LAST — above dynamic caps, not below.
+  // They are hand-written statements about one provider's upstream ("this
+  // provider's deepseek-v4-pro is text-only"), so a live sync must not be able to
+  // contradict them. Layering them under dynamic — which an earlier revision of
+  // this change did — let a synced `vision: true` overturn `codebuddy-cn`'s
+  // deliberate `vision: false`, which is exactly the defect class of #198: the
+  // wrong flag stops the translator stripping image_url and the upstream 400s.
+  const providerCaps = (provider && PROVIDER_CAPABILITIES[provider]?.[model]) || null;
+
+  // Dynamic caps (upstream sync / DB) LAYER OVER the catalogue entry — they must
   // fill gaps, never replace what the static table already knows.
   //
   // They used to be merged over DEFAULT_CAPABILITIES alone, skipping the static
@@ -368,8 +376,13 @@ export function getCapabilitiesForModel(provider, model) {
   const dynamicCaps =
     DYNAMIC_CAPABILITIES_CACHE.get(baseModel) ?? DYNAMIC_CAPABILITIES_CACHE.get(model) ?? null;
 
-  if (!staticCaps && !dynamicCaps) return { ...DEFAULT_CAPABILITIES };
-  return { ...DEFAULT_CAPABILITIES, ...(staticCaps || {}), ...(dynamicCaps || {}) };
+  if (!catalogueCaps && !dynamicCaps && !providerCaps) return { ...DEFAULT_CAPABILITIES };
+  return {
+    ...DEFAULT_CAPABILITIES,
+    ...(catalogueCaps || {}),
+    ...(dynamicCaps || {}),
+    ...(providerCaps || {}),
+  };
 }
 
 /**

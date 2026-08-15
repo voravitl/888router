@@ -100,3 +100,38 @@ describe("dynamic capabilities layer over static, not instead of it (#283)", () 
     expect(caps.vision).toBe(false);
   });
 });
+
+// A provider override is a hand-written statement about ONE provider's upstream
+// ("this provider's deepseek-v4-pro is text-only"), so a live sync must not be
+// able to contradict it. An earlier revision of this change layered provider
+// overrides UNDER dynamic caps, which let a synced `vision: true` overturn
+// codebuddy-cn's deliberate `vision: false` — the defect class of #198, where the
+// wrong flag stops the translator stripping image_url and the upstream 400s.
+describe("provider overrides outrank dynamic caps", () => {
+  it("does not let a synced vision:true overturn a provider's vision:false", () => {
+    registerDynamicCapabilities("deepseek-v4-pro", { vision: true });
+    expect(getCapabilitiesForModel("codebuddy-cn", "deepseek-v4-pro").vision).toBe(false);
+  });
+
+  it("lets the provider override win on every field it declares", () => {
+    registerDynamicCapabilities("deepseek-v4-pro", { vision: true, contextWindow: 777000 });
+    const caps = getCapabilitiesForModel("codebuddy-cn", "deepseek-v4-pro");
+    expect(caps.vision).toBe(false);
+    // The override declares its own contextWindow, so that is what ships —
+    // dynamic does not get to lower it.
+    expect(caps.contextWindow).toBe(1000000);
+  });
+
+  it("still lets dynamic fill a field the provider override does not declare", () => {
+    // Same model, a field the codebuddy-cn override says nothing about.
+    registerDynamicCapabilities("deepseek-v4-pro", { pdf: true });
+    expect(getCapabilitiesForModel("codebuddy-cn", "deepseek-v4-pro").pdf).toBe(true);
+  });
+
+  it("leaves other providers of the same model on the dynamic value", () => {
+    // The override is scoped to one provider; another provider must still see
+    // the synced value rather than inheriting the override.
+    registerDynamicCapabilities("deepseek-v4-pro", { vision: true });
+    expect(getCapabilitiesForModel("some-other-provider", "deepseek-v4-pro").vision).toBe(true);
+  });
+});
