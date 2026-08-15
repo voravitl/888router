@@ -1,3 +1,11 @@
+# v0.15.25 (2026-08-15)
+
+## Fix: DeepSeek V4 is text-only on codebuddy-cn (drop wrong `vision: true`)
+
+- **`open-sse/providers/capabilities.js`:** Removed `vision: true` from `codebuddy-cn` → `deepseek-v4-pro` and `deepseek-v4-flash`. DeepSeek V4 (flash/pro) is text-only — every provider in models.dev reports `modalities.input = ["text"]` (verified: nvidia, hpc-ai, cortecs, orcarouter, nano-gpt, cloudflare-workers-ai). The wrong `vision: true` stopped `stripUnsupportedModalities()` from removing `image_url` blocks, so image-bearing requests reached upstream and were rejected with `400 "unknown variant image_url, expected text"`.
+- **Scope:** family-level correctness fix for the whole DeepSeek V4 generation on this provider, not a per-model workaround. The `*deepseek-v4*` PATTERN entry already (correctly) omits vision; only the provider override was wrong.
+- **Version hygiene:** `package-lock.json` was stale at `0.15.21` while `package.json` was `0.15.24`; both are now `0.15.25`.
+
 # v0.15.24 (2026-08-14)
 
 ## Fix: Kiro AWS IAM Identity Center (IDC) Region Resolution & Target Headers
