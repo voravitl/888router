@@ -59,7 +59,12 @@ const REASONS = {
 // wins, so the more specific and more actionable reasons come first. Billing
 // leads because it is the case that looks like auth and is not.
 const SIGNALS = [
-  [/out of credits|no credits|insufficient (?:credits|balance|funds|quota)|spending[- ]?limit|payment required|subscription (?:required|expired)|billing|past due|add credits|top ?up|upgrade your plan/, "billing"],
+  // Separators must include `_` and `-`: machine-readable upstreams send
+  // "code":"insufficient_quota", and a space-only pattern let that fall through
+  // to permission (403) or quota (429) — the latter advising a pointless retry
+  // for what is actually a billing problem, the exact confusion #279 exists to
+  // remove.
+  [/out of credits|no credits|insufficient[_ -](?:credits|balance|funds|quota)|spending[- ]?limit|payment required|subscription (?:required|expired)|billing|past due|add credits|top ?up|upgrade your plan/, "billing"],
   [/rate ?limit|too many requests|quota (?:exceeded|exhausted)|usage limit|throttl|resource[- ]?exhausted/, "quota"],
   // Must name the CREDENTIAL as the thing that expired. A bare /expired/ also
   // caught "certificate expired" and "cache expired", which are not auth
@@ -75,7 +80,7 @@ const SIGNALS = [
   // /access denied/ claimed them first and told the user to fix permissions on an
   // account that has them. The word boundaries matter too: a bare /blocked/
   // matched "unblocked" and /geo/ matched "geometry".
-  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region(?:al)? (?:not )?(?:supported|restricted|policy)|country (?:not )?(?:supported|allowed)|firewall|policy violation|denied by (?:the )?(?:regional |geo|country |network )?(?:policy|firewall|gateway|proxy|cdn|waf)/, "blocked"],
+  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region(?:al)? (?:not )?(?:supported|restricted|policy)|country (?:not )?(?:supported|allowed)|firewall|policy violation|denied by (?:the )?(?:(?:regional|geo|country|network) )?(?:policy|firewall|gateway|proxy|cdn|waf)\b/, "blocked"],
   [/permission|forbidden|not authorized|unauthorized_client|insufficient (?:permission|scope|privileges)|access denied|\b(?:missing|invalid|insufficient|required) scopes?\b|\bscopes? (?:missing|invalid|required|insufficient)\b/, "permission"],
   [/not found|no such (?:model|endpoint|route)|unknown (?:model|endpoint)|404|does not exist/, "not_found"],
   // MUST precede `unsupported`: "region not supported" and "country not

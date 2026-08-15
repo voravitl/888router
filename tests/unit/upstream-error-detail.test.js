@@ -313,6 +313,28 @@ describe("signals do not fire on unrelated words", () => {
     }
   });
 
+  // Round 8: the billing pattern accepted only a space, so machine-readable
+  // codes fell through — to permission on a 403, and to quota on a 429, which
+  // advises a pointless retry for what is actually a billing stop.
+  it("classifies machine-readable billing codes as billing", () => {
+    for (const [status, body] of [
+      [403, '{"code":"insufficient_quota"}'],
+      [429, '{"code":"insufficient_quota"}'],
+      [403, '{"code":"insufficient-credits"}'],
+      [403, "insufficient quota"],
+      [500, '{"error":{"code":"insufficient_funds"}}'],
+    ]) {
+      expect(classifyUpstreamError(status, body), `${status} ${body}`).toBe("billing");
+    }
+  });
+
+  // Round 8 LOW: the actor group had no terminal boundary, so "waf" matched
+  // inside "waffle".
+  it("requires a whole-word blocking actor after 'denied by'", () => {
+    expect(classifyUpstreamError(403, "access denied by waffle administrator")).toBe("permission");
+    expect(classifyUpstreamError(403, "denied by policyholder services")).toBe("permission");
+  });
+
   it("treats 'denied by' a blocking actor as blocked", () => {
     for (const body of [
       "access denied by regional policy",
