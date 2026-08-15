@@ -33,7 +33,12 @@
 // costs an attacker a *less* informative error, never a disclosure.
 
 // Reasons we can state, keyed by a stable identifier. The `text` values are OURS
-// and are the only strings this module can return.
+// and are the only EXPLANATIONS this module can return. Stated precisely, the
+// module's output guarantee is: no body content and no arbitrary status text is
+// ever copied into the output — everything emitted is a module-authored literal
+// (these values, the `Failed to fetch models:` template, a reason key, or
+// "unknown status") plus validated numeric metadata (a 100-599 status and the
+// body's length).
 const REASONS = {
   billing: "out of credits or subscription required (billing, not auth — refreshing the token will not help)",
   quota: "usage quota or rate limit exceeded — retry later",
@@ -64,13 +69,19 @@ const SIGNALS = [
   [/missing (?:api ?key|token|credential|authorization)|no (?:api ?key|token|credentials?) (?:provided|supplied|found)|api ?key (?:is )?required|authorization (?:header )?required/, "auth_missing"],
   // A bare /scope/ matched "microscope" and beat the authoritative 404 fallback
   // on "model microscope-v2 not found", so the scope signal needs its context.
+  // MUST precede BOTH `permission` and `unsupported`. A geo block arrives worded
+  // as a generic 403 with the region detail trailing — "Forbidden: region not
+  // supported", "access denied by regional policy" — so /forbidden/ and
+  // /access denied/ claimed them first and told the user to fix permissions on an
+  // account that has them. The word boundaries matter too: a bare /blocked/
+  // matched "unblocked" and /geo/ matched "geometry".
+  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region(?:al)? (?:not )?(?:supported|restricted|policy)|country (?:not )?(?:supported|allowed)|firewall|policy violation|denied by/, "blocked"],
   [/permission|forbidden|not authorized|unauthorized_client|insufficient (?:permission|scope|privileges)|access denied|\b(?:missing|invalid|insufficient|required) scopes?\b|\bscopes? (?:missing|invalid|required|insufficient)\b/, "permission"],
   [/not found|no such (?:model|endpoint|route)|unknown (?:model|endpoint)|404|does not exist/, "not_found"],
   // MUST precede `unsupported`: "region not supported" and "country not
   // supported" are geo blocks, but /not supported/ claimed them first and told
   // the user model listing itself was unsupported. The word boundaries matter
   // too — a bare /blocked/ matched "unblocked" and /geo/ matched "geometry".
-  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region (?:not )?(?:supported|restricted)|country (?:not )?(?:supported|allowed)|firewall|policy violation|denied by/, "blocked"],
   [/not supported|unsupported|not implemented|method not allowed/, "unsupported"],
   [/timed? ?out|timeout|deadline exceeded|etimedout/, "timeout"],
   [/unavailable|overloaded|high load|capacity|try again later|temporarily|maintenance|503/, "unavailable"],
@@ -208,7 +219,10 @@ export function formatModelsFetchError(status, body) {
 
 /**
  * Server-log form. The raw body used to be logged verbatim, which persists any
- * echoed credential to disk. Log the classification and a byte count instead —
+ * echoed credential to disk. Log the classification and a length instead —
+ * reported as UTF-16 code units, which is what String#length counts; calling it
+ * bytes would be wrong for any non-ASCII body, and computing real UTF-8 bytes
+ * would mean scanning the whole body and giving up the bounded-work property —
  * enough to correlate with the upstream, nothing quotable.
  *
  * @param {number} status
@@ -217,8 +231,8 @@ export function formatModelsFetchError(status, body) {
  */
 export function safeLogDetail(status, body) {
   const reason = classifyUpstreamError(status, body);
-  const bytes = typeof body === "string" ? body.length : 0;
-  return `status=${statusLabel(toStatusCode(status))} reason=${reason || "unclassified"} body=${bytes}chars (not logged)`;
+  const codeUnits = typeof body === "string" ? body.length : 0;
+  return `status=${statusLabel(toStatusCode(status))} reason=${reason || "unclassified"} body=${codeUnits}codeUnits (not logged)`;
 }
 
 /** Exported for tests: the fixed set of strings this module can emit. */

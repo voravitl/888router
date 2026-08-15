@@ -282,6 +282,25 @@ describe("signals do not fire on unrelated words", () => {
     }
   });
 
+  // Round 6: a geo block usually arrives as a generic 403 with the region detail
+  // trailing, so /forbidden/ and /access denied/ claimed it first and sent the
+  // user to fix permissions on an account that already had them.
+  it("prefers blocked over permission when the body names a region or policy", () => {
+    for (const body of [
+      "Forbidden: region not supported",
+      "access denied by regional policy",
+      "403 forbidden - country not allowed",
+    ]) {
+      expect(classifyUpstreamError(403, body), body).toBe("blocked");
+    }
+  });
+
+  it("still reports a genuine permission problem", () => {
+    for (const body of ["forbidden", "access denied", "insufficient scopes", "insufficient privileges"]) {
+      expect(classifyUpstreamError(403, body), body).toBe("permission");
+    }
+  });
+
   it("still reports genuinely unsupported endpoints", () => {
     for (const [status, body] of [
       [405, "method not allowed"],
@@ -310,7 +329,7 @@ describe("safeLogDetail", () => {
     const body = JSON.stringify({ error: { message: "invalid key sk-abcdef1234567890abcdef" } });
     const out = safeLogDetail(401, body);
     expect(out).not.toContain("sk-abcdef1234567890abcdef");
-    expect(out).toBe(`status=401 reason=auth_invalid body=${body.length}chars (not logged)`);
+    expect(out).toBe(`status=401 reason=auth_invalid body=${body.length}codeUnits (not logged)`);
   });
 
   it("marks an unclassifiable body rather than dumping it", () => {
@@ -320,6 +339,6 @@ describe("safeLogDetail", () => {
   });
 
   it("handles a missing body", () => {
-    expect(safeLogDetail(500, undefined)).toContain("body=0chars");
+    expect(safeLogDetail(500, undefined)).toContain("body=0codeUnits");
   });
 });
