@@ -9,6 +9,7 @@ import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from 
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { refreshProviderCredentials } from "open-sse/services/oauthCredentialManager.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { formatModelsFetchError } from "@/lib/upstreamErrorDetail";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -351,7 +352,7 @@ export async function GET(request, { params }) {
         const errorText = await response.text();
         console.log(`Error fetching models from ${connection.provider}:`, errorText);
         return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
+          { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
         );
       }
@@ -392,7 +393,7 @@ export async function GET(request, { params }) {
         const errorText = await response.text();
         console.log(`Error fetching models from ${connection.provider}:`, errorText);
         return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
+          { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
         );
       }
@@ -687,7 +688,7 @@ export async function GET(request, { params }) {
         const errorText = await response.text();
         console.log(`Error fetching models from ollama-local:`, errorText);
         return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
+          { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
         );
       }
@@ -795,7 +796,7 @@ export async function GET(request, { params }) {
       const errorText = await response.text();
       console.log(`Error fetching models from ${connection.provider}:`, errorText);
       return NextResponse.json(
-        { error: `Failed to fetch models: ${response.status}` },
+        { error: formatModelsFetchError(response.status, errorText) },
         { status: response.status }
       );
     }

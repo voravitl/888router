@@ -124,7 +124,9 @@ describe("Models route — generic OAuth refresh-and-retry", () => {
     expect(mocks.updateProviderCredentials).not.toHaveBeenCalled();
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(403);
-    expect(body.error).toBe("Failed to fetch models: 403");
+    // The upstream body is now appended so a billing 403 is distinguishable
+    // from an auth 403 in the dashboard (#279). Status prefix unchanged.
+    expect(body.error).toBe("Failed to fetch models: 403 — Forbidden");
   });
 
   it("does not retry when the refresh fails and returns the original error", async () => {
@@ -152,7 +154,9 @@ describe("Models route — generic OAuth refresh-and-retry", () => {
     expect(mocks.updateProviderCredentials).not.toHaveBeenCalled();
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(403);
-    expect(body.error).toBe("Failed to fetch models: 403");
+    // Upstream body appended (#279) — this is the case the detail matters for:
+    // the reason the refresh did not help is now visible to the user.
+    expect(body.error).toBe("Failed to fetch models: 403 — OAuth2 access token could not be validated");
   });
 
   it("rebuilds the authQuery request with the fresh token on retry (gemini)", async () => {
@@ -265,6 +269,8 @@ describe("Models route — generic OAuth refresh-and-retry", () => {
     expect(mocks.updateProviderCredentials).not.toHaveBeenCalled();
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(403);
-    expect(body.error).toBe("Failed to fetch models: 403");
+    // The upstream body is now appended so a billing 403 is distinguishable
+    // from an auth 403 in the dashboard (#279). Status prefix unchanged.
+    expect(body.error).toBe("Failed to fetch models: 403 — Forbidden");
   });
 });
