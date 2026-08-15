@@ -185,6 +185,105 @@ describe("secret redaction", () => {
     const out = redactSecrets("token=QwErTyUiOpAsDfGhJkLzXcVbNm123456");
     expect(out).not.toContain("QwErTyUiOpAsDfGhJkLzXcVbNm123456");
   });
+
+  // Review round 2: the scheme match was case-sensitive, and the keyword match
+  // required a `:`/`=` separator, so these all passed through unredacted.
+  it("redacts a lowercase scheme and a whitespace-separated value", () => {
+    for (const input of [
+      "bearer abcdefghijklmnopqr",
+      "API key abcdefghijklmnopqr",
+      "cookie: sessionvalue12345678",
+      "Password: hunter2xyzabcdef",
+      "client secret abcdefghijklmnopqr",
+    ]) {
+      expect(redactSecrets(input), input).toContain("[redacted]");
+      expect(redactSecrets(input), input).toBe(
+        `${input.split(/\s*[:=]\s*|\s+(?=[A-Za-z0-9+/=._~-]{16,}$)/)[0]} [redacted]`
+      );
+    }
+  });
+
+  // A whitespace separator is ambiguous — English prose puts ordinary words
+  // after these nouns. The >=16-char floor is what keeps prose intact; an
+  // earlier revision without it produced "access token [redacted] not be
+  // validated".
+  it("keeps prose after a keyword when the next word is not credential-shaped", () => {
+    for (const msg of [
+      "OAuth2 access token could not be validated",
+      "access token could not be validated",
+      "password reset required",
+      "credential check failed",
+    ]) {
+      expect(redactSecrets(msg), msg).toBe(msg);
+    }
+  });
+});
+
+// Review round 2 found three ways to bypass the field allowlist. Each is pinned
+// here because each one re-opens the boundary if it regresses.
+describe("allowlist cannot be bypassed", () => {
+  it("withholds a bare top-level JSON string", () => {
+    // No field to allowlist, so emitting it would bypass the boundary entirely.
+    expect(extractUpstreamErrorDetail('"hunter2"')).toBe("");
+    expect(formatModelsFetchError(403, '"hunter2"')).toBe("Failed to fetch models: 403");
+  });
+
+  it("withholds bare top-level JSON scalars", () => {
+    for (const body of ["42", "true", "null", "[]", '["hunter2"]']) {
+      expect(extractUpstreamErrorDetail(body), body).toBe("");
+    }
+  });
+
+  it("withholds a JSON-shaped body that fails to parse", () => {
+    // Previously this fell through to the plain-text path, emitting the unknown
+    // fields the allowlist exists to suppress.
+    const truncated = '{"message":"ok","leaked_secret":"hunter2';
+    expect(extractUpstreamErrorDetail(truncated)).toBe("");
+    expect(extractUpstreamErrorDetail(truncated)).not.toContain("hunter2");
+  });
+
+  it("parses a large valid JSON body whole instead of slicing it into garbage", () => {
+    // Slicing before parsing made a valid body malformed, which diverted it to
+    // the raw-text path and leaked the very field being guarded.
+    const body = JSON.stringify({ leaked_secret: "S".repeat(9000), message: "ok" });
+    expect(extractUpstreamErrorDetail(body)).toBe("ok");
+    expect(extractUpstreamErrorDetail(body)).not.toContain("SSSS");
+  });
+
+  it("withholds a JSON body above the parse cap rather than degrading it", () => {
+    const body = JSON.stringify({ message: "ok", filler: "F".repeat(300000) });
+    expect(extractUpstreamErrorDetail(body)).toBe("");
+    expect(extractUpstreamErrorDetail(body)).not.toContain("FFFF");
+  });
+
+  it("still reads plain-text and HTML bodies, which have no fields to protect", () => {
+    expect(extractUpstreamErrorDetail("upstream connect error or disconnect")).toBe(
+      "upstream connect error or disconnect"
+    );
+    expect(extractUpstreamErrorDetail("<html><body>502 Bad Gateway</body></html>")).toContain("502");
+  });
+});
+
+// An ANSI escape can clear a terminal or hide adjacent log lines; bidi overrides
+// can visually reorder text. Neither belongs in something we log or render.
+describe("control character stripping", () => {
+  const ESC = String.fromCharCode(27);
+
+  it("strips ANSI escapes from the emitted detail", () => {
+    const detail = extractUpstreamErrorDetail(JSON.stringify({ message: `${ESC}[2Jcleared` }));
+    expect(detail).not.toContain(ESC);
+    expect(detail).toBe("[2Jcleared");
+  });
+
+  it("strips bidi overrides", () => {
+    const rlo = String.fromCodePoint(0x202e);
+    const detail = extractUpstreamErrorDetail(JSON.stringify({ message: `safe${rlo}reversed` }));
+    expect(detail).not.toContain(rlo);
+  });
+
+  it("strips control characters from the log form too", () => {
+    expect(safeLogDetail(JSON.stringify({ message: `${ESC}[31mred` }))).not.toContain(ESC);
+  });
 });
 
 // The raw body was previously logged verbatim, which persists any credential the
