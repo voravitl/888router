@@ -129,8 +129,17 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
 
-      # Push by digest, untagged. Tags are attached once, by the merge job, so a
-      # single-arch image can never occupy :latest even briefly.
+      # Push by digest, untagged, to BOTH registries. Tags are attached once, by
+      # the merge job, so a single-arch image can never occupy :latest even
+      # briefly.
+      #
+      # Both names are required here: an OCI index references its children by
+      # digest, and those child manifests and blobs must already exist in the
+      # SAME repository the index is pushed to. Pushing only to Docker Hub and
+      # then creating a GHCR index from Docker Hub digests would push an index
+      # whose children GHCR does not have — a dangling manifest at best.
+      # The quoted `"name=a,b"` form is how buildx takes multiple names without
+      # the comma being read as an output-option separator.
       #
       # `continue-on-error` + the retry step below is a deliberate safety net,
       # NOT the fix: native runners remove the known flake source, but a registry
@@ -146,7 +155,7 @@ jobs:
           build-args: |
             BUILD_VERSION=${{ steps.meta.outputs.version }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,"name=${{ env.DOCKERHUB_IMAGE }},${{ env.GHCR_IMAGE }}",push-by-digest=true,name-canonical=true,push=true
           # Per-arch cache scope: one shared scope would have the two jobs
           # overwrite each other's manifest on every run.
           cache-from: type=gha,scope=${{ matrix.arch }}
@@ -164,11 +173,26 @@ jobs:
           build-args: |
             BUILD_VERSION=${{ steps.meta.outputs.version }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,"name=${{ env.DOCKERHUB_IMAGE }},${{ env.GHCR_IMAGE }}",push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           provenance: false
           sbom: false
+
+      # A green job that needed two attempts must not look identical to one that
+      # passed first time — a product build that is merely flaky would otherwise
+      # publish silently. Surface it in the run summary.
+      - name: Flag that the first attempt failed
+        if: steps.build.outcome == 'failure'
+        run: |
+          {
+            echo "### ⚠️ ${{ matrix.platform }} build needed a retry"
+            echo ""
+            echo "The first attempt failed and the retry succeeded. The image was"
+            echo "published, but this is not a healthy build — check the failed"
+            echo "step's log before treating it as noise."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Retried build::${{ matrix.platform }} failed once before succeeding"
 
       # Hand the digest to the merge job. Fails loudly when both attempts
       # produced nothing — a missing digest must stop the release, not merge a
@@ -244,59 +268,120 @@ jobs:
             # Traceability for branch/master builds
             type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
 
-      # Assert both arches arrived before publishing anything. `needs` already
-      # gates on job success, but an empty artifact would otherwise yield a
-      # one-arch manifest that looks healthy.
-      - name: Verify both digests present
+      # Validate the SOURCES before any public tag moves. Checking only that two
+      # non-empty files exist is not enough: if the arm64 artifact carried an
+      # amd64 digest, :latest would be updated to an amd64-only index and the
+      # post-publish check would catch it only AFTER the tag had already moved,
+      # with no rollback. So resolve each digest in each destination repository
+      # and require it to be the architecture it claims.
+      - name: Validate source digests
         run: |
           set -euo pipefail
           for arch in amd64 arm64; do
-            if [ ! -s "/tmp/digests/$arch" ]; then
+            file="/tmp/digests/$arch"
+            if [ ! -s "$file" ]; then
               echo "::error::missing digest for $arch — refusing to publish a partial manifest"
               exit 1
             fi
-            echo "$arch $(cat "/tmp/digests/$arch")"
+            digest=$(cat "$file")
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::malformed digest for $arch: $digest"
+              exit 1
+            fi
+            # Distinct images: the same digest for both arches means one build
+            # overwrote the other's artifact.
+            eval "d_$arch=\$digest"
+
+            for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
+              # --format '{{.Image.*}}' and NOT --raw: the platform lives in the
+              # config blob, so a raw single-platform manifest has no
+              # .architecture field at all (verified against a published
+              # child: its raw keys are config/layers/mediaType/schemaVersion).
+              # buildx resolves the config for us with this format. Also fails
+              # closed when the child is absent from this repository, which is
+              # exactly what would leave a dangling index.
+              got=$(docker buildx imagetools inspect "$image@$digest" \
+                --format '{{.Image.OS}}/{{.Image.Architecture}}') || {
+                echo "::error::$image@$digest is not present in $image"
+                exit 1
+              }
+              if [ "$got" != "linux/$arch" ]; then
+                echo "::error::$image@$digest claims $arch but reports $got"
+                exit 1
+              fi
+              echo "ok  $image@$digest is $got"
+            done
           done
 
+          if [ "$d_amd64" = "$d_arm64" ]; then
+            echo "::error::both arches report the same digest — one artifact clobbered the other"
+            exit 1
+          fi
+
       # One manifest list per image name, carrying every tag metadata-action
-      # produced for that name.
+      # produced for that name, built from THAT registry's own children.
       - name: Create and push manifest
         run: |
           set -euo pipefail
-          refs=""
-          for arch in amd64 arm64; do
-            refs="$refs ${DOCKERHUB_IMAGE}@$(cat "/tmp/digests/$arch")"
-          done
+          # while-read, not mapfile: keeps this snippet runnable (and therefore
+          # testable) on bash 3.2 as well as the runner's bash 5.
+          all_tags=()
+          while IFS= read -r line; do
+            [ -n "$line" ] && all_tags+=("$line")
+          done <<< '${{ steps.meta.outputs.tags }}'
 
           for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
-            tag_args=""
-            while read -r tag; do
+            # Children must come from the destination repository — an index may
+            # only reference manifests that already live alongside it.
+            refs=()
+            for arch in amd64 arm64; do
+              refs+=("$image@$(cat "/tmp/digests/$arch")")
+            done
+
+            tag_args=()
+            for tag in "${all_tags[@]}"; do
               [ -n "$tag" ] || continue
               case "$tag" in
-                "$image":*) tag_args="$tag_args -t $tag" ;;
+                "$image":*) tag_args+=("-t" "$tag") ;;
               esac
-            done <<< '${{ steps.meta.outputs.tags }}'
-            if [ -z "$tag_args" ]; then
+            done
+            if [ "${#tag_args[@]}" -eq 0 ]; then
               echo "::error::no tags resolved for $image"
               exit 1
             fi
-            echo "publishing $image:"
-            # shellcheck disable=SC2086
-            docker buildx imagetools create $tag_args $refs
+            echo "publishing $image with ${#tag_args[@]} tag(s)"
+            docker buildx imagetools create "${tag_args[@]}" "${refs[@]}"
           done
 
-      # Prove the published manifest actually carries both architectures, rather
-      # than trusting that the create call did what it was asked.
-      - name: Verify published manifest is multi-arch
+      # Defence in depth: re-read EVERY published tag in BOTH registries and
+      # require both architectures, rather than trusting that the create calls
+      # did what they were asked.
+      - name: Verify every published tag is multi-arch
         run: |
           set -euo pipefail
-          ref="${DOCKERHUB_IMAGE}:${{ steps.meta.outputs.version }}"
-          echo "inspecting $ref"
-          out=$(docker buildx imagetools inspect "$ref" --raw)
-          for arch in amd64 arm64; do
-            echo "$out" | grep -q "\"architecture\":\"$arch\"" || {
-              echo "::error::published manifest is missing linux/$arch"
-              exit 1
-            }
+          all_tags=()
+          while IFS= read -r line; do
+            [ -n "$line" ] && all_tags+=("$line")
+          done <<< '${{ steps.meta.outputs.tags }}'
+          checked=0
+
+          for tag in "${all_tags[@]}"; do
+            [ -n "$tag" ] || continue
+            raw=$(docker buildx imagetools inspect "$tag" --raw)
+            for arch in amd64 arm64; do
+              jq -e --arg a "$arch" \
+                'any(.manifests[]?; .platform.os == "linux" and .platform.architecture == $a)' \
+                >/dev/null <<<"$raw" || {
+                  echo "::error::$tag is missing linux/$arch"
+                  exit 1
+                }
+            done
+            echo "ok  $tag carries amd64 + arm64"
+            checked=$((checked + 1))
           done
-          echo "manifest carries both amd64 and arm64"
+
+          if [ "$checked" -eq 0 ]; then
+            echo "::error::verified no tags — the tag list was empty"
+            exit 1
+          fi
+          echo "verified $checked tag(s)"
