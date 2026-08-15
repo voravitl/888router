@@ -31,10 +31,50 @@ env:
   DOCKERHUB_IMAGE: voravitl/888router
 
 jobs:
+  # Fail fast when this ref cannot produce a publishable tag at all — e.g. a
+  # manual dispatch from a non-default branch, where neither the semver rule nor
+  # the is_default_branch-gated :latest/:sha rules resolve. Without this the run
+  # spends both full arch builds before the merge job discovers it has nothing to
+  # tag. Cheap: metadata-action only, no checkout.
+  tags:
+    name: resolve tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ env.DOCKERHUB_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
+
+      - name: Require at least one tag per image
+        run: |
+          set -euo pipefail
+          for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
+            found=0
+            while IFS= read -r tag; do
+              case "$tag" in
+                "$image":*) found=1 ;;
+              esac
+            done <<< '${{ steps.meta.outputs.tags }}'
+            if [ "$found" -eq 0 ]; then
+              echo "::error::ref ${{ github.ref }} resolves no publishable tag for $image — push to the default branch or a v* tag"
+              exit 1
+            fi
+          done
+          echo "tags resolve for both registries"
+
   # Test gate: do not publish an image if unit smoke fails.
   # (Same smoke set as .github/workflows/ci.yml — keep in sync.)
   test:
     name: unit-smoke
+    needs: tags
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -48,9 +88,11 @@ jobs:
       - name: Install root dependencies
         run: npm ci --no-audit --no-fund
 
+      # npm ci, not npm install: the publish gate must run against the committed
+      # dependency graph, not whatever the ranges resolve to today.
       - name: Install test dependencies
         working-directory: tests
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
 
       - name: Run unit smoke tests
         working-directory: tests
@@ -87,7 +129,12 @@ jobs:
     permissions:
       contents: read
       packages: write
-      actions: write   # required for type=gha build cache
+      # Kept deliberately: the GHA cache backend v2 used by `cache-to: type=gha`
+      # writes through the Actions cache service and fails without this scope.
+      # Reviewed and retained rather than trimmed on the assumption that the
+      # runtime cache token alone suffices — dropping it silently disables the
+      # build cache, turning every build cold.
+      actions: write
     strategy:
       # Never cancel a sibling: a half-built arch leaves the merge step with a
       # missing digest, and the fix is a full re-run either way.
