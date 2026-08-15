@@ -101,11 +101,15 @@ jobs:
       - name: Install root dependencies
         run: npm ci --no-audit --no-fund
 
-      # npm ci, not npm install: the publish gate must run against the committed
-      # dependency graph, not whatever the ranges resolve to today.
+      # npm install, NOT npm ci: `tests/package-lock.json` is deliberately
+      # gitignored (tests/.gitignore:2), so it does not exist in a fresh clone and
+      # `npm ci` fails with EUSAGE. Switching to `npm ci` here broke master CI
+      # exactly that way — the local lockfile made it look fine, but the check
+      # that mattered was whether git tracks the file. Keep this in step with
+      # .github/workflows/ci.yml, which uses npm install for the same reason.
       - name: Install test dependencies
         working-directory: tests
-        run: npm ci --no-audit --no-fund
+        run: npm install --no-audit --no-fund
 
       - name: Run unit smoke tests
         working-directory: tests
