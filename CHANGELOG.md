@@ -1,3 +1,12 @@
+## Unreleased
+
+### Fix: `docker-publish` build job had no timeout, letting stalled runs block the queue for hours (#277)
+
+- **`.github/workflows/docker-publish.yml`:** Added `timeout-minutes: 45` to the `build-and-push` job. It previously inherited the 360-minute default (the `test` job already had 20), so a stalled multi-arch build (QEMU arm64 emulation plus a hung `npm ci`) sat `in_progress` and, combined with `cancel-in-progress: false`, blocked the concurrency group behind it. Three such zombie runs were found and cancelled by hand — two of them from the v0.15.25 release, stuck for ~2 hours. The last 8 successful builds measured 12-18 minutes, so 45 leaves ~2.5x headroom.
+- **`concurrency.group` deliberately left on `github.ref`.** A release does fire two runs on one commit (the master push, then the `v*` tag push), which looks like a duplicate-build race. It is not: the two runs publish **disjoint** tag sets — `:latest` and `:sha-xxx` are gated on `{{is_default_branch}}`, and `type=semver` only resolves on the tag event. Verified against the v0.15.24 release logs, where the tag run pushed `:0.15.24` and nothing else. Re-keying the group on `github.sha` would have merged those two harmless runs into one group while **splitting consecutive master pushes apart**, letting commit A and commit B publish `:latest` concurrently — an older build finishing last would clobber the newer `:latest`. A comment now records this so the same "fix" is not attempted again.
+- **Corrected a stale comment on the cleanup step:** it claimed to prune "after every build" but has no `if: always()`, so it only runs on success. Left as-is behaviourally — the runner is ephemeral and discarded either way, so pruning after a failure buys nothing — and the comment now says so.
+- **Not the same defect as the failed v0.15.26 build**, which died on `npm error code ETIMEDOUT` — a transient runner network failure, cleared by a re-run. The timeout added here is what bounds that class of hang instead of letting it idle for 6 hours.
+
 # v0.15.26 (2026-08-15)
 
 ## Fix: `9-opus` / `9-sonnet` / `9-haiku` context limits missing from `/v1/models` (#275)
