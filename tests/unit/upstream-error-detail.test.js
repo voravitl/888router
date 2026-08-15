@@ -301,6 +301,29 @@ describe("signals do not fire on unrelated words", () => {
     }
   });
 
+  // Round 7: `denied by` was unrestricted, so moving `blocked` ahead of
+  // `permission` made an ordinary admin denial look like a geo block.
+  it("keeps a non-policy 'denied by ...' as a permission problem", () => {
+    for (const body of [
+      "access denied by account administrator",
+      "permission denied by the organization owner",
+      "denied by your workspace admin",
+    ]) {
+      expect(classifyUpstreamError(403, body), body).toBe("permission");
+    }
+  });
+
+  it("treats 'denied by' a blocking actor as blocked", () => {
+    for (const body of [
+      "access denied by regional policy",
+      "denied by firewall",
+      "request denied by the geo policy",
+      "denied by waf",
+    ]) {
+      expect(classifyUpstreamError(403, body), body).toBe("blocked");
+    }
+  });
+
   it("still reports genuinely unsupported endpoints", () => {
     for (const [status, body] of [
       [405, "method not allowed"],

@@ -75,7 +75,7 @@ const SIGNALS = [
   // /access denied/ claimed them first and told the user to fix permissions on an
   // account that has them. The word boundaries matter too: a bare /blocked/
   // matched "unblocked" and /geo/ matched "geometry".
-  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region(?:al)? (?:not )?(?:supported|restricted|policy)|country (?:not )?(?:supported|allowed)|firewall|policy violation|denied by/, "blocked"],
+  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region(?:al)? (?:not )?(?:supported|restricted|policy)|country (?:not )?(?:supported|allowed)|firewall|policy violation|denied by (?:the )?(?:regional |geo|country |network )?(?:policy|firewall|gateway|proxy|cdn|waf)/, "blocked"],
   [/permission|forbidden|not authorized|unauthorized_client|insufficient (?:permission|scope|privileges)|access denied|\b(?:missing|invalid|insufficient|required) scopes?\b|\bscopes? (?:missing|invalid|required|insufficient)\b/, "permission"],
   [/not found|no such (?:model|endpoint|route)|unknown (?:model|endpoint)|404|does not exist/, "not_found"],
   // MUST precede `unsupported`: "region not supported" and "country not
