@@ -67,28 +67,154 @@ jobs:
             unit/retry-500-config.test.js \
             unit/request-details-retention.test.js
 
-  build-and-push:
+  # Per-architecture build on a NATIVE runner — no QEMU.
+  #
+  # WHY: the previous single-job build ran linux/arm64 under QEMU emulation
+  # (setup-qemu-action + buildx), and that emulation was the direct cause of two
+  # unrelated-looking failures on healthy commits: a stalled `npm ci`
+  # (ETIMEDOUT) and `Cannot find module '../lightningcss.linux-arm64-musl.node'`
+  # during `next build`. Neither reproduced natively — running the same lockfile
+  # under `--platform linux/arm64` locally installed the arm64-musl binary and
+  # required it successfully, including when the npm cache had been populated by
+  # an amd64 pass first. The emulator, not the code or the lockfile, was the
+  # variable. `ubuntu-24.04-arm` is a GitHub-hosted native arm64 runner, free for
+  # public repositories, which removes the emulator from the path entirely.
+  build:
+    name: build (${{ matrix.platform }})
     needs: test
-    runs-on: ubuntu-latest
-    # Bound the run. Without this the job inherits the 360-minute default, so a
-    # hung multi-arch build (QEMU arm64 emulation + a stalled `npm ci`) sat
-    # in_progress for hours and, with cancel-in-progress:false, blocked the
-    # concurrency group behind it. Healthy multi-arch builds measured 12-18 min
-    # across the last 8 successful runs, so 45 min leaves ~2.5x headroom.
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
-    # Least privilege: only this job needs registry + cache write access.
     permissions:
       contents: read
       packages: write
       actions: write   # required for type=gha build cache
+    strategy:
+      # Never cancel a sibling: a half-built arch leaves the merge step with a
+      # missing digest, and the fix is a full re-run either way.
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
-      # QEMU for multi-arch (arm64) builds — required before buildx
-      - uses: docker/setup-qemu-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Only the version is needed here; the tag list is applied by the merge job.
+      - name: Extract version
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Push by digest, untagged. Tags are attached once, by the merge job, so a
+      # single-arch image can never occupy :latest even briefly.
+      #
+      # `continue-on-error` + the retry step below is a deliberate safety net,
+      # NOT the fix: native runners remove the known flake source, but a registry
+      # 5xx or a transient network fault can still lose a build, and a lost build
+      # means :latest silently lags master until someone notices.
+      - name: Build and push by digest
+        id: build
+        continue-on-error: true
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            BUILD_VERSION=${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          # Per-arch cache scope: one shared scope would have the two jobs
+          # overwrite each other's manifest on every run.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          provenance: false
+          sbom: false
+
+      - name: Retry build once
+        id: retry
+        if: steps.build.outcome == 'failure'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            BUILD_VERSION=${{ steps.meta.outputs.version }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          provenance: false
+          sbom: false
+
+      # Hand the digest to the merge job. Fails loudly when both attempts
+      # produced nothing — a missing digest must stop the release, not merge a
+      # single-arch manifest and call it multi-arch.
+      - name: Export digest
+        run: |
+          set -euo pipefail
+          digest="${{ steps.build.outputs.digest || steps.retry.outputs.digest }}"
+          if [ -z "$digest" ]; then
+            echo "::error::no digest for ${{ matrix.platform }} — both build attempts failed"
+            exit 1
+          fi
+          mkdir -p /tmp/digests
+          echo -n "$digest" > "/tmp/digests/${{ matrix.arch }}"
+          echo "$digest"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Combine the per-arch digests into one multi-arch manifest and apply the tags.
+  # Requires BOTH arch builds: `needs` fails this job if either did not succeed,
+  # so a partial build never publishes. A single-arch image pulls fine but fails
+  # to run on the other architecture ("exec format error"), which is exactly the
+  # #196 regression this repo already fixed once.
+  merge:
+    name: merge manifest
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -118,30 +244,59 @@ jobs:
             # Traceability for branch/master builds
             type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          build-args: |
-            BUILD_VERSION=${{ steps.meta.outputs.version }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          # Multi-arch: publish both amd64 and arm64 so anyone can self-host on
-          # x86_64 VPS/cloud OR Apple Silicon — a single-arch (arm64-only) image
-          # pulls fine but fails to run on Intel/AMD hosts ("exec format error").
-          # QEMU (setup-qemu-action above) + buildx build a combined manifest;
-          # clients select the arch matching their runtime, so order is cosmetic.
-          platforms: linux/amd64,linux/arm64
-          provenance: false
-          sbom: false
-
-      # Cleanup: prune build cache and dangling images after a SUCCESSFUL build.
-      # Deliberately not `if: always()` — the runner is ephemeral and discarded
-      # either way, so pruning after a failure or a timeout buys nothing.
-      - name: Cleanup Docker build cache
+      # Assert both arches arrived before publishing anything. `needs` already
+      # gates on job success, but an empty artifact would otherwise yield a
+      # one-arch manifest that looks healthy.
+      - name: Verify both digests present
         run: |
-          docker builder prune -f
-          docker image prune -f
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            if [ ! -s "/tmp/digests/$arch" ]; then
+              echo "::error::missing digest for $arch — refusing to publish a partial manifest"
+              exit 1
+            fi
+            echo "$arch $(cat "/tmp/digests/$arch")"
+          done
+
+      # One manifest list per image name, carrying every tag metadata-action
+      # produced for that name.
+      - name: Create and push manifest
+        run: |
+          set -euo pipefail
+          refs=""
+          for arch in amd64 arm64; do
+            refs="$refs ${DOCKERHUB_IMAGE}@$(cat "/tmp/digests/$arch")"
+          done
+
+          for image in "$GHCR_IMAGE" "$DOCKERHUB_IMAGE"; do
+            tag_args=""
+            while read -r tag; do
+              [ -n "$tag" ] || continue
+              case "$tag" in
+                "$image":*) tag_args="$tag_args -t $tag" ;;
+              esac
+            done <<< '${{ steps.meta.outputs.tags }}'
+            if [ -z "$tag_args" ]; then
+              echo "::error::no tags resolved for $image"
+              exit 1
+            fi
+            echo "publishing $image:"
+            # shellcheck disable=SC2086
+            docker buildx imagetools create $tag_args $refs
+          done
+
+      # Prove the published manifest actually carries both architectures, rather
+      # than trusting that the create call did what it was asked.
+      - name: Verify published manifest is multi-arch
+        run: |
+          set -euo pipefail
+          ref="${DOCKERHUB_IMAGE}:${{ steps.meta.outputs.version }}"
+          echo "inspecting $ref"
+          out=$(docker buildx imagetools inspect "$ref" --raw)
+          for arch in amd64 arm64; do
+            echo "$out" | grep -q "\"architecture\":\"$arch\"" || {
+              echo "::error::published manifest is missing linux/$arch"
+              exit 1
+            }
+          done
+          echo "manifest carries both amd64 and arm64"
