@@ -211,6 +211,39 @@ describe("status is not trusted either", () => {
       expect(formatModelsFetchError(status, ""), String(status)).toBe("Failed to fetch models: unknown status");
     }
   });
+
+  it("bounds work on a status supplied as a huge string", () => {
+    const started = Date.now();
+    expect(formatModelsFetchError(" ".repeat(5_000_000) + "403", "")).toBe(
+      "Failed to fetch models: unknown status"
+    );
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+});
+
+// Round 5 advisory: both lookup tables were ordinary objects, so a polluted
+// Object.prototype could plant a numeric status key or a reason key and steer the
+// output. The emitted string must always come from OUR table.
+describe("lookups are own-property only", () => {
+  it("ignores a reason planted on Object.prototype for an unknown status", () => {
+    try {
+      Object.prototype[418] = "auth_invalid";
+      expect(formatModelsFetchError(418, "")).toBe("Failed to fetch models: 418");
+      expect(classifyUpstreamError(418, "")).toBeNull();
+    } finally {
+      delete Object.prototype[418];
+    }
+  });
+
+  it("ignores explanation text planted on Object.prototype", () => {
+    try {
+      Object.prototype.injected = "ATTACKER TEXT";
+      expect(explainUpstreamError(418, "injected")).toBe("");
+      expect(formatModelsFetchError(418, "injected")).not.toContain("ATTACKER TEXT");
+    } finally {
+      delete Object.prototype.injected;
+    }
+  });
 });
 
 // Review round 4: several signals were bare substrings, so they matched unrelated
@@ -238,6 +271,24 @@ describe("signals do not fire on unrelated words", () => {
       [403, "request blocked", "blocked"],
     ]) {
       expect(classifyUpstreamError(status, body), body).toBe(expected);
+    }
+  });
+
+  // Round 5: `unsupported` sat before `blocked`, so a geo block was reported as
+  // "the upstream does not support listing models" — wrong and unactionable.
+  it("prefers the specific blocked signal over the broader unsupported one", () => {
+    for (const body of ["region not supported", "country not supported", "unsupported due to policy violation"]) {
+      expect(classifyUpstreamError(403, body), body).toBe("blocked");
+    }
+  });
+
+  it("still reports genuinely unsupported endpoints", () => {
+    for (const [status, body] of [
+      [405, "method not allowed"],
+      [501, "not implemented"],
+      [400, "listing models is not supported"],
+    ]) {
+      expect(classifyUpstreamError(status, body), body).toBe("unsupported");
     }
   });
 

@@ -66,12 +66,14 @@ const SIGNALS = [
   // on "model microscope-v2 not found", so the scope signal needs its context.
   [/permission|forbidden|not authorized|unauthorized_client|insufficient (?:permission|scope|privileges)|access denied|\b(?:missing|invalid|insufficient|required) scopes?\b|\bscopes? (?:missing|invalid|required|insufficient)\b/, "permission"],
   [/not found|no such (?:model|endpoint|route)|unknown (?:model|endpoint)|404|does not exist/, "not_found"],
+  // MUST precede `unsupported`: "region not supported" and "country not
+  // supported" are geo blocks, but /not supported/ claimed them first and told
+  // the user model listing itself was unsupported. The word boundaries matter
+  // too — a bare /blocked/ matched "unblocked" and /geo/ matched "geometry".
+  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region (?:not )?(?:supported|restricted)|country (?:not )?(?:supported|allowed)|firewall|policy violation|denied by/, "blocked"],
   [/not supported|unsupported|not implemented|method not allowed/, "unsupported"],
   [/timed? ?out|timeout|deadline exceeded|etimedout/, "timeout"],
   [/unavailable|overloaded|high load|capacity|try again later|temporarily|maintenance|503/, "unavailable"],
-  // /blocked/ matched "unblocked" and /geo/ matched "geometry" — both need a
-  // word boundary, and "geo" only means anything in its own compounds.
-  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region (?:not )?(?:supported|restricted)|country|firewall|policy violation|denied by/, "blocked"],
   [/econnrefused|enotfound|dns|connect(?:ion)? (?:refused|error|reset)|socket hang ?up|network/, "network"],
   [/internal (?:server )?error|server error|bad gateway|upstream error|exception|traceback/, "server"],
 ];
@@ -135,8 +137,11 @@ function toStatusCode(status) {
   if (typeof status === "number") {
     return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
   }
-  if (typeof status === "string" && /^[1-5]\d{2}$/.test(status.trim())) {
-    return Number(status.trim());
+  // Length-check BEFORE trim() so a huge string cannot buy work here either. A
+  // real status is 3 chars; anything longer than a little whitespace is not one.
+  if (typeof status === "string" && status.length <= 16) {
+    const trimmed = status.trim();
+    if (/^[1-5]\d{2}$/.test(trimmed)) return Number(trimmed);
   }
   return null;
 }
@@ -165,7 +170,10 @@ export function classifyUpstreamError(status, body) {
   }
   const code = toStatusCode(status);
   if (code === null) return null;
-  return STATUS_REASONS[code] || (code >= 500 ? "server" : null);
+  // Own-property lookup only. A polluted Object.prototype could otherwise plant
+  // a numeric key here and steer an unknown status to a wrong reason.
+  if (Object.hasOwn(STATUS_REASONS, code)) return STATUS_REASONS[code];
+  return code >= 500 ? "server" : null;
 }
 
 /**
@@ -178,7 +186,9 @@ export function classifyUpstreamError(status, body) {
  */
 export function explainUpstreamError(status, body) {
   const reason = classifyUpstreamError(status, body);
-  return reason ? REASONS[reason] : "";
+  // Own-property lookup, same reason as above: the emitted string must come from
+  // OUR table, never from something planted on Object.prototype.
+  return reason && Object.hasOwn(REASONS, reason) ? REASONS[reason] : "";
 }
 
 /**
