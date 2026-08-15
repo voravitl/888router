@@ -55,16 +55,23 @@ const REASONS = {
 // leads because it is the case that looks like auth and is not.
 const SIGNALS = [
   [/out of credits|no credits|insufficient (?:credits|balance|funds|quota)|spending[- ]?limit|payment required|subscription (?:required|expired)|billing|past due|add credits|top ?up|upgrade your plan/, "billing"],
-  [/rate ?limit|too many requests|quota (?:exceeded|exhausted)|usage limit|throttl|resource[- ]?exhausted|overloaded_error/, "quota"],
-  [/expired|token has expired|credentials? (?:have )?expired/, "auth_expired"],
+  [/rate ?limit|too many requests|quota (?:exceeded|exhausted)|usage limit|throttl|resource[- ]?exhausted/, "quota"],
+  // Must name the CREDENTIAL as the thing that expired. A bare /expired/ also
+  // caught "certificate expired" and "cache expired", which are not auth
+  // problems and send the user to re-authenticate for nothing.
+  [/(?:token|credentials?|key|session|grant|authorization|jwt|login)\b[^.]{0,20}\bexpired|expired[^.]{0,20}\b(?:token|credentials?|key|session|grant)/, "auth_expired"],
   [/invalid[_ ]?(?:api[_ ]?)?key|incorrect api key|invalid token|invalid[_ ]?grant|invalid credentials?|authentication[_ ]?(?:failed|error)|could not be validated|unauthenticated|bad credentials|signature (?:mismatch|invalid)|revoked/, "auth_invalid"],
   [/missing (?:api ?key|token|credential|authorization)|no (?:api ?key|token|credentials?) (?:provided|supplied|found)|api ?key (?:is )?required|authorization (?:header )?required/, "auth_missing"],
-  [/permission|forbidden|not authorized|unauthorized_client|insufficient (?:permission|scope|privileges)|access denied|scope/, "permission"],
+  // A bare /scope/ matched "microscope" and beat the authoritative 404 fallback
+  // on "model microscope-v2 not found", so the scope signal needs its context.
+  [/permission|forbidden|not authorized|unauthorized_client|insufficient (?:permission|scope|privileges)|access denied|\b(?:missing|invalid|insufficient|required) scopes?\b|\bscopes? (?:missing|invalid|required|insufficient)\b/, "permission"],
   [/not found|no such (?:model|endpoint|route)|unknown (?:model|endpoint)|404|does not exist/, "not_found"],
   [/not supported|unsupported|not implemented|method not allowed/, "unsupported"],
   [/timed? ?out|timeout|deadline exceeded|etimedout/, "timeout"],
   [/unavailable|overloaded|high load|capacity|try again later|temporarily|maintenance|503/, "unavailable"],
-  [/blocked|geo|region (?:not )?(?:supported|restricted)|country|firewall|policy violation|denied by/, "blocked"],
+  // /blocked/ matched "unblocked" and /geo/ matched "geometry" — both need a
+  // word boundary, and "geo" only means anything in its own compounds.
+  [/\bblocked\b|\bgeo(?:graphic|graphical|blocking|-?restricted)?\b|region (?:not )?(?:supported|restricted)|country|firewall|policy violation|denied by/, "blocked"],
   [/econnrefused|enotfound|dns|connect(?:ion)? (?:refused|error|reset)|socket hang ?up|network/, "network"],
   [/internal (?:server )?error|server error|bad gateway|upstream error|exception|traceback/, "server"],
 ];
@@ -89,6 +96,10 @@ const STATUS_REASONS = {
 // matching (`Bear<ZWSP>er`). Built from codepoints so this source file never
 // contains a literal control character. C0, DEL+C1, bidi marks/overrides, ALM,
 // zero-width space/joiners, word joiner, and BOM.
+// Bound on how much of the body is examined. Applied by slicing FIRST, before
+// any whole-string operation, so a multi-megabyte body cannot buy unbounded work.
+const MAX_MATCH_LENGTH = 16384;
+
 const INVISIBLE_RANGES = [
   [0x00, 0x08], [0x0b, 0x0c], [0x0e, 0x1f], [0x7f, 0x9f],
   [0x061c, 0x061c], [0x200b, 0x200f], [0x202a, 0x202e],
@@ -110,6 +121,32 @@ function normalize(body) {
 }
 
 /**
+ * Coerce a status into a plain integer, or null when it is not a usable HTTP
+ * status. Nothing derived from the argument is ever emitted — callers print
+ * either this integer or a fixed placeholder.
+ *
+ * This exists because the argument is NOT trustworthy just for being called a
+ * status. `Number(x)` invokes `valueOf`, and template interpolation invokes
+ * `toString`; an object can answer 403 to one and a secret to the other, which
+ * put attacker text into the output through the status parameter while the body
+ * path stayed clean. A `Symbol` threw outright. Accept primitives only.
+ */
+function toStatusCode(status) {
+  if (typeof status === "number") {
+    return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+  }
+  if (typeof status === "string" && /^[1-5]\d{2}$/.test(status.trim())) {
+    return Number(status.trim());
+  }
+  return null;
+}
+
+/** Printable form of a status: the integer, or a fixed placeholder. */
+function statusLabel(code) {
+  return code === null ? "unknown status" : String(code);
+}
+
+/**
  * Identify why an upstream call failed, as a key into REASONS.
  *
  * @param {number} status HTTP status from the upstream.
@@ -117,15 +154,18 @@ function normalize(body) {
  * @returns {string|null} A REASONS key, or null when nothing is recognised.
  */
 export function classifyUpstreamError(status, body) {
-  if (typeof body === "string" && body.trim()) {
-    // Bound the match work; keyword signals live at the start of real payloads.
-    const haystack = normalize(body.slice(0, 16384));
-    for (const [pattern, reason] of SIGNALS) {
-      if (pattern.test(haystack)) return reason;
+  // Slice BEFORE any full-string operation so the work is genuinely bounded.
+  if (typeof body === "string" && body.length > 0) {
+    const haystack = normalize(body.slice(0, MAX_MATCH_LENGTH));
+    if (haystack.trim()) {
+      for (const [pattern, reason] of SIGNALS) {
+        if (pattern.test(haystack)) return reason;
+      }
     }
   }
-  const key = Number(status);
-  return STATUS_REASONS[key] || (key >= 500 ? "server" : null);
+  const code = toStatusCode(status);
+  if (code === null) return null;
+  return STATUS_REASONS[code] || (code >= 500 ? "server" : null);
 }
 
 /**
@@ -152,7 +192,8 @@ export function explainUpstreamError(status, body) {
  */
 export function formatModelsFetchError(status, body) {
   const detail = explainUpstreamError(status, body);
-  return detail ? `Failed to fetch models: ${status} — ${detail}` : `Failed to fetch models: ${status}`;
+  const label = statusLabel(toStatusCode(status));
+  return detail ? `Failed to fetch models: ${label} — ${detail}` : `Failed to fetch models: ${label}`;
 }
 
 /**
@@ -167,7 +208,7 @@ export function formatModelsFetchError(status, body) {
 export function safeLogDetail(status, body) {
   const reason = classifyUpstreamError(status, body);
   const bytes = typeof body === "string" ? body.length : 0;
-  return `status=${status} reason=${reason || "unclassified"} body=${bytes}B (not logged)`;
+  return `status=${statusLabel(toStatusCode(status))} reason=${reason || "unclassified"} body=${bytes}chars (not logged)`;
 }
 
 /** Exported for tests: the fixed set of strings this module can emit. */

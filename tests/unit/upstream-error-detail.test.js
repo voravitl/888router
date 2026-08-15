@@ -173,14 +173,93 @@ describe("invisible-character folding", () => {
   });
 });
 
+// Review round 4: the body path was clean, but `status` was interpolated raw.
+// An object answering 403 to valueOf() and a secret to toString() put attacker
+// text into the output THROUGH THE STATUS PARAMETER, and a Symbol threw.
+describe("status is not trusted either", () => {
+  it("does not emit text supplied through a crafted status", () => {
+    const status = { valueOf: () => 403, toString: () => "SECRET" };
+    const out = formatModelsFetchError(status, "SECRET");
+    expect(out).not.toContain("SECRET");
+    expect(out).toBe("Failed to fetch models: unknown status");
+  });
+
+  it("does not throw on any status shape", () => {
+    const throwing = {
+      valueOf() {
+        throw new Error("boom");
+      },
+    };
+    for (const status of [Symbol("x"), throwing, null, undefined, NaN, Infinity, 1e99, "abc", {}, [], true]) {
+      expect(() => formatModelsFetchError(status, "")).not.toThrow();
+      expect(() => classifyUpstreamError(status, "")).not.toThrow();
+      expect(() => safeLogDetail(status, "")).not.toThrow();
+    }
+  });
+
+  it("rejects a status carrying injected newlines", () => {
+    expect(formatModelsFetchError("403\ninjected line", "")).toBe("Failed to fetch models: unknown status");
+  });
+
+  it("accepts a real status as a number or a numeric string", () => {
+    expect(formatModelsFetchError(403, "out of credits")).toContain("403 — out of credits");
+    expect(formatModelsFetchError("429", "")).toContain("429 — usage quota");
+  });
+
+  it("rejects out-of-range and non-integer statuses", () => {
+    for (const status of [99, 600, 403.5, -403]) {
+      expect(formatModelsFetchError(status, ""), String(status)).toBe("Failed to fetch models: unknown status");
+    }
+  });
+});
+
+// Review round 4: several signals were bare substrings, so they matched unrelated
+// words and beat the authoritative status fallback.
+describe("signals do not fire on unrelated words", () => {
+  it("classifies these correctly rather than on a substring accident", () => {
+    for (const [status, body, expected] of [
+      [404, "model microscope-v2 not found", "not_found"], // /scope/ once won here
+      [404, "unblocked region", "not_found"], // /blocked/ matched "unblocked"
+      [500, "geometry error", "server"], // /geo/ matched "geometry"
+      [500, "certificate expired", "server"], // /expired/ is not always auth
+      [500, "cache expired", "server"],
+    ]) {
+      expect(classifyUpstreamError(status, body), body).toBe(expected);
+    }
+  });
+
+  it("still fires when the word genuinely applies", () => {
+    for (const [status, body, expected] of [
+      [401, "token has expired", "auth_expired"],
+      [401, "your credentials have expired", "auth_expired"],
+      [403, "insufficient scopes", "permission"],
+      [403, "missing scope", "permission"],
+      [403, "geo-restricted", "blocked"],
+      [403, "request blocked", "blocked"],
+    ]) {
+      expect(classifyUpstreamError(status, body), body).toBe(expected);
+    }
+  });
+
+  it("bounds the match work by slicing before any whole-string operation", () => {
+    // trim() on the full body defeated the advertised bound.
+    const huge = " ".repeat(5_000_000) + "out of credits";
+    const started = Date.now();
+    expect(classifyUpstreamError(500, huge)).toBe("server");
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+});
+
 // The raw body used to be logged verbatim, persisting any echoed credential to
 // disk — inconsistent with the module's own premise.
 describe("safeLogDetail", () => {
-  it("logs the classification and a byte count, never the body", () => {
+  // Reported as chars, not bytes: String#length counts UTF-16 code units, so
+  // calling it "B" was wrong for any non-ASCII body.
+  it("logs the classification and a length, never the body", () => {
     const body = JSON.stringify({ error: { message: "invalid key sk-abcdef1234567890abcdef" } });
     const out = safeLogDetail(401, body);
     expect(out).not.toContain("sk-abcdef1234567890abcdef");
-    expect(out).toBe(`status=401 reason=auth_invalid body=${body.length}B (not logged)`);
+    expect(out).toBe(`status=401 reason=auth_invalid body=${body.length}chars (not logged)`);
   });
 
   it("marks an unclassifiable body rather than dumping it", () => {
@@ -190,6 +269,6 @@ describe("safeLogDetail", () => {
   });
 
   it("handles a missing body", () => {
-    expect(safeLogDetail(500, undefined)).toContain("body=0B");
+    expect(safeLogDetail(500, undefined)).toContain("body=0chars");
   });
 });
