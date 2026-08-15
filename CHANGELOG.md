@@ -2,9 +2,10 @@
 
 ## Fix: DeepSeek V4 is text-only on codebuddy-cn (drop wrong `vision: true`)
 
-- **`open-sse/providers/capabilities.js`:** Removed `vision: true` from `codebuddy-cn` → `deepseek-v4-pro` and `deepseek-v4-flash`. DeepSeek V4 (flash/pro) is text-only — every provider in models.dev reports `modalities.input = ["text"]` (verified: nvidia, hpc-ai, cortecs, orcarouter, nano-gpt, cloudflare-workers-ai). The wrong `vision: true` stopped `stripUnsupportedModalities()` from removing `image_url` blocks, so image-bearing requests reached upstream and were rejected with `400 "unknown variant image_url, expected text"`.
-- **Scope:** family-level correctness fix for the whole DeepSeek V4 generation on this provider, not a per-model workaround. The `*deepseek-v4*` PATTERN entry already (correctly) omits vision; only the provider override was wrong.
-- **Version hygiene:** `package-lock.json` was stale at `0.15.21` while `package.json` was `0.15.24`; both are now `0.15.25`.
+- **`open-sse/providers/capabilities.js`:** Set `vision: false` on `codebuddy-cn` → `deepseek-v4-pro` and `deepseek-v4-flash` (previously `vision: true`). Primary evidence is the observed upstream rejection — image-bearing requests to these models returned `400 "unknown variant image_url, expected text"` because the wrong flag kept the translator from stripping `image_url` blocks. Corroborated by models.dev, which reports `modalities.input = ["text"]` for DeepSeek V4 on every provider that publishes it (nvidia, hpc-ai, cortecs, orcarouter, nano-gpt, cloudflare-workers-ai). Written as an explicit `false` rather than an omission so the intent is "unsupported", not "unspecified".
+- **Scope:** `codebuddy-cn` was the only provider override carrying the wrong flag — the `nvidia` override and the `*deepseek-v4*` PATTERN entry were already text-only, so no other provider needed a change. Verified by grepping every `deepseek-v4` occurrence in `open-sse/` and `src/`.
+- **Regression guard (`tests/unit/capabilities-deepseek-v4-text-only.test.js`):** 6 new tests pin the resolved capability, assert the other caps (reasoning, thinking format, context) survive the fix, and add two family-level invariants — no provider override may grant `vision` to any `deepseek-v4*` model, and the pattern entry must stay text-only — so a future V4 variant is safe by default instead of one 400 away from a hotfix.
+- **Version hygiene:** `package-lock.json` was stale at `0.15.21` while `package.json` was `0.15.24`; both are now `0.15.25`. Regenerated with `npm ci`, which produced no dependency changes beyond the version strings — the tree was already consistent.
 
 # v0.15.24 (2026-08-14)
 
