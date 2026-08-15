@@ -1,5 +1,15 @@
 ## Unreleased
 
+### Fix: synced models lost every capability the sync did not carry (#283)
+
+- **`open-sse/providers/capabilities.js`:** dynamic capabilities (from the provider sync / DB) now **layer over** the resolved static entry instead of replacing it. They were merged over `DEFAULT_CAPABILITIES` alone, skipping `PROVIDER_CAPABILITIES` / `MODEL_CAPABILITIES` / `PATTERN_CAPABILITIES` entirely, so any field the sync did not record silently fell back to the floor.
+- **Observed symptom:** `kr/claude-opus-5` advertised `max_tokens: 64000` while its own `MODEL_CAPABILITIES` entry says `128000` — and its `-thinking` / `-agentic` variants, which are never synced and so were never overwritten, correctly reported `128000`. A base model disagreeing with its own variants about a value that comes from the same table was the tell.
+- **Why it was systemic, not one bad entry:** the sync records only `{ contextWindow, vision, reasoning }` (`src/app/api/providers/[id]/models/route.js`), so **every** synced model also lost `thinkingFormat`, `search`, `pdf`, `thinkingRange`, and the rest. `contextWindow` looked fine purely because it happens to be one of the three fields the sync carries.
+- **Why the existing safety net missed it:** `/v1/models` fills gaps only when a value is not `Number.isFinite`, and `64000` is a perfectly finite number — just the wrong one. Nothing downstream could tell a floor value from a real one.
+- **Dynamic caps still win where they have a value** — that is the point of the layer, e.g. a live catalog reporting a context window the static table does not know yet. Verified an explicit `false` also still overrides, rather than being treated as absent.
+- **`resolveKnownContextWindow()` was already correct** and is unchanged: it reads a single field (`dyn.contextWindow != null`) instead of spreading the object, so it never had this bug. Pinned by a test so the refactor cannot change it.
+- **Tests (`tests/unit/dynamic-caps-merge-order.test.js`, 10 new):** the synced-base case, base-agrees-with-its-variants, the fields the sync never carries, dynamic-still-wins, explicit-`false`, a dynamic-only model unknown to the static table, the genuinely-unknown floor, provider-override precedence, and `resolveKnownContextWindow` non-regression. Full suite: 1824 pass / 16 fail, all 16 pre-existing on a clean checkout (13 `AUDIT-*`, 3 `GOLDEN buildHeaders`).
+
 ### Fix: docker arm64 build flaked under QEMU — build natively per arch (#281)
 
 - **`.github/workflows/docker-publish.yml`:** split the single emulated multi-arch build into two **native** per-arch jobs — `linux/amd64` on `ubuntu-latest`, `linux/arm64` on `ubuntu-24.04-arm` (a GitHub-hosted native arm64 runner, free for public repos) — each pushing by digest, then a `merge` job that combines the digests into one manifest list and applies the tags. `setup-qemu-action` is gone.
