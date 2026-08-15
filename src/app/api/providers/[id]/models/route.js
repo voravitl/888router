@@ -9,6 +9,7 @@ import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from 
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { refreshProviderCredentials } from "open-sse/services/oauthCredentialManager.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { formatModelsFetchError, safeLogDetail } from "@/lib/upstreamErrorDetail";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -349,9 +350,9 @@ export async function GET(request, { params }) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log(`Error fetching models from ${connection.provider}:`, errorText);
+        console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(response.status, errorText));
         return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
+          { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
         );
       }
@@ -390,9 +391,9 @@ export async function GET(request, { params }) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log(`Error fetching models from ${connection.provider}:`, errorText);
+        console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(response.status, errorText));
         return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
+          { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
         );
       }
@@ -660,8 +661,16 @@ export async function GET(request, { params }) {
           }
         } else {
           const errorText = await response.text();
-          warning = `Failed to fetch Gemini CLI models: ${response.status} ${errorText}`;
-          console.log("Failed to fetch Gemini CLI models dynamically, falling back to static:", errorText);
+          // This warning reaches the client, so it gets the same sanitized
+          // detail as the error paths — never the raw upstream body.
+          warning = formatModelsFetchError(response.status, errorText).replace(
+            "Failed to fetch models:",
+            "Failed to fetch Gemini CLI models:"
+          );
+          console.log(
+            "Failed to fetch Gemini CLI models dynamically, falling back to static:",
+            safeLogDetail(response.status, errorText)
+          );
         }
       } catch (error) {
         warning = `Failed to fetch Gemini CLI models: ${error.message}`;
@@ -685,9 +694,9 @@ export async function GET(request, { params }) {
       });
       if (!response.ok) {
         const errorText = await response.text();
-        console.log(`Error fetching models from ollama-local:`, errorText);
+        console.log(`Error fetching models from ollama-local:`, safeLogDetail(response.status, errorText));
         return NextResponse.json(
-          { error: `Failed to fetch models: ${response.status}` },
+          { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
         );
       }
@@ -793,9 +802,9 @@ export async function GET(request, { params }) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.log(`Error fetching models from ${connection.provider}:`, errorText);
+      console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(response.status, errorText));
       return NextResponse.json(
-        { error: `Failed to fetch models: ${response.status}` },
+        { error: formatModelsFetchError(response.status, errorText) },
         { status: response.status }
       );
     }
