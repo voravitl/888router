@@ -1,310 +1,195 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  extractUpstreamErrorDetail,
+  UPSTREAM_ERROR_REASONS,
+  classifyUpstreamError,
+  explainUpstreamError,
   formatModelsFetchError,
-  redactSecrets,
   safeLogDetail,
 } from "../../src/lib/upstreamErrorDetail.js";
 
-// Model-sync failures surfaced as a bare `Failed to fetch models: 403`, which
-// makes a billing 403 indistinguishable from an auth 403 in the dashboard — the
-// distinguishing text was logged server-side and then dropped (#279).
-describe("upstream error detail extraction (#279)", () => {
-  it("surfaces the xAI billing reason that motivated this fix", () => {
-    const body = JSON.stringify({
-      code: "personal-team-blocked:spending-limit",
-      error: "You have run out of credits or need a Grok subscription.",
-    });
-    expect(formatModelsFetchError(403, body)).toBe(
-      "Failed to fetch models: 403 — You have run out of credits or need a Grok subscription."
+const FIXED_STRINGS = Object.values(UPSTREAM_ERROR_REASONS);
+
+/** Every string this module is allowed to emit is one of ours. */
+function isOurOwnText(out, status) {
+  return out === `Failed to fetch models: ${status}` || FIXED_STRINGS.some((r) => out.endsWith(r));
+}
+
+// The point of #279: a billing 403 and an auth 403 were the same string in the
+// dashboard, which is what made #272 hard to diagnose — no token refresh clears a
+// billing 403, but nothing said so.
+describe("upstream error classification (#279)", () => {
+  it("distinguishes the xAI billing 403 from an auth 403", () => {
+    const billing = formatModelsFetchError(
+      403,
+      JSON.stringify({
+        code: "personal-team-blocked:spending-limit",
+        error: "You have run out of credits or need a Grok subscription.",
+      })
     );
+    const auth = formatModelsFetchError(403, JSON.stringify({ error: { message: "Invalid API key provided" } }));
+
+    expect(billing).not.toBe(auth);
+    expect(billing).toContain("billing, not auth");
+    expect(auth).toContain("re-authenticate");
   });
 
-  it("distinguishes an auth 403 from a billing 403", () => {
-    const auth = formatModelsFetchError(403, JSON.stringify({ error: { message: "Invalid API key" } }));
-    const billing = formatModelsFetchError(403, JSON.stringify({ error: "Out of credits" }));
-    expect(auth).not.toBe(billing);
-    expect(auth).toContain("Invalid API key");
-    expect(billing).toContain("Out of credits");
+  it("classifies the reason classes it claims to", () => {
+    const cases = [
+      [402, "payment required", "billing"],
+      [429, "rate limit exceeded", "quota"],
+      [401, "token has expired", "auth_expired"],
+      [401, "invalid_grant", "auth_invalid"],
+      [401, "api key is required", "auth_missing"],
+      [403, "insufficient scope", "permission"],
+      [404, "no such endpoint", "not_found"],
+      [405, "method not allowed", "unsupported"],
+      [504, "deadline exceeded", "timeout"],
+      [503, "temporarily unavailable", "unavailable"],
+      [403, "blocked in your region", "blocked"],
+      [500, "ECONNREFUSED", "network"],
+      [500, "internal server error", "server"],
+    ];
+    for (const [status, body, expected] of cases) {
+      expect(classifyUpstreamError(status, body), `${status} ${body}`).toBe(expected);
+    }
   });
 
-  it("reads the nested OpenAI-style { error: { message } } shape", () => {
-    const body = JSON.stringify({ error: { message: "model not found", type: "invalid_request_error" } });
-    expect(extractUpstreamErrorDetail(body)).toBe("model not found");
+  it("puts billing ahead of auth when a body mentions both", () => {
+    // A billing failure often arrives worded like an auth failure. Getting this
+    // order wrong is the original #272 misdiagnosis.
+    expect(classifyUpstreamError(403, "unauthorized: you have run out of credits")).toBe("billing");
   });
 
-  it("falls back to the raw text for non-JSON bodies", () => {
-    expect(extractUpstreamErrorDetail("upstream connect error or disconnect")).toBe(
-      "upstream connect error or disconnect"
-    );
+  it("falls back to the status when the body says nothing recognisable", () => {
+    for (const [status, expected] of [
+      [401, "auth_invalid"],
+      [402, "billing"],
+      [403, "permission"],
+      [429, "quota"],
+      [599, "server"],
+    ]) {
+      expect(classifyUpstreamError(status, ""), String(status)).toBe(expected);
+    }
   });
 
-  it("reduces an HTML error page to its text", () => {
-    const detail = extractUpstreamErrorDetail("<html>\n  <body><h1>502 Bad Gateway</h1></body>\n</html>");
-    expect(detail).toContain("502 Bad Gateway");
-    expect(detail).not.toContain("<");
+  it("prefers a body signal over the status code", () => {
+    // A one-word body still carries a signal, and it wins: "Forbidden" on a 401
+    // describes a permission problem more precisely than the status alone.
+    expect(classifyUpstreamError(401, "Forbidden")).toBe("permission");
+    expect(classifyUpstreamError(500, "rate limit exceeded")).toBe("quota");
   });
 
-  it("drops script/style content from an HTML page", () => {
-    const detail = extractUpstreamErrorDetail("<html><script>var k='secret'</script><body>503</body></html>");
-    expect(detail).not.toContain("secret");
-    expect(detail).toContain("503");
-  });
-
-  it("never regresses below the old message when the body is empty", () => {
+  it("never regresses below the pre-#279 message when nothing is known", () => {
     for (const body of ["", "   ", null, undefined]) {
-      expect(formatModelsFetchError(500, body)).toBe("Failed to fetch models: 500");
+      expect(formatModelsFetchError(418, body)).toBe("Failed to fetch models: 418");
     }
+    expect(classifyUpstreamError(418, "teapot")).toBeNull();
+    expect(explainUpstreamError(418, "")).toBe("");
   });
 
-  it("caps the detail so a huge body cannot flood the UI", () => {
-    const detail = extractUpstreamErrorDetail("x".repeat(50000));
-    expect(detail.length).toBeLessThanOrEqual(300);
-    expect(detail.endsWith("…")).toBe(true);
-  });
-
-  it("does not throw on malformed or unexpected payloads", () => {
-    for (const body of ["{ not json", "[]", "null", "42", JSON.stringify({ nested: { deep: {} } })]) {
-      expect(() => formatModelsFetchError(400, body)).not.toThrow();
-    }
-  });
-
-  // A parsed payload with no allowlisted message field must yield NOTHING.
-  // Falling back to the raw body would defeat the allowlist and leak internal
-  // hostnames, request echoes, or credentials sitting in unrecognised fields.
-  it("emits nothing for a payload carrying no recognised message field", () => {
-    const body = JSON.stringify({ debug: { host: "internal-db.internal", request: { path: "/x" } } });
-    expect(extractUpstreamErrorDetail(body)).toBe("");
-    expect(formatModelsFetchError(500, body)).toBe("Failed to fetch models: 500");
-  });
-
-  it("does not emit a credential parked in a non-message field", () => {
-    const body = JSON.stringify({
-      error: { message: "bad" },
-      access_token: "QwErTyUiOpAsDfGhJkLzXcVbNm123456",
-    });
-    const out = formatModelsFetchError(403, body);
-    expect(out).not.toContain("QwErTyUiOpAsDfGhJkLzXcVbNm123456");
-    expect(out).toBe("Failed to fetch models: 403 — bad");
-  });
-});
-
-// A 401/403 body is exactly where an upstream is most likely to echo back the
-// credential it just rejected, so redaction is not hypothetical here. It is
-// defence in depth — the field allowlist above is the actual boundary.
-describe("secret redaction", () => {
-  it("redacts vendor key formats", () => {
-    for (const [secret, label] of [
-      ["sk-abcdef1234567890abcdef", "openai"],
-      ["xai-abcdef1234567890abcdef", "xai"],
-      ["ghp_abcdef1234567890abcdef", "github-pat"],
-      ["github_pat_abcdef1234567890abcdef", "github-fine-grained"],
-      ["glpat-abcdef1234567890abcdef", "gitlab"],
-      ["AIzaSyAbcdef1234567890abcdefghij", "google"],
-      ["xoxb-1234567890-abcdefghij", "slack"],
-      ["AKIAIOSFODNN7EXAMPLE", "aws"],
-    ]) {
-      const out = redactSecrets(`rejected key ${secret} is invalid`);
-      expect(out, label).not.toContain(secret);
-      expect(out, label).toContain("[redacted]");
-    }
-  });
-
-  it("redacts every HTTP auth scheme's value, keeping the scheme name", () => {
-    for (const scheme of ["Basic", "Bearer", "Digest", "Negotiate", "Token"]) {
-      const out = redactSecrets(`Authorization: ${scheme} dXNlcjpwYXNzd29yZA==`);
-      expect(out, scheme).not.toContain("dXNlcjpwYXNzd29yZA");
-    }
-  });
-
-  it("redacts quoted JSON fields whose name looks credential-bearing", () => {
-    for (const field of [
-      "access_token",
-      "refresh_token",
-      "client_secret",
-      "api_key",
-      "apiKey",
-      "password",
-      "session_id",
-      "signature",
-    ]) {
-      const out = redactSecrets(`{"${field}": "opaque-secret-value"}`);
-      expect(out, field).not.toContain("opaque-secret-value");
-    }
-  });
-
-  it("redacts JWTs and long hex runs", () => {
-    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r";
-    expect(redactSecrets(`token ${jwt} expired`)).not.toContain("dBjftJeZ4CVPmB92K27uhbUJU1p1r");
-    const hex = "a".repeat(40);
-    expect(redactSecrets(`machineId ${hex}`)).not.toContain(hex);
-  });
-
-  it("redacts through the public formatter, not just the helper", () => {
-    const body = JSON.stringify({ error: { message: "invalid key sk-abcdef1234567890abcdef" } });
-    const out = formatModelsFetchError(401, body);
-    expect(out).not.toContain("sk-abcdef1234567890abcdef");
-    expect(out).toContain("[redacted]");
-  });
-
-  // Regression set. Every entry here was a real over-redaction found in review:
-  // vendor prefixes without their delimiter matched ordinary words, and matching
-  // a keyword with an OPTIONAL separator mangled the exact messages this module
-  // exists to surface.
-  it("leaves ordinary prose untouched", () => {
-    for (const msg of [
-      "You have run out of credits or need a Grok subscription.",
-      "skyscraper too tall",
-      "ghostwriter needed",
-      "the token expired",
-      "OAuth2 access token could not be validated",
-      "invalid bearer credentials supplied",
-      "your api key is missing",
-      "skipped 3 models",
-    ]) {
-      expect(redactSecrets(msg), msg).toBe(msg);
-    }
-  });
-
-  // "token: expired" must NOT become "token [redacted]" — that destroys the
-  // diagnostic the user needs, which is the whole point of #279.
-  it("keeps a benign state word after a credential keyword", () => {
-    for (const msg of [
-      "token: expired",
-      "token=invalid",
-      "API key: missing",
-      "access_token: revoked",
-      "authorization: required",
-    ]) {
-      expect(redactSecrets(msg), msg).toBe(msg);
-    }
-  });
-
-  it("still redacts a real value after a credential keyword", () => {
-    const out = redactSecrets("token=QwErTyUiOpAsDfGhJkLzXcVbNm123456");
-    expect(out).not.toContain("QwErTyUiOpAsDfGhJkLzXcVbNm123456");
-  });
-
-  // Review round 2: the scheme match was case-sensitive, and the keyword match
-  // required a `:`/`=` separator, so these all passed through unredacted.
-  it("redacts a lowercase scheme and a whitespace-separated value", () => {
-    for (const input of [
-      "bearer abcdefghijklmnopqr",
-      "API key abcdefghijklmnopqr",
-      "cookie: sessionvalue12345678",
-      "Password: hunter2xyzabcdef",
-      "client secret abcdefghijklmnopqr",
-    ]) {
-      expect(redactSecrets(input), input).toContain("[redacted]");
-      expect(redactSecrets(input), input).toBe(
-        `${input.split(/\s*[:=]\s*|\s+(?=[A-Za-z0-9+/=._~-]{16,}$)/)[0]} [redacted]`
-      );
-    }
-  });
-
-  // A whitespace separator is ambiguous — English prose puts ordinary words
-  // after these nouns. The >=16-char floor is what keeps prose intact; an
-  // earlier revision without it produced "access token [redacted] not be
-  // validated".
-  it("keeps prose after a keyword when the next word is not credential-shaped", () => {
-    for (const msg of [
-      "OAuth2 access token could not be validated",
-      "access token could not be validated",
-      "password reset required",
-      "credential check failed",
-    ]) {
-      expect(redactSecrets(msg), msg).toBe(msg);
+  it("does not throw on any body shape", () => {
+    for (const body of ["{ not json", "[]", "null", "42", '"str"', "<html>x</html>", null, undefined, 7]) {
+      expect(() => formatModelsFetchError(500, body)).not.toThrow();
     }
   });
 });
 
-// Review round 2 found three ways to bypass the field allowlist. Each is pinned
-// here because each one re-opens the boundary if it regresses.
-describe("allowlist cannot be bypassed", () => {
-  it("withholds a bare top-level JSON string", () => {
-    // No field to allowlist, so emitting it would bypass the boundary entirely.
-    expect(extractUpstreamErrorDetail('"hunter2"')).toBe("");
-    expect(formatModelsFetchError(403, '"hunter2"')).toBe("Failed to fetch models: 403");
-  });
-
-  it("withholds bare top-level JSON scalars", () => {
-    for (const body of ["42", "true", "null", "[]", '["hunter2"]']) {
-      expect(extractUpstreamErrorDetail(body), body).toBe("");
-    }
-  });
-
-  it("withholds a JSON-shaped body that fails to parse", () => {
-    // Previously this fell through to the plain-text path, emitting the unknown
-    // fields the allowlist exists to suppress.
-    const truncated = '{"message":"ok","leaked_secret":"hunter2';
-    expect(extractUpstreamErrorDetail(truncated)).toBe("");
-    expect(extractUpstreamErrorDetail(truncated)).not.toContain("hunter2");
-  });
-
-  it("parses a large valid JSON body whole instead of slicing it into garbage", () => {
-    // Slicing before parsing made a valid body malformed, which diverted it to
-    // the raw-text path and leaked the very field being guarded.
-    const body = JSON.stringify({ leaked_secret: "S".repeat(9000), message: "ok" });
-    expect(extractUpstreamErrorDetail(body)).toBe("ok");
-    expect(extractUpstreamErrorDetail(body)).not.toContain("SSSS");
-  });
-
-  it("withholds a JSON body above the parse cap rather than degrading it", () => {
-    const body = JSON.stringify({ message: "ok", filler: "F".repeat(300000) });
-    expect(extractUpstreamErrorDetail(body)).toBe("");
-    expect(extractUpstreamErrorDetail(body)).not.toContain("FFFF");
-  });
-
-  it("still reads plain-text and HTML bodies, which have no fields to protect", () => {
-    expect(extractUpstreamErrorDetail("upstream connect error or disconnect")).toBe(
-      "upstream connect error or disconnect"
-    );
-    expect(extractUpstreamErrorDetail("<html><body>502 Bad Gateway</body></html>")).toContain("502");
-  });
-});
-
-// An ANSI escape can clear a terminal or hide adjacent log lines; bidi overrides
-// can visually reorder text. Neither belongs in something we log or render.
-describe("control character stripping", () => {
+// THE core invariant. Three review rounds of a redaction-based design each lost
+// to a new evasion, so the design changed: the body is matched against, never
+// emitted. Each entry below is a secret that leaked in some earlier revision.
+describe("no upstream bytes are ever emitted", () => {
+  const SECRETS = [
+    "hunter2",
+    "correct horse battery staple",
+    "verysecretvalue123",
+    "abcdefghijklmnop",
+    "sk-abcdef1234567890abcdef",
+    "dXNlcjpwYXNzd29yZA",
+    "QwErTyUiOpAsDfGhJkLzXcVbNm123456",
+    "db.internal",
+    "shouldnotappear1234",
+  ];
+  const NUL = String.fromCharCode(0);
   const ESC = String.fromCharCode(27);
+  const ZWSP = String.fromCodePoint(0x200b);
 
-  it("strips ANSI escapes from the emitted detail", () => {
-    const detail = extractUpstreamErrorDetail(JSON.stringify({ message: `${ESC}[2Jcleared` }));
-    expect(detail).not.toContain(ESC);
-    expect(detail).toBe("[2Jcleared");
+  const BODIES = [
+    ["bare top-level JSON string", 403, '"hunter2"'],
+    ["NUL-prefixed JSON", 403, `${NUL}${JSON.stringify({ message: "safe", rejected_value: "hunter2" })}`],
+    ["control char inside keyword", 401, JSON.stringify({ message: `Bear${ESC}er abcdefghijklmnop` })],
+    ["zero-width space inside keyword", 401, `Bear${ZWSP}er abcdefghijklmnop`],
+    ["multi-word quoted password", 401, 'password: "correct horse battery staple"'],
+    ["multiple cookie pairs", 401, "cookie: sid=abc; auth=verysecretvalue123"],
+    ["basic auth value", 401, "Authorization: Basic dXNlcjpwYXNzd29yZA=="],
+    ["credential in non-message field", 403, JSON.stringify({ access_token: "QwErTyUiOpAsDfGhJkLzXcVbNm123456", error: { message: "bad" } })],
+    ["internal metadata", 500, JSON.stringify({ internal: { host: "db.internal", token: "shouldnotappear1234" } })],
+    ["truncated JSON", 500, '{"message":"ok","leaked":"hunter2'],
+    ["secret inside the message field", 401, JSON.stringify({ error: { message: "invalid key sk-abcdef1234567890abcdef" } })],
+    ["oversized body", 500, JSON.stringify({ message: "ok", filler: "hunter2".repeat(50000) })],
+  ];
+
+  for (const [label, status, body] of BODIES) {
+    it(`emits none of the body: ${label}`, () => {
+      const out = formatModelsFetchError(status, body);
+      for (const secret of SECRETS) {
+        expect(out, `${label} leaked ${secret}`).not.toContain(secret);
+      }
+      expect(isOurOwnText(out, status), `${label} produced off-table text: ${out}`).toBe(true);
+    });
+  }
+
+  it("only ever returns strings from the fixed table", () => {
+    // Fuzz: no input may produce text outside the table.
+    const fragments = ["error", "token", "credits", "{", '"', "\\", NUL, ESC, ZWSP, "<html>", "%s", "‮"];
+    for (let i = 0; i < 400; i++) {
+      let body = "";
+      const parts = 1 + (i % 5);
+      for (let p = 0; p < parts; p++) body += fragments[(i * 7 + p * 3) % fragments.length];
+      const status = [400, 401, 402, 403, 404, 429, 500, 503][i % 8];
+      expect(isOurOwnText(formatModelsFetchError(status, body), status), JSON.stringify(body)).toBe(true);
+    }
   });
 
-  it("strips bidi overrides", () => {
-    const rlo = String.fromCodePoint(0x202e);
-    const detail = extractUpstreamErrorDetail(JSON.stringify({ message: `safe${rlo}reversed` }));
-    expect(detail).not.toContain(rlo);
-  });
-
-  it("strips control characters from the log form too", () => {
-    expect(safeLogDetail(JSON.stringify({ message: `${ESC}[31mred` }))).not.toContain(ESC);
+  it("cannot be made to emit text by an evasion that defeats classification", () => {
+    // Fail-safe direction: evasion costs the attacker a LESS informative
+    // message, never a disclosure.
+    const evaded = formatModelsFetchError(418, `cr${ZWSP}ed${NUL}its hunter2`);
+    expect(evaded).not.toContain("hunter2");
+    expect(isOurOwnText(evaded, 418)).toBe(true);
   });
 });
 
-// The raw body was previously logged verbatim, which persists any credential the
-// upstream echoed back — inconsistent with this module's own premise.
+// Invisible characters are deleted before matching, so a keyword split by one is
+// still recognised. This closes the evasion without needing the folded text to be
+// safe to print — it is never printed.
+describe("invisible-character folding", () => {
+  it("still classifies a keyword split by an invisible character", () => {
+    for (const cp of [0x200b, 0x200e, 0x202e, 0x2060, 0xfeff, 0x00, 0x1b]) {
+      const sep = String.fromCodePoint(cp);
+      const body = `out of cr${sep}edits`;
+      expect(classifyUpstreamError(403, body), `U+${cp.toString(16)}`).toBe("billing");
+    }
+  });
+});
+
+// The raw body used to be logged verbatim, persisting any echoed credential to
+// disk — inconsistent with the module's own premise.
 describe("safeLogDetail", () => {
-  it("logs the sanitized detail, not the raw body", () => {
+  it("logs the classification and a byte count, never the body", () => {
     const body = JSON.stringify({ error: { message: "invalid key sk-abcdef1234567890abcdef" } });
-    const out = safeLogDetail(body);
+    const out = safeLogDetail(401, body);
     expect(out).not.toContain("sk-abcdef1234567890abcdef");
-    expect(out).toContain("[redacted]");
+    expect(out).toBe(`status=401 reason=auth_invalid body=${body.length}B (not logged)`);
   });
 
-  it("withholds an unrecognised body instead of dumping it", () => {
-    const body = JSON.stringify({ internal: { host: "db.internal", token: "shouldnotappear1234567" } });
-    const out = safeLogDetail(body);
-    expect(out).not.toContain("shouldnotappear1234567");
-    expect(out).not.toContain("db.internal");
-    expect(out).toContain("withheld");
+  it("marks an unclassifiable body rather than dumping it", () => {
+    const out = safeLogDetail(418, "totally opaque hunter2");
+    expect(out).not.toContain("hunter2");
+    expect(out).toContain("reason=unclassified");
   });
 
-  it("reports a byte count for a withheld body", () => {
-    expect(safeLogDetail(JSON.stringify({ unknown: 1 }))).toMatch(/\d+ bytes withheld/);
+  it("handles a missing body", () => {
+    expect(safeLogDetail(500, undefined)).toContain("body=0B");
   });
 });

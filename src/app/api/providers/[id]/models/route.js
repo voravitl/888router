@@ -350,7 +350,7 @@ export async function GET(request, { params }) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(errorText));
+        console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(response.status, errorText));
         return NextResponse.json(
           { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
@@ -391,7 +391,7 @@ export async function GET(request, { params }) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(errorText));
+        console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(response.status, errorText));
         return NextResponse.json(
           { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
@@ -669,7 +669,7 @@ export async function GET(request, { params }) {
           );
           console.log(
             "Failed to fetch Gemini CLI models dynamically, falling back to static:",
-            safeLogDetail(errorText)
+            safeLogDetail(response.status, errorText)
           );
         }
       } catch (error) {
@@ -694,7 +694,7 @@ export async function GET(request, { params }) {
       });
       if (!response.ok) {
         const errorText = await response.text();
-        console.log(`Error fetching models from ollama-local:`, safeLogDetail(errorText));
+        console.log(`Error fetching models from ollama-local:`, safeLogDetail(response.status, errorText));
         return NextResponse.json(
           { error: formatModelsFetchError(response.status, errorText) },
           { status: response.status }
@@ -802,7 +802,7 @@ export async function GET(request, { params }) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(errorText));
+      console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(response.status, errorText));
       return NextResponse.json(
         { error: formatModelsFetchError(response.status, errorText) },
         { status: response.status }

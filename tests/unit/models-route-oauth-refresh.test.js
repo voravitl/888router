@@ -126,7 +126,9 @@ describe("Models route — generic OAuth refresh-and-retry", () => {
     expect(res.status).toBe(403);
     // The upstream body is now appended so a billing 403 is distinguishable
     // from an auth 403 in the dashboard (#279). Status prefix unchanged.
-    expect(body.error).toBe("Failed to fetch models: 403 — Forbidden");
+    // The upstream body is classified into one of our own explanations (#279);
+    // no upstream bytes are echoed back. Status prefix unchanged.
+    expect(body.error).toBe("Failed to fetch models: 403 — this account lacks permission for the models endpoint");
   });
 
   it("does not retry when the refresh fails and returns the original error", async () => {
@@ -156,7 +158,11 @@ describe("Models route — generic OAuth refresh-and-retry", () => {
     expect(res.status).toBe(403);
     // Upstream body appended (#279) — this is the case the detail matters for:
     // the reason the refresh did not help is now visible to the user.
-    expect(body.error).toBe("Failed to fetch models: 403 — OAuth2 access token could not be validated");
+    // Classified, not echoed (#279) — and this is the case the detail matters
+    // for: the user learns re-authentication is needed, not just "403".
+    expect(body.error).toBe(
+      "Failed to fetch models: 403 — credentials rejected by the upstream — re-authenticate this connection"
+    );
   });
 
   it("rebuilds the authQuery request with the fresh token on retry (gemini)", async () => {
@@ -271,6 +277,8 @@ describe("Models route — generic OAuth refresh-and-retry", () => {
     expect(res.status).toBe(403);
     // The upstream body is now appended so a billing 403 is distinguishable
     // from an auth 403 in the dashboard (#279). Status prefix unchanged.
-    expect(body.error).toBe("Failed to fetch models: 403 — Forbidden");
+    // The upstream body is classified into one of our own explanations (#279);
+    // no upstream bytes are echoed back. Status prefix unchanged.
+    expect(body.error).toBe("Failed to fetch models: 403 — this account lacks permission for the models endpoint");
   });
 });
