@@ -323,37 +323,69 @@ export function registerDynamicCapabilities(modelId, caps) {
  * @param {string} model
  * @returns {object} full capabilities object
  */
-export function getCapabilitiesForModel(provider, model) {
-  if (!model) return { ...DEFAULT_CAPABILITIES };
+/**
+ * Catalogue-wide static entry for a model, ignoring provider-specific overrides.
+ * Those are applied separately, LAST, because they must also outrank dynamic caps.
+ */
+function catalogueCapabilitiesFor(model, baseModel) {
+  // 1. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
+  if (MODEL_CAPABILITIES[baseModel]) return MODEL_CAPABILITIES[baseModel];
+  if (MODEL_CAPABILITIES[model]) return MODEL_CAPABILITIES[model];
 
-  // 1. Provider-specific override
-  if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
-    return { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model] };
-  }
-
-  const baseModel = model.includes("/") ? model.split("/").pop() : model;
-
-  // 2. Dynamic Runtime / DB Cache (Extracted from Upstream Sync or DB)
-  if (DYNAMIC_CAPABILITIES_CACHE.has(baseModel)) {
-    return { ...DEFAULT_CAPABILITIES, ...DYNAMIC_CAPABILITIES_CACHE.get(baseModel) };
-  }
-  if (DYNAMIC_CAPABILITIES_CACHE.has(model)) {
-    return { ...DEFAULT_CAPABILITIES, ...DYNAMIC_CAPABILITIES_CACHE.get(model) };
-  }
-
-  // 3. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
-  if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
-  if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
-
-  // 4. Pattern match (first match wins)
+  // 2. Pattern match (first match wins)
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return { ...DEFAULT_CAPABILITIES, ...caps };
+      return caps;
     }
   }
 
-  // 5. Safe Floor
-  return { ...DEFAULT_CAPABILITIES };
+  // 3. Nothing known
+  return null;
+}
+
+export function getCapabilitiesForModel(provider, model) {
+  if (!model) return { ...DEFAULT_CAPABILITIES };
+
+  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  const catalogueCaps = catalogueCapabilitiesFor(model, baseModel);
+
+  // Provider-specific overrides are applied LAST — above dynamic caps, not below.
+  // They are hand-written statements about one provider's upstream ("this
+  // provider's deepseek-v4-pro is text-only"), so a live sync must not be able to
+  // contradict them. Layering them under dynamic — which an earlier revision of
+  // this change did — let a synced `vision: true` overturn `codebuddy-cn`'s
+  // deliberate `vision: false`, which is exactly the defect class of #198: the
+  // wrong flag stops the translator stripping image_url and the upstream 400s.
+  const providerCaps = (provider && PROVIDER_CAPABILITIES[provider]?.[model]) || null;
+
+  // Dynamic caps (upstream sync / DB) LAYER OVER the catalogue entry: they win on
+  // the fields they carry, and leave every catalogue field the sync omitted
+  // intact. (The earlier wording here said "fill gaps, never replace", which
+  // understated it — an overlapping field IS replaced, deliberately, since that
+  // is how a live catalogue reports something newer than the static table.)
+  //
+  // They used to be merged over DEFAULT_CAPABILITIES alone, skipping the static
+  // table entirely, so any field the sync did not carry silently fell back to
+  // the floor. The provider sync only records { contextWindow, vision,
+  // reasoning } (src/app/api/providers/[id]/models/route.js), so every synced
+  // model lost its real maxOutput: kr/claude-opus-5 advertised max_tokens 64000
+  // (the DEFAULT floor) while its own MODEL_CAPABILITIES entry says 128000, and
+  // its -thinking/-agentic variants — never synced, so never overwritten —
+  // correctly reported 128000. Same reason thinkingFormat/search/pdf could be
+  // dropped from a synced model.
+  //
+  // The floor is `Number.isFinite`, so the /v1/models fill-gap path could not
+  // rescue it either: 64000 is a valid number, just the wrong one.
+  const dynamicCaps =
+    DYNAMIC_CAPABILITIES_CACHE.get(baseModel) ?? DYNAMIC_CAPABILITIES_CACHE.get(model) ?? null;
+
+  if (!catalogueCaps && !dynamicCaps && !providerCaps) return { ...DEFAULT_CAPABILITIES };
+  return {
+    ...DEFAULT_CAPABILITIES,
+    ...(catalogueCaps || {}),
+    ...(dynamicCaps || {}),
+    ...(providerCaps || {}),
+  };
 }
 
 /**
