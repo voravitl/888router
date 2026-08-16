@@ -1,6 +1,6 @@
-## Unreleased
+# v0.15.27 (2026-08-16)
 
-### Fix: synced models lost every capability the sync did not carry (#283)
+## Fix: synced models lost every capability the sync did not carry (#283)
 
 - **`open-sse/providers/capabilities.js`:** dynamic capabilities (from the provider sync / DB) now **layer over** the resolved static entry instead of replacing it. They were merged over `DEFAULT_CAPABILITIES` alone, skipping `PROVIDER_CAPABILITIES` / `MODEL_CAPABILITIES` / `PATTERN_CAPABILITIES` entirely, so any field the sync did not record silently fell back to the floor.
 - **Observed symptom:** `kr/claude-opus-5` advertised `max_tokens: 64000` while its own `MODEL_CAPABILITIES` entry says `128000` — and its `-thinking` / `-agentic` variants, which are never synced and so were never overwritten, correctly reported `128000`. A base model disagreeing with its own variants about a value that comes from the same table was the tell.
@@ -11,7 +11,7 @@
 - **`resolveKnownContextWindow()` was already correct** and is unchanged: it reads a single field (`dyn.contextWindow != null`) instead of spreading the object, so it never had this bug. Pinned by a test so the refactor cannot change it.
 - **Tests (`tests/unit/dynamic-caps-merge-order.test.js`, 14 new):** the synced-base case, base-agrees-with-its-variants, the fields the sync never carries, dynamic-still-wins, explicit-`false`, a dynamic-only model unknown to the static table, the genuinely-unknown floor, provider-override precedence, and `resolveKnownContextWindow` non-regression. Full suite: 1828 pass / 16 fail, all 16 pre-existing on a clean checkout (13 `AUDIT-*`, 3 `GOLDEN buildHeaders`).
 
-### Fix: docker arm64 build flaked under QEMU — build natively per arch (#281)
+## Fix: docker arm64 build flaked under QEMU — build natively per arch (#281)
 
 - **`.github/workflows/docker-publish.yml`:** split the single emulated multi-arch build into two **native** per-arch jobs — `linux/amd64` on `ubuntu-latest`, `linux/arm64` on `ubuntu-24.04-arm` (a GitHub-hosted native arm64 runner, free for public repos) — each pushing by digest, then a `merge` job that combines the digests into one manifest list and applies the tags. `setup-qemu-action` is gone.
 - **Why:** two docker builds failed on healthy commits with unrelated-looking errors, both under `/dev/.buildkit_qemu_emulator` — a stalled `npm ci` (`ETIMEDOUT`), and `Cannot find module '../lightningcss.linux-arm64-musl.node'` during `next build`. Neither reproduced natively: running the same committed lockfile under `--platform linux/arm64` installed `lightningcss-linux-arm64-musl@1.32.0`, produced the `.node` binary, and required it successfully — including when the npm cache had been populated by an amd64 pass first, which ruled out cross-platform cache contamination. The lockfile declares the arm64-musl optional dep correctly (`os: linux, cpu: arm64, libc: musl`). The emulator was the variable, so it is removed rather than worked around.
@@ -20,7 +20,13 @@
 - **Retry as a safety net, not the fix:** each arch build gets one automatic retry (`continue-on-error` + a second attempt). Native runners remove the known flake source, but a registry 5xx can still lose a build, and a lost build means `:latest` silently lags master. If both attempts produce no digest the job fails loudly instead of letting the merge proceed.
 - **Per-arch GHA cache scopes** (`scope=amd64` / `scope=arm64`): one shared scope would have the two jobs overwrite each other's cache manifest on every run. `fail-fast: false` keeps one arch's failure from cancelling the sibling mid-push.
 
-### Fix: model-sync surfaced a bare status, hiding why the call failed (#279)
+## Fix: `npm ci` for `tests/` broke CI — its lockfile is gitignored (#284)
+
+- **`.github/workflows/docker-publish.yml`:** reverted the `tests/` dependency step to `npm install`. The multi-arch rework (#281) had switched it to `npm ci`, which fails with `EUSAGE` on a fresh runner because `tests/package-lock.json` is deliberately gitignored (`tests/.gitignore`) and therefore never reaches CI. Root deps stay on `npm ci` — that lockfile *is* tracked — matching `.github/workflows/ci.yml`, which uses `npm install` for `tests/` for this same reason.
+- **The verification was the actual mistake, not just the change:** "lockfile is in sync" had been checked by running `npm ci` against a copy of the *local* file, a test that could never fail because it exercised a file the runner never sees. The check that mattered was `git ls-files tests/package-lock.json`, which is empty.
+- **`tests/.gitignore` now records why the file stays untracked**, so the same "improvement" is not reapplied.
+
+## Fix: model-sync surfaced a bare status, hiding why the call failed (#279)
 
 - **`src/lib/upstreamErrorDetail.js` (new):** classifies an upstream failure into one of a **fixed table of explanations written by us**, so `Failed to fetch models: 403` becomes `Failed to fetch models: 403 — out of credits or subscription required (billing, not auth — refreshing the token will not help)`. Thirteen reason classes (billing, quota, auth invalid/expired/missing, permission, not-found, unsupported, server, unavailable, timeout, network, blocked) are matched from keyword signals in the body, with the HTTP status as fallback. Billing is matched ahead of auth deliberately — a billing failure is usually worded like an auth failure, which is exactly the #272 misdiagnosis.
 - **Why it mattered:** the distinguishing text was already read into `errorText` and logged server-side, then dropped before the response. From the dashboard a billing 403 and an auth 403 were the same string, so "retry still hits 403" looked like a refresh bug when no refresh could ever have helped.
@@ -32,7 +38,7 @@
 - **Tests:** `tests/unit/upstream-error-detail.test.js` (24) covers each reason class, the billing-over-auth ordering, status fallback, the never-regress case, and — as the core invariant — a table of twelve bodies replaying **every secret that leaked in any earlier revision**, asserting none appears in the output and that the output is always one of our own strings. A 400-case fuzz pass asserts the same. Three assertions in `tests/unit/models-route-oauth-refresh.test.js` were updated for the intentionally changed strings. Full suite: 1795 pass / 16 fail, all 16 pre-existing on a clean checkout (13 `AUDIT-*`, 3 `GOLDEN buildHeaders` — verified by stash-and-rerun).
 - **Tradeoff, stated plainly:** the upstream's exact wording is no longer shown. In exchange the message is actionable (it says whether to re-authenticate, top up, or retry) and cannot leak a credential. The raw body remains available to whoever runs the upstream; it was never a reliable diagnostic for our users anyway.
 
-### Fix: `docker-publish` build job had no timeout, letting stalled runs block the queue for hours (#277)
+## Fix: `docker-publish` build job had no timeout, letting stalled runs block the queue for hours (#277)
 
 - **`.github/workflows/docker-publish.yml`:** Added `timeout-minutes: 45` to the `build-and-push` job. It previously inherited the 360-minute default (the `test` job already had 20), so a stalled multi-arch build (QEMU arm64 emulation plus a hung `npm ci`) sat `in_progress` and, combined with `cancel-in-progress: false`, blocked the concurrency group behind it. Three such zombie runs were found and cancelled by hand — two of them from the v0.15.25 release, stuck for ~2 hours. The last 8 successful builds measured 12-18 minutes, so 45 leaves ~2.5x headroom.
 - **`concurrency.group` deliberately left on `github.ref`.** A release does fire two runs on one commit (the master push, then the `v*` tag push), which looks like a duplicate-build race. It is not: the two runs publish **disjoint** tag sets — `:latest` and `:sha-xxx` are gated on `{{is_default_branch}}`, and `type=semver` only resolves on the tag event. Verified against the v0.15.24 release logs, where the tag run pushed `:0.15.24` and nothing else. Re-keying the group on `github.sha` would have merged those two harmless runs into one group while **splitting consecutive master pushes apart**, letting commit A and commit B publish `:latest` concurrently — an older build finishing last would clobber the newer `:latest`. A comment now records this so the same "fix" is not attempted again.
