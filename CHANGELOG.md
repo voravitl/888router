@@ -20,6 +20,12 @@
 - **Retry as a safety net, not the fix:** each arch build gets one automatic retry (`continue-on-error` + a second attempt). Native runners remove the known flake source, but a registry 5xx can still lose a build, and a lost build means `:latest` silently lags master. If both attempts produce no digest the job fails loudly instead of letting the merge proceed.
 - **Per-arch GHA cache scopes** (`scope=amd64` / `scope=arm64`): one shared scope would have the two jobs overwrite each other's cache manifest on every run. `fail-fast: false` keeps one arch's failure from cancelling the sibling mid-push.
 
+## Fix: `npm ci` for `tests/` broke CI — its lockfile is gitignored (#284)
+
+- **`.github/workflows/docker-publish.yml`:** reverted the `tests/` dependency step to `npm install`. The multi-arch rework (#281) had switched it to `npm ci`, which fails with `EUSAGE` on a fresh runner because `tests/package-lock.json` is deliberately gitignored (`tests/.gitignore`) and therefore never reaches CI. Root deps stay on `npm ci` — that lockfile *is* tracked — matching `.github/workflows/ci.yml`, which uses `npm install` for `tests/` for this same reason.
+- **The verification was the actual mistake, not just the change:** "lockfile is in sync" had been checked by running `npm ci` against a copy of the *local* file, a test that could never fail because it exercised a file the runner never sees. The check that mattered was `git ls-files tests/package-lock.json`, which is empty.
+- **`tests/.gitignore` now records why the file stays untracked**, so the same "improvement" is not reapplied.
+
 ## Fix: model-sync surfaced a bare status, hiding why the call failed (#279)
 
 - **`src/lib/upstreamErrorDetail.js` (new):** classifies an upstream failure into one of a **fixed table of explanations written by us**, so `Failed to fetch models: 403` becomes `Failed to fetch models: 403 — out of credits or subscription required (billing, not auth — refreshing the token will not help)`. Thirteen reason classes (billing, quota, auth invalid/expired/missing, permission, not-found, unsupported, server, unavailable, timeout, network, blocked) are matched from keyword signals in the body, with the HTTP status as fallback. Billing is matched ahead of auth deliberately — a billing failure is usually worded like an auth failure, which is exactly the #272 misdiagnosis.
