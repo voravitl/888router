@@ -358,8 +358,11 @@ export function getCapabilitiesForModel(provider, model) {
   // wrong flag stops the translator stripping image_url and the upstream 400s.
   const providerCaps = (provider && PROVIDER_CAPABILITIES[provider]?.[model]) || null;
 
-  // Dynamic caps (upstream sync / DB) LAYER OVER the catalogue entry — they must
-  // fill gaps, never replace what the static table already knows.
+  // Dynamic caps (upstream sync / DB) LAYER OVER the catalogue entry: they win on
+  // the fields they carry, and leave every catalogue field the sync omitted
+  // intact. (The earlier wording here said "fill gaps, never replace", which
+  // understated it — an overlapping field IS replaced, deliberately, since that
+  // is how a live catalogue reports something newer than the static table.)
   //
   // They used to be merged over DEFAULT_CAPABILITIES alone, skipping the static
   // table entirely, so any field the sync did not carry silently fell back to
