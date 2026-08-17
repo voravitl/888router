@@ -19,6 +19,10 @@ services:
       - "20128:20128"
     labels:
       - "dev.orbstack.http-port=20128"
+      # Watchtower re-pulls this container when the published image changes.
+      # Only 888router opts in — headroom/searxng stay pinned to avoid
+      # third-party breaking changes dropping in unannounced.
+      - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - 888router-data:/app/data
     env_file:
@@ -104,6 +108,37 @@ services:
       start_period: 15s
     # Search engines may be flaky; a full readiness gate would flap the app.
     # Liveness ("is SearXNG up") is enough for the gateway to route queries.
+
+  # Auto-updater: re-pulls and recreates containers carrying the
+  # com.centurylinklabs.watchtower.enable=true label AND matching the name
+  # filter (the 888router service above). Everything else — headroom, searxng —
+  # is deliberately left out. A name filter plus the label is belt-and-braces:
+  # the label is how we opt in, the name is how we scope to exactly one
+  # container on a host that may run other compose projects.
+  # Polls Docker Hub every 1h (WATCHTOWER_POLL_INTERVAL).
+  #
+  # The upstream containrrr/watchtower repo was archived 2025-12-17 (no more
+  # fixes). The image is pinned by DIGEST so a floating :latest cannot silently
+  # move to a newer-but-unmaintained build. If this becomes a problem, the
+  # downgrade path is dropping this service and going back to manual
+  # `docker compose pull && up -d`.
+  watchtower:
+    image: containrrr/watchtower@sha256:6dd50763bbd632a83cb154d5451700530d1e44200b268a4e9488fefdfcf2b038
+    container_name: watchtower
+    restart: unless-stopped
+    command:
+      - 888router
+    environment:
+      WATCHTOWER_POLL_INTERVAL: "3600"
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_CLEANUP: "true"
+      # OrbStack rejects Docker API clients older than 1.40; the watchtower image
+      # ships a go-dockerclient that defaults to 1.25 and crashes on startup
+      # ("client version 1.25 is too old"). Override the client API version so
+      # it negotiates one the daemon accepts. 1.40 is the floor and works.
+      DOCKER_API_VERSION: "1.40"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
   888router-data:
