@@ -172,6 +172,18 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "deepseek-v4-pro", { reasoning_effort: "ultra" }, "deepseek");
     expect(out.reasoning_effort).toBe("max");
   });
+  it("ultra budget in qwen clamps to maxOutput", () => {
+    const out = apply("openai", "qwen3-coder", { reasoning_effort: "ultra" }, "qwen");
+    expect(out.enable_thinking).toBe(true);
+    expect(out.thinking_budget).toBeLessThanOrEqual(64000);
+    expect(out.thinking_budget).toBeGreaterThan(0);
+  });
+  it("ultra budget in hunyuan clamps to its 262144 maxOutput", () => {
+    const out = apply("openai", "hunyuan-turbos", { reasoning_effort: "ultra" }, "hunyuan");
+    expect(out.thinking.type).toBe("enabled");
+    expect(out.thinking.budget_tokens).toBeLessThanOrEqual(262144);
+    expect(out.thinking.budget_tokens).toBeGreaterThan(0);
+  });
   it("ultra clamps to high for step (native enum low/medium/high)", () => {
     const out = apply("openai", "step-2-16k", { reasoning_effort: "ultra" }, "step");
     expect(out.reasoning_effort).toBe("high");

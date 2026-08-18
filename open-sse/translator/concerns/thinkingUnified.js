@@ -126,7 +126,7 @@ function toBudget(cfg, range, maxOutput) {
     if (range.min != null && budget < range.min) budget = range.min;
     if (range.max != null && budget > range.max) budget = range.max;
   }
-  if (Number.isFinite(maxOutput) && budget > maxOutput) budget = maxOutput;
+  if (Number.isFinite(maxOutput) && budget >= maxOutput) budget = Math.max(1, maxOutput - 1);
   return budget;
 }
 
@@ -202,6 +202,8 @@ function applyFormat(fmt, body, cfg, caps) {
       // output_config for auto so adaptive thinking decides on its own.
       const level = toLevel(eff);
       if (level && level !== "auto") {
+        // toLevel() already collapses ultra→max; keep max/ultra keys anyway as a
+        // cheap guard against future toLevel() changes silently widening the enum.
         const effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "high", max: "high", ultra: "high" }[level];
         if (effort) body.output_config = { effort };
       }
