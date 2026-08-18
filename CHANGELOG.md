@@ -3,8 +3,8 @@
 ## Fix: `reasoning_effort="ultra"` no longer 400s or silently drops thinking per provider
 
 - **`open-sse/translator/concerns/thinking.js`:** added `ultra` to `EFFORT_LEVELS` and `LEVEL_TO_BUDGET` (160000) so the level is recognized as a "max+" request.
-- **`open-sse/translator/concerns/thinkingUnified.js`:** `toLevel()` clamps `ultra → max` so no wire format ever sees the invalid string. Claude-adaptive `output_config.effort` also now clamps any value beyond `high` (native enum is low/medium/high only). Result per provider: OpenAI `reasoning_effort=max`, Claude adaptive `effort=high`, budget formats clamp 160000 to range, Gemini `thinkingLevel=high`, Kimi/DeepSeek `max`, Step `high` — instead of upstream 400s (openai/gemini/claude/step) or silent `max`→`high` collapse (kimi).
-- **Test:** `tests/translator/thinking-unified.test.js` covers ultra across openai, claude-adaptive, claude-budget, gemini-3, kimi, deepseek, step.
+- **`open-sse/translator/concerns/thinkingUnified.js`:** `toLevel()` clamps `ultra → max` so no wire format ever sees the invalid string. Claude-adaptive `output_config.effort` now maps every level onto the native enum (low/medium/high only, `minimal→low`, beyond-`high`→`high`, `auto` omits `output_config`). Budget formats (`claude-budget`, `gemini-budget`, `qwen`, `hunyuan`) now clamp the budget to `caps.maxOutput` (strict `<`, so `budget_tokens` never equals `max_tokens` — Anthropic rejects that). Result per provider: OpenAI `reasoning_effort=max`, Claude adaptive `effort=high`, Claude/gemini/qwen/hunyuan budgets clamp to the model's output cap, Gemini `thinkingLevel=high`, Kimi/DeepSeek `max`, Step `high` — instead of upstream 400s (openai/gemini/claude/step) or silent collapse (kimi).
+- **Test:** `tests/translator/thinking-unified.test.js` covers ultra across openai, claude-adaptive, claude-budget, gemini-3, kimi, deepseek, step, qwen, hunyuan, plus claude-adaptive `minimal`/`auto` regressions.
 
 # v0.15.29 (2026-08-18)
 
