@@ -190,6 +190,16 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra " }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
   });
+  it("hermes reasoning.effort ultra shape clamps too", () => {
+    // Hermes sends extra_body.reasoning which the OpenAI SDK merges to the
+    // top-level body.reasoning = { enabled, effort }. extractThinking reads it.
+    const body = { messages: [], reasoning: { enabled: true, effort: "ultra" }, reasoning_effort: "ultra" };
+    const intent = extractThinking(body);
+    expect(intent).toEqual({ mode: "level", level: "ultra" });
+    const out = apply("openai", "gpt-5.3-codex", { ...body }, "codex");
+    expect(out.reasoning_effort).toBe("xhigh");
+    expect(out.reasoning).toBeUndefined(); // stripAll removed the raw object
+  });
   it("ultra preserves answer room on claude-budget (budget == maxOutput-1024)", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "ultra" }, "claude");
     // Anthropic requires budget_tokens < max_tokens; the 1024 floor matches the
