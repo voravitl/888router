@@ -113,7 +113,10 @@ function resolveFormat(targetFormat, model, provider) {
 }
 
 // Convert unified config to a budget number (for budget-based formats).
-function toBudget(cfg, range) {
+// Clamped to thinkingRange (provider-native min/max) AND maxOutput: Anthropic
+// requires budget_tokens < max_tokens, so an unbounded "ultra" (160000) on a
+// small model must not sail past its output cap (upstream 400 otherwise).
+function toBudget(cfg, range, maxOutput) {
   let budget;
   if (cfg.mode === "budget") budget = cfg.budget;
   else if (cfg.mode === "level") budget = effortToBudget(cfg.level);
@@ -123,6 +126,7 @@ function toBudget(cfg, range) {
     if (range.min != null && budget < range.min) budget = range.min;
     if (range.max != null && budget > range.max) budget = range.max;
   }
+  if (Number.isFinite(maxOutput) && budget > maxOutput) budget = maxOutput;
   return budget;
 }
 
@@ -193,15 +197,19 @@ function applyFormat(fmt, body, cfg, caps) {
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       body.thinking = { type: "adaptive" };
+      // Claude native output_config.effort accepts low/medium/high only. Map
+      // every level onto that enum — minimal→low, beyond-high→high — and omit
+      // output_config for auto so adaptive thinking decides on its own.
       const level = toLevel(eff);
-      // Claude native output_config.effort accepts low/medium/high only (not
-      // xhigh/max/ultra) — clamp beyond-high to "high".
-      if (level) body.output_config = { effort: ["low", "medium", "high"].includes(level) ? level : "high" };
+      if (level && level !== "auto") {
+        const effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "high", max: "high", ultra: "high" }[level];
+        if (effort) body.output_config = { effort };
+      }
       break;
     }
     case "claude-budget": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps.thinkingRange, caps.maxOutput);
       body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
@@ -212,7 +220,7 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "gemini-budget": {
       if (none && canDisable) { setGeminiThinking(body, { thinkingBudget: 0, includeThoughts: false }); break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps.thinkingRange, caps.maxOutput);
       setGeminiThinking(body, { thinkingBudget: budget ?? -1, includeThoughts: true });
       break;
     }
@@ -225,7 +233,7 @@ function applyFormat(fmt, body, cfg, caps) {
     case "qwen": {
       if (none && canDisable) { body.enable_thinking = false; break; }
       body.enable_thinking = true;
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps.thinkingRange, caps.maxOutput);
       if (Number.isFinite(budget) && budget > 0) body.thinking_budget = budget;
       break;
     }
@@ -250,7 +258,7 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "hunyuan": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps.thinkingRange, caps.maxOutput);
       body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }

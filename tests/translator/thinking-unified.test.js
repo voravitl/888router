@@ -146,10 +146,19 @@ describe("applyThinking per provider format", () => {
     expect(out.thinking).toEqual({ type: "adaptive" });
     expect(out.output_config).toEqual({ effort: "high" });
   });
-  it("ultra maps to max for claude-budget (budget 160000 clamped by range)", () => {
+  it("claude-adaptive minimal maps to low (no silent cost escalation)", () => {
+    const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "minimal" }, "claude");
+    expect(out.output_config).toEqual({ effort: "low" });
+  });
+  it("claude-adaptive auto emits no output_config (adaptive decides)", () => {
+    const out = apply("claude", "claude-opus-4.7", { output_config: { effort: "auto" } }, "claude");
+    expect(out.output_config).toBeUndefined();
+  });
+  it("ultra never exceeds provider maxOutput on claude-budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "ultra" }, "claude");
     expect(out.thinking.type).toBe("enabled");
-    expect(out.thinking.budget_tokens).toBeGreaterThanOrEqual(24576);
+    expect(out.thinking.budget_tokens).toBeGreaterThanOrEqual(1);
+    expect(out.thinking.budget_tokens).toBeLessThanOrEqual(64000);
   });
   it("ultra clamps to high for gemini-3 (enum minimal/low/medium/high only)", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "ultra" }, "gemini");
