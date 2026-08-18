@@ -192,9 +192,10 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra " }, "codex");
     expect(out.reasoning_effort).toBe("max");
   });
-  it("ultra preserves answer room on claude-budget (budget < maxOutput-1024)", () => {
+  it("ultra preserves answer room on claude-budget (budget == maxOutput-1024)", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "ultra" }, "claude");
-    expect(out.thinking.budget_tokens).toBeLessThan(64000 - 1024 + 1024);
+    // Anthropic requires budget_tokens < max_tokens; the 1024 floor matches the
+    // reconciler in formats/claude.js:285, so answer room stays >= 1024 tokens.
     expect(out.thinking.budget_tokens).toBe(64000 - 1024);
   });
 });
