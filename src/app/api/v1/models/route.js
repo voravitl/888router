@@ -214,6 +214,19 @@ export function applyComboContextFields(entry, combo) {
     entry.max_tokens = maxOut;
     entry.max_completion_tokens = maxOut;
   }
+  // Combos always emit capabilities so the response shape is uniform (matching
+  // non-combo entries). Clients rely on capabilities.tools to enable tool calling;
+  // LLM combos always support it, so advertise tools:true regardless of member
+  // capabilities. Preserve any pre-existing capabilities (per-combo override) via
+  // spread; ignore non-object values that would degrade the spread into index keys.
+  const existing = (typeof entry.capabilities === "object" && entry.capabilities !== null)
+    ? entry.capabilities
+    : {};
+  entry.capabilities = {
+    ...DEFAULT_CAPABILITIES,
+    ...existing,
+    tools: (combo?.kind ?? LLM_KIND) === LLM_KIND,
+  };
   return entry;
 }
 

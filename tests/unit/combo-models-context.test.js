@@ -4,6 +4,7 @@ import {
   resolveComboMaxOutput,
   applyComboContextFields,
 } from "@/app/api/v1/models/route.js";
+import { DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
 
 describe("Combo context window resolution", () => {
   it("resolves context window for combos with provider-prefixed models", () => {
@@ -74,5 +75,33 @@ describe("Combo context window resolution", () => {
     expect(llm.context_window).toBe(128000);
     expect(llm.contextWindow).toBe(128000);
     expect(llm.max_tokens).toBeDefined();
+  });
+
+  it("attaches capabilities with tools:true to LLM combos (not web/non-LLM combos)", () => {
+    const llm = applyComboContextFields({ id: "good" }, { models: ["gpt-4o"] });
+    expect(llm.capabilities).toBeDefined();
+    expect(llm.capabilities.tools).toBe(true);
+    expect(llm.capabilities.contextWindow).toBe(DEFAULT_CAPABILITIES.contextWindow);
+
+    const web = applyComboContextFields(
+      { id: "search-combo" },
+      { kind: "webSearch", models: ["gpt-4o"] },
+    );
+    expect(web.capabilities).toBeUndefined();
+
+    const nonLlm = applyComboContextFields(
+      { id: "embed-combo" },
+      { kind: "embedding", models: ["gpt-4o"] },
+    );
+    // non-LLM combos keep a uniform shape but advertise tools:false
+    expect(nonLlm.capabilities).toBeDefined();
+    expect(nonLlm.capabilities.tools).toBe(false);
+  });
+
+  it("preserves pre-existing capabilities on LLM combos", () => {
+    const entry = { id: "good", capabilities: { tools: false, custom: 1 } };
+    const out = applyComboContextFields(entry, { models: ["gpt-4o"] });
+    expect(out.capabilities.tools).toBe(true); // default floor wins
+    expect(out.capabilities.custom).toBe(1);   // pre-existing preserved
   });
 });
