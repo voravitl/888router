@@ -7,6 +7,7 @@ import {
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getAllModelDynamicCapabilities } from "@/lib/db";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -445,6 +446,12 @@ export async function buildModelsList(kindFilter) {
       );
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
+      // Synced dynamic capabilities persisted to DB by the provider-model sync
+      // endpoint ({provider}/models). Lay them over the static catalogue so a
+      // freshly-synced model reports its real context window (e.g. xai grok-4.6
+      // 500k) without a per-model pattern edit. Live upstream tells win over
+      // these; these win over the static table (see caps merge in loop below).
+      let syncedCapabilitiesById = await getAllModelDynamicCapabilities();
 
       let rawModelIds = hasExplicitEnabledModels
         ? Array.from(
@@ -559,9 +566,14 @@ export async function buildModelsList(kindFilter) {
           object: "model",
           owned_by: outputAlias,
         };
-        const caps = liveCapabilitiesById.get(modelId)
-          || capabilitiesFromServiceKind(customKind || liveKind)
-          || getCapabilitiesForModel(providerId, modelId);
+        const staticCaps = capabilitiesFromServiceKind(customKind || liveKind)
+          || getCapabilitiesForModel(providerId, modelId)
+          || DEFAULT_CAPABILITIES;
+        const caps = {
+          ...staticCaps,
+          ...(syncedCapabilitiesById.get(modelId) || {}),
+          ...(liveCapabilitiesById.get(modelId) || {}),
+        };
         if (caps) model.capabilities = caps;
         if (kind === LLM_KIND || allowAsLlm) {
           let contextWindow = caps?.contextWindow;

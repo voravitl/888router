@@ -57,6 +57,28 @@ export async function getModelDynamicCapabilities(modelId) {
   return parseJson(row.value, null);
 }
 
+/**
+ * Bulk-read all synced dynamic capabilities into a Map keyed by bare model id.
+ * Lets /v1/models lay the synced context over the static catalogue in one
+ * query instead of one round-trip per model. Keys align with
+ * getCapabilitiesForModel's baseModel stripping (modelId.split("/").pop()).
+ */
+export async function getAllModelDynamicCapabilities() {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT key, value FROM kv WHERE scope = 'modelCapabilities'`);
+  const out = new Map();
+  for (const r of rows) {
+    const caps = parseJson(r.value, null);
+    if (caps && typeof caps === "object" && typeof caps.updatedAt === "string" && caps.contextWindow != null) {
+      // Strip the persistence timestamp — it is repo metadata, not a capability,
+      // and leaking it into /v1/models model.capabilities pollutes the payload.
+      const { updatedAt, ...clean } = caps;
+      out.set(r.key, clean);
+    }
+  }
+  return out;
+}
+
 export async function saveModelDynamicCapabilities(modelId, caps) {
   if (!modelId || !caps) return;
   const baseId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
