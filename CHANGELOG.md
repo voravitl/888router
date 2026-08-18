@@ -1,3 +1,10 @@
+# v0.15.29 (2026-08-18)
+
+## Fix: `/v1/models` combo entries now advertise capabilities — clients see tool support
+
+- **`src/app/api/v1/models/route.js`:** LLM combo entries (e.g. `9-deepseek-v4-flash`, `9-sonnet`) built via `applyComboContextFields` previously had **no `capabilities` field** at all, so Claude Code treated them as not supporting tool calling and used MCP tools poorly. Combo entries now emit `DEFAULT_CAPABILITIES` — `tools:true` for LLM combos, `tools:false` for non-LLM kinds — while preserving any pre-existing capabilities and ignoring non-object values.
+- **Test:** `tests/unit/combo-models-context.test.js` covers tools advertisement, non-LLM shape, and pre-existing-capabilities preservation.
+
 # v0.15.28 (2026-08-18)
 
 ## Fix: `/v1/models` now reads synced dynamic capabilities from the DB, so a synced model reports its real context window without a per-model pattern edit
