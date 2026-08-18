@@ -70,7 +70,7 @@ export {
 // Synced models & dynamic capabilities
 export {
   getSyncedModelsMap, stampSyncedModels, upsertSyncedModel,
-  getModelDynamicCapabilities, saveModelDynamicCapabilities,
+  getModelDynamicCapabilities, getAllModelDynamicCapabilities, saveModelDynamicCapabilities,
 } from "./repos/syncedModelsRepo.js";
 
 // Export/import full DB
