@@ -50,7 +50,7 @@ export function extractThinking(body) {
   // Claude output_config.effort (explicit) — priority over adaptive thinking
   const oc = body.output_config?.effort;
   if (typeof oc === "string" && oc) {
-    const e = oc.toLowerCase();
+    const e = oc.toLowerCase().trim();
     if (e === "none" || e === "off") return { mode: "none" };
     if (e === "auto") return { mode: "auto" };
     return { mode: "level", level: e };
@@ -70,7 +70,7 @@ export function extractThinking(body) {
   // OpenAI chat / Responses shape
   const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
   if (typeof effort === "string" && effort) {
-    const e = effort.toLowerCase();
+    const e = effort.toLowerCase().trim();
     if (e === "none" || e === "off") return { mode: "none" };
     if (e === "auto") return { mode: "auto" };
     return { mode: "level", level: e };
@@ -79,7 +79,7 @@ export function extractThinking(body) {
   // Gemini shape (top-level, generationConfig, or request envelope)
   const tc = body.thinkingConfig || body.generationConfig?.thinkingConfig || body.request?.generationConfig?.thinkingConfig;
   if (tc && typeof tc === "object") {
-    if (typeof tc.thinkingLevel === "string") return { mode: "level", level: tc.thinkingLevel.toLowerCase() };
+    if (typeof tc.thinkingLevel === "string") return { mode: "level", level: tc.thinkingLevel.toLowerCase().trim() };
     const tb = Number(tc.thinkingBudget);
     if (Number.isFinite(tb)) {
       if (tb === 0) return { mode: "none" };
@@ -116,6 +116,9 @@ function resolveFormat(targetFormat, model, provider) {
 // Clamped to thinkingRange (provider-native min/max) AND maxOutput: Anthropic
 // requires budget_tokens < max_tokens, so an unbounded "ultra" (160000) on a
 // small model must not sail past its output cap (upstream 400 otherwise).
+// The 1024 buffer matches the reconciler in formats/claude.js:285, which only
+// fires when budget_tokens >= max_tokens — clamping to maxOutput-1 would leave
+// exactly one token for the visible answer and defeat it.
 function toBudget(cfg, range, maxOutput) {
   let budget;
   if (cfg.mode === "budget") budget = cfg.budget;
@@ -126,7 +129,7 @@ function toBudget(cfg, range, maxOutput) {
     if (range.min != null && budget < range.min) budget = range.min;
     if (range.max != null && budget > range.max) budget = range.max;
   }
-  if (Number.isFinite(maxOutput) && budget >= maxOutput) budget = Math.max(1, maxOutput - 1);
+  if (Number.isFinite(maxOutput) && budget >= maxOutput) budget = Math.max(1024, maxOutput - 1024);
   return budget;
 }
 

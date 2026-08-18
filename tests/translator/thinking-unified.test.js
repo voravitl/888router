@@ -188,6 +188,15 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "step-2-16k", { reasoning_effort: "ultra" }, "step");
     expect(out.reasoning_effort).toBe("high");
   });
+  it("ultra with trailing whitespace still clamps (no raw leak)", () => {
+    const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra " }, "codex");
+    expect(out.reasoning_effort).toBe("max");
+  });
+  it("ultra preserves answer room on claude-budget (budget < maxOutput-1024)", () => {
+    const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "ultra" }, "claude");
+    expect(out.thinking.budget_tokens).toBeLessThan(64000 - 1024 + 1024);
+    expect(out.thinking.budget_tokens).toBe(64000 - 1024);
+  });
 });
 
 describe("extractReasoningText (response shapes)", () => {
