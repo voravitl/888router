@@ -1,3 +1,11 @@
+# v0.15.30 (2026-08-18)
+
+## Fix: `reasoning_effort="ultra"` no longer 400s or silently drops thinking per provider
+
+- **`open-sse/translator/concerns/thinking.js`:** added `ultra` to `EFFORT_LEVELS` and `LEVEL_TO_BUDGET` (160000) so the level is recognized as a "max+" request.
+- **`open-sse/translator/concerns/thinkingUnified.js`:** `toLevel()` clamps `ultra → xhigh` (highest enum OpenAI/Codex accept — `max` would still 400 there; kimi/deepseek map `xhigh→max` downstream so they lose nothing) so no wire format ever sees the invalid string. Claude-adaptive `output_config.effort` now maps every level onto the native enum (low/medium/high only, `minimal→low`, beyond-`high`→`high`, `auto` omits `output_config`). Budget formats (`claude-budget`, `gemini-budget`, `qwen`) now clamp the budget to `caps.maxOutput` (strict `<`, so `budget_tokens` never equals `max_tokens` — Anthropic rejects that); `hunyuan` (maxOutput 262144) passes 160000 through untouched. Result per provider: OpenAI/Codex `reasoning_effort=xhigh`, Claude adaptive `effort=high`, Kimi/DeepSeek `max`, Step/Gemini `high`, Claude/gemini/qwen budgets clamp to the model's output cap — instead of upstream 400s (openai/codex/gemini/claude/step) or silent collapse (kimi).
+- **Test:** `tests/translator/thinking-unified.test.js` covers ultra across openai, claude-adaptive, claude-budget, gemini-3, kimi, deepseek, step, qwen, hunyuan, plus claude-adaptive `minimal`/`auto` regressions.
+
 # v0.15.29 (2026-08-18)
 
 ## Fix: `/v1/models` combo entries now advertise capabilities — clients see tool support

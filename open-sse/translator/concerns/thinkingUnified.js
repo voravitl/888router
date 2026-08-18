@@ -50,7 +50,7 @@ export function extractThinking(body) {
   // Claude output_config.effort (explicit) — priority over adaptive thinking
   const oc = body.output_config?.effort;
   if (typeof oc === "string" && oc) {
-    const e = oc.toLowerCase();
+    const e = oc.toLowerCase().trim();
     if (e === "none" || e === "off") return { mode: "none" };
     if (e === "auto") return { mode: "auto" };
     return { mode: "level", level: e };
@@ -70,7 +70,7 @@ export function extractThinking(body) {
   // OpenAI chat / Responses shape
   const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
   if (typeof effort === "string" && effort) {
-    const e = effort.toLowerCase();
+    const e = effort.toLowerCase().trim();
     if (e === "none" || e === "off") return { mode: "none" };
     if (e === "auto") return { mode: "auto" };
     return { mode: "level", level: e };
@@ -79,7 +79,7 @@ export function extractThinking(body) {
   // Gemini shape (top-level, generationConfig, or request envelope)
   const tc = body.thinkingConfig || body.generationConfig?.thinkingConfig || body.request?.generationConfig?.thinkingConfig;
   if (tc && typeof tc === "object") {
-    if (typeof tc.thinkingLevel === "string") return { mode: "level", level: tc.thinkingLevel.toLowerCase() };
+    if (typeof tc.thinkingLevel === "string") return { mode: "level", level: tc.thinkingLevel.toLowerCase().trim() };
     const tb = Number(tc.thinkingBudget);
     if (Number.isFinite(tb)) {
       if (tb === 0) return { mode: "none" };
@@ -113,7 +113,13 @@ function resolveFormat(targetFormat, model, provider) {
 }
 
 // Convert unified config to a budget number (for budget-based formats).
-function toBudget(cfg, range) {
+// Clamped to thinkingRange (provider-native min/max) AND maxOutput: Anthropic
+// requires budget_tokens < max_tokens, so an unbounded "ultra" (160000) on a
+// small model must not sail past its output cap (upstream 400 otherwise).
+// The 1024 buffer matches the reconciler in formats/claude.js:285, which only
+// fires when budget_tokens >= max_tokens — clamping to maxOutput-1 would leave
+// exactly one token for the visible answer and defeat it.
+function toBudget(cfg, range, maxOutput) {
   let budget;
   if (cfg.mode === "budget") budget = cfg.budget;
   else if (cfg.mode === "level") budget = effortToBudget(cfg.level);
@@ -123,12 +129,21 @@ function toBudget(cfg, range) {
     if (range.min != null && budget < range.min) budget = range.min;
     if (range.max != null && budget > range.max) budget = range.max;
   }
+  if (Number.isFinite(maxOutput) && budget >= maxOutput) budget = Math.max(1024, maxOutput - 1024);
   return budget;
 }
 
 // Convert unified config to a discrete level string.
+// "ultra" is a client "max+" sentinel — no provider wire format accepts it, so
+// clamp to xhigh (the highest OpenAI/Codex-accepted level) here, once, for
+// every format. Budget formats also hit it via effortToBudget(ultra)=160000
+// then clamp to the model's output cap.
 function toLevel(cfg) {
-  if (cfg.mode === "level") return cfg.level;
+  // "ultra" is a client "max+" sentinel. No provider wire format accepts it,
+  // and OpenAI/Codex enums top out at xhigh (not max), so clamp to xhigh here,
+  // once, for every format. Formats that accept "max" (kimi, deepseek) already
+  // map xhigh→max downstream, so nothing loses depth.
+  if (cfg.mode === "level") return cfg.level === "ultra" ? "xhigh" : cfg.level;
   if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "medium";
   if (cfg.mode === "auto") return "auto";
   return null;
@@ -190,13 +205,21 @@ function applyFormat(fmt, body, cfg, caps) {
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       body.thinking = { type: "adaptive" };
+      // Claude native output_config.effort accepts low/medium/high only. Map
+      // every level onto that enum — minimal→low, beyond-high→high — and omit
+      // output_config for auto so adaptive thinking decides on its own.
       const level = toLevel(eff);
-      if (level) body.output_config = { effort: level === "xhigh" ? "high" : level };
+      if (level && level !== "auto") {
+        // toLevel() already collapses ultra→xhigh; keep max/ultra keys anyway
+        // as a cheap guard against future toLevel() changes widening the enum.
+        const effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "high", max: "high", ultra: "high" }[level];
+        if (effort) body.output_config = { effort };
+      }
       break;
     }
     case "claude-budget": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps.thinkingRange, caps.maxOutput);
       body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
@@ -207,7 +230,7 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "gemini-budget": {
       if (none && canDisable) { setGeminiThinking(body, { thinkingBudget: 0, includeThoughts: false }); break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps.thinkingRange, caps.maxOutput);
       setGeminiThinking(body, { thinkingBudget: budget ?? -1, includeThoughts: true });
       break;
     }
@@ -220,7 +243,7 @@ function applyFormat(fmt, body, cfg, caps) {
     case "qwen": {
       if (none && canDisable) { body.enable_thinking = false; break; }
       body.enable_thinking = true;
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps.thinkingRange, caps.maxOutput);
       if (Number.isFinite(budget) && budget > 0) body.thinking_budget = budget;
       break;
     }
@@ -245,7 +268,7 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "hunyuan": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      const budget = toBudget(eff, caps.thinkingRange);
+      const budget = toBudget(eff, caps.thinkingRange, caps.maxOutput);
       body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }

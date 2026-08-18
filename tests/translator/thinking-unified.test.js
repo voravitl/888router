@@ -137,6 +137,75 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
   });
+  it("ultra clamps to xhigh for openai/codex (enum tops at xhigh, not max)", () => {
+    const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra" }, "codex");
+    expect(out.reasoning_effort).toBe("xhigh");
+  });
+  it("ultra clamps to high for claude-adaptive (native enum low/medium/high only)", () => {
+    const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "ultra" }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "high" });
+  });
+  it("claude-adaptive minimal maps to low (no silent cost escalation)", () => {
+    const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "minimal" }, "claude");
+    expect(out.output_config).toEqual({ effort: "low" });
+  });
+  it("claude-adaptive auto emits no output_config (adaptive decides)", () => {
+    const out = apply("claude", "claude-opus-4.7", { output_config: { effort: "auto" } }, "claude");
+    expect(out.output_config).toBeUndefined();
+  });
+  it("ultra never exceeds provider maxOutput on claude-budget", () => {
+    const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "ultra" }, "claude");
+    expect(out.thinking.type).toBe("enabled");
+    expect(out.thinking.budget_tokens).toBeGreaterThanOrEqual(1);
+    expect(out.thinking.budget_tokens).toBeLessThanOrEqual(64000);
+  });
+  it("ultra clamps to high for gemini-3 (enum minimal/low/medium/high only)", () => {
+    const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "ultra" }, "gemini");
+    expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
+  });
+  it("ultra maps to max for kimi", () => {
+    const out = apply("openai", "kimi-k2.7", { reasoning_effort: "ultra" }, "kimchi");
+    expect(out.reasoning_effort).toBe("max");
+  });
+  it("ultra maps to max for deepseek", () => {
+    const out = apply("openai", "deepseek-v4-pro", { reasoning_effort: "ultra" }, "deepseek");
+    expect(out.reasoning_effort).toBe("max");
+  });
+  it("ultra budget in qwen clamps to maxOutput-1024 (62976)", () => {
+    const out = apply("openai", "qwen3-coder", { reasoning_effort: "ultra" }, "qwen");
+    expect(out.enable_thinking).toBe(true);
+    expect(out.thinking_budget).toBe(62976);
+  });
+  it("ultra budget in hunyuan stays 160000 (under its 262144 maxOutput)", () => {
+    const out = apply("openai", "hunyuan-turbos", { reasoning_effort: "ultra" }, "hunyuan");
+    expect(out.thinking.type).toBe("enabled");
+    expect(out.thinking.budget_tokens).toBe(160000);
+  });
+  it("ultra clamps to high for step (native enum low/medium/high)", () => {
+    const out = apply("openai", "step-2-16k", { reasoning_effort: "ultra" }, "step");
+    expect(out.reasoning_effort).toBe("high");
+  });
+  it("ultra with trailing whitespace still clamps (no raw leak)", () => {
+    const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra " }, "codex");
+    expect(out.reasoning_effort).toBe("xhigh");
+  });
+  it("hermes reasoning.effort ultra shape clamps too", () => {
+    // Hermes sends extra_body.reasoning which the OpenAI SDK merges to the
+    // top-level body.reasoning = { enabled, effort }. extractThinking reads it.
+    const body = { messages: [], reasoning: { enabled: true, effort: "ultra" }, reasoning_effort: "ultra" };
+    const intent = extractThinking(body);
+    expect(intent).toEqual({ mode: "level", level: "ultra" });
+    const out = apply("openai", "gpt-5.3-codex", { ...body }, "codex");
+    expect(out.reasoning_effort).toBe("xhigh");
+    expect(out.reasoning).toBeUndefined(); // stripAll removed the raw object
+  });
+  it("ultra preserves answer room on claude-budget (budget == maxOutput-1024)", () => {
+    const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "ultra" }, "claude");
+    // Anthropic requires budget_tokens < max_tokens; the 1024 floor matches the
+    // reconciler in formats/claude.js:285, so answer room stays >= 1024 tokens.
+    expect(out.thinking.budget_tokens).toBe(64000 - 1024);
+  });
 });
 
 describe("extractReasoningText (response shapes)", () => {
