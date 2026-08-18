@@ -138,7 +138,11 @@ function toBudget(cfg, range, maxOutput) {
 // clamp to max (the highest widely-supported level) here, once, for every
 // format. Budget formats also hit it via effortToBudget(ultra)=160000 then clamp.
 function toLevel(cfg) {
-  if (cfg.mode === "level") return cfg.level === "ultra" ? "max" : cfg.level;
+  // "ultra" is a client "max+" sentinel. No provider wire format accepts it,
+  // and OpenAI/Codex enums top out at xhigh (not max), so clamp to xhigh here,
+  // once, for every format. Formats that accept "max" (kimi, deepseek) already
+  // map xhigh→max downstream, so nothing loses depth.
+  if (cfg.mode === "level") return cfg.level === "ultra" ? "xhigh" : cfg.level;
   if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "medium";
   if (cfg.mode === "auto") return "auto";
   return null;

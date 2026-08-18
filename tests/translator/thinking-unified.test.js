@@ -137,9 +137,9 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
   });
-  it("ultra clamps to max for openai (no invalid reasoning_effort=ultra)", () => {
+  it("ultra clamps to xhigh for openai/codex (enum tops at xhigh, not max)", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra" }, "codex");
-    expect(out.reasoning_effort).toBe("max");
+    expect(out.reasoning_effort).toBe("xhigh");
   });
   it("ultra clamps to high for claude-adaptive (native enum low/medium/high only)", () => {
     const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "ultra" }, "claude");
@@ -188,7 +188,7 @@ describe("applyThinking per provider format", () => {
   });
   it("ultra with trailing whitespace still clamps (no raw leak)", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra " }, "codex");
-    expect(out.reasoning_effort).toBe("max");
+    expect(out.reasoning_effort).toBe("xhigh");
   });
   it("ultra preserves answer room on claude-budget (budget == maxOutput-1024)", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "ultra" }, "claude");
