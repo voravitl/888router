@@ -137,6 +137,36 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
   });
+  it("ultra clamps to max for openai (no invalid reasoning_effort=ultra)", () => {
+    const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra" }, "codex");
+    expect(out.reasoning_effort).toBe("max");
+  });
+  it("ultra clamps to high for claude-adaptive (native enum low/medium/high only)", () => {
+    const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "ultra" }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "high" });
+  });
+  it("ultra maps to max for claude-budget (budget 160000 clamped by range)", () => {
+    const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "ultra" }, "claude");
+    expect(out.thinking.type).toBe("enabled");
+    expect(out.thinking.budget_tokens).toBeGreaterThanOrEqual(24576);
+  });
+  it("ultra clamps to high for gemini-3 (enum minimal/low/medium/high only)", () => {
+    const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "ultra" }, "gemini");
+    expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
+  });
+  it("ultra maps to max for kimi", () => {
+    const out = apply("openai", "kimi-k2.7", { reasoning_effort: "ultra" }, "kimchi");
+    expect(out.reasoning_effort).toBe("max");
+  });
+  it("ultra maps to max for deepseek", () => {
+    const out = apply("openai", "deepseek-v4-pro", { reasoning_effort: "ultra" }, "deepseek");
+    expect(out.reasoning_effort).toBe("max");
+  });
+  it("ultra clamps to high for step (native enum low/medium/high)", () => {
+    const out = apply("openai", "step-2-16k", { reasoning_effort: "ultra" }, "step");
+    expect(out.reasoning_effort).toBe("high");
+  });
 });
 
 describe("extractReasoningText (response shapes)", () => {

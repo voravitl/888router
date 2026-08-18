@@ -3,9 +3,11 @@
 // Provider-specific application lives in thinkingUnified.js; this file is maps-only.
 
 // Discrete effort levels, ordered low→high.
-export const EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"];
+export const EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 
 // Web-standard level → budget_tokens (Anthropic/Gemini docs).
+// ultra: clients send reasoning_effort="ultra" as "max+". It is above max, so
+// budget formats clamp to provider range; discrete formats map ultra→max/high.
 export const LEVEL_TO_BUDGET = {
   none: 0,
   minimal: 512,
@@ -14,6 +16,7 @@ export const LEVEL_TO_BUDGET = {
   high: 24576,
   xhigh: 32768,
   max: 128000,
+  ultra: 160000,
 };
 
 // Returns budget_tokens for an effort level, or undefined if unknown.

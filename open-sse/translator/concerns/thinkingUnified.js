@@ -127,8 +127,11 @@ function toBudget(cfg, range) {
 }
 
 // Convert unified config to a discrete level string.
+// "ultra" is a client "max+" sentinel — no provider wire format accepts it, so
+// clamp to max (the highest widely-supported level) here, once, for every
+// format. Budget formats also hit it via effortToBudget(ultra)=160000 then clamp.
 function toLevel(cfg) {
-  if (cfg.mode === "level") return cfg.level;
+  if (cfg.mode === "level") return cfg.level === "ultra" ? "max" : cfg.level;
   if (cfg.mode === "budget") return budgetToLevel(cfg.budget) || "medium";
   if (cfg.mode === "auto") return "auto";
   return null;
@@ -191,7 +194,9 @@ function applyFormat(fmt, body, cfg, caps) {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       body.thinking = { type: "adaptive" };
       const level = toLevel(eff);
-      if (level) body.output_config = { effort: level === "xhigh" ? "high" : level };
+      // Claude native output_config.effort accepts low/medium/high only (not
+      // xhigh/max/ultra) — clamp beyond-high to "high".
+      if (level) body.output_config = { effort: ["low", "medium", "high"].includes(level) ? level : "high" };
       break;
     }
     case "claude-budget": {

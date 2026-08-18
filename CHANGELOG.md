@@ -1,3 +1,11 @@
+# v0.15.30 (2026-08-18)
+
+## Fix: `reasoning_effort="ultra"` no longer 400s or silently drops thinking per provider
+
+- **`open-sse/translator/concerns/thinking.js`:** added `ultra` to `EFFORT_LEVELS` and `LEVEL_TO_BUDGET` (160000) so the level is recognized as a "max+" request.
+- **`open-sse/translator/concerns/thinkingUnified.js`:** `toLevel()` clamps `ultra → max` so no wire format ever sees the invalid string. Claude-adaptive `output_config.effort` also now clamps any value beyond `high` (native enum is low/medium/high only). Result per provider: OpenAI `reasoning_effort=max`, Claude adaptive `effort=high`, budget formats clamp 160000 to range, Gemini `thinkingLevel=high`, Kimi/DeepSeek `max`, Step `high` — instead of upstream 400s (openai/gemini/claude/step) or silent `max`→`high` collapse (kimi).
+- **Test:** `tests/translator/thinking-unified.test.js` covers ultra across openai, claude-adaptive, claude-budget, gemini-3, kimi, deepseek, step.
+
 # v0.15.29 (2026-08-18)
 
 ## Fix: `/v1/models` combo entries now advertise capabilities — clients see tool support
