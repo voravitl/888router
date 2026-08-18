@@ -135,8 +135,9 @@ function toBudget(cfg, range, maxOutput) {
 
 // Convert unified config to a discrete level string.
 // "ultra" is a client "max+" sentinel — no provider wire format accepts it, so
-// clamp to max (the highest widely-supported level) here, once, for every
-// format. Budget formats also hit it via effortToBudget(ultra)=160000 then clamp.
+// clamp to xhigh (the highest OpenAI/Codex-accepted level) here, once, for
+// every format. Budget formats also hit it via effortToBudget(ultra)=160000
+// then clamp to the model's output cap.
 function toLevel(cfg) {
   // "ultra" is a client "max+" sentinel. No provider wire format accepts it,
   // and OpenAI/Codex enums top out at xhigh (not max), so clamp to xhigh here,
@@ -209,8 +210,8 @@ function applyFormat(fmt, body, cfg, caps) {
       // output_config for auto so adaptive thinking decides on its own.
       const level = toLevel(eff);
       if (level && level !== "auto") {
-        // toLevel() already collapses ultra→max; keep max/ultra keys anyway as a
-        // cheap guard against future toLevel() changes silently widening the enum.
+        // toLevel() already collapses ultra→xhigh; keep max/ultra keys anyway
+        // as a cheap guard against future toLevel() changes widening the enum.
         const effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "high", max: "high", ultra: "high" }[level];
         if (effort) body.output_config = { effort };
       }

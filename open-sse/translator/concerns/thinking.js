@@ -7,7 +7,7 @@ export const EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"
 
 // Web-standard level → budget_tokens (Anthropic/Gemini docs).
 // ultra: clients send reasoning_effort="ultra" as "max+". It is above max, so
-// budget formats clamp to provider range; discrete formats map ultra→max/high.
+// budget formats clamp to provider range; discrete formats map ultra→xhigh/max/high.
 export const LEVEL_TO_BUDGET = {
   none: 0,
   minimal: 512,
