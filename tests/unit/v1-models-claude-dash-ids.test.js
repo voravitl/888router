@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getModelAliases: vi.fn(async () => ({})),
   getDisabledModels: vi.fn(async () => ({})),
   resolveKiroModels: vi.fn(async () => null),
+  getAllModelDynamicCapabilities: vi.fn(async () => new Map()),
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -18,6 +19,10 @@ vi.mock("@/lib/localDb", () => ({
   getCombos: mocks.getCombos,
   getCustomModels: mocks.getCustomModels,
   getModelAliases: mocks.getModelAliases,
+}));
+
+vi.mock("@/lib/db", () => ({
+  getAllModelDynamicCapabilities: mocks.getAllModelDynamicCapabilities,
 }));
 
 vi.mock("@/lib/disabledModelsDb", () => ({
@@ -52,6 +57,7 @@ describe("/v1/models Claude dash ids (#102)", () => {
     mocks.getModelAliases.mockReset().mockResolvedValue({});
     mocks.getDisabledModels.mockReset().mockResolvedValue({});
     mocks.resolveKiroModels.mockReset().mockResolvedValue(null);
+    mocks.getAllModelDynamicCapabilities.mockReset().mockResolvedValue(new Map());
   });
 
   it("static catalog: Kiro Claude ids use dash spelling", async () => {
@@ -117,5 +123,32 @@ describe("/v1/models Claude dash ids (#102)", () => {
     const listed = toClaudeCodeModelId("claude-opus-4.8");
     expect(listed).toBe("claude-opus-4-8");
     expect(resolveKiroModel(listed).upstream).toBe("claude-opus-4.8");
+  });
+
+  it("synced dynamic caps overlay static pattern for enabled member models", async () => {
+    // xai/grok-4 is a static member (xai registry). Its static pattern
+    // (*grok-4*) reports 256k. After a sync persisted a 300k context window to
+    // the DB, /v1/models must report the synced value — the whole point of the
+    // mechanism: sync is the source of truth, no per-model pattern edit.
+    mocks.getProviderConnections.mockResolvedValue([
+      {
+        id: "conn-xai-1",
+        provider: "xai",
+        isActive: true,
+        accessToken: "tok",
+        providerSpecificData: { enabledModels: ["grok-4"] },
+      },
+    ]);
+    mocks.getAllModelDynamicCapabilities.mockResolvedValue(
+      new Map([["grok-4", { contextWindow: 300000 }]])
+    );
+
+    const { GET } = await import("../../src/app/api/v1/models/route.js");
+    const res = await GET(new Request("http://localhost/v1/models"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const model = (body.data || []).find((m) => m.id === "xai/grok-4");
+    expect(model).toBeDefined();
+    expect(model.context_length).toBe(300000);
   });
 });
