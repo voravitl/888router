@@ -16,7 +16,7 @@ import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { updateProviderCredentials, refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel, resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
+import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
 import { toClaudeCodeModelId } from "@/shared/utils/claudeCodeModelId";
 
 // Per-provider live model resolvers. Each receives a connection record and
@@ -424,6 +424,17 @@ export async function buildModelsList(kindFilter) {
       });
     }
   } else {
+    // Load synced dynamic capabilities ONCE for the whole request, before the
+    // per-provider loop. The DB query is async and may be unavailable (no
+    // adapter yet) — fail-open to an empty map so /v1/models still serves the
+    // static catalogue.
+    let syncedCapabilitiesById = new Map();
+    try {
+      syncedCapabilitiesById = await getAllModelDynamicCapabilities();
+    } catch (e) {
+      console.log("Could not load synced dynamic capabilities:", e?.message);
+    }
+
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
 
@@ -446,12 +457,6 @@ export async function buildModelsList(kindFilter) {
       );
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
-      // Synced dynamic capabilities persisted to DB by the provider-model sync
-      // endpoint ({provider}/models). Lay them over the static catalogue so a
-      // freshly-synced model reports its real context window (e.g. xai grok-4.6
-      // 500k) without a per-model pattern edit. Live upstream tells win over
-      // these; these win over the static table (see caps merge in loop below).
-      let syncedCapabilitiesById = await getAllModelDynamicCapabilities();
 
       let rawModelIds = hasExplicitEnabledModels
         ? Array.from(
@@ -569,12 +574,20 @@ export async function buildModelsList(kindFilter) {
         const staticCaps = capabilitiesFromServiceKind(customKind || liveKind)
           || getCapabilitiesForModel(providerId, modelId)
           || DEFAULT_CAPABILITIES;
+        // Synced caps are keyed `providerId:baseId` (save/getAll scope them), so
+        // look up the scoped form first, then the legacy bare form for
+        // pre-scoped rows. Validity (a positive finite context window) is
+        // enforced by the repo reader.
+        const bareId = modelId.split("/").pop();
+        const syncedCaps = syncedCapabilitiesById.get(`${providerId}:${bareId}`)
+          || syncedCapabilitiesById.get(bareId)
+          || syncedCapabilitiesById.get(modelId);
         const caps = {
           ...staticCaps,
-          ...(syncedCapabilitiesById.get(modelId) || {}),
+          ...(syncedCaps || {}),
           ...(liveCapabilitiesById.get(modelId) || {}),
         };
-        if (caps) model.capabilities = caps;
+        model.capabilities = caps;
         if (kind === LLM_KIND || allowAsLlm) {
           let contextWindow = caps?.contextWindow;
           let maxOutput = caps?.maxOutput;

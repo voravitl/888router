@@ -31,23 +31,47 @@ afterEach(() => {
 });
 
 describe("getAllModelDynamicCapabilities", () => {
-  it("returns synced caps keyed by bare model id, stripping updatedAt", async () => {
+  it("returns synced caps keyed by provider:model, stripping updatedAt", async () => {
     await import("@/lib/db/driver.js");
     const { saveModelDynamicCapabilities, getAllModelDynamicCapabilities } = await import("@/lib/db/index.js");
 
-    await saveModelDynamicCapabilities("xai/grok-4.6", { contextWindow: 500000, vision: true });
-    await saveModelDynamicCapabilities("grok-4.5", { contextWindow: 500000 });
+    await saveModelDynamicCapabilities("xai", "grok-4.6", { contextWindow: 500000, vision: true });
+    await saveModelDynamicCapabilities("xai", "grok-4.5", { contextWindow: 500000 });
 
     const map = await getAllModelDynamicCapabilities();
     expect(map.size).toBe(2);
-    expect(map.get("grok-4.6").contextWindow).toBe(500000);
-    // Base key is the bare id (split("/").pop()), matching getCapabilitiesForModel
-    expect(map.get("grok-4.6").vision).toBe(true);
-    expect(map.get("grok-4.5").contextWindow).toBe(500000);
+    // Keys are scoped provider:model — no cross-provider bleed.
+    expect(map.get("xai:grok-4.6").contextWindow).toBe(500000);
+    expect(map.get("xai:grok-4.6").vision).toBe(true);
+    expect(map.get("xai:grok-4.5").contextWindow).toBe(500000);
     // Persistence timestamp is repo metadata — must not leak into capabilities
     for (const caps of map.values()) {
       expect(caps.updatedAt).toBeUndefined();
     }
+  });
+
+  it("drops rows whose contextWindow is not a positive finite number", async () => {
+    const { saveModelDynamicCapabilities, getAllModelDynamicCapabilities } = await import("@/lib/db/index.js");
+
+    await saveModelDynamicCapabilities("prov", "bad-zero", { contextWindow: 0, vision: true });
+    await saveModelDynamicCapabilities("prov", "bad-negative", { contextWindow: -500 });
+    await saveModelDynamicCapabilities("prov", "bad-string", { contextWindow: "128000" });
+    await saveModelDynamicCapabilities("prov", "good", { contextWindow: 500000 });
+
+    const map = await getAllModelDynamicCapabilities();
+    expect(map.size).toBe(1);
+    expect(map.get("prov:good").contextWindow).toBe(500000);
+  });
+
+  it("scopes by provider — the same model id on two providers stays isolated", async () => {
+    const { saveModelDynamicCapabilities, getAllModelDynamicCapabilities } = await import("@/lib/db/index.js");
+
+    await saveModelDynamicCapabilities("provider-a", "grok-4", { contextWindow: 300000 });
+    await saveModelDynamicCapabilities("provider-b", "grok-4", { contextWindow: 131072 });
+
+    const map = await getAllModelDynamicCapabilities();
+    expect(map.get("provider-a:grok-4").contextWindow).toBe(300000);
+    expect(map.get("provider-b:grok-4").contextWindow).toBe(131072);
   });
 
   it("is empty when nothing has been synced", async () => {

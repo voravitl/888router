@@ -1,3 +1,13 @@
+# v0.15.28 (2026-08-18)
+
+## Fix: `/v1/models` now reads synced dynamic capabilities from the DB, so a synced model reports its real context window without a per-model pattern edit
+
+- **`open-sse/providers/capabilities.js`:** added `*grok-4.6*` / `*grok-4-6*` pattern entries (500k, matching `grok-4.5`, per `models.dev`) above the catch-all `*grok-4*`. Without them, `xai/grok-4.6` fell to that generic 256k.
+- **The systemic fix:** the provider-model sync endpoint (`src/app/api/providers/[id]/models/route.js`) already persisted per-model dynamic capabilities (`contextWindow`/`vision`/`reasoning`) to the DB — but `/v1/models` resolved capabilities purely from the static `PATTERN_CAPABILITIES` table and never read them back, which is why context went stale for every model the static table predates. Every new model previously needed a pattern edit.
+- **`src/lib/db/repos/syncedModelsRepo.js`:** added `getAllModelDynamicCapabilities()` — bulk `SELECT` of the `modelCapabilities` scope, now keyed `providerId:modelId` so one provider's sync cannot bleed into the same model id on another connection. Reader rejects a non-positive-finite `contextWindow` and strips the `updatedAt` persistence stamp so it never leaks into the model payload. Legacy bare-key rows (pre-scoped builds) still resolve via fallback.
+- **`src/app/api/v1/models/route.js`:** `buildModelsList` now bulk-loads the synced caps once per request (hoisted above the per-provider loop, fail-open) and overlays them in the resolution chain with precedence **live upstream > synced (scoped `providerId:modelId`, then legacy bare) > static pattern**. Live tells win over a stale sync; a fresh sync wins over the static table. Provider-model sync is now the source of truth for a model's context window.
+- **Tests:** `tests/unit/synced-dynamic-caps.test.js` (bulk loader: scoped keys, `updatedAt` stripped, malformed-context rejection, provider isolation, empty on no sync), a `v1-models-claude-dash-ids` case proving a synced 300k overlay beats the static `*grok-4*` 256k end-to-end through `GET /v1/models`, plus a legacy bare-key fallback case and `grok-4.6` → 500k static safety net.
+
 # v0.15.27 (2026-08-16)
 
 ## Fix: synced models lost every capability the sync did not carry (#283)

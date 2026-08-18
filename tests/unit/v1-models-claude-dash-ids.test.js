@@ -140,7 +140,7 @@ describe("/v1/models Claude dash ids (#102)", () => {
       },
     ]);
     mocks.getAllModelDynamicCapabilities.mockResolvedValue(
-      new Map([["grok-4", { contextWindow: 300000 }]])
+      new Map([["xai:grok-4", { contextWindow: 300000 }]])
     );
 
     const { GET } = await import("../../src/app/api/v1/models/route.js");
@@ -150,5 +150,30 @@ describe("/v1/models Claude dash ids (#102)", () => {
     const model = (body.data || []).find((m) => m.id === "xai/grok-4");
     expect(model).toBeDefined();
     expect(model.context_length).toBe(300000);
+  });
+
+  it("legacy bare-key synced caps still overlay (pre-scoped rows)", async () => {
+    mocks.getProviderConnections.mockResolvedValue([
+      {
+        id: "conn-xai-2",
+        provider: "xai",
+        isActive: true,
+        accessToken: "tok",
+        providerSpecificData: { enabledModels: ["grok-4"] },
+      },
+    ]);
+    // Pre-scoped build persisted under a bare id — the scoped lookup misses,
+    // the legacy fallback must still win over the static 256k.
+    mocks.getAllModelDynamicCapabilities.mockResolvedValue(
+      new Map([["grok-4", { contextWindow: 320000 }]])
+    );
+
+    const { GET } = await import("../../src/app/api/v1/models/route.js");
+    const res = await GET(new Request("http://localhost/v1/models"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const model = (body.data || []).find((m) => m.id === "xai/grok-4");
+    expect(model).toBeDefined();
+    expect(model.context_length).toBe(320000);
   });
 });

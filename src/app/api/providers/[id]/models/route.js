@@ -98,7 +98,7 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
             if (reasoning !== undefined) caps.reasoning = Boolean(reasoning);
 
             if (typeof saveModelDynamicCapabilities === "function") {
-              await saveModelDynamicCapabilities(id, caps);
+              await saveModelDynamicCapabilities(provider, id, caps);
             }
             if (typeof registerDynamicCapabilities === "function") {
               registerDynamicCapabilities(id, caps);
