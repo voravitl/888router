@@ -1,3 +1,12 @@
+# v0.15.31 (2026-08-21)
+
+## Fix: OpenCode Zen Free can now sync models without an existing DB connection and added latest free models (#299)
+
+- **`src/app/api/providers/[id]/models/route.js` & `src/shared/constants/providers.js`**: `isPublicModelsProvider` allows fetching upstream models for public/no-auth providers (e.g. `opencode`, `opencode-zen`) by fallback when no database connection record exists, instead of returning 404.
+- **`src/app/(dashboard)/dashboard/providers/[id]/page.js` & `SyncProviderModelsModal.js`**: Enabled "Sync Models" button and automated fallback to `providerId` when `activeConnections` is empty, allowing seamless model discovery and syncing for public providers without manual connection setup.
+- **`open-sse/providers/registry/opencode.js` & `open-sse/providers/capabilities.js`**: Added active upstream free models (`mimo-v2.5-free`, `hy3-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`, `x-preview-f-free`, `laguna-s-2.1-free`, `muse-spark-1.2-contributor-free`, `big-pickle`) and resolved their reasoning/modality/context window capabilities.
+- **Tests**: `tests/unit/opencode-models-sync.test.js` covers static registry presence, `isPublicModelsProvider` helper validation, capability resolution, and suggested-models filtering.
+
 # v0.15.30 (2026-08-18)
 
 ## Fix: `reasoning_effort="ultra"` no longer 400s or silently drops thinking per provider
