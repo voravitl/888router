@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, providerSupportsModelSync, AI_PROVIDERS } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, providerSupportsModelSync, isPublicModelsProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -154,6 +154,7 @@ export default function ProviderDetailPage() {
   const isOAuth = (!!OAUTH_PROVIDERS[providerId] || authModes.includes("oauth")) && !FREE_PROVIDERS[providerId]?.noAuth;
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
+  const canSyncModels = connections.some((conn) => conn.isActive !== false) || isPublicModelsProvider(providerId);
   const models = getModelsByProviderId(providerId);
   const providerAlias = getProviderAlias(providerId);
   
@@ -1262,9 +1263,9 @@ export default function ProviderDetailPage() {
         {providerSupportsModelSync(providerId) && (
           <button
             onClick={() => setShowSyncModels(true)}
-            disabled={!connections.some((conn) => conn.isActive !== false) && !isFreeNoAuth && !providerInfo?.hasFree && providerInfo?.category !== "free"}
+            disabled={!canSyncModels}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-500/5 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 sm:w-auto"
-            title={connections.some((conn) => conn.isActive !== false) || isFreeNoAuth || providerInfo?.hasFree || providerInfo?.category === "free" ? "Sync models from upstream" : "Add an active connection before syncing"}
+            title={canSyncModels ? "Sync models from upstream" : "Add an active connection before syncing"}
           >
             <span className="material-symbols-outlined text-sm">sync</span>
             Sync Models
@@ -1767,7 +1768,7 @@ export default function ProviderDetailPage() {
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">
-                {providerSupportsModelSync(providerId) && (connections.some((conn) => conn.isActive !== false) || isFreeNoAuth || providerInfo?.hasFree || providerInfo?.category === "free") && (
+                {providerSupportsModelSync(providerId) && canSyncModels && (
                   <Button size="sm" variant="secondary" icon="sync" onClick={() => setShowSyncModels(true)}>
                     Sync Models
                   </Button>

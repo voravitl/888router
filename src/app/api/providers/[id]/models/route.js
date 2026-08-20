@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { getSyncedModelsMap, stampSyncedModels } from "@/lib/db";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isPublicModelsProvider } from "@/shared/constants/providers";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { OllamaService } from "@/lib/oauth/services/ollama";
 import { GEMINI_CONFIG, ANTIGRAVITY_CONFIG } from "@/lib/oauth/constants/oauth";
@@ -331,7 +331,7 @@ export async function GET(request, { params }) {
     let connection = await getProviderConnectionById(id);
 
     if (!connection) {
-      if (id === "opencode" || id === "opencode-zen") {
+      if (isPublicModelsProvider(id)) {
         connection = { id: `public:${id}`, provider: id, isActive: true };
       } else {
         return NextResponse.json({ error: "Connection not found" }, { status: 404 });

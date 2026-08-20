@@ -170,6 +170,11 @@ export function providerSupportsModelSync(providerId) {
   return kinds.includes("llm");
 }
 
+// Providers that support public model listing without requiring an active connection in DB
+export function isPublicModelsProvider(providerId) {
+  return providerId === "opencode" || providerId === "opencode-zen";
+}
+
 // Derive từ registry features flags
 export const USAGE_SUPPORTED_PROVIDERS = REGISTRY
   .filter(r => r.features?.usage)

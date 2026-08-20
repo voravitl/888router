@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { providerSupportsModelSync } from "../../src/shared/constants/providers.js";
+import { providerSupportsModelSync, isPublicModelsProvider } from "../../src/shared/constants/providers.js";
 import opencodeRegistry from "open-sse/providers/registry/opencode.js";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { FILTERS } from "../../src/app/api/providers/suggested-models/filters.js";
@@ -10,7 +10,14 @@ describe("OpenCode Model Sync Support", () => {
     expect(providerSupportsModelSync("opencode-go")).toBe(true);
   });
 
-  it("should include all current active free models in opencode static registry", () => {
+  it("should verify isPublicModelsProvider correctly identifies opencode free providers", () => {
+    expect(isPublicModelsProvider("opencode")).toBe(true);
+    expect(isPublicModelsProvider("opencode-zen")).toBe(true);
+    expect(isPublicModelsProvider("openai")).toBe(false);
+    expect(isPublicModelsProvider("anthropic")).toBe(false);
+  });
+
+  it("should include all current free models in opencode static registry", () => {
     const modelIds = opencodeRegistry.models.map((m) => m.id);
     expect(modelIds).toContain("mimo-v2.5-free");
     expect(modelIds).toContain("hy3-free");
@@ -20,6 +27,7 @@ describe("OpenCode Model Sync Support", () => {
     expect(modelIds).toContain("laguna-s-2.1-free");
     expect(modelIds).toContain("muse-spark-1.2-contributor-free");
     expect(modelIds).toContain("big-pickle");
+    expect(modelIds).toContain("deepseek-v4-flash-free");
   });
 
   it("should resolve capabilities correctly for new free models", () => {

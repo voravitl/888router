@@ -303,8 +303,8 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
   { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
-  { pattern: "*x-preview*",     caps: { reasoning: true, contextWindow: 128000 } },
-  { pattern: "*laguna*",        caps: { reasoning: true, contextWindow: 128000 } },
+  { pattern: "*x-preview-f*",   caps: { reasoning: true, contextWindow: 128000 } },
+  { pattern: "*laguna-s*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*muse-spark*",    caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*big-pickle*",    caps: { contextWindow: 128000 } },
 ];

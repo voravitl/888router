@@ -73,7 +73,7 @@ export default function SyncProviderModelsModal({
   useEffect(() => {
     if (!isOpen) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    const initialId = activeConnections[0]?.id || (connections.length === 0 ? providerId : "");
+    const initialId = activeConnections[0]?.id || (activeConnections.length === 0 ? providerId : "");
     setConnectionId(initialId);
     setModels([]);
     setSelected({});
@@ -81,10 +81,10 @@ export default function SyncProviderModelsModal({
     setFilterTab("all");
     setError("");
     setWarning("");
-  }, [activeConnections, connections.length, isOpen, providerId]);
+  }, [activeConnections, isOpen, providerId]);
 
   const fetchModels = async (id = connectionId) => {
-    const targetId = id || (connections.length === 0 ? providerId : "");
+    const targetId = id || (activeConnections.length === 0 ? providerId : "");
     if (!targetId || loading) return;
     setLoading(true);
     setError("");
@@ -110,11 +110,12 @@ export default function SyncProviderModelsModal({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (isOpen && (connectionId || (connections.length === 0 && providerId))) {
-      fetchModels(connectionId || providerId);
+    const target = connectionId || (activeConnections.length === 0 ? providerId : "");
+    if (isOpen && target) {
+      fetchModels(target);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, connectionId, providerId]);
+  }, [isOpen, connectionId, activeConnections.length, providerId]);
 
   const existingSet = useMemo(() => new Set(existingModelIds), [existingModelIds]);
 
