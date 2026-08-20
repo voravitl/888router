@@ -29,12 +29,15 @@ const opencodeConfig = {
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
   models: [
-    { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash (Free)" },
     { id: "mimo-v2.5-free", name: "MiMo V2.5 (Free)" },
     { id: "hy3-free", name: "HY3 (Free)" },
     { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra (Free)" },
     { id: "nemotron-3.5-lightning-free", name: "Nemotron 3.5 Lightning (Free)" },
+    { id: "x-preview-f-free", name: "X Preview F (Free)" },
+    { id: "laguna-s-2.1-free", name: "Laguna S 2.1 (Free)" },
+    { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor (Free)" },
     { id: "big-pickle", name: "Big Pickle (Free)" },
+    { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash (Free)" },
   ],
 };
 

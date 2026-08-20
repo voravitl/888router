@@ -54,6 +54,7 @@ export default function SyncProviderModelsModal({
   passthroughModels,
   onAddModels,
   onClose,
+  providerId = "",
 }) {
   const activeConnections = useMemo(
     () => connections.filter((conn) => conn.isActive !== false),
@@ -72,22 +73,24 @@ export default function SyncProviderModelsModal({
   useEffect(() => {
     if (!isOpen) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setConnectionId(activeConnections[0]?.id || "");
+    const initialId = activeConnections[0]?.id || (connections.length === 0 ? providerId : "");
+    setConnectionId(initialId);
     setModels([]);
     setSelected({});
     setQuery("");
     setFilterTab("all");
     setError("");
     setWarning("");
-  }, [activeConnections, isOpen]);
+  }, [activeConnections, connections.length, isOpen, providerId]);
 
   const fetchModels = async (id = connectionId) => {
-    if (!id || loading) return;
+    const targetId = id || (connections.length === 0 ? providerId : "");
+    if (!targetId || loading) return;
     setLoading(true);
     setError("");
     setWarning("");
     try {
-      const res = await fetch(`/api/providers/${id}/models`, { cache: "no-store" });
+      const res = await fetch(`/api/providers/${targetId}/models`, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || `HTTP ${res.status}`);
@@ -107,9 +110,11 @@ export default function SyncProviderModelsModal({
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (isOpen && connectionId) fetchModels(connectionId);
+    if (isOpen && (connectionId || (connections.length === 0 && providerId))) {
+      fetchModels(connectionId || providerId);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, connectionId]);
+  }, [isOpen, connectionId, providerId]);
 
   const existingSet = useMemo(() => new Set(existingModelIds), [existingModelIds]);
 
@@ -450,4 +455,5 @@ SyncProviderModelsModal.propTypes = {
   passthroughModels: PropTypes.bool,
   onAddModels: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
+  providerId: PropTypes.string,
 };

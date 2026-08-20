@@ -328,10 +328,14 @@ const PROVIDER_MODELS_CONFIG = {
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
+    let connection = await getProviderConnectionById(id);
 
     if (!connection) {
-      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+      if (id === "opencode" || id === "opencode-zen") {
+        connection = { id: `public:${id}`, provider: id, isActive: true };
+      } else {
+        return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+      }
     }
 
     if (isOpenAICompatibleProvider(connection.provider)) {

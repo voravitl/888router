@@ -1262,9 +1262,9 @@ export default function ProviderDetailPage() {
         {providerSupportsModelSync(providerId) && (
           <button
             onClick={() => setShowSyncModels(true)}
-            disabled={!connections.some((conn) => conn.isActive !== false)}
+            disabled={!connections.some((conn) => conn.isActive !== false) && !isFreeNoAuth && !providerInfo?.hasFree && providerInfo?.category !== "free"}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-500/5 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 sm:w-auto"
-            title={connections.some((conn) => conn.isActive !== false) ? "Sync models from upstream" : "Add an active connection before syncing"}
+            title={connections.some((conn) => conn.isActive !== false) || isFreeNoAuth || providerInfo?.hasFree || providerInfo?.category === "free" ? "Sync models from upstream" : "Add an active connection before syncing"}
           >
             <span className="material-symbols-outlined text-sm">sync</span>
             Sync Models
@@ -1767,7 +1767,7 @@ export default function ProviderDetailPage() {
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">
-                {providerSupportsModelSync(providerId) && connections.some((conn) => conn.isActive !== false) && (
+                {providerSupportsModelSync(providerId) && (connections.some((conn) => conn.isActive !== false) || isFreeNoAuth || providerInfo?.hasFree || providerInfo?.category === "free") && (
                   <Button size="sm" variant="secondary" icon="sync" onClick={() => setShowSyncModels(true)}>
                     Sync Models
                   </Button>
@@ -1920,6 +1920,7 @@ export default function ProviderDetailPage() {
           ]}
           providerDisplayAlias={providerDisplayAlias}
           passthroughModels={!!providerInfo.passthroughModels}
+          providerId={providerId}
           onAddModels={handleAddSyncedModels}
           onClose={() => setShowSyncModels(false)}
         />
