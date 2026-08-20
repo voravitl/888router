@@ -172,7 +172,9 @@ export function providerSupportsModelSync(providerId) {
 
 // Providers that support public model listing without requiring an active connection in DB
 export function isPublicModelsProvider(providerId) {
-  return providerId === "opencode" || providerId === "opencode-zen";
+  if (providerId === "opencode" || providerId === "opencode-zen") return true;
+  const provider = AI_PROVIDERS[providerId];
+  return !!(provider?.noAuth && provider?.hasFree);
 }
 
 // Derive từ registry features flags
