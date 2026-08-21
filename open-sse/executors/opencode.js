@@ -40,6 +40,18 @@ function toOpencodeSession(id) {
   return stripped ? `ses_${stripped}` : null;
 }
 
+// OpenCode Zen HTTP 400s on content: [] and text parts with null/missing text
+// (observed on muse-spark-1.2-contributor-free). Mixed/image arrays are left
+// for modality strip; valid text-part arrays are left untouched.
+function sanitizeOpencodeMessageContent(content) {
+  if (!Array.isArray(content)) return content;
+  if (content.length === 0) return "";
+  const textOnly = content.every((p) => p && p.type === "text");
+  if (!textOnly) return content;
+  if (content.every((p) => typeof p.text === "string")) return content;
+  return content.map((p) => (typeof p.text === "string" ? p.text : "")).join("\n");
+}
+
 function resolveOpencodeSession(body, credentials) {
   return toOpencodeSession(resolveSessionId({
     headers: credentials?.rawHeaders,
@@ -58,7 +70,9 @@ export class OpenCodeExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     this._currentSessionId = resolveOpencodeSession(body, credentials);
     let nextBody = injectReasoningContent({ provider: this.provider, model, body });
-    // Sanitize messages: OpenCode upstream rejects messages with content: null/undefined (HTTP 400)
+    // Sanitize messages: OpenCode Zen HTTP 400s on content: null/undefined/[] and
+    // text parts with null/missing text. Assistant turns with non-empty tool_calls
+    // may omit content; leave that shape alone.
     if (Array.isArray(nextBody?.messages)) {
       nextBody = {
         ...nextBody,
@@ -71,7 +85,9 @@ export class OpenCodeExecutor extends BaseExecutor {
           if (m.role === "tool" && (m.content === null || m.content === undefined)) {
             return { ...m, content: "" };
           }
-          return m;
+          if (m.content === null || m.content === undefined) return m;
+          const content = sanitizeOpencodeMessageContent(m.content);
+          return content === m.content ? m : { ...m, content };
         }),
       };
     }
