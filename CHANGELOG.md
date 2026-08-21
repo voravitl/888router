@@ -1,3 +1,17 @@
+# v0.15.33 (2026-08-21)
+
+## Fix: OpenCode HTTP 400 null message content sanitization & 1M context + multimodal capabilities (#301)
+
+- **`open-sse/executors/opencode.js`**:
+  - In `OpenCodeExecutor.transformRequest`, sanitized messages with `content: null` or `content: undefined` to `content: ""` (for user, assistant turns without `tool_calls`, and tool response turns). Upstream OpenCode Zen API rejects null content with HTTP 400 (`{"choices":[{"index":0,"message":{"role":"assistant"},"finish_reason":null}]}`), which previously caused requests to fail.
+- **`open-sse/providers/capabilities.js`**:
+  - `*muse-spark*`: Set context window to 1,048,576 (1M tokens), max output to 131,072, and enabled full multimodal flags (`vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true`).
+  - `*nemotron-3-ultra*`: Set context window to 1,000,000 (1M tokens), max output to 128,000, and explicit `vision: false, reasoning: true`.
+  - `*laguna-s*`: Set family pattern to native 1,048,576 tokens / 32,768 max output, and added `PROVIDER_CAPABILITIES` provider overrides for `opencode`, `opencode-go`, `opencode-zen` mapping `laguna-s-2.1-free` to the OpenCode Zen SKU limit of 256,000 context / 32,000 max output.
+- **Tests**:
+  - `tests/unit/opencode-models-sync.test.js`: Verified 1M context, max output, and multimodal capability resolution for Muse Spark 1.2, Nemotron 3 Ultra, Laguna S 2.1 family, and OpenCode SKU overrides.
+  - `tests/unit/opencode-executor.test.js`: Verified null and undefined message content sanitization across user, assistant (with empty / non-empty `tool_calls`), and tool message roles.
+
 # v0.15.32 (2026-08-21)
 
 ## Fix: OpenCode ModelError treated as model-level error & Combo stream guard Anthropic max_tokens reasoning retry (#300)

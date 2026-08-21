@@ -148,6 +148,15 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
+  "opencode": {
+    "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
+  },
+  "opencode-go": {
+    "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
+  },
+  "opencode-zen": {
+    "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
+  },
 };
 
 /**
@@ -301,11 +310,12 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
-  { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
+  { pattern: "*nemotron-3-ultra*", caps: { reasoning: true, vision: false, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*nemotron*",      caps: { reasoning: true, vision: false, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*x-preview-f*",   caps: { reasoning: true, contextWindow: 128000 } },
-  { pattern: "*laguna-s*",      caps: { reasoning: true, contextWindow: 128000 } },
-  { pattern: "*muse-spark*",    caps: { reasoning: true, contextWindow: 128000 } },
+  { pattern: "*laguna-s*",      caps: { reasoning: true, vision: false, contextWindow: 1048576, maxOutput: 32768 } },
+  { pattern: "*muse-spark*",    caps: { reasoning: true, vision: true, pdf: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*big-pickle*",    caps: { contextWindow: 128000 } },
 ];
 

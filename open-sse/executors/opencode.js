@@ -58,6 +58,23 @@ export class OpenCodeExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     this._currentSessionId = resolveOpencodeSession(body, credentials);
     let nextBody = injectReasoningContent({ provider: this.provider, model, body });
+    // Sanitize messages: OpenCode upstream rejects messages with content: null/undefined (HTTP 400)
+    if (Array.isArray(nextBody?.messages)) {
+      nextBody = {
+        ...nextBody,
+        messages: nextBody.messages.map((m) => {
+          if (!m) return m;
+          const hasToolCalls = Array.isArray(m.tool_calls) && m.tool_calls.length > 0;
+          if ((m.content === null || m.content === undefined) && !hasToolCalls) {
+            return { ...m, content: "" };
+          }
+          if (m.role === "tool" && (m.content === null || m.content === undefined)) {
+            return { ...m, content: "" };
+          }
+          return m;
+        }),
+      };
+    }
     // OpenCode free/reasoning models (model ends with "-free" or is big-pickle) often receive no
     // max_tokens from clients (e.g. Claude Code). Upstream defaults to a low budget
     // (~40-150 tokens) which exhausts on reasoning, leaving empty text content.
