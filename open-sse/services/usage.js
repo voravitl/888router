@@ -46,7 +46,11 @@ const USAGE_HANDLERS = {
   "minimax-cn": (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
   "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
-  "grok-cli": (c) => getGrokCliUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  "grok-cli": (c) => getGrokCliUsage(c.accessToken || c.apiKey, c.providerSpecificData, c.proxyOptions),
+  gcli: (c) => getGrokCliUsage(c.accessToken || c.apiKey, c.providerSpecificData, c.proxyOptions),
+  "grok-build": (c) => getGrokCliUsage(c.accessToken || c.apiKey, c.providerSpecificData, c.proxyOptions),
+  grok: (c) => getGrokCliUsage(c.accessToken || c.apiKey, c.providerSpecificData, c.proxyOptions),
+  xai: (c) => getGrokCliUsage(c.accessToken || c.apiKey, c.providerSpecificData, c.proxyOptions),
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
 };

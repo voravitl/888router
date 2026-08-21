@@ -369,6 +369,12 @@ export async function getGrokCliUsage(accessToken, providerSpecificData = null, 
     ]);
 
     if (billingRes.status === 401 || billingRes.status === 403) {
+      if (typeof accessToken === "string" && accessToken.startsWith("xai-")) {
+        return {
+          message:
+            "xAI API Key does not provide quota/credit balance via API. Usage tracking is available for xAI OAuth / Grok CLI accounts.",
+        };
+      }
       return { message: "Grok CLI authentication expired. Please re-authorize." };
     }
 

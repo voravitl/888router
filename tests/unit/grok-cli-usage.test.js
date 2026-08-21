@@ -398,29 +398,58 @@ describe("getUsageForProvider(grok-cli)", () => {
     expect(usage.message).toMatch(/active.*numeric included quota/i);
     expect(usage.quotas).toEqual({});
   });
+
+  it("routes aliases xai, gcli, grok-build and fallback apiKey", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(ACTIVE_BILLING))
+      .mockResolvedValueOnce(jsonResponse(USER_PROFILE));
+
+    const usage = await getUsageForProvider({
+      provider: "xai",
+      apiKey: "test-oauth-token",
+    });
+
+    expect(usage.plan).toBe("Grok Code");
+    expect(usage.quotas["On-demand"]).toBeDefined();
+  });
+
+  it("returns helpful message when xAI API key gets 401 from Grok Build billing", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
+      .mockResolvedValueOnce(null);
+
+    const usage = await getUsageForProvider({
+      provider: "xai",
+      apiKey: "xai-1234567890abcdef",
+    });
+
+    expect(usage.message).toMatch(/xAI API Key does not provide quota/i);
+  });
 });
 
 describe("parseQuotaData(grok-cli)", () => {
-  it("forwards remainingPercentage for dashboard bars", () => {
-    const rows = parseQuotaData("grok-cli", {
-      plan: "Grok Code",
-      quotas: {
-        "On-demand": {
-          used: 35,
-          total: 100,
-          remaining: 65,
-          remainingPercentage: 65,
-          resetAt: "2026-07-15T00:00:00.000Z",
+  it("forwards remainingPercentage for dashboard bars on grok-cli and aliases", () => {
+    for (const p of ["grok-cli", "xai", "gcli", "grok-build", "grok"]) {
+      const rows = parseQuotaData(p, {
+        plan: "Grok Code",
+        quotas: {
+          "On-demand": {
+            used: 35,
+            total: 100,
+            remaining: 65,
+            remainingPercentage: 65,
+            resetAt: "2026-07-15T00:00:00.000Z",
+          },
         },
-      },
-    });
+      });
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      name: "On-demand",
-      used: 35,
-      total: 100,
-      remainingPercentage: 65,
-    });
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        name: "On-demand",
+        used: 35,
+        total: 100,
+        remainingPercentage: 65,
+      });
+    }
   });
 });

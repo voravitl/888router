@@ -463,6 +463,10 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "grok-cli":
+      case "gcli":
+      case "grok-build":
+      case "grok":
+      case "xai":
         // Grok Build credits (on-demand window + prepaid balance).
         // Do NOT forward absolute `remaining` — getRemainingPercentage treats
         // it as a 0–100 percentage (same as Qoder). Use remainingPercentage.
