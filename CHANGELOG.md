@@ -1,3 +1,18 @@
+# v0.15.36 (2026-08-21)
+
+## Fix: Security hardening for Devin CLI host bridge & Trae error redaction (#303)
+
+- **Devin CLI Security Gate (`open-sse/executors/devin-cli.js`)**:
+  - Gated execution behind `DEVIN_CLI_ENABLE=1` (disabled by default) to prevent unauthorized host agent execution via remote chat requests.
+  - Removed prompt text scanning for `<cwd>...</cwd>` tags; only structured, validated absolute directories in request fields (`body.cwd`, `body.working_directory`, etc.) are allowed.
+  - Isolated subprocess environment to an allowlist of safe keys (`PATH`, `HOME`, `USER`, `LANG`, `TMPDIR`, `XDG_*`, `DEVIN_*`) rather than leaking server secrets (`JWT_SECRET`, database keys, auth tokens).
+  - Replaced static temp MCP script path with a randomized, dedicated directory (`fs.mkdtempSync`) with `0o700` directory mode and `0o600` file mode.
+  - Enforced `shell: false` for all child process spawns.
+- **Trae Error Redaction (`open-sse/executors/trae.js`)**:
+  - Truncated and redacted upstream error responses to prevent leaking tokens or internal session IDs in error stack traces.
+- **Tests**:
+  - `tests/unit/devin-cli-executor.test.js`: Added assertions for security gate, explicit cwd enforcement, and prompt cwd injection prevention.
+
 # v0.15.35 (2026-08-21)
 
 ## Feat: Port upstream v0.5.55 features (Items 1-4) & add Grok 4.6 default model to xAI (#302)
