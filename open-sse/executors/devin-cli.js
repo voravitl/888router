@@ -105,9 +105,9 @@ rl.on("line", (line) => {
 `.trimStart();
 
 function ensureClientToolsScript() {
-  const scriptPath = path.join(os.tmpdir(), "9router-devin-client-tools.mjs");
-  // Always rewrite so script upgrades land without a process restart.
-  fs.writeFileSync(scriptPath, CLIENT_TOOLS_MCP_SCRIPT);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-tools-"), { mode: 0o700 });
+  const scriptPath = path.join(dir, "client-tools.mjs");
+  fs.writeFileSync(scriptPath, CLIENT_TOOLS_MCP_SCRIPT, { mode: 0o600 });
   return scriptPath;
 }
 
@@ -191,9 +191,8 @@ function extractClientToolResults(messages) {
   return results;
 }
 
-// Resolve workspace cwd from client request (Codex/CLI env context, body fields).
-// Prefer an absolute existing path so agent file tools hit the user's project
-// instead of os.tmpdir() (which made relative create/delete inconsistent).
+// Resolve workspace cwd from client request body fields.
+// Do NOT parse cwd from prompt message text to prevent unauthorized traversal.
 function resolveWorkspaceCwd(body) {
   const candidates = [];
   const push = (v) => {
@@ -205,35 +204,6 @@ function resolveWorkspaceCwd(body) {
   push(body?.workspace);
   push(body?.metadata?.cwd);
   push(body?.metadata?.working_directory);
-
-  const scanText = (text) => {
-    if (typeof text !== "string") return;
-    for (const m of text.matchAll(/<cwd>\s*([^<]+?)\s*<\/cwd>/gi)) push(m[1]);
-  };
-  const scanMessages = (msgs) => {
-    if (!Array.isArray(msgs)) return;
-    for (const msg of msgs) {
-      if (!msg) continue;
-      if (typeof msg.content === "string") scanText(msg.content);
-      else if (Array.isArray(msg.content)) {
-        for (const p of msg.content) {
-          if (typeof p === "string") scanText(p);
-          else if (p && typeof p === "object") {
-            scanText(p.text);
-            scanText(p.input_text);
-            scanText(p.content);
-          }
-        }
-      }
-      // Responses API input items
-      if (typeof msg === "string") scanText(msg);
-      if (msg.type === "message" && Array.isArray(msg.content)) {
-        for (const p of msg.content) scanText(p?.text || p?.input_text);
-      }
-    }
-  };
-  scanMessages(body?.messages);
-  scanMessages(body?.input);
 
   for (const c of candidates) {
     try {
@@ -320,6 +290,12 @@ export class DevinCliExecutor extends BaseExecutor {
   }
 
   async execute({ model, body, credentials, signal, log }) {
+    if (process.env.DEVIN_CLI_ENABLE !== "1" && process.env.DEVIN_CLI_ENABLE !== "true") {
+      throw new Error(
+        "Devin CLI bridge is disabled by default for security. Set DEVIN_CLI_ENABLE=1 in the environment to allow local agent execution."
+      );
+    }
+
     const b = body ?? {};
     const messages = Array.isArray(b.messages)
       ? b.messages
@@ -368,12 +344,13 @@ export class DevinCliExecutor extends BaseExecutor {
     }
     if (Object.keys(mcpServers).length) {
       try {
-        mcpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"));
+        mcpConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), "devin-mcp-"), { mode: 0o700 });
         const cfgDev = path.join(mcpConfigDir, "devin");
-        fs.mkdirSync(cfgDev, { recursive: true });
+        fs.mkdirSync(cfgDev, { recursive: true, mode: 0o700 });
         fs.writeFileSync(
           path.join(cfgDev, "config.json"),
-          JSON.stringify({ mcpServers })
+          JSON.stringify({ mcpServers }),
+          { mode: 0o600 }
         );
         log?.info?.("DEVIN", `mcp config written → ${mcpConfigDir}`);
       } catch (e) {
@@ -396,36 +373,30 @@ export class DevinCliExecutor extends BaseExecutor {
         const enc = new TextEncoder();
         const emit = (data) => controller.enqueue(enc.encode(data));
 
-        // Inherit the parent environment so devin resolves stored CLI credentials
-        // (~/.local/share/devin/credentials.toml from `devin auth login`). Do NOT
-        // inject WINDSURF_API_KEY: this provider is noAuth, and a bogus/leaked key
-        // overrides stored creds and makes devin return -32000 "invalid api key".
-        const env = { ...process.env };
-        // Auto-approve tool execution so the agent doesn't block waiting for a
-        // session/request_permission response we never send (default mode would
-        // hang the stream on the first shell/exec tool call). Override via env.
-        // WARNING: bypass lets the agent run shell/modify FS unattended — local only.
+        // Sanitize environment variables so server secrets are never leaked to host agent
+        const SAFE_ENV_KEYS = [
+          "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TMP", "TEMP",
+          "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES",
+          "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
+          "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
+          "DEVIN_API_KEY", "DEVIN_MCP_TOOLS", "DEVIN_MCP_TOOL_RESULTS",
+        ];
+        const env = {};
+        for (const k of SAFE_ENV_KEYS) {
+          if (process.env[k] !== undefined) env[k] = process.env[k];
+        }
         env.DEVIN_PERMISSION_MODE = process.env.DEVIN_PERMISSION_MODE || "bypass";
         if (mcpConfigDir) env.XDG_CONFIG_HOME = mcpConfigDir;
 
-        // Agent type: default (omitted) = full agent with built-in tools
-        // (fs/shell/search) so the model can actually perform tasks. Override to
-        // `summarizer` (no tools, text-only) via CLI_DEVIN_AGENT_TYPE for a safer,
-        // tool-less mode. WARNING: the default agent can run shell commands and
-        // modify the filesystem on the host running 9router — only expose locally.
         const agentType = process.env.CLI_DEVIN_AGENT_TYPE?.trim();
         const acpArgs = ["acp"];
         if (agentType) acpArgs.push("--agent-type", agentType);
 
-        // Spawn in the client workspace cwd (from <cwd> env context) so built-in
-        // file tools create/delete relative paths in the user's project.
-        // MCP config still comes from XDG_CONFIG_HOME (throwaway), not project .devin/.
         const child = spawn(devinBin, acpArgs, {
           env,
           cwd: workspaceCwd,
           stdio: ["pipe", "pipe", "pipe"],
-          // On Windows, devin.exe may need shell resolution
-          shell: process.platform === "win32",
+          shell: false,
         });
 
         let spawnError = null;

@@ -125,10 +125,21 @@ export default class TraeExecutor extends BaseExecutor {
       signal,
     }, null);
     const text = await res.text();
-    if (!res.ok) throw new Error(`[${res.status}] ${text}`);
-    const json = JSON.parse(text);
-    if (json?.code !== 0) throw new Error(`Trae create_session: ${JSON.stringify(json)}`);
-    return { sessionId: json.data.chat_session_id, messageId: json.data.message_id };
+    const safeText = String(text || "")
+      .slice(0, 500)
+      .replace(/(?:Bearer|Cloud-IDE-JWT|jwt|key|token)[=:\s]+[A-Za-z0-9._-]+/gi, "[REDACTED]");
+    if (!res.ok) throw new Error(`[${res.status}] ${safeText}`);
+    let json;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      throw new Error(`Trae create_session invalid JSON: ${safeText}`);
+    }
+    if (json?.code !== 0) {
+      const safeMsg = JSON.stringify({ code: json?.code, message: json?.message || json?.msg || "unknown error" });
+      throw new Error(`Trae create_session: ${safeMsg}`);
+    }
+    return { sessionId: json?.data?.chat_session_id, messageId: json?.data?.message_id };
   }
 
   // GET /events SSE → invoke onEvent(eventType, dataObj) per frame.
