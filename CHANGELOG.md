@@ -1,3 +1,16 @@
+# v0.15.32 (2026-08-21)
+
+## Fix: OpenCode ModelError treated as model-level error & Combo stream guard Anthropic max_tokens reasoning retry (#300)
+
+- **`open-sse/config/errorConfig.js`**: Added `{ text: "\"type\":\"modelerror\"", modelError: true }` and `{ text: "promotion has ended", modelError: true }` rules so when upstream OpenCode returns a model-level error (e.g. decommissioned free model promotion ending), 888router treats it as a model error rather than an account-level 401 auth failure. This prevents false provider-level account / proxy pool quarantines that previously blocked all subsequent free model requests with cached 401s.
+- **`open-sse/services/combo.js`**:
+  - `isReasoningEmptyContent`: Extended `finishReason` check to include Anthropic format `"max_tokens"` alongside OpenAI format `"length"`.
+  - `handleComboChat`: Stream guard reasoning budget exhaustion retry now triggers on both `length` and `max_tokens` (`guard.finishReason() === "length" || guard.finishReason() === "max_tokens"`), allowing Claude Code and other Anthropic-format clients to automatically retry reasoning models that burned their token budget during thinking.
+  - `withRaisedMaxTokens`: Added a minimum token floor of 2048 (`Math.min(Math.max(original * 3, original + 512, 2048), 65536)`), ensuring reasoning models have sufficient budget to output both reasoning deltas and final text content.
+- **Tests**:
+  - `tests/unit/combo-routing.test.js`: Added test cases for OpenCode `ModelError` and `promotion has ended` error classifications.
+  - `tests/unit/combo-stream-fallback.test.js`: Added tests for Anthropic SSE format thinking stream retry on `stop_reason: "max_tokens"`, and `isReasoningEmptyContent` unit test.
+
 # v0.15.31 (2026-08-21)
 
 ## Fix: OpenCode Zen Free can now sync models without an existing DB connection and added latest free models (#299)

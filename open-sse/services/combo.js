@@ -18,17 +18,17 @@ const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 // happens we retry once with a raised budget. Pure function, exported for tests.
 export function isReasoningEmptyContent(finishReason, content, reasoningContent) {
   return (
-    finishReason === "length" &&
+    (finishReason === "length" || finishReason === "max_tokens") &&
     !content &&
     !!(reasoningContent || "").length
   );
 }
 
-// Raise max_tokens for the retry: original x3 or +512 (whichever is larger), capped
+// Raise max_tokens for the retry: original x3 or +512 (whichever is larger), minimum 2048, capped
 // at 65536. Returns a new body object, never mutates the original.
 function withRaisedMaxTokens(body) {
   const original = Number.isFinite(body?.max_tokens) ? body.max_tokens : 0;
-  const raised = Math.min(Math.max(original * 3, original + 512), 65536);
+  const raised = Math.min(Math.max(original * 3, original + 512, 2048), 65536);
   return { ...body, max_tokens: raised };
 }
 
@@ -368,7 +368,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
               // the non-stream path below (isReasoningEmptyContent) and give
               // the model one more attempt with a raised budget before
               // falling through to the next combo model.
-              if (guard.sawReasoning() && guard.finishReason() === "length") {
+              if (guard.sawReasoning() && (guard.finishReason() === "length" || guard.finishReason() === "max_tokens")) {
                 log.warn("COMBO", `Model ${modelStr} exhausted max_tokens on reasoning (streamed), retrying once with raised budget`);
                 await reader.cancel().catch(() => {});
                 const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr);

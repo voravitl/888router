@@ -90,4 +90,18 @@ describe("combo modelError fallback rules", () => {
     expect(overloaded.modelError).toBe(true);
     expect(overloaded.cooldownMs).toBe(0);
   });
+
+  it("classifies OpenCode ModelError and promotion has ended as model-level errors", async () => {
+    const { checkFallbackError } = await import("../../open-sse/services/accountFallback.js");
+
+    const opencodeModelError = checkFallbackError(401, '{"type":"error","error":{"type":"ModelError","message":"Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go"}}');
+    expect(opencodeModelError.shouldFallback).toBe(false);
+    expect(opencodeModelError.modelError).toBe(true);
+    expect(opencodeModelError.cooldownMs).toBe(0);
+
+    const promotionEnded = checkFallbackError(400, "promotion has ended for this model");
+    expect(promotionEnded.shouldFallback).toBe(false);
+    expect(promotionEnded.modelError).toBe(true);
+    expect(promotionEnded.cooldownMs).toBe(0);
+  });
 });

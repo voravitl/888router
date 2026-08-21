@@ -95,6 +95,8 @@ export const ERROR_RULES = [
   // 500 retry, see DEFAULT_RETRY_CONFIG.500). Matched on the lowercased error
   // text, so use the underscore spelling of Kiro's exact reason.
   { text: "model_temporarily_unavailable", modelError: true },
+  { text: "\"type\":\"modelerror\"", modelError: true },
+  { text: "promotion has ended", modelError: true },
 
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
