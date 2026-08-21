@@ -1,3 +1,25 @@
+# v0.15.35 (2026-08-21)
+
+## Feat: Port upstream v0.5.55 features (Items 1-4) & add Grok 4.6 default model to xAI (#302)
+
+- **IDE & Agent CLI Bridges (Item 1)**:
+  - Added dedicated bridge executors and OAuth configs for `grok-cli` (`cli-chat-proxy.grok.com`), `devin-cli` (stdio ACP bridge), `trae` (`core-normal.trae.ai`), `windsurf` (Codeium gRPC-web protocol), and `zed` (`cloud.zed.dev`).
+  - Added `BUILTIN_MODEL_ALIASES` mapping `grok-build` to `gcli/grok-build`.
+- **Video Generation Endpoint (Item 2)**:
+  - Added `/v1/videos/generations`, `/v1/videos/edits`, `/v1/videos/extensions`, and `/v1/videos/[id]` REST routes.
+  - Implemented `open-sse/handlers/videoCore.js` and `src/sse/handlers/videoGeneration.js` supporting async job polling and multipart form video generation with xAI (`grok-imagine-video`).
+- **Usage Trackers & Quota Bars (Item 3)**:
+  - Added quota parsers and fetchers for `deepseek` (`/user/balance`), `kimi` (`/v1/usages`), and `grok-cli` (billing credits & quota frames).
+  - Integrated `remainingPercentage` for balance rows in dashboard `ProviderLimits`.
+- **Fast Inference & Specialized Providers (Item 4)**:
+  - Ported 20+ specialized provider registries: `sambanova`, `perplexity-agent`, `poolside`, `featherless`, `kilo-gateway`, `morph`, `bluesminds`, `api-airforce`, `llm7`, `bazaarlink`, `baidu`, `tencent`, `codebuddy-intl`, `selfhosted-tts`, `selfhosted-stt`, `selfhosted-embedding`.
+  - Added TTS adapters for `xiaomi-mimo` and `selfhosted-tts`.
+  - Added embedding adapter for `selfhosted-embedding`.
+- **Grok 4.6 Model Support**:
+  - Added `grok-4.6` to default models list in `open-sse/providers/registry/xai.js`.
+  - Confirmed 500k context window and reasoning translation across OpenAI and Claude SSE formats.
+- **Tests**: All 218 test files (2,219 unit tests) passed 100%. Refreshed golden URL baseline snapshots.
+
 # v0.15.34 (2026-08-21)
 
 ## Fix: OpenCode muse-spark HTTP 400 from empty content arrays and advertised vision (#300)
