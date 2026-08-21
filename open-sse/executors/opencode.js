@@ -40,16 +40,26 @@ function toOpencodeSession(id) {
   return stripped ? `ses_${stripped}` : null;
 }
 
+const TEXT_PART_TYPES = new Set(["text", "input_text"]);
+
+function partText(p) {
+  if (typeof p === "string") return p;
+  if (p && typeof p.text === "string") return p.text;
+  return "";
+}
+
 // OpenCode Zen HTTP 400s on content: [] and text parts with null/missing text
-// (observed on muse-spark-1.2-contributor-free). Mixed/image arrays are left
-// for modality strip; valid text-part arrays are left untouched.
+// (observed on muse-spark-1.2-contributor-free). chatCore strips modalities
+// before this runs and injects text placeholders, so image-only does not
+// become []. Mixed/image arrays are left for that strip; valid text-part
+// arrays are left untouched. Collapse [null]/bare strings/unknown text-only.
 function sanitizeOpencodeMessageContent(content) {
   if (!Array.isArray(content)) return content;
   if (content.length === 0) return "";
-  const textOnly = content.every((p) => p && p.type === "text");
-  if (!textOnly) return content;
-  if (content.every((p) => typeof p.text === "string")) return content;
-  return content.map((p) => (typeof p.text === "string" ? p.text : "")).join("\n");
+  const hasNonText = content.some((p) => p && typeof p === "object" && p.type && !TEXT_PART_TYPES.has(p.type));
+  if (hasNonText) return content;
+  if (content.every((p) => p && typeof p.text === "string")) return content;
+  return content.map(partText).filter((t) => t.length > 0).join("\n");
 }
 
 function resolveOpencodeSession(body, credentials) {

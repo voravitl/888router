@@ -63,5 +63,30 @@ describe("OpenCodeExecutor.transformRequest - t2 max_tokens injection", () => {
     ]);
     expect(res.messages[5].content).toBeUndefined();
   });
+
+  it("collapses null/bare-string/unknown text-only arrays and filters empty join segments", () => {
+    const body = {
+      messages: [
+        { role: "user", content: [null] },
+        { role: "user", content: ["hello"] },
+        { role: "user", content: [{ type: "text", text: null }, { type: "text", text: null }] },
+        { role: "user", content: [{ type: "text", text: null }, { type: "text", text: "keep" }] },
+        { role: "user", content: [{ type: "input_text", text: null }] },
+        { role: "user", content: [{ type: "text", text: "hi" }, { type: "image_url", image_url: { url: "x" } }] },
+        { role: "assistant", tool_calls: [{ id: "call_1" }] },
+      ],
+    };
+    const res = executor.transformRequest("muse-spark-1.2-contributor-free", body);
+    expect(res.messages[0].content).toBe("");
+    expect(res.messages[1].content).toBe("hello");
+    expect(res.messages[2].content).toBe("");
+    expect(res.messages[3].content).toBe("keep");
+    expect(res.messages[4].content).toBe("");
+    expect(res.messages[5].content).toEqual([
+      { type: "text", text: "hi" },
+      { type: "image_url", image_url: { url: "x" } },
+    ]);
+    expect(res.messages[6].content).toBeUndefined();
+  });
 });
 

@@ -3,13 +3,13 @@
 ## Fix: OpenCode muse-spark HTTP 400 from empty content arrays and advertised vision (#300)
 
 - **`open-sse/executors/opencode.js`**:
-  - Extended `transformRequest` sanitization beyond `content: null`/`undefined`. Empty `content: []` collapses to `""`. Text-only part arrays with `text: null` or missing `text` collapse to a joined string. Valid text-part arrays and mixed/image arrays are left untouched. Assistant turns with non-empty `tool_calls` still omit `content`.
+  - Extended `transformRequest` sanitization beyond `content: null`/`undefined`. Empty `content: []` collapses to `""`. Text-only part arrays with `text: null`, missing `text`, `[null]`, or bare strings collapse to a joined string (empty segments dropped so all-null does not become a newline). Valid text-part arrays and mixed/image arrays are left untouched. Assistant turns with non-empty `tool_calls` still omit `content`.
   - Evidence: live OpenCode Zen returned HTTP 400 with an empty `chat.completion` body for `content: []`, `[{type:"text", text:null}]`, and `[{type:"text"}]` on `muse-spark-1.2-contributor-free`.
 - **`open-sse/providers/capabilities.js`**:
   - `PROVIDER_CAPABILITIES` OpenCode SKU override for `muse-spark-1.2-contributor-free` on `opencode` / `opencode-go` / `opencode-zen`: `vision: false, pdf: false, audioInput: false, videoInput: false`. Family pattern `*muse-spark*` stays multimodal for other providers. Context window 1M / max output 131k unchanged.
   - Evidence: live Zen HTTP 400 on a 1×1 PNG `image_url`. Same defect class as #198 (wrong vision flag skips modality strip).
 - **Tests**:
-  - `tests/unit/opencode-executor.test.js`: empty arrays, nested null/missing text, valid text parts, mixed image arrays, tool_calls content left undefined.
+  - `tests/unit/opencode-executor.test.js`: empty arrays, nested null/missing text, `[null]`, bare strings, all-null join, `input_text`, valid text parts, mixed image arrays, tool_calls content left undefined.
   - `tests/unit/opencode-models-sync.test.js`: OpenCode SKU modalities false; family pattern still true.
 
 # v0.15.33 (2026-08-21)
