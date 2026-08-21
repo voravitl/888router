@@ -1,6 +1,6 @@
 import { CLAUDE_API_HEADERS } from "../shared.js";
 
-const deepseekConfig = {
+export default {
   id: "deepseek",
   priority: 110,
   alias: "deepseek",
@@ -48,6 +48,8 @@ const deepseekConfig = {
     { id: "deepseek-chat", name: "DeepSeek V3.2 Chat" },
     { id: "deepseek-reasoner", name: "DeepSeek V3.2 Reasoner" },
   ],
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };
-
-export default deepseekConfig;

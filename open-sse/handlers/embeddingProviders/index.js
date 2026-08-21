@@ -2,17 +2,20 @@
 import createOpenAIEmbeddingAdapter from "./openai.js";
 import gemini from "./gemini.js";
 import openaiCompatNode from "./openaiCompatNode.js";
+import selfhostedEmbedding from "./selfhostedEmbedding.js";
 
 const OPENAI_COMPAT_PROVIDERS = [
   "openai", "openrouter", "mistral", "voyage-ai", "fireworks",
-  "together", "nebius", "github", "nvidia", "jina-ai",
-  "vercel-ai-gateway",
+  "together", "deepinfra", "nebius", "siliconflow", "chutes",
+  "hyperbolic", "novita", "alicode", "alicode-intl", "byteplus",
+  "vertex-partner", "github", "nvidia", "jina-ai", "vercel-ai-gateway",
 ];
 
 const ADAPTERS = {
   ...Object.fromEntries(OPENAI_COMPAT_PROVIDERS.map((id) => [id, createOpenAIEmbeddingAdapter(id)])),
   gemini,
   google_ai_studio: gemini,
+  "selfhosted-embedding": selfhostedEmbedding,
 };
 
 export function getEmbeddingAdapter(provider) {
