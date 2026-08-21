@@ -150,12 +150,16 @@ export const PROVIDER_CAPABILITIES = {
   },
   "opencode": {
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
+    // Observed Zen HTTP 400 on image_url; do not invent SKU token cuts.
+    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "opencode-go": {
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
+    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "opencode-zen": {
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
+    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
 };
 

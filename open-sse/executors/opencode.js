@@ -40,6 +40,28 @@ function toOpencodeSession(id) {
   return stripped ? `ses_${stripped}` : null;
 }
 
+const TEXT_PART_TYPES = new Set(["text", "input_text"]);
+
+function partText(p) {
+  if (typeof p === "string") return p;
+  if (p && typeof p.text === "string") return p.text;
+  return "";
+}
+
+// OpenCode Zen HTTP 400s on content: [] and text parts with null/missing text
+// (observed on muse-spark-1.2-contributor-free). chatCore strips modalities
+// before this runs and injects text placeholders, so image-only does not
+// become []. Mixed/image arrays are left for that strip; valid text-part
+// arrays are left untouched. Collapse [null]/bare strings/unknown text-only.
+function sanitizeOpencodeMessageContent(content) {
+  if (!Array.isArray(content)) return content;
+  if (content.length === 0) return "";
+  const hasNonText = content.some((p) => p && typeof p === "object" && p.type && !TEXT_PART_TYPES.has(p.type));
+  if (hasNonText) return content;
+  if (content.every((p) => p && typeof p.text === "string")) return content;
+  return content.map(partText).filter((t) => t.length > 0).join("\n");
+}
+
 function resolveOpencodeSession(body, credentials) {
   return toOpencodeSession(resolveSessionId({
     headers: credentials?.rawHeaders,
@@ -58,7 +80,9 @@ export class OpenCodeExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     this._currentSessionId = resolveOpencodeSession(body, credentials);
     let nextBody = injectReasoningContent({ provider: this.provider, model, body });
-    // Sanitize messages: OpenCode upstream rejects messages with content: null/undefined (HTTP 400)
+    // Sanitize messages: OpenCode Zen HTTP 400s on content: null/undefined/[] and
+    // text parts with null/missing text. Assistant turns with non-empty tool_calls
+    // may omit content; leave that shape alone.
     if (Array.isArray(nextBody?.messages)) {
       nextBody = {
         ...nextBody,
@@ -71,7 +95,9 @@ export class OpenCodeExecutor extends BaseExecutor {
           if (m.role === "tool" && (m.content === null || m.content === undefined)) {
             return { ...m, content: "" };
           }
-          return m;
+          if (m.content === null || m.content === undefined) return m;
+          const content = sanitizeOpencodeMessageContent(m.content);
+          return content === m.content ? m : { ...m, content };
         }),
       };
     }

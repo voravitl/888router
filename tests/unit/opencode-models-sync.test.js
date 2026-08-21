@@ -49,14 +49,25 @@ describe("OpenCode Model Sync Support", () => {
     expect(lagunaFamilyCaps.contextWindow).toBe(1048576);
     expect(lagunaFamilyCaps.maxOutput).toBe(32768);
 
+    // OpenCode SKU: Zen HTTP 400s on image_url — strip modalities, keep 1M/131k.
     const museCaps = getCapabilitiesForModel("opencode", "muse-spark-1.2-contributor-free");
     expect(museCaps.reasoning).toBe(true);
-    expect(museCaps.vision).toBe(true);
-    expect(museCaps.pdf).toBe(true);
-    expect(museCaps.audioInput).toBe(true);
-    expect(museCaps.videoInput).toBe(true);
+    expect(museCaps.vision).toBe(false);
+    expect(museCaps.pdf).toBe(false);
+    expect(museCaps.audioInput).toBe(false);
+    expect(museCaps.videoInput).toBe(false);
     expect(museCaps.contextWindow).toBe(1048576);
     expect(museCaps.maxOutput).toBe(131072);
+
+    const museGoCaps = getCapabilitiesForModel("opencode-go", "muse-spark-1.2-contributor-free");
+    expect(museGoCaps.vision).toBe(false);
+    const museZenCaps = getCapabilitiesForModel("opencode-zen", "muse-spark-1.2-contributor-free");
+    expect(museZenCaps.vision).toBe(false);
+
+    // Family pattern stays multimodal for non-OpenCode providers.
+    const museFamilyCaps = getCapabilitiesForModel("openai", "muse-spark-1.2");
+    expect(museFamilyCaps.vision).toBe(true);
+    expect(museFamilyCaps.pdf).toBe(true);
 
     const nemotronUltraCaps = getCapabilitiesForModel("opencode", "nemotron-3-ultra-free");
     expect(nemotronUltraCaps.reasoning).toBe(true);
