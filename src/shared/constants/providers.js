@@ -172,7 +172,8 @@ export function providerSupportsModelSync(providerId) {
 
 // Providers that support public model listing without requiring an active connection in DB
 export function isPublicModelsProvider(providerId) {
-  if (providerId === "opencode" || providerId === "opencode-zen") return true;
+  // /v1/models is unauthenticated for these gateways (observed 200 without a key).
+  if (providerId === "opencode" || providerId === "opencode-zen" || providerId === "nousresearch") return true;
   const provider = AI_PROVIDERS[providerId];
   return !!(provider?.noAuth && provider?.hasFree);
 }

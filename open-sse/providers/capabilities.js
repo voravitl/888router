@@ -345,8 +345,9 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
   { pattern: "*nemotron-3-ultra*", caps: { reasoning: true, vision: false, contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*nemotron*",      caps: { reasoning: true, vision: false, contextWindow: 128000 } },
-  { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
-
+  // Nous Hermes 4 (Portal live catalog 2026-08-23: 131k, text-only, reasoning param)
+  { pattern: "*hermes-4*",      caps: { reasoning: true, vision: false, thinkingFormat: "openai", contextWindow: 131072 } },
+  { pattern: "*deephermes-4*",  caps: { reasoning: true, vision: false, thinkingFormat: "openai", contextWindow: 131072 } },
   { pattern: "*laguna-s*",      caps: { reasoning: true, vision: false, contextWindow: 1048576, maxOutput: 32768 } },
   { pattern: "*muse-spark*",    caps: { reasoning: true, vision: true, pdf: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*big-pickle*",    caps: { contextWindow: 128000 } },

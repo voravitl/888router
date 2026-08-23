@@ -1,3 +1,13 @@
+# v0.15.38 (2026-08-24)
+
+## Feat: Native Nous Research Portal provider (complete flow)
+
+- **Was a stub:** `nousresearch` previously proxied OpenRouter (`openrouter.ai`) with stale Hermes 3 IDs and no dashboard logo, so the card looked broken / unusable.
+- **Native gateway:** `https://inference-api.nousresearch.com/v1/chat/completions` (+ `/v1/models`, `/v1/embeddings`) per [Nous Portal docs](https://hermes-agent.nousresearch.com/docs/integrations/nous-portal) (`base_url: https://inference-api.nousresearch.com/v1`). Live catalog 2026-08-23: 373 models.
+- **Dashboard flow:** API-key card + `public/providers/nousresearch.png`, `modelsFetcher` + `passthroughModels`, public model sync (`GET /v1/models` is unauthenticated), featured seed includes Hermes 4 70B/405B.
+- **Caps:** `*hermes-4*` → reasoning, text-only, 131k context (Portal live architecture).
+- **Tests:** `tests/unit/nousresearch-provider.test.js`.
+
 # v0.15.37 (2026-08-23)
 
 ## Feat: OpenCode Ox Alpha Free (`oc/x-preview-f-free`, `ocg/ox-alpha-free`)
