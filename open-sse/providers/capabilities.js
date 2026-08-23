@@ -42,7 +42,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|openai-low-high-max|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -65,6 +65,26 @@ const SERVICE_KIND_CAPABILITIES = {
 export function capabilitiesFromServiceKind(kind) {
   return SERVICE_KIND_CAPABILITIES[kind] || null;
 }
+
+// Strip a trailing thinking suffix "model(value)" so lookups resolve the base id.
+function stripThinkingSuffix(model) {
+  if (typeof model !== "string") return model;
+  return model.replace(/\([^()]+\)\s*$/, "").trim();
+}
+
+// OpenCode Ox Alpha Free — image input + always-thinking reasoning
+// (models.dev reasoning_options [low, high, max]; videoInput stays false until
+// the common video transport is end-to-end). Shared by the provider/id pairs
+// below; never exposed globally so other providers' same-named models keep
+// pattern/default caps.
+const OX_ALPHA_CAPABILITIES = {
+  vision: true,
+  reasoning: true,
+  thinkingFormat: "openai-low-high-max",
+  thinkingCanDisable: false,
+  contextWindow: 1000000,
+  maxOutput: 131072,
+};
 
 /**
  * Canonical exact-id overrides — used for exceptions that patterns would
@@ -149,15 +169,24 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
   "opencode": {
+    "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     // Observed Zen HTTP 400 on image_url; do not invent SKU token cuts.
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
+  "oc": {
+    "x-preview-f-free": OX_ALPHA_CAPABILITIES,
+  },
   "opencode-go": {
+    "ox-alpha-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
+  "ocg": {
+    "ox-alpha-free": OX_ALPHA_CAPABILITIES,
+  },
   "opencode-zen": {
+    "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
@@ -317,7 +346,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*nemotron-3-ultra*", caps: { reasoning: true, vision: false, contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*nemotron*",      caps: { reasoning: true, vision: false, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
-  { pattern: "*x-preview-f*",   caps: { reasoning: true, contextWindow: 128000 } },
+
   { pattern: "*laguna-s*",      caps: { reasoning: true, vision: false, contextWindow: 1048576, maxOutput: 32768 } },
   { pattern: "*muse-spark*",    caps: { reasoning: true, vision: true, pdf: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*big-pickle*",    caps: { contextWindow: 128000 } },
@@ -366,8 +395,9 @@ function catalogueCapabilitiesFor(model, baseModel) {
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
-  const baseModel = model.includes("/") ? model.split("/").pop() : model;
-  const catalogueCaps = catalogueCapabilitiesFor(model, baseModel);
+  const normalizedModel = stripThinkingSuffix(model);
+  const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
+  const catalogueCaps = catalogueCapabilitiesFor(normalizedModel, baseModel);
 
   // Provider-specific overrides are applied LAST — above dynamic caps, not below.
   // They are hand-written statements about one provider's upstream ("this
@@ -376,7 +406,10 @@ export function getCapabilitiesForModel(provider, model) {
   // this change did — let a synced `vision: true` overturn `codebuddy-cn`'s
   // deliberate `vision: false`, which is exactly the defect class of #198: the
   // wrong flag stops the translator stripping image_url and the upstream 400s.
-  const providerCaps = (provider && PROVIDER_CAPABILITIES[provider]?.[model]) || null;
+  const providerCaps = (provider && (
+    PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
+    || PROVIDER_CAPABILITIES[provider]?.[baseModel]
+  )) || null;
 
   // Dynamic caps (upstream sync / DB) LAYER OVER the catalogue entry: they win on
   // the fields they carry, and leave every catalogue field the sync omitted
@@ -397,7 +430,7 @@ export function getCapabilitiesForModel(provider, model) {
   // The floor is `Number.isFinite`, so the /v1/models fill-gap path could not
   // rescue it either: 64000 is a valid number, just the wrong one.
   const dynamicCaps =
-    DYNAMIC_CAPABILITIES_CACHE.get(baseModel) ?? DYNAMIC_CAPABILITIES_CACHE.get(model) ?? null;
+    DYNAMIC_CAPABILITIES_CACHE.get(baseModel) ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel) ?? null;
 
   if (!catalogueCaps && !dynamicCaps && !providerCaps) return { ...DEFAULT_CAPABILITIES };
   return {
@@ -418,19 +451,24 @@ export function getCapabilitiesForModel(provider, model) {
  */
 export function resolveKnownContextWindow(provider, model) {
   if (!model) return undefined;
-  if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
-    return PROVIDER_CAPABILITIES[provider][model].contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
+  const normalizedModel = stripThinkingSuffix(model);
+  const providerEntry = provider && (
+    PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
+    || PROVIDER_CAPABILITIES[provider]?.[normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel]
+  );
+  if (providerEntry) {
+    return providerEntry.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   }
-  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
   // Dynamic runtime/DB caps take precedence over static patterns — a synced
   // model (e.g. kiro live catalog) may carry a contextWindow the static table
   // doesn't know yet. Without this, combo MIN context ignores live caps.
-  const dyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel) || DYNAMIC_CAPABILITIES_CACHE.get(model);
+  const dyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel) || DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
   if (dyn && dyn.contextWindow != null) return dyn.contextWindow;
-  const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[model];
+  const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[normalizedModel];
   if (exact) return exact.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
-    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
+    if (matchPattern(pattern, baseModel) || matchPattern(pattern, normalizedModel)) {
       return caps.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
     }
   }

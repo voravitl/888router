@@ -1,3 +1,13 @@
+# v0.15.37 (2026-08-23)
+
+## Feat: OpenCode Ox Alpha Free (`oc/x-preview-f-free`, `ocg/ox-alpha-free`)
+
+- **OpenCode Zen**: rename static model `x-preview-f-free` to **Ox Alpha Free** (Chat Completions, `@ai-sdk/openai-compatible` per [Zen docs](https://opencode.ai/docs/zen/)).
+- **OpenCode Go**: add `ox-alpha-free` as Chat Completions-only (`supportedFormats: ["openai"]`).
+- **Capabilities** (models.dev, 2026-08-23): provider-scoped 1M context / 131k max output, image input, mandatory reasoning `low|high|max` (`thinkingCanDisable: false`). Video input stays off until the common video transport is verified.
+- **Thinking wire**: new `openai-low-high-max` format so `none/minimal` clamp to `low` and `xhigh/max/ultra` map to `max` (OpenAI `gpt-5` still uses `xhigh`).
+- **Tests**: `tests/unit/ox-alpha-capabilities.test.js`, `tests/unit/opencode-ox-alpha-free.test.js`.
+
 # v0.15.36 (2026-08-21)
 
 ## Fix: Security hardening for Devin CLI host bridge & Trae error redaction (#303)

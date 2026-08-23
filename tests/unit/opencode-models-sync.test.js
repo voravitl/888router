@@ -33,7 +33,12 @@ describe("OpenCode Model Sync Support", () => {
   it("should resolve capabilities correctly for new free models", () => {
     const xPreviewCaps = getCapabilitiesForModel("opencode", "x-preview-f-free");
     expect(xPreviewCaps.reasoning).toBe(true);
-    expect(xPreviewCaps.contextWindow).toBe(128000);
+    expect(xPreviewCaps.vision).toBe(true);
+    expect(xPreviewCaps.thinkingFormat).toBe("openai-low-high-max");
+    expect(xPreviewCaps.thinkingCanDisable).toBe(false);
+    expect(xPreviewCaps.contextWindow).toBe(1000000);
+    expect(xPreviewCaps.maxOutput).toBe(131072);
+    expect(xPreviewCaps.videoInput).toBe(false);
 
     // Provider override SKU (OpenCode Zen limit: 256k / 32k)
     const lagunaCaps = getCapabilitiesForModel("opencode", "laguna-s-2.1-free");

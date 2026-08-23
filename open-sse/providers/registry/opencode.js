@@ -33,7 +33,7 @@ const opencodeConfig = {
     { id: "hy3-free", name: "HY3 (Free)" },
     { id: "nemotron-3-ultra-free", name: "Nemotron 3 Ultra (Free)" },
     { id: "nemotron-3.5-lightning-free", name: "Nemotron 3.5 Lightning (Free)" },
-    { id: "x-preview-f-free", name: "X Preview F (Free)" },
+    { id: "x-preview-f-free", name: "Ox Alpha Free", targetFormat: "openai", supportedFormats: ["openai"] },
     { id: "laguna-s-2.1-free", name: "Laguna S 2.1 (Free)" },
     { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor (Free)" },
     { id: "big-pickle", name: "Big Pickle (Free)" },
