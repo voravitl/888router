@@ -110,4 +110,29 @@ describe("Group A models config", () => {
       "anthropic/claude-sonnet-4.6",
     ]);
   });
+
+  it("allows public model listing for opencode-go without an existing connection in DB", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue(null);
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        object: "list",
+        data: [
+          { id: "ox-alpha-free" },
+          { id: "glm-5.3" },
+        ],
+      }),
+    });
+
+    const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
+    const res = await GET(new Request("http://localhost/api/providers/opencode-go/models"), {
+      params: Promise.resolve({ id: "opencode-go" }),
+    });
+    const body = await res.json();
+
+    const [url, init] = mocks.fetch.mock.calls[0];
+    expect(url).toBe("https://opencode.ai/zen/go/v1/models");
+    expect(init.headers?.Authorization).toBeUndefined();
+    expect(body.models.map((m) => m.id)).toEqual(["ox-alpha-free", "glm-5.3"]);
+  });
 });

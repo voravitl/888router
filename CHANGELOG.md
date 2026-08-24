@@ -1,3 +1,10 @@
+# v0.15.41 (2026-08-24)
+
+## Fix: Allow public model sync for OpenCode Go (`opencode-go`, `ocg`) & OpenRouter
+
+- **Public Model Listing**: Added `opencode-go`, `ocg`, and `openrouter` to `isPublicModelsProvider` in `src/shared/constants/providers.js` so clicking Sync Models fetches the live catalog without requiring a pre-saved API key in DB.
+- **Tests**: `tests/unit/group-a-models-config.test.js`.
+
 # v0.15.40 (2026-08-24)
 
 ## Fix: Ox Alpha context length resolution & sync modal context_length parsing
