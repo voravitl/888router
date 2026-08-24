@@ -1,3 +1,11 @@
+# v0.15.39 (2026-08-24)
+
+## Fix: Wire Nous Research in models listing endpoint (`/api/providers/[id]/models`)
+
+- **Root Cause**: `PROVIDER_MODELS_CONFIG` was missing `nousresearch` endpoint, causing `/api/providers/[id]/models` to reject model sync requests with `"Provider nousresearch does not support models listing"`.
+- **Public Sync Support**: Allowed unauthenticated model sync when `isPublicModelsProvider` is true so models can be fetched without an active API key in DB.
+- **Tests**: `tests/unit/group-a-models-config.test.js`.
+
 # v0.15.38 (2026-08-24)
 
 ## Feat: Native Nous Research Portal provider (complete flow)

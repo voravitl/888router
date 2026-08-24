@@ -294,6 +294,8 @@ const PROVIDER_MODELS_CONFIG = {
   "xiaomi-mimo": createOpenAIModelsConfig("https://api.xiaomimimo.com/v1/models"),
   // GLM coding API: non-standard /v4 path, verified live to return the OpenAI {object,data} shape
   glm: createOpenAIModelsConfig("https://api.z.ai/api/coding/paas/v4/models"),
+  nousresearch: createOpenAIModelsConfig("https://inference-api.nousresearch.com/v1/models"),
+  "nous-portal": createOpenAIModelsConfig("https://inference-api.nousresearch.com/v1/models"),
 
   // Cloudflare Workers AI: account-scoped endpoint, requires accountId in path.
   // URL resolved per-request in buildFetchRequest (below) from providerSpecificData.accountId.
@@ -723,7 +725,7 @@ export async function GET(request, { params }) {
 
     // Get auth token
     const token = connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey;
-    if (!token) {
+    if (!token && !isPublicModelsProvider(connection.provider)) {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }
 
@@ -740,12 +742,12 @@ export async function GET(request, { params }) {
         }
         requestUrl = requestUrl.replace("{accountId}", encodeURIComponent(accountId));
       }
-      if (config.authQuery) {
+      if (config.authQuery && authToken) {
         requestUrl += `?${config.authQuery}=${authToken}`;
       }
 
       const headers = { ...config.headers };
-      if (config.authHeader && !config.authQuery) {
+      if (config.authHeader && !config.authQuery && authToken) {
         headers[config.authHeader] = (config.authPrefix || "") + authToken;
       }
 

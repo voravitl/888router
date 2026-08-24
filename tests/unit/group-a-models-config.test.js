@@ -64,6 +64,8 @@ describe("Group A models config", () => {
       venice: "https://api.venice.ai/api/v1/models",
       "vercel-ai-gateway": "https://ai-gateway.vercel.sh/v1/models",
       "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models",
+      nousresearch: "https://inference-api.nousresearch.com/v1/models",
+      "nous-portal": "https://inference-api.nousresearch.com/v1/models",
     };
 
     const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
@@ -80,5 +82,32 @@ describe("Group A models config", () => {
       expect(mocks.fetch.mock.calls.at(-1)[0], provider).toBe(url);
       expect(body.models.map((m) => ({ id: m.id })), provider).toEqual([{ id: "m1" }]);
     }
+  });
+
+  it("allows public model listing for nousresearch without an existing connection in DB", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue(null);
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "nousresearch/hermes-4-70b" },
+          { id: "anthropic/claude-sonnet-4.6" },
+        ],
+      }),
+    });
+
+    const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
+    const res = await GET(new Request("http://localhost/api/providers/nousresearch/models"), {
+      params: Promise.resolve({ id: "nousresearch" }),
+    });
+    const body = await res.json();
+
+    const [url, init] = mocks.fetch.mock.calls[0];
+    expect(url).toBe("https://inference-api.nousresearch.com/v1/models");
+    expect(init.headers?.Authorization).toBeUndefined();
+    expect(body.models.map((m) => m.id)).toEqual([
+      "nousresearch/hermes-4-70b",
+      "anthropic/claude-sonnet-4.6",
+    ]);
   });
 });
