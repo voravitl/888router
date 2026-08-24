@@ -16,6 +16,10 @@ const OX_PAIRS = [
   ["opencode-zen", FREE_ID],
   ["opencode-go", GO_ID],
   ["ocg", GO_ID],
+  ["openrouter", "stealth/ox-alpha"],
+  ["openrouter", "ox-alpha"],
+  ["nousresearch", "stealth/ox-alpha"],
+  ["nous", "stealth/ox-alpha"],
 ];
 
 describe("Ox Alpha capability entries (provider-scoped)", () => {

@@ -190,6 +190,18 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
+  "openrouter": {
+    "stealth/ox-alpha": OX_ALPHA_CAPABILITIES,
+    "ox-alpha": OX_ALPHA_CAPABILITIES,
+  },
+  "nousresearch": {
+    "stealth/ox-alpha": OX_ALPHA_CAPABILITIES,
+    "ox-alpha": OX_ALPHA_CAPABILITIES,
+  },
+  "nous": {
+    "stealth/ox-alpha": OX_ALPHA_CAPABILITIES,
+    "ox-alpha": OX_ALPHA_CAPABILITIES,
+  },
 };
 
 /**

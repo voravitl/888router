@@ -1,3 +1,11 @@
+# v0.15.40 (2026-08-24)
+
+## Fix: Ox Alpha context length resolution & sync modal context_length parsing
+
+- **OpenRouter & Nous Ox Alpha Caps**: Wired `stealth/ox-alpha` and `ox-alpha` in `PROVIDER_CAPABILITIES` for `openrouter`, `nousresearch`, and `nous` with 1M context (`contextWindow: 1000000`) and 131k output (`maxOutput: 131072`), preventing fallback to 200k default.
+- **Sync Modal Context Parsing**: Added `item.context_length` and `item.top_provider?.context_length` support to `normalizeModel` in `SyncProviderModelsModal.js` so OpenRouter models display their full 1M context badge.
+- **Tests**: `tests/unit/ox-alpha-capabilities.test.js`.
+
 # v0.15.39 (2026-08-24)
 
 ## Fix: Wire Nous Research in models listing endpoint (`/api/providers/[id]/models`)
