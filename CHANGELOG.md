@@ -1,3 +1,13 @@
+# v0.15.43 (2026-08-25)
+
+## Feat: GMI Cloud provider (`gmi`) with Kimi K3 seed
+
+- **New provider:** GMI Cloud serverless inference (`api.gmi-serving.com/v1`) as an OpenAI-compatible API-key card. Aliases: `gmi`, `gmi-cloud`, `gmicloud`.
+- **Kimi K3:** Seed id `moonshotai/kimi-k3` from [GMI's Kimi K3 post](https://www.gmicloud.ai/en/blog/kimi-k3-open-weights-are-here-the-benchmark-phase-starts-now). Also seeds `deepseek-ai/DeepSeek-V4-Pro` from the [developers curl](https://www.gmicloud.ai/en/developers). Other catalogue ids via Sync/`passthroughModels` after a key — do not invent OpenClaw-only ids.
+- **Sync:** `modelsFetcher` + `passthroughModels` plus `PROVIDER_MODELS_CONFIG` (`gmi` / `gmi-cloud` / `gmicloud` → `https://api.gmi-serving.com/v1/models`). `GET /v1/models` requires a Bearer key (observed 401 without Authorization) — connect a key in the dashboard, then Sync.
+- **Not a $0 SKU:** GMI bills per token in Model Hub. This is not a documented free-tier model; add it to a combo only after a live key works.
+- **Tests:** `tests/unit/gmi-provider.test.js`. Logo: `public/providers/gmi.png`.
+
 # v0.15.42 (2026-08-25)
 
 ## Feat: B.AI (`bai`) OpenAI-compatible API-key provider

@@ -298,6 +298,9 @@ const PROVIDER_MODELS_CONFIG = {
   "nous-portal": createOpenAIModelsConfig("https://inference-api.nousresearch.com/v1/models"),
   bai: createOpenAIModelsConfig("https://api.b.ai/v1/models"),
   "b-ai": createOpenAIModelsConfig("https://api.b.ai/v1/models"),
+  gmi: createOpenAIModelsConfig("https://api.gmi-serving.com/v1/models"),
+  "gmi-cloud": createOpenAIModelsConfig("https://api.gmi-serving.com/v1/models"),
+  gmicloud: createOpenAIModelsConfig("https://api.gmi-serving.com/v1/models"),
 
   // Cloudflare Workers AI: account-scoped endpoint, requires accountId in path.
   // URL resolved per-request in buildFetchRequest (below) from providerSpecificData.accountId.

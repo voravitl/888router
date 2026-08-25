@@ -470,6 +470,11 @@
       }
     ]
   },
+  "gmi": {
+    "baseUrl": "https://api.gmi-serving.com/v1/chat/completions",
+    "thinkingFormat": "openai",
+    "format": "openai"
+  },
   "grok-cli": {
     "baseUrl": "https://cli-chat-proxy.grok.com/v1/responses",
     "format": "openai-responses",

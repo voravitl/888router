@@ -68,6 +68,9 @@ describe("Group A models config", () => {
       "nous-portal": "https://inference-api.nousresearch.com/v1/models",
       bai: "https://api.b.ai/v1/models",
       "b-ai": "https://api.b.ai/v1/models",
+      gmi: "https://api.gmi-serving.com/v1/models",
+      "gmi-cloud": "https://api.gmi-serving.com/v1/models",
+      gmicloud: "https://api.gmi-serving.com/v1/models",
     };
 
     const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
