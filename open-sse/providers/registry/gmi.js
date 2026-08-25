@@ -26,15 +26,13 @@ const gmiConfig = {
     validateUrl: "https://api.gmi-serving.com/v1/models",
     thinkingFormat: "openai",
   },
-  // Seed from GMI developers curl + OpenClaw gmi plugin + GMI Kimi K3 blog
-  // (model="moonshotai/kimi-k3"). Live catalogue via modelsFetcher after a key is saved.
+  // Seed only ids shown in official GMI curls. Live catalogue via modelsFetcher
+  // after a key is saved (passthroughModels covers the rest of /v1/models).
+  // kimi-k3: https://www.gmicloud.ai/en/blog/kimi-k3-open-weights-are-here-the-benchmark-phase-starts-now
+  // DeepSeek-V4-Pro: https://www.gmicloud.ai/en/developers
   models: [
     { id: "moonshotai/kimi-k3", name: "Kimi K3" },
     { id: "deepseek-ai/DeepSeek-V4-Pro", name: "DeepSeek V4 Pro" },
-    { id: "openai/gpt-5.6-sol", name: "GPT 5.6 Sol" },
-    { id: "anthropic/claude-sonnet-5", name: "Claude Sonnet 5" },
-    { id: "google/gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite" },
-    { id: "zai-org/GLM-5.2-FP8", name: "GLM 5.2 FP8" },
   ],
   modelsFetcher: { url: "https://api.gmi-serving.com/v1/models", type: "openai" },
   passthroughModels: true,

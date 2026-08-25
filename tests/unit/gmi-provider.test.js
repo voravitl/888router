@@ -40,8 +40,12 @@ describe("GMI Cloud provider", () => {
   it("seeds moonshotai/kimi-k3 from the GMI Kimi K3 blog curl", () => {
     // https://www.gmicloud.ai/en/blog/kimi-k3-open-weights-are-here-the-benchmark-phase-starts-now
     const ids = gmi.models.map((m) => m.id);
-    expect(ids).toContain("moonshotai/kimi-k3");
-    expect(ids).toContain("deepseek-ai/DeepSeek-V4-Pro");
+    expect(ids).toEqual(["moonshotai/kimi-k3", "deepseek-ai/DeepSeek-V4-Pro"]);
+    // Not on GMI developers/blog curls — do not invent OpenClaw-only ids.
+    expect(ids).not.toContain("openai/gpt-5.6-sol");
+    expect(ids).not.toContain("anthropic/claude-sonnet-5");
+    expect(ids).not.toContain("google/gemini-3.5-flash-lite");
+    expect(ids).not.toContain("zai-org/GLM-5.2-FP8");
   });
 
   it("resolves gmi / gmi-cloud / gmicloud aliases and slash-in-id model strings", () => {
