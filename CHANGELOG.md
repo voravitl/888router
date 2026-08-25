@@ -1,4 +1,16 @@
+# v0.15.42 (2026-08-25)
+
+## Feat: B.AI (`bai`) OpenAI-compatible API-key provider
+
+- **Gateway:** [B.AI LLM Service API](https://docs.b.ai/llmservice/api/) at `https://api.b.ai` (OpenAI-compatible `POST /v1/chat/completions` + `GET /v1/models`; Bearer or `x-api-key`). OpenClaw namespace is `"b.ai"` ([integration guide](https://docs.b.ai/llmservice/openclaw/integration-guide/)); Claude Code uses hyphenated ids such as `claude-sonnet-4-6`.
+- **Auth:** GET `/v1/models` without a key returns 401 `Invalid token` (header `x-oneapi-request-id`) — not a public models provider. Dashboard Sync uses `PROVIDER_MODELS_CONFIG` (`bai` / `b-ai` → `https://api.b.ai/v1/models`) with a stored key.
+- **Seed (documented ids only):** `deepseek-v4-flash`, `deepseek-v4-flash-vision-exp`, `hy3` (256K), `gpt-5.2`, `claude-sonnet-4-6`, `glm-5.2`. Live catalogue via `modelsFetcher` + `passthroughModels` after a key. Do not invent `mimo-v2.5`.
+- **Pricing:** Limited-time 0-credit API promos (DeepSeek V4 Flash, Hy3, MiMo) per [promotions](https://docs.b.ai/llmservice/promotions-and-pricing-notices/) are **not** a documented permanent $0 SKU — they return to standard pricing after the offer. GLM-5.2 is 60% of standard, not free. Not added to live combos / 9-free.
+- **Caps:** `*deepseek-v4-flash-vision*` (vision) before text-only `*deepseek-v4*` (`vision: false`). Hy3 stays 262144 via existing `hy3*` glob.
+- **Dashboard:** `public/providers/bai.png` (official `https://b.ai/favicon.ico`). Aliases: `bai`, `b-ai`, `b.ai`.
+
 # v0.15.41 (2026-08-24)
+
 
 ## Fix: Allow public model sync for OpenCode Go (`opencode-go`, `ocg`) & OpenRouter
 

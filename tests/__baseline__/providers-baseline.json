@@ -87,6 +87,12 @@
     "headers": {},
     "format": "openai"
   },
+  "bai": {
+    "baseUrl": "https://api.b.ai/v1/chat/completions",
+    "validateUrl": "https://api.b.ai/v1/models",
+    "thinkingFormat": "openai",
+    "format": "openai"
+  },
   "baidu": {
     "baseUrl": "https://qianfan.baidubce.com/v2/chat/completions",
     "validateUrl": "https://qianfan.baidubce.com/v2/models",

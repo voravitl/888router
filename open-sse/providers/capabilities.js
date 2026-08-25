@@ -316,7 +316,10 @@ export const PATTERN_CAPABILITIES = [
   // DeepSeek V4 (flash/pro) is text-only per models.dev (input=["text"]). Do NOT
   // set vision:true here — it would let image_url blocks through to upstream,
   // which rejects them with 400 "unknown variant image_url, expected text".
-  { pattern: "*deepseek-v4*",   caps: { reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 } },
+  // Exception: *-flash-vision* (e.g. B.AI deepseek-v4-flash-vision-exp) is a
+  // documented vision SKU — must match BEFORE the text-only *deepseek-v4* glob.
+  { pattern: "*deepseek-v4-flash-vision*", caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 } },
+  { pattern: "*deepseek-v4*",   caps: { vision: false, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 } },
   { pattern: "*reasoner*",      caps: { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 128000 } },
   { pattern: "*deepseek-r*",    caps: { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 128000 } },
   { pattern: "*deepseek-chat*", caps: { contextWindow: 128000 } },
