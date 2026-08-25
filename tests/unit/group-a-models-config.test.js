@@ -66,6 +66,8 @@ describe("Group A models config", () => {
       "xiaomi-mimo": "https://api.xiaomimimo.com/v1/models",
       nousresearch: "https://inference-api.nousresearch.com/v1/models",
       "nous-portal": "https://inference-api.nousresearch.com/v1/models",
+      bai: "https://api.b.ai/v1/models",
+      "b-ai": "https://api.b.ai/v1/models",
     };
 
     const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");

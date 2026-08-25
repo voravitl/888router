@@ -89,7 +89,10 @@
     "polly": "aws-polly",
     "aws-polly": "aws-polly",
     "bb": "blackbox",
-    "blackbox": "blackbox"
+    "blackbox": "blackbox",
+    "bai": "bai",
+    "b-ai": "bai",
+    "b.ai": "bai"
   },
   "idToAlias": {
     "alicode": "alicode",
@@ -101,6 +104,7 @@
     "api-airforce": "af",
     "assemblyai": "assemblyai",
     "azure": "azure",
+    "bai": "bai",
     "baidu": "qianfan",
     "bazaarlink": "bzl",
     "blackbox": "blackbox",
@@ -189,6 +193,7 @@
     "alitp-intl",
     "anthropic",
     "assemblyai",
+    "bai",
     "black-forest-labs",
     "blackbox",
     "bm",
