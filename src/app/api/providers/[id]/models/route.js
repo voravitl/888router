@@ -539,6 +539,53 @@ export async function GET(request, { params }) {
       });
     }
 
+    // AgentRouter: Try live /v1/models with dual auth headers (Bearer + x-api-key + CC wire image).
+    // If upstream returns 401/404 or fails, gracefully fall back to default catalog so sync never breaks.
+    if (connection.provider === "agentrouter") {
+      let warning;
+      try {
+        const token = connection.apiKey;
+        if (token) {
+          const headers = {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`,
+            "x-api-key": token,
+            "User-Agent": "Claude-Code/0.2.29",
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "prompt-caching-2024-07-31,interleaved-thinking-2025-05-14",
+            "anthropic-dangerous-direct-browser-access": "true",
+            "x-app": "cli",
+          };
+          const response = await fetch("https://agentrouter.org/v1/models", {
+            method: "GET",
+            headers,
+          });
+          if (response.ok) {
+            const data = await response.json();
+            const models = Array.isArray(data) ? data : data?.data || data?.models || [];
+            if (models.length > 0) {
+              return buildModelsResponse({
+                provider: connection.provider,
+                connectionId: connection.id,
+                models: models.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id }),
+              });
+            }
+          } else {
+            console.log(`AgentRouter /v1/models returned HTTP ${response.status}, falling back to built-in models.`);
+          }
+        }
+      } catch (error) {
+        console.log("AgentRouter models fetch error, falling back to built-in models:", error?.message);
+      }
+
+      // Return empty dynamic list so UI gracefully falls back to built-in static models
+      return buildModelsResponse({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: [],
+      });
+    }
+
     // Ollama Cloud: Fetch models from API
     // OpenCode: Fetch models from Zen Free or Zen Go API depending on API key presence
     if (connection.provider === "opencode" || connection.provider === "opencode-zen") {

@@ -38,7 +38,13 @@ const agentrouterConfig = {
   models: [
     { id: "claude-opus-4-8", name: "Claude Opus 4.8" },
     { id: "claude-opus-5", name: "Claude Opus 5" },
+    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
+    { id: "claude-3-7-sonnet", name: "Claude 3.7 Sonnet" },
     { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+    { id: "gpt-4o", name: "GPT-4o" },
+    { id: "deepseek-v3", name: "DeepSeek V3" },
+    { id: "deepseek-r1", name: "DeepSeek R1" },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
   ],
   serviceKinds: ["llm"],
   passthroughModels: true,
