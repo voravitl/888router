@@ -576,6 +576,8 @@ export async function POST(request) {
             isValid = true;
           }
           break;
+        }
+
         case "chatgpt-web": {
           let cookieHeader = String(apiKey || "").trim();
           if (/^cookie\s*:\s*/i.test(cookieHeader)) {
