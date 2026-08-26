@@ -1,5 +1,27 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`GOLDEN buildHeaders (default executor providers) > agentrouter → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
+  },
+  "nonStream": {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "<CRED>",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > alicode → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1546,6 +1568,13 @@ exports[`GOLDEN buildHeaders (default executor providers) > zed → headers (api
     "Content-Type": "application/json",
     "content-type": "application/json",
   },
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > agentrouter → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://agentrouter.org/v1/messages",
+  "stream": "https://agentrouter.org/v1/messages",
 }
 `;
 

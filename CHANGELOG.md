@@ -1,3 +1,13 @@
+# v0.15.44 (2026-08-26)
+
+## Feat: OmniRoute Parity Port (Codex completed tools, Cache-optimized combos, Modality Bridge, AgentRouter)
+
+- **Codex CLI Tool Retention (#8990 parity):** In OpenAI Responses API streaming, `response.created` and `response.in_progress` have `instructions` and `tools` stripped, while `response.completed` preserves `tools` so Codex CLI retains full tool registry.
+- **Smart Routing & Telemetry:** Added `cache-optimized` combo strategy using 32-bit FNV-1a prompt prefix hashing (first 2,048 chars) and `X-Router-Decision` telemetry headers.
+- **Modality Bridge:** Added automatic vision-to-text image description layer with SHA-256 caching (30m TTL) when multimodal requests hit text-only models.
+- **AgentRouter Provider & Error Rules:** Added `agentrouter` provider preset ($200 free credits, Claude/OpenAI/Responses formats) and Chinese/English quota error classification (`额度不足`, `insufficient_quota`).
+- **Tests:** Added `tests/unit/responses-completed-tools.test.js`, `tests/unit/combo-cache-optimized.test.js`, `tests/unit/modality-bridge.test.js`, `tests/unit/agentrouter-provider.test.js`.
+
 # v0.15.43 (2026-08-25)
 
 ## Feat: GMI Cloud provider (`gmi`) with Kimi K3 seed
