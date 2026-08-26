@@ -1,3 +1,11 @@
+# v0.15.46 (2026-08-26)
+
+## Fix: AgentRouter Model Sync 401 Graceful Fallback & Dual Auth
+
+- **Dual Auth & Wire Headers:** Upgraded AgentRouter `/v1/models` discovery request to send dual auth (`Authorization: Bearer <key>` + `x-api-key: <key>`) alongside Claude Code wire headers (`anthropic-version`, `anthropic-beta`, `x-app`).
+- **Graceful Built-in Catalog Fallback:** When upstream `https://agentrouter.org/v1/models` returns 401/404 or fails, the sync endpoint now returns gracefully so UI falls back seamlessly to the built-in static model list (`claude-opus-4-8`, `claude-opus-5`, `claude-sonnet-4-6`, `claude-3-7-sonnet`, `gpt-5.6-sol`, `gpt-4o`, `deepseek-v3`, `deepseek-r1`, `gemini-2.5-flash`) instead of throwing an unhandled 401 error modal.
+- **Tests:** Added `tests/unit/agentrouter-sync.test.js`.
+
 # v0.15.45 (2026-08-26)
 
 ## Feat: OmniRoute 5-Pillar Full Parity Release
