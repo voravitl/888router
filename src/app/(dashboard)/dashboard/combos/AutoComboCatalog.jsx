@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Card } from "@/shared/components";
 import { AUTO_COMBO_TEMPLATES } from "open-sse/services/autoCombo/builtinCatalog.js";
 
-export default function AutoComboCatalog({ onDuplicate }) {
+export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -67,17 +67,36 @@ export default function AutoComboCatalog({ onDuplicate }) {
                   ))}
                 </div>
 
-                {onDuplicate && (
-                  <button
-                    type="button"
-                    onClick={() => onDuplicate(tpl)}
-                    className="flex items-center gap-1 text-text-muted hover:text-brand-500 transition-colors"
-                    title="Snapshot into customizable combo"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                    <span>Snapshot</span>
-                  </button>
-                )}
+                <div className="flex items-center gap-3">
+                  {onCopy && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCopy(tpl.name, `tpl-${tpl.name}`);
+                      }}
+                      className="flex items-center gap-1 text-text-muted hover:text-brand-500 transition-colors"
+                      title={`Copy "${tpl.name}" — usable directly as a model ID in Claude Code / Cursor / Cline`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">{copiedId === `tpl-${tpl.name}` ? "check" : "data_object"}</span>
+                      <span>{copiedId === `tpl-${tpl.name}` ? "Copied" : "Copy"}</span>
+                    </button>
+                  )}
+                  {onDuplicate && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDuplicate(tpl);
+                      }}
+                      className="flex items-center gap-1 text-text-muted hover:text-brand-500 transition-colors"
+                      title="Snapshot into customizable combo"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                      <span>Snapshot</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
