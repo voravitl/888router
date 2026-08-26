@@ -249,9 +249,16 @@ export default function CombosPage() {
 }
 
 const STRATEGY_OPTIONS = [
-  { value: "fallback", label: "Fallback — try in order" },
-  { value: "round-robin", label: "Round Robin — rotate" },
-  { value: "fusion", label: "Fusion — panel + judge" },
+  { value: "fallback", label: "Priority Fallback — try in order 🥇" },
+  { value: "round-robin", label: "Round Robin — cycle evenly 🔄" },
+  { value: "cache-optimized", label: "Cache-Optimized — pin prompt prefix for 90% cache hits 🎯" },
+  { value: "p2c", label: "P2C — Power-of-Two-Choices latency minimization ⚡" },
+  { value: "reset-aware", label: "Reset-Aware — prioritize expiring quota windows 📊" },
+  { value: "cost-optimized", label: "Cost-Optimized — lowest token cost first 💰" },
+  { value: "headroom", label: "Headroom — highest remaining quota first 🔋" },
+  { value: "least-used", label: "Least-Used — lowest active load ⚖️" },
+  { value: "random", label: "Random — uniform load balancing 🎲" },
+  { value: "fusion", label: "Fusion — fan-out panel + AI Judge synthesis 🧬" },
 ];
 
 function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], modelAliases = {}, copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {

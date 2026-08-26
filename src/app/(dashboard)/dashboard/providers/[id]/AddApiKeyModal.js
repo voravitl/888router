@@ -21,8 +21,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isCloudflareAi = provider === "cloudflare-ai";
   const providerCfg = AI_PROVIDERS?.[provider] || null;
   const providerRegions = providerCfg?.regions || null;
-  const defaultRegion = providerCfg?.defaultRegion || providerRegions?.[0]?.id || "";
+  const isKeyless = authType === "none" || providerCfg?.authType === "none";
   const allowsNoAuth = isOllamaLocal ||
+    isKeyless ||
     !!providerCfg?.noAuth ||
     !!providerCfg?.hasFree ||
     !!providerCfg?.authModes?.includes("noauth");

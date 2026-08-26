@@ -85,11 +85,14 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
-    const { apiKey, providerSpecificData } = body;
-
-    const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true;
+    const pDef = PROVIDERS[provider] || AI_PROVIDERS[provider];
+    const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true || pDef?.authType === "none" || pDef?.noAuth === true;
     if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth)) {
       return NextResponse.json({ error: "Provider and API key required" }, { status: 400 });
+    }
+
+    if (isNoAuth) {
+      return NextResponse.json({ valid: true, error: null });
     }
 
     let isValid = false;

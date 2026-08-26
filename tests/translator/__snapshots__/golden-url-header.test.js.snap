@@ -300,6 +300,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > cerebras → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > cheaperinference → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > chutes → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -387,10 +406,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.46",
+    "User-Agent": "9Router/0.15.47",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.46",
-    "X-CORE-VERSION": "0.15.46",
+    "X-CLIENT-VERSION": "0.15.47",
+    "X-CORE-VERSION": "0.15.47",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -400,10 +419,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.46",
+    "User-Agent": "9Router/0.15.47",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.46",
-    "X-CORE-VERSION": "0.15.46",
+    "X-CLIENT-VERSION": "0.15.47",
+    "X-CORE-VERSION": "0.15.47",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -414,10 +433,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.46",
+    "User-Agent": "9Router/0.15.47",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.46",
-    "X-CORE-VERSION": "0.15.46",
+    "X-CLIENT-VERSION": "0.15.47",
+    "X-CORE-VERSION": "0.15.47",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -433,10 +452,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.46",
+    "User-Agent": "9Router/0.15.47",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.46",
-    "X-CORE-VERSION": "0.15.46",
+    "X-CLIENT-VERSION": "0.15.47",
+    "X-CORE-VERSION": "0.15.47",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -446,10 +465,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.46",
+    "User-Agent": "9Router/0.15.47",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.46",
-    "X-CORE-VERSION": "0.15.46",
+    "X-CLIENT-VERSION": "0.15.47",
+    "X-CORE-VERSION": "0.15.47",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -460,10 +479,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.46",
+    "User-Agent": "9Router/0.15.47",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.46",
-    "X-CORE-VERSION": "0.15.46",
+    "X-CLIENT-VERSION": "0.15.47",
+    "X-CORE-VERSION": "0.15.47",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -641,6 +660,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > devin-cli → header
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > duckduckgo-web → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > featherless → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -660,7 +698,45 @@ exports[`GOLDEN buildHeaders (default executor providers) > featherless → head
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > felo-web → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > fireworks → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > freebuff → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -917,7 +993,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.46",
+    "X-Msh-Version": "0.15.47",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
@@ -928,7 +1004,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.46",
+    "X-Msh-Version": "0.15.47",
     "x-api-key": "<CRED>",
   },
   "oauth": {
@@ -940,7 +1016,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.46",
+    "X-Msh-Version": "0.15.47",
     "x-api-key": "<CRED>",
   },
 }
@@ -957,7 +1033,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.46",
+    "X-Msh-Version": "0.15.47",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
@@ -968,7 +1044,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.46",
+    "X-Msh-Version": "0.15.47",
     "x-api-key": "<CRED>",
   },
   "oauth": {
@@ -980,7 +1056,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.46",
+    "X-Msh-Version": "0.15.47",
     "x-api-key": "<CRED>",
   },
 }
@@ -1676,6 +1752,13 @@ exports[`GOLDEN buildUrl (default executor providers) > cerebras → url (stream
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > cheaperinference → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.cheaperinference.com/v1",
+  "stream": "https://api.cheaperinference.com/v1",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > chutes → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://llm.chutes.ai/v1/chat/completions",
@@ -1753,6 +1836,13 @@ exports[`GOLDEN buildUrl (default executor providers) > devin-cli → url (strea
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > duckduckgo-web → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://duckduckgo.com/duckchat/v1/chat",
+  "stream": "https://duckduckgo.com/duckchat/v1/chat",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > featherless → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.featherless.ai/v1/chat/completions",
@@ -1760,10 +1850,24 @@ exports[`GOLDEN buildUrl (default executor providers) > featherless → url (str
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > felo-web → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://felo.ai/api-proxy/main/search/threads",
+  "stream": "https://felo.ai/api-proxy/main/search/threads",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > fireworks → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.fireworks.ai/inference/v1/chat/completions",
   "stream": "https://api.fireworks.ai/inference/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > freebuff → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://www.codebuff.com/api/v1",
+  "stream": "https://www.codebuff.com/api/v1",
 }
 `;
 

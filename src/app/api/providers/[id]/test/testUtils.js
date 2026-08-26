@@ -740,6 +740,21 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid SSO cookie" };
       }
+      case "duckduckgo-web":
+      case "felo-web": {
+        return { valid: true, error: null };
+      }
+      case "zenmux-free": {
+        const cookie = String(connection.apiKey || "").trim();
+        const valid = cookie.length > 0;
+        return { valid, error: valid ? null : "Please provide your ZenMux cookie / token" };
+      }
+      case "freebuff":
+      case "cheaperinference": {
+        const key = String(connection.apiKey || "").trim();
+        const valid = key.length > 0;
+        return { valid, error: valid ? null : "API key is required" };
+      }
       case "chatgpt-web": {
         let cookieHeader = String(connection.apiKey || "").trim();
         if (/^cookie\s*:\s*/i.test(cookieHeader)) cookieHeader = cookieHeader.replace(/^cookie\s*:\s*/i, "");

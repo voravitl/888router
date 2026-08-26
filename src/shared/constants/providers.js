@@ -172,7 +172,8 @@ export function providerSupportsModelSync(providerId) {
 
 // Providers that support public model listing without requiring an active connection in DB
 export function isPublicModelsProvider(providerId) {
-  // /v1/models is unauthenticated for these gateways (observed 200 without a key).
+  if (!providerId) return false;
+  const pId = String(providerId).toLowerCase();
   const publicGateways = new Set([
     "opencode",
     "opencode-zen",
@@ -183,9 +184,16 @@ export function isPublicModelsProvider(providerId) {
     "nousresearch",
     "nous",
     "nous-portal",
+    "agentrouter",
+    "api-airforce",
+    "cheaperinference",
+    "freebuff",
+    "zenmux-free",
+    "duckduckgo-web",
+    "felo-web",
   ]);
-  if (publicGateways.has(providerId)) return true;
-  const provider = AI_PROVIDERS[providerId];
+  if (publicGateways.has(pId)) return true;
+  const provider = AI_PROVIDERS[pId];
   return !!(provider?.noAuth && provider?.hasFree);
 }
 

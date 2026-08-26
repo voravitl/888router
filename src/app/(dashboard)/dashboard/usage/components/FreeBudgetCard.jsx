@@ -17,6 +17,14 @@ export default function FreeBudgetCard() {
   const [search, setSearch] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("all");
   const [excludeAvoid, setExcludeAvoid] = useState(false);
+  const [copiedExpr, setCopiedExpr] = useState(null);
+
+  const handleCopy = (text) => {
+    if (!navigator?.clipboard) return;
+    navigator.clipboard.writeText(text);
+    setCopiedExpr(text);
+    setTimeout(() => setCopiedExpr(null), 2000);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -138,60 +146,88 @@ export default function FreeBudgetCard() {
                 <th className="pb-2 font-medium">Allowance</th>
                 <th className="pb-2 font-medium">Regime</th>
                 <th className="pb-2 font-medium">Guarantees & TOS</th>
+                <th className="pb-2 font-medium text-right pr-2">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {filteredModels.slice(0, 100).map((m, idx) => (
-                <tr key={`${m.provider}-${m.modelId}-${idx}`} className="hover:bg-bg-alt/50 transition-colors">
-                  <td className="py-2.5 pr-3 font-semibold text-text-main">
-                    <span className="inline-block rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px]">
-                      {m.provider}
-                    </span>
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    <div className="font-medium text-text-main">{m.displayName || m.modelId}</div>
-                    <div className="font-mono text-[10px] text-text-muted">{m.modelId}</div>
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    {m.monthlyTokens > 0 ? (
-                      <span className="font-semibold text-emerald-500">~{fmtTokens(m.monthlyTokens)}/mo</span>
-                    ) : m.creditTokens > 0 ? (
-                      <span className="font-semibold text-amber-500">${fmtTokens(m.creditTokens)} credit</span>
-                    ) : (
-                      <span className="text-text-muted font-mono">Uncapped / Keyless</span>
-                    )}
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-500">
-                      {m.freeType}
-                    </span>
-                  </td>
-                  <td className="py-2.5 pr-3">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {m.hardStopGuaranteed && (
-                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                          🛡️ Hard Stop ($0 Guarantee)
-                        </span>
+              {filteredModels.slice(0, 100).map((m, idx) => {
+                const expr = `${m.provider}/${m.modelId}`;
+                const isCopied = copiedExpr === expr;
+                return (
+                  <tr key={`${m.provider}-${m.modelId}-${idx}`} className="hover:bg-bg-alt/50 transition-colors">
+                    <td className="py-2.5 pr-3 font-semibold text-text-main">
+                      <span className="inline-block rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11px]">
+                        {m.provider}
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      <div className="font-medium text-text-main">{m.displayName || m.modelId}</div>
+                      <div className="font-mono text-[10px] text-text-muted">{m.modelId}</div>
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      {m.monthlyTokens > 0 ? (
+                        <span className="font-semibold text-emerald-500">~{fmtTokens(m.monthlyTokens)}/mo</span>
+                      ) : m.creditTokens > 0 ? (
+                        <span className="font-semibold text-amber-500">${fmtTokens(m.creditTokens)} credit</span>
+                      ) : (
+                        <span className="text-text-muted font-mono">Uncapped / Keyless</span>
                       )}
-                      {m.trainsOnPrompts && (
-                        <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-500">
-                          ⚠️ Trains on Prompts
-                        </span>
-                      )}
-                      {m.tos === "avoid" && (
-                        <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-500">
-                          🚫 Avoid TOS
-                        </span>
-                      )}
-                      {m.tos === "caution" && (
-                        <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                          ⚠️ Caution TOS
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-500">
+                        {m.freeType}
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {m.hardStopGuaranteed && (
+                          <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                            🛡️ Hard Stop ($0 Guarantee)
+                          </span>
+                        )}
+                        {m.trainsOnPrompts && (
+                          <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-500">
+                            ⚠️ Trains on Prompts
+                          </span>
+                        )}
+                        {m.tos === "avoid" && (
+                          <span className="rounded bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-medium text-rose-500">
+                            🚫 Avoid TOS
+                          </span>
+                        )}
+                        {m.tos === "caution" && (
+                          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                            ⚠️ Caution TOS
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-2 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(expr)}
+                          className="inline-flex items-center gap-1 rounded border border-border bg-surface-2 px-2 py-1 text-[11px] font-medium text-text-muted hover:border-brand-500 hover:text-brand-500 transition-colors"
+                          title={`Copy ${expr} for Claude Code, Cursor, Cline`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">
+                            {isCopied ? "check" : "content_copy"}
+                          </span>
+                          <span>{isCopied ? "Copied!" : "Copy"}</span>
+                        </button>
+                        <a
+                          href={`/dashboard/providers/new?provider=${encodeURIComponent(m.provider)}`}
+                          className="inline-flex items-center gap-1 rounded bg-brand-500/10 px-2 py-1 text-[11px] font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-500/20 transition-colors"
+                          title={`Connect ${m.provider}`}
+                        >
+                          <span className="material-symbols-outlined text-[13px]">add_link</span>
+                          <span>Connect</span>
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 

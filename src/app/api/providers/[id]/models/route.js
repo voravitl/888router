@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
-import { getSyncedModelsMap, stampSyncedModels } from "@/lib/db";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isPublicModelsProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isPublicModelsProvider } from "@/shared/constants/providers.js";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { OllamaService } from "@/lib/oauth/services/ollama";
 import { GEMINI_CONFIG, ANTIGRAVITY_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { refreshProviderCredentials } from "open-sse/services/oauthCredentialManager.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { formatModelsFetchError, safeLogDetail } from "@/lib/upstreamErrorDetail";
@@ -77,8 +76,13 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
   let stampMap = {};
   if (safeModels.length > 0) {
     try {
-      await stampSyncedModels(safeModels.map((m) => ({ connectionId, modelId: m.id })));
-      stampMap = await getSyncedModelsMap();
+      const db = await import("@/lib/db");
+      if (typeof db.stampSyncedModels === "function") {
+        await db.stampSyncedModels(safeModels.map((m) => ({ connectionId, modelId: m.id })));
+      }
+      if (typeof db.getSyncedModelsMap === "function") {
+        stampMap = (await db.getSyncedModelsMap()) || {};
+      }
 
       // Extract & persist dynamic capabilities metadata from upstream response
       try {
@@ -578,11 +582,12 @@ export async function GET(request, { params }) {
         console.log("AgentRouter models fetch error, falling back to built-in models:", error?.message);
       }
 
-      // Return empty dynamic list so UI gracefully falls back to built-in static models
+      // Return registered models so UI displays them immediately and cleanly
+      const staticModels = PROVIDERS["agentrouter"]?.models || [];
       return buildModelsResponse({
         provider: connection.provider,
         connectionId: connection.id,
-        models: [],
+        models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
       });
     }
 
@@ -778,8 +783,38 @@ export async function GET(request, { params }) {
       });
     }
 
-    const config = PROVIDER_MODELS_CONFIG[connection.provider];
+    let config = PROVIDER_MODELS_CONFIG[connection.provider];
+    const pDef = PROVIDERS[connection.provider];
+
+    if (!config && pDef) {
+      const baseUrl = pDef.baseUrl || pDef.transport?.baseUrl || "";
+      const modelsUrl = pDef.transport?.validateUrl ||
+        (baseUrl ? baseUrl.replace(/\/chat\/completions$/, "/models").replace(/\/conversation$/, "/models").replace(/\/messages$/, "/models") : "");
+
+      if (modelsUrl) {
+        config = {
+          url: modelsUrl,
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...(pDef.transport?.headers || pDef.headers || {}),
+          },
+          authHeader: pDef.authHeader === "x-api-key" ? "x-api-key" : (pDef.authType === "none" ? undefined : "Authorization"),
+          authPrefix: pDef.authHeader === "x-api-key" ? "" : (pDef.authType === "none" ? "" : "Bearer "),
+          parseResponse: (data) => parseOpenAIStyleModels(data),
+        };
+      }
+    }
+
     if (!config) {
+      const staticModels = pDef?.models || [];
+      if (staticModels.length > 0) {
+        return buildModelsResponse({
+          provider: connection.provider,
+          connectionId: connection.id,
+          models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
+        });
+      }
       return NextResponse.json(
         { error: `Provider ${connection.provider} does not support models listing` },
         { status: 400 }
@@ -788,7 +823,7 @@ export async function GET(request, { params }) {
 
     // Get auth token
     const token = connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey;
-    if (!token && !isPublicModelsProvider(connection.provider)) {
+    if (!token && !isPublicModelsProvider(connection.provider) && pDef?.authType !== "none") {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }
 
@@ -823,7 +858,21 @@ export async function GET(request, { params }) {
     };
 
     let { requestUrl, requestOptions } = buildFetchRequest(token);
-    let response = await fetch(requestUrl, requestOptions);
+    let response;
+    try {
+      response = await fetch(requestUrl, requestOptions);
+    } catch (networkErr) {
+      console.log(`Network error fetching models from ${connection.provider}:`, networkErr?.message);
+      const staticModels = pDef?.models || [];
+      if (staticModels.length > 0) {
+        return buildModelsResponse({
+          provider: connection.provider,
+          connectionId: connection.id,
+          models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
+        });
+      }
+      throw networkErr;
+    }
 
     // OAuth providers (xai, qwen, codex, iflow, ...) use short-lived tokens that
     // chat requests refresh but this endpoint historically did not. Refresh and
@@ -846,9 +895,6 @@ export async function GET(request, { params }) {
         if (refreshed?.accessToken) {
           await updateProviderCredentials(connection.id, refreshed);
 
-          // Build a request-scoped view with the refreshed providerSpecificData
-          // (e.g. qwen's rotated resourceUrl) merged in, without mutating the
-          // loaded connection record itself.
           const refreshedConn = refreshed.providerSpecificData
             ? {
                 ...connection,
@@ -865,13 +911,21 @@ export async function GET(request, { params }) {
         }
       } catch (refreshError) {
         console.log(`Error refreshing token for ${connection.provider}:`, refreshError);
-        // keep the original response, fall through to the error path below
       }
     }
 
     if (!response.ok) {
       const errorText = await response.text();
       console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(response.status, errorText));
+      const staticModels = pDef?.models || [];
+      const isPublic = connection.id?.startsWith("public:") || isPublicModelsProvider(connection.provider) || pDef?.authType === "none";
+      if (staticModels.length > 0 && isPublic) {
+        return buildModelsResponse({
+          provider: connection.provider,
+          connectionId: connection.id,
+          models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
+        });
+      }
       return NextResponse.json(
         { error: formatModelsFetchError(response.status, errorText) },
         { status: response.status }
@@ -879,7 +933,8 @@ export async function GET(request, { params }) {
     }
 
     const data = await response.json();
-    const models = config.parseResponse(data);
+    const parsed = config.parseResponse(data);
+    const models = (Array.isArray(parsed) && parsed.length > 0) ? parsed : (pDef?.models || []);
 
     return buildModelsResponse({
       provider: connection.provider,
