@@ -1,3 +1,22 @@
+# v0.15.48 (2026-08-26)
+
+## Feat: 5 Permanent Free Providers, Universal Model Sync Fallback & Free-Tiers 1-Click UI
+
+- **5 Permanent Free Providers:**
+  - `duckduckgo-web`: Keyless DuckDuckGo AI gateway (`gpt-5.4-mini`, `gpt-5.4-nano`, `claude-haiku-4-5`, `mistral-small-2603`, `tinfoil/gpt-oss-120b`, `tinfoil/gemma4-31b`).
+  - `felo-web`: Keyless Felo AI Search gateway (`felo-chat`, `felo-search`, `felo-scholar`, `felo-social`, `felo-document`).
+  - `cheaperinference`: Cost-ranked gateway (`claude-opus-4-8-fast`, `claude-fable-5`, `claude-haiku-4.5`, `gpt-5`, `deepseek-v4-pro`).
+  - `freebuff`: Codebuff developer gateway (`deepseek/deepseek-v4-pro`, `openai/gpt-5.6-luna`, `minimax/minimax-m3`, `mimo/mimo-v2.5`, `z-ai/glm-5.2`, `crof/kimi-k3-eco`).
+  - `zenmux-free`: Session cookie gateway (`deepseek/deepseek-chat`, `deepseek/deepseek-reasoner`, `deepseek/deepseek-v4-pro`, `z-ai/glm-4.7-flash-free`, `stepfun/step-3.5-flash-free`, `inclusionai/ling-1t`).
+- **Universal Dynamic Model Sync & Graceful Static Catalog Fallback:**
+  - Upgraded `/api/providers/[id]/models` with universal dynamic endpoint builder from registry `baseUrl`/`validateUrl`.
+  - Added seamless static catalog fallback (`PROVIDERS[p].models`) for public/keyless providers and when upstream returns 401/404/network error, resolving sync issues for `agentrouter` and `api-airforce`.
+- **Free Tiers & Zero-Cost Models UI Enhancements:**
+  - Added 1-Click Connect button and Copy Model Expression action in `/dashboard/free-tiers` table.
+  - Added Keyless connection mode in `AddApiKeyModal.js` and `validate/route.js` accepting `authType: "none"`.
+- **Combos UI Expansion:**
+  - Exposed all 10 routing strategies (`Priority Fallback`, `Round Robin`, `Cache-Optimized`, `P2C`, `Reset-Aware`, `Cost-Optimized`, `Headroom`, `Least-Used`, `Random`, `Fusion`) in Combo Strategy selector.
+
 # v0.15.47 (2026-08-26)
 
 ## Feat: ChatGPT Web Cookie Provider (`chatgpt-web`)
