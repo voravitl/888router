@@ -400,9 +400,21 @@ describe("DevinCliExecutor ACP session/new", () => {
     const os = await import("node:os");
     const path = await import("node:path");
     const child = makeFakeChild();
+    let capturedConfig = null;
+    let capturedScriptContent = null;
     spawnMock.mockImplementation((bin, args, opts) => {
       child.args = args;
       child.opts = opts;
+      if (opts.env?.XDG_CONFIG_HOME) {
+        const configPath = path.join(opts.env.XDG_CONFIG_HOME, "devin", "config.json");
+        if (fs.existsSync(configPath)) {
+          capturedConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+          const scriptPath = capturedConfig?.mcpServers?.clientTools?.args?.[0];
+          if (scriptPath && fs.existsSync(scriptPath)) {
+            capturedScriptContent = fs.readFileSync(scriptPath, "utf8");
+          }
+        }
+      }
       return child;
     });
     const exec = new DevinCliExecutor();
@@ -421,10 +433,9 @@ describe("DevinCliExecutor ACP session/new", () => {
     await reader.read();
     // XDG_CONFIG_HOME set so devin loads the generated config.
     expect(child.opts.env.XDG_CONFIG_HOME).toBeTruthy();
-    // Static MCP bridge script written to disk.
-    const scriptPath = path.join(os.tmpdir(), "9router-devin-client-tools.mjs");
-    expect(fs.existsSync(scriptPath)).toBe(true);
-    expect(fs.readFileSync(scriptPath, "utf8")).toContain("clientTools");
-    expect(fs.readFileSync(scriptPath, "utf8")).toContain("DEVIN_MCP_TOOLS");
+    expect(capturedConfig).toBeTruthy();
+    expect(capturedConfig.mcpServers.clientTools).toBeTruthy();
+    expect(capturedScriptContent).toContain("clientTools");
+    expect(capturedConfig.mcpServers.clientTools.env.DEVIN_MCP_TOOLS).toContain("get_weather");
   });
 });

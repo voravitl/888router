@@ -73,3 +73,37 @@ export function buildAbortedClaudeTerminalBytes(openBlockIndices = null) {
     `event: message_stop\ndata: ${JSON.stringify({ type: "message_stop" })}\n\n`
   );
 }
+
+const RESPONSES_LIFECYCLE_EVENT_TYPES = new Set([
+  "response.created",
+  "response.in_progress",
+  "response.completed"
+]);
+
+/**
+ * Strip instructions payload from Responses API lifecycle events, but preserve tools
+ * in response.completed (which Codex CLI uses to reconstruct its tool catalog).
+ * @param {object} parsed - Parsed SSE payload
+ * @returns {boolean} Whether the object was modified
+ */
+export function stripResponsesLifecycleEcho(parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+  if (typeof parsed.type !== "string" || !RESPONSES_LIFECYCLE_EVENT_TYPES.has(parsed.type)) {
+    return false;
+  }
+  const resp = parsed.response;
+  if (!resp || typeof resp !== "object" || Array.isArray(resp)) return false;
+  let changed = false;
+  if ("instructions" in resp) {
+    delete resp.instructions;
+    changed = true;
+  }
+  // Preserve tools on the terminal snapshot: response.completed is what
+  // Codex CLI rebuilds its tool list from (#8990). Still stripped on created/in_progress.
+  if (parsed.type !== "response.completed" && "tools" in resp) {
+    delete resp.tools;
+    changed = true;
+  }
+  return changed;
+}
+
