@@ -23,8 +23,7 @@ export const FREE_MODEL_BUDGETS = [
   { provider: "chatgpt-web", modelId: "gpt-5.6-luna-free-thinking", displayName: "GPT-5.6 Luna (Free, Think)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "chatgpt-web-free", tos: "caution" },
   // felo-web moved off the keyless /search/threads proxy (turnstile-gated, not chat-shaped)
   // to the openapi.felo.ai LLM API — now an apikey provider; see registry/felo-web.js.
-  { provider: "felo-web", modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna (Felo OpenAPI)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "felo-web", tos: "caution" },
-  { provider: "felo-web", modelId: "deepseek-v4-flash", displayName: "DeepSeek V4 Flash (Felo OpenAPI)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "felo-web", tos: "caution" },
+  // Entries live in the alphabetical block below (single source, no duplicates).
   { provider: "cheaperinference", modelId: "claude-opus-4-8-fast", displayName: "Claude Opus 4.8 Fast (Free Tier)", monthlyTokens: 0, creditTokens: 50000000, freeType: "one-time-initial", poolKey: "cheaperinference", tos: "caution" },
   { provider: "cheaperinference", modelId: "claude-fable-5", displayName: "Claude Fable 5", monthlyTokens: 0, creditTokens: 50000000, freeType: "one-time-initial", poolKey: "cheaperinference", tos: "caution" },
   { provider: "cheaperinference", modelId: "gpt-5", displayName: "GPT-5 (Free Tier)", monthlyTokens: 0, creditTokens: 50000000, freeType: "one-time-initial", poolKey: "cheaperinference", tos: "caution" },
