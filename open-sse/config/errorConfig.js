@@ -129,6 +129,10 @@ export const ERROR_RULES = [
   { text: "usage limit",              backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
+  { text: "user quota exhausted",     backoff: true },
+  { text: "insufficient_quota",       backoff: true },
+  { text: "insufficient quota",       backoff: true },
+  { text: "额度不足",                 backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
 
