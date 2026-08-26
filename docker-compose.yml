@@ -11,8 +11,6 @@ services:
     image: voravitl/888router:latest
     # build:
     #   context: .
-    #   args:
-    #     BUILD_VERSION: "0.14.12"
     container_name: 888router
     restart: always
     ports:
@@ -129,9 +127,10 @@ services:
     command:
       - 888router
     environment:
-      WATCHTOWER_POLL_INTERVAL: "3600"
+      WATCHTOWER_POLL_INTERVAL: "300"
       WATCHTOWER_LABEL_ENABLE: "true"
       WATCHTOWER_CLEANUP: "true"
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
       # OrbStack rejects Docker API clients older than 1.40; the watchtower image
       # ships a go-dockerclient that defaults to 1.25 and crashes on startup
       # ("client version 1.25 is too old"). Override the client API version so
