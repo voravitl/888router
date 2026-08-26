@@ -740,6 +740,23 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid SSO cookie" };
       }
+      case "chatgpt-web": {
+        let cookieHeader = String(connection.apiKey || "").trim();
+        if (/^cookie\s*:\s*/i.test(cookieHeader)) cookieHeader = cookieHeader.replace(/^cookie\s*:\s*/i, "");
+        if (!/__Secure-next-auth\.session-token(?:\.\d+)?\s*=/.test(cookieHeader)) {
+          cookieHeader = `__Secure-next-auth.session-token=${cookieHeader}`;
+        }
+        const res = await fetchWithConnectionProxy("https://chatgpt.com/api/auth/session", {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+            Cookie: cookieHeader,
+          },
+        }, effectiveProxy).catch(() => null);
+        const valid = res ? (res.status !== 401 && res.status !== 403) : cookieHeader.length > 20;
+        return { valid, error: valid ? null : "Invalid ChatGPT session cookie" };
+      }
       case "perplexity-web": {
         let sessionToken = connection.apiKey;
         if (sessionToken.startsWith("__Secure-next-auth.session-token=")) sessionToken = sessionToken.slice("__Secure-next-auth.session-token=".length);

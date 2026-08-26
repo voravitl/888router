@@ -125,6 +125,7 @@ import p122 from "./xiaomi-tokenplan.js";
 import p123 from "./youcom.js";
 import p124 from "./zed.js";
 import p125 from "./agentrouter.js";
+import p126 from "./chatgpt-web.js";
 
 export default [
   p0,
@@ -253,4 +254,5 @@ export default [
   p123,
   p124,
   p125,
+  p126,
 ];
