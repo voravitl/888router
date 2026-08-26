@@ -1,3 +1,15 @@
+# v0.15.45 (2026-08-26)
+
+## Feat: OmniRoute 5-Pillar Full Parity Release
+
+- **Free-Tiers Catalog & Dashboard (`/dashboard/free-tiers`):** Full dataset of 42+ providers (495+ models) with pool-deduplicated monthly quota calculation (~1.51B tokens/mo), uncapped provider tracking, TOS privacy indicators, and countdowns.
+- **Auto-Combo 2.0 & Suffix Composition:** Zero-configuration dynamic virtual combos (`auto/best-free`, `auto/coding:fast`, `auto/cheap`, `auto/best-coding`, `auto/best-reasoning`, `auto/best-vision`) without requiring static DB rows.
+- **Advanced Routing Strategies:** Added `p2c` (Power-of-Two-Choices latency minimization), `reset-aware` (expiring quota priority), and `cache-optimized` (prefix prompt cache pinning).
+- **Modality Bridge & Auto-Reroute:** Added sibling vision model detection (`findFamilyVisionModel`) and automated image-to-text fallback with SHA-256 caching.
+- **AgentRouter Integration & Fixes:** Added official AgentRouter logo (`agentrouter.png`), dynamic model sync endpoint (`/v1/models` with Claude Code wire image), and connection validation.
+- **Embedded MCP Server (`/api/mcp`):** Standards-compliant JSON-RPC 2.0 & SSE MCP Server exposing tools `list_models`, `check_free_quotas`, `get_auto_combos`.
+- **Tests:** Added `tests/unit/free-model-catalog.test.js`, `tests/unit/auto-combo-parity.test.js`, `tests/unit/mcp-server-protocol.test.js`.
+
 # v0.15.44 (2026-08-26)
 
 ## Feat: OmniRoute Parity Port (Codex completed tools, Cache-optimized combos, Modality Bridge, AgentRouter)
