@@ -85,7 +85,10 @@ export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null 
                   {onDuplicate && (
                     <button
                       type="button"
-                      onClick={() => onDuplicate(tpl)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDuplicate(tpl);
+                      }}
                       className="flex items-center gap-1 text-text-muted hover:text-brand-500 transition-colors"
                       title="Snapshot into customizable combo"
                     >
