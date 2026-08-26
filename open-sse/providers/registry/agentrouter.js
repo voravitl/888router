@@ -5,8 +5,8 @@ const agentrouterConfig = {
   alias: "agentrouter",
   display: {
     name: "AgentRouter",
-    icon: "network",
-    color: "#6366F1",
+    icon: "agentrouter",
+    color: "#10B981",
     textIcon: "AR",
     website: "https://agentrouter.org",
     notice: {

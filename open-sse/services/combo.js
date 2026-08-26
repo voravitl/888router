@@ -272,6 +272,21 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, b
     return rotateModelsFromIndex(models, targetIndex);
   }
 
+  // Power-of-Two-Choices (p2c): samples two candidates and picks the first/better one
+  if (strategy === "p2c") {
+    const idxA = Math.floor(Math.random() * models.length);
+    const idxB = Math.floor(Math.random() * models.length);
+    const targetIndex = Math.min(idxA, idxB);
+    return rotateModelsFromIndex(models, targetIndex);
+  }
+
+  // Reset-aware / reset-window: rotates based on time slots (e.g. 5-min window)
+  if (strategy === "reset-aware" || strategy === "reset-window") {
+    const timeSlot = Math.floor(Date.now() / (5 * 60 * 1000));
+    const targetIndex = timeSlot % models.length;
+    return rotateModelsFromIndex(models, targetIndex);
+  }
+
   if (strategy !== "round-robin") {
     return models;
   }

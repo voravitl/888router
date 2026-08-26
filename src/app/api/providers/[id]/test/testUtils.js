@@ -559,6 +559,17 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401;
         return { valid, error: valid ? null : "Invalid API key" };
       }
+      case "agentrouter": {
+        const res = await fetchWithConnectionProxy("https://agentrouter.org/v1/models", {
+          headers: {
+            "x-api-key": connection.apiKey,
+            "User-Agent": "Claude-Code/0.2.29",
+            "anthropic-version": "2023-06-01",
+          }
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid API key" };
+      }
       case "gemini": {
         const res = await fetchWithConnectionProxy(`https://generativelanguage.googleapis.com/v1/models?key=${connection.apiKey}`, {}, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };

@@ -75,6 +75,10 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
+  if (modelStr && modelStr.startsWith("auto/")) {
+    return { provider: null, model: modelStr };
+  }
+
   return getModelInfoCore(modelStr, getModelAliases);
 }
 
@@ -83,6 +87,14 @@ export async function getModelInfo(modelStr) {
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
 export async function getComboModels(modelStr) {
+  if (modelStr && modelStr.startsWith("auto/")) {
+    const { resolveVirtualAutoCombo } = await import("open-sse/services/autoCombo/virtualFactory.js");
+    const virtual = resolveVirtualAutoCombo(modelStr);
+    if (virtual && virtual.models && virtual.models.length > 0) {
+      return virtual.models;
+    }
+  }
+
   // Only check if it's not in provider/model format
   if (modelStr.includes("/")) return null;
 

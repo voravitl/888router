@@ -20,6 +20,7 @@ const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "trave
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  { href: "/dashboard/free-tiers", label: "Free Tiers", icon: "card_giftcard" },
   { href: "/dashboard/combos", label: "Combos", icon: "layers" },
   // Playground: test combos/models + see token-save meta (was Hidden — feature incomplete without nav)
   { href: "/dashboard/basic-chat", label: "Test Chat", icon: "chat" },

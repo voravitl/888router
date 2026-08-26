@@ -169,6 +169,30 @@ export async function bridgeVisionToText(body, options = {}) {
 }
 
 /**
+ * Find sibling vision model in the same family/provider
+ * @param {string} modelStr
+ * @returns {string|null}
+ */
+export function findFamilyVisionModel(modelStr) {
+  if (!modelStr) return null;
+  const lower = modelStr.toLowerCase();
+  
+  if (lower.includes("claude")) {
+    return modelStr.includes("/") ? `${modelStr.split("/")[0]}/claude-3-7-sonnet` : "claude-3-7-sonnet";
+  }
+  if (lower.includes("gpt")) {
+    return modelStr.includes("/") ? `${modelStr.split("/")[0]}/gpt-4o` : "gpt-4o";
+  }
+  if (lower.includes("gemini")) {
+    return modelStr.includes("/") ? `${modelStr.split("/")[0]}/gemini-2.5-flash` : "gemini-2.5-flash";
+  }
+  if (lower.includes("qwen")) {
+    return modelStr.includes("/") ? `${modelStr.split("/")[0]}/qwen-vl-max` : "qwen-vl-max";
+  }
+  return null;
+}
+
+/**
  * Clear bridge description cache (for tests)
  */
 export function clearBridgeCache() {

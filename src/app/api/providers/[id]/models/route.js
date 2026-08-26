@@ -240,6 +240,17 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "x-api-key",
     parseResponse: (data) => data.data || []
   },
+  agentrouter: {
+    url: "https://agentrouter.org/v1/models",
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": "Claude-Code/0.2.29",
+      "anthropic-version": "2023-06-01",
+    },
+    authHeader: "x-api-key",
+    parseResponse: (data) => (Array.isArray(data) ? data : data?.data || data?.models || []),
+  },
 
   alicode: {
     url: "https://coding.dashscope.aliyuncs.com/v1/models",
