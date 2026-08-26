@@ -22,6 +22,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const providerCfg = AI_PROVIDERS?.[provider] || null;
   const providerRegions = providerCfg?.regions || null;
   const isKeyless = authType === "none" || providerCfg?.authType === "none";
+  const defaultRegion = providerCfg?.defaultRegion || providerRegions?.[0]?.id || "";
   const allowsNoAuth = isOllamaLocal ||
     isKeyless ||
     !!providerCfg?.noAuth ||
