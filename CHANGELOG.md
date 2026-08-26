@@ -1,3 +1,11 @@
+# v0.15.47 (2026-08-26)
+
+## Feat: ChatGPT Web Cookie Provider (`chatgpt-web`)
+
+- **New Provider:** Added `chatgpt-web` provider in registry (`open-sse/providers/registry/chatgpt-web.js`) under `category: "webCookie"`.
+- **Supported Models:** Supports `gpt-5.6-luna-free`, `gpt-5.6-luna-free-thinking`, `gpt-5.6-sol-pro`, `gpt-5.6-sol-high`, `gpt-5.6-sol-instant`, `gpt-5.5-pro`, `gpt-5.5-high`, `gpt-5.5-instant`, `gpt-4o`, `gpt-4o-mini`.
+- **Auth & Session Validation:** Supports `__Secure-next-auth.session-token` cookie or raw session tokens from `chatgpt.com` with pre-flight session check.
+
 # v0.15.46 (2026-08-26)
 
 ## Fix: AgentRouter Model Sync 401 Graceful Fallback & Dual Auth
