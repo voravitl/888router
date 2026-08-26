@@ -84,6 +84,7 @@ async function probeMediaProvider(provider, apiKey) {
 export async function POST(request) {
   try {
     const body = await request.json();
+    const { apiKey, providerSpecificData } = body;
     const provider = normalizeProviderId(body.provider);
     const pDef = PROVIDERS[provider] || AI_PROVIDERS[provider];
     const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true || pDef?.authType === "none" || pDef?.noAuth === true;

@@ -9,30 +9,35 @@ const felo_webConfig = {
   ],
   uiAlias: "felo",
   display: {
-    name: "Felo AI Search (Keyless / Permanent Free)",
+    name: "Felo OpenAPI (Search-grounded LLM)",
     icon: "felo",
     color: "#3B82F6",
     textIcon: "FELO",
     website: "https://felo.ai",
     notice: {
-      text: "Keyless AI Web Search & Synthesis provided by Felo.ai. No API Key required.",
-      apiKeyUrl: "https://felo.ai",
+      text: "Felo API Platform — search-grounded chat via openapi.felo.ai. Requires a Felo API key (free tier available).",
+      apiKeyUrl: "https://felo.ai/settings/api-keys",
     },
   },
-  category: "freeTier",
-  authType: "none",
-  authHint: "No API Key required. Click Connect to enable instant free access.",
+  category: "apikey",
+  authType: "apikey",
+  authHint: "Enter your Felo OpenAPI key (https://felo.ai/settings/api-keys)",
   transport: {
-    baseUrl: "https://felo.ai/api-proxy/main/search/threads",
+    // LLM API (OpenAI-compatible). The old keyless /api-proxy/main/search/threads
+    // endpoint requires a turnstile session token and a query-shaped body — not
+    // reachable from DefaultExecutor's chat flow. Evidence: openapi.felo.ai/docs
+    // (POST /api/v1/chat/completions), live probe returns 401 UNAUTHORIZED.
+    baseUrl: "https://openapi.felo.ai/api/v1/chat/completions",
     format: "openai",
-    authType: "none",
+    authType: "apikey",
   },
   models: [
-    { id: "felo-chat", name: "Felo Chat (Free)", toolCalling: false },
-    { id: "felo-search", name: "Felo Search (Web Grounded)", toolCalling: false },
-    { id: "felo-scholar", name: "Felo Scholar (Academic)", toolCalling: false },
-    { id: "felo-social", name: "Felo Social (Social Media)", toolCalling: false },
-    { id: "felo-document", name: "Felo Document (Doc Search)", toolCalling: false },
+    // IDs from openapi.felo.ai/docs/api-reference/llm pricing table
+    { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", contextLength: 1050000 },
+    { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", contextLength: 1050000 },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", contextLength: 1000000, toolCalling: true },
+    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", contextLength: 200000, toolCalling: true },
+    { id: "grok-4.5", name: "Grok 4.5", contextLength: 500000, toolCalling: true },
   ],
 };
 
