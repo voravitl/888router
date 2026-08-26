@@ -4,7 +4,10 @@ import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
 export const dynamic = "force-dynamic";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
+// `auto/*` is the virtual-comb namespace (OmniRoute parity) — only the
+// builtin templates may carry it; reject user-created DB rows from claiming it.
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
+const RESERVED_NAME_PREFIX = "auto/";
 
 // GET /api/combos - Get all combos
 export async function GET() {
@@ -30,6 +33,9 @@ export async function POST(request) {
     // Validate name format
     if (!VALID_NAME_REGEX.test(name)) {
       return NextResponse.json({ error: "Name can only contain letters, numbers, -, _ and ." }, { status: 400 });
+    }
+    if (name.startsWith(RESERVED_NAME_PREFIX) || name === "auto") {
+      return NextResponse.json({ error: "\"auto/*\" is reserved for built-in zero-config combos — call them directly, no need to save" }, { status: 400 });
     }
 
     // Check if name already exists

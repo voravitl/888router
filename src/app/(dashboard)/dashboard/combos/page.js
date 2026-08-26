@@ -20,6 +20,8 @@ export default function CombosPage() {
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Template being snapshotted into the create modal (from AutoComboCatalog)
+  const [snapshotTemplate, setSnapshotTemplate] = useState(null);
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
@@ -161,6 +163,15 @@ export default function CombosPage() {
     );
   }
 
+  const handleSnapshotTemplate = (tpl) => {
+    setShowCreateModal(true);
+    setSnapshotTemplate({
+      name: tpl.name,
+      models: [], // virtual combos have no static members; the API resolves them at request time
+      strategy: tpl.strategy,
+    });
+  };
+
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
       {/* Header */}
@@ -180,6 +191,9 @@ export default function CombosPage() {
           Create Combo
         </Button>
       </div>
+
+      {/* Zero-config auto/* templates (OmniRoute parity) — call directly without saving */}
+      <AutoComboCatalog onDuplicate={handleSnapshotTemplate} onCopy={copy} copiedId={copied} />
 
       {/* Combos List */}
       {combos.length === 0 ? (
@@ -218,11 +232,18 @@ export default function CombosPage() {
 
       {/* Create Modal - Use key to force remount and reset state */}
       <ComboFormModal
-        key="create"
+        key={snapshotTemplate?.name || "create"}
         isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onSave={handleCreate}
+        onClose={() => {
+          setShowCreateModal(false);
+          setSnapshotTemplate(null);
+        }}
+        onSave={(data) => {
+          setSnapshotTemplate(null);
+          return handleCreate(data);
+        }}
         activeProviders={activeProviders}
+        initialName={snapshotTemplate?.name}
       />
 
       {/* Edit Modal - Use key to force remount and reset state */}
@@ -506,9 +527,9 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null, initialName }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
-  const [name, setName] = useState(combo?.name || "");
+  const [name, setName] = useState(combo?.name || initialName || "");
   const [models, setModels] = useState(combo?.models || []);
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
