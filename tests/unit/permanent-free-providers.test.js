@@ -22,7 +22,15 @@ describe("Permanent Free Providers & Model Sync", () => {
 
   it("should identify keyless providers correctly", () => {
     expect(PROVIDERS["duckduckgo-web"].authType).toBe("none");
-    expect(PROVIDERS["felo-web"].authType).toBe("none");
+    // felo-web: moved to openapi.felo.ai LLM API — apikey, not keyless
+    expect(PROVIDERS["felo-web"].authType).toBe("apikey");
+  });
+
+  it("should use chat-compatible transports (no search/turnstile endpoints)", () => {
+    // felo /search/threads needs a turnstile token + query-shaped body; zenmux
+    // anthropic endpoint must declare the claude format so the translator runs.
+    expect(PROVIDERS["felo-web"].baseUrl).toContain("/chat/completions");
+    expect(PROVIDERS["zenmux-free"].format).toBe("claude");
   });
 
   it("should recognize public model listing for all free gateways and agentrouter", () => {

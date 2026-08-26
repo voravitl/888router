@@ -24,7 +24,7 @@ const zenmux_freeConfig = {
   authHint: "Paste your ZenMux Cookie header or ctoken from zenmux.ai",
   transport: {
     baseUrl: "https://zenmux.ai/api/anthropic/v1/messages",
-    format: "anthropic",
+    format: "claude",
     authType: "cookie",
   },
   models: [

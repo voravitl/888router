@@ -21,9 +21,9 @@ export const FREE_CATALOG_CURATED_AT = "2026-08-20";
 export const FREE_MODEL_BUDGETS = [
   { provider: "chatgpt-web", modelId: "gpt-5.6-luna-free", displayName: "GPT-5.6 Luna (Free)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "chatgpt-web-free", tos: "caution" },
   { provider: "chatgpt-web", modelId: "gpt-5.6-luna-free-thinking", displayName: "GPT-5.6 Luna (Free, Think)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "chatgpt-web-free", tos: "caution" },
-  { provider: "felo-web", modelId: "felo-chat", displayName: "Felo Chat (Free)", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "felo-web", tos: "caution" },
-  { provider: "felo-web", modelId: "felo-search", displayName: "Felo Search (Web Grounded)", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "felo-web", tos: "caution" },
-  { provider: "felo-web", modelId: "felo-scholar", displayName: "Felo Scholar (Academic)", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "felo-web", tos: "caution" },
+  // felo-web moved off the keyless /search/threads proxy (turnstile-gated, not chat-shaped)
+  // to the openapi.felo.ai LLM API — now an apikey provider; see registry/felo-web.js.
+  // Entries live in the alphabetical block below (single source, no duplicates).
   { provider: "cheaperinference", modelId: "claude-opus-4-8-fast", displayName: "Claude Opus 4.8 Fast (Free Tier)", monthlyTokens: 0, creditTokens: 50000000, freeType: "one-time-initial", poolKey: "cheaperinference", tos: "caution" },
   { provider: "cheaperinference", modelId: "claude-fable-5", displayName: "Claude Fable 5", monthlyTokens: 0, creditTokens: 50000000, freeType: "one-time-initial", poolKey: "cheaperinference", tos: "caution" },
   { provider: "cheaperinference", modelId: "gpt-5", displayName: "GPT-5 (Free Tier)", monthlyTokens: 0, creditTokens: 50000000, freeType: "one-time-initial", poolKey: "cheaperinference", tos: "caution" },
@@ -172,11 +172,11 @@ export const FREE_MODEL_BUDGETS = [
   { provider: "duckduckgo-web", modelId: "mistral-small-2603", displayName: "Mistral Small 4", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "duckduckgo-web", tos: "avoid" },
   { provider: "duckduckgo-web", modelId: "tinfoil/gpt-oss-120b", displayName: "gpt-oss 120B", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "duckduckgo-web", tos: "avoid" },
   { provider: "duckduckgo-web", modelId: "tinfoil/gemma4-31b", displayName: "Gemma 4 31B", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "duckduckgo-web", tos: "avoid" },
-  { provider: "felo-web", modelId: "felo-chat", displayName: "Felo Chat", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "felo-web", tos: "avoid" },
-  { provider: "felo-web", modelId: "felo-search", displayName: "Felo Search", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "felo-web", tos: "avoid" },
-  { provider: "felo-web", modelId: "felo-scholar", displayName: "Felo Scholar", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "felo-web", tos: "avoid" },
-  { provider: "felo-web", modelId: "felo-social", displayName: "Felo Social", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "felo-web", tos: "avoid" },
-  { provider: "felo-web", modelId: "felo-document", displayName: "Felo Document", monthlyTokens: 0, creditTokens: 0, freeType: "keyless", poolKey: "felo-web", tos: "avoid" },
+  { provider: "felo-web", modelId: "gpt-5.6-luna", displayName: "GPT-5.6 Luna (Felo OpenAPI)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "felo-web", tos: "avoid" },
+  { provider: "felo-web", modelId: "gpt-5.6-terra", displayName: "GPT-5.6 Terra (Felo OpenAPI)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "felo-web", tos: "avoid" },
+  { provider: "felo-web", modelId: "deepseek-v4-flash", displayName: "DeepSeek V4 Flash (Felo OpenAPI)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "felo-web", tos: "avoid" },
+  { provider: "felo-web", modelId: "claude-haiku-4-5", displayName: "Claude Haiku 4.5 (Felo OpenAPI)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "felo-web", tos: "avoid" },
+  { provider: "felo-web", modelId: "grok-4.5", displayName: "Grok 4.5 (Felo OpenAPI)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "felo-web", tos: "avoid" },
   { provider: "fireworks", modelId: "deepseek-v4-flash", displayName: "DeepSeek V4 Flash", monthlyTokens: 0, creditTokens: 1000000, freeType: "one-time-initial", poolKey: "fireworks", tos: "avoid" },
   { provider: "fireworks", modelId: "deepseek-v4-pro", displayName: "DeepSeek V4 Pro", monthlyTokens: 0, creditTokens: 1000000, freeType: "one-time-initial", poolKey: "fireworks", tos: "avoid" },
   { provider: "fireworks", modelId: "glm-5p1", displayName: "GLM 5.1", monthlyTokens: 0, creditTokens: 1000000, freeType: "one-time-initial", poolKey: "fireworks", tos: "avoid" },

@@ -87,7 +87,6 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
       // Extract & persist dynamic capabilities metadata from upstream response
       try {
         const { saveModelDynamicCapabilities } = await import("@/lib/db");
-        const { registerDynamicCapabilities } = await import("open-sse/providers/capabilities.js");
 
         for (const m of safeModels) {
           const id = m.id;
@@ -104,9 +103,9 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
             if (typeof saveModelDynamicCapabilities === "function") {
               await saveModelDynamicCapabilities(provider, id, caps);
             }
-            if (typeof registerDynamicCapabilities === "function") {
-              registerDynamicCapabilities(id, caps);
-            }
+            // Persist provider-scoped only. The bare-modelId in-memory register
+            // bled caps across providers sharing an id (PR #292 lesson); readers
+            // (/v1/models, resolveCapabilities) load the scoped rows instead.
           }
         }
       } catch (capErr) {
