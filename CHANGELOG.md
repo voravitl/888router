@@ -1,3 +1,19 @@
+# v0.15.49 (2026-08-26)
+
+## Feat: Zero-Config Auto-Combo Template Gallery & Provider Review Fixes
+
+- **Zero-Config Auto-Combo Template Gallery (`/dashboard/combos`):**
+  - Surfaced 6 built-in `auto/*` dynamic combo templates (`auto/best-coding`, `auto/best-reasoning`, `auto/best-fast`, `auto/best-vision`, `auto/best-free`, `auto/cheap`) on `/dashboard/combos`.
+  - Added **Snapshot** button to prefill manual combo create modal from template defaults.
+  - Added **Copy** button for instant model ID copy (`auto/*`) to use directly in Claude Code, Cursor, or Cline.
+  - Reserved `auto/*` prefix in `/api/combos` POST so manual DB combos cannot collide with virtual templates (#315).
+- **Provider Review Fixes & Stability:**
+  - Fixed `AddApiKeyModal.js` `ReferenceError: defaultRegion is not defined` client-side crash on provider detail pages (#313, closes #312).
+  - Restored `apiKey`/`providerSpecificData` destructuring in `validate/route.js` (#314).
+  - Removed global in-memory capability registration in `[id]/models/route.js` to prevent cross-provider capability bleed; capability data now persists strictly provider-scoped in DB (#314).
+  - Repointed `zenmux-free` transport format to `"claude"` so `openai-to-claude` request translator runs (#314).
+  - Repointed `felo-web` transport to `openapi.felo.ai` OpenAI-compatible `/api/v1/chat/completions` LLM API with API key auth (#314).
+
 # v0.15.48 (2026-08-26)
 
 ## Feat: 5 Permanent Free Providers, Universal Model Sync Fallback & Free-Tiers 1-Click UI
