@@ -217,15 +217,62 @@ function rotateModelsFromIndex(models, currentIndex) {
 }
 
 /**
+ * Compute stable hash of prefix (system instructions + tools) for cache-optimized pinning
+ * @param {object} body - Request body
+ * @returns {number} 32-bit positive integer hash
+ */
+export function computePrefixHash(body) {
+  if (!body) return 0;
+  let prefix = "";
+  if (Array.isArray(body.messages)) {
+    for (const m of body.messages) {
+      if (m && (m.role === "system" || m.role === "developer")) {
+        prefix += (typeof m.content === "string" ? m.content : JSON.stringify(m.content || "")) + "\n";
+      }
+    }
+    if (!prefix && body.messages[0]) {
+      const first = body.messages[0];
+      prefix += (typeof first?.content === "string" ? first.content : JSON.stringify(first?.content || "")) + "\n";
+    }
+  }
+  if (Array.isArray(body.tools)) {
+    prefix += JSON.stringify(body.tools);
+  }
+  // Clamp to first 2,048 chars (Normalized Substring) to avoid excessive processing
+  prefix = prefix.slice(0, 2048);
+  if (!prefix) return 0;
+  
+  // Fast FNV-1a 32-bit hash
+  let hash = 2166136261;
+  for (let i = 0; i < prefix.length; i++) {
+    hash ^= prefix.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash >>> 0);
+}
+
+/**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
  * @param {string} comboName - Name of the combo
- * @param {string} strategy - "fallback" or "round-robin"
+ * @param {string} strategy - "fallback", "round-robin", or "cache-optimized"
  * @param {number|string} [stickyLimit=1] - Requests per combo model before switching
+ * @param {object} [body=null] - Request body for cache-optimized hashing
  * @returns {string[]} Rotated models array
  */
-export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
-  if (!models || models.length <= 1 || strategy !== "round-robin") {
+export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, body = null) {
+  if (!models || models.length <= 1) {
+    return models;
+  }
+
+  // Cache-optimized: pins the same prompt prefix/instructions to the same model index
+  if (strategy === "cache-optimized" && body) {
+    const hash = computePrefixHash(body);
+    const targetIndex = hash % models.length;
+    return rotateModelsFromIndex(models, targetIndex);
+  }
+
+  if (strategy !== "round-robin") {
     return models;
   }
 
@@ -253,6 +300,35 @@ export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
   }
 
   return rotatedModels;
+}
+
+/**
+ * Attach X-Router-Decision telemetry header to Response
+ * @param {Response} response - Original fetch Response
+ * @param {object} meta - Decision metadata
+ * @returns {Response}
+ */
+export function attachRouterDecisionHeader(response, meta = {}) {
+  if (!response || !response.headers) return response;
+  try {
+    const strategy = meta.strategy || "fallback";
+    const model = meta.model || "unknown";
+    const fallbackCount = meta.fallbackCount ?? 0;
+    const status = meta.status || (response.ok ? "ok" : "error");
+    let headerVal = `strategy=${strategy}; model=${model}; fallback_count=${fallbackCount}; status=${status}`;
+    if (meta.savingsTokens !== undefined && meta.savingsTokens !== null) {
+      headerVal += `; savings_tokens=${meta.savingsTokens}`;
+    }
+    const headers = new Headers(response.headers);
+    headers.set("X-Router-Decision", headerVal);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  } catch {
+    return response;
+  }
 }
 
 /**
@@ -297,8 +373,8 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
-  // Apply rotation strategy if enabled
-  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  // Apply rotation strategy if enabled (supports round-robin, cache-optimized)
+  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit, body);
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -374,7 +450,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                 const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr);
                 if (retried.ok) {
                   log.info("COMBO", `Model ${modelStr} succeeded after streamed reasoning-budget retry`);
-                  return retried;
+                  return attachRouterDecisionHeader(retried, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
                 }
                 lastError = `reasoning budget exhausted; streamed retry failed (${retried.status})`;
                 if (!lastStatus) lastStatus = retried.status;
@@ -392,10 +468,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             // the client.
             const streamHeaders = new Headers(result.headers);
             streamHeaders.delete("content-length");
-            return new Response(pipeStreamWithHead(reader, guard.release()), {
+            const responseWithHeaders = new Response(pipeStreamWithHead(reader, guard.release()), {
               status: result.status,
               headers: streamHeaders,
             });
+            return attachRouterDecisionHeader(responseWithHeaders, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
           }
         }
         // ponytail: reasoning models (deepseek, kimi, ...) can exhaust max_tokens
@@ -422,7 +499,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr);
             if (retried.ok) {
               log.info("COMBO", `Model ${modelStr} succeeded after reasoning-budget retry`);
-              return retried;
+              return attachRouterDecisionHeader(retried, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
             }
             lastError = `reasoning-empty-content retry failed (${retried.status})`;
             if (!lastStatus) lastStatus = retried.status;
@@ -430,7 +507,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           }
         }
         log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        return attachRouterDecisionHeader(result, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
       }
 
       // Extract error info from response
