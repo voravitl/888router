@@ -1,3 +1,17 @@
+# v0.15.50 (2026-08-27)
+
+## Feat: Expose Zero-Config Auto-Combo Templates in /v1/models
+
+- **`auto/*` virtual combos now visible in OpenAI `/v1/models` response:** `auto/best-coding`, `auto/best-reasoning`, `auto/best-fast`, `auto/best-vision`, `auto/best-free`, `auto/cheap` are injected with `isCombo=true`, `comboCategory/Tier/Strategy`, `comboMembers`, `context_length`/`max_output_tokens` via existing combo field resolvers (closes #317).
+- **Injection moved after `if (connections.length===0)` branch** so both static-fallback and dynamic provider paths emit virtual combos (per agy review round 3).
+
+# v0.15.50 (2026-08-27)
+
+## Feat: Expose Zero-Config Auto-Combo Templates in /v1/models
+
+- **`auto/*` virtual combos now visible in OpenAI `/v1/models` response:** `auto/best-coding`, `auto/best-reasoning`, `auto/best-fast`, `auto/best-vision`, `auto/best-free`, `auto/cheap` are injected with `isCombo=true`, `comboCategory/Tier/Strategy`, `comboMembers`, `context_length`/`max_output_tokens` via existing combo field resolvers (closes #317).
+- **Injection moved after `if (connections.length===0)` branch** so both static-fallback and dynamic provider paths emit virtual combos (per agy review round 3).
+
 # v0.15.49 (2026-08-26)
 
 ## Feat: Zero-Config Auto-Combo Template Gallery & Provider Review Fixes

@@ -7,6 +7,8 @@ import {
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { AUTO_COMBO_TEMPLATES } from "open-sse/services/autoCombo/builtinCatalog.js";
+import { resolveVirtualAutoCombo } from "open-sse/services/autoCombo/virtualFactory.js";
 import { getAllModelDynamicCapabilities } from "@/lib/db";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -643,6 +645,33 @@ export async function buildModelsList(kindFilter) {
           owned_by: outputAlias,
         });
       }
+    }
+  }
+
+  // Inject zero-config virtual combos (auto/best-coding, auto/best-free, …)
+  // AFTER the if/else so both the static-fallback path (no connections) and
+  // the dynamic provider path emit them. PR #315 surfaces UI side; this is
+  // the OpenAI /v1/models side. Review #320: never lose virtual combos to early return.
+  const shouldIncludeLlm = !kindFilter || kindFilter.includes("all") || kindFilter.includes("llm");
+  if (shouldIncludeLlm) {
+    for (const tpl of AUTO_COMBO_TEMPLATES) {
+      if (models.some((m) => m.id === tpl.name)) continue;
+      const virtual = resolveVirtualAutoCombo(tpl.name);
+      const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
+      if (memberIds.length === 0) continue; // Skip ghost combos with no usable members
+      const entry = {
+        id: tpl.name,
+        object: "model",
+        owned_by: "auto-combo",
+        isCombo: true,
+        comboCategory: tpl.categories?.[0] || null,
+        comboTier: tpl.tiers?.[0] || null,
+        comboStrategy: tpl.strategy || null,
+        comboMembers: memberIds.slice(0, 8),
+        comboMemberCount: memberIds.length,
+      };
+      applyComboContextFields(entry, { models: memberIds });
+      models.push(entry);
     }
   }
 
