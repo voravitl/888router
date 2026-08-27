@@ -1,9 +1,10 @@
-# v0.15.50 (2026-08-27)
+# v0.15.51 (2026-08-27)
 
-## Feat: Expose Zero-Config Auto-Combo Templates in /v1/models
+## Fix: Cloudflare Workers AI Model Sync Returns Empty List
 
-- **`auto/*` virtual combos now visible in OpenAI `/v1/models` response:** `auto/best-coding`, `auto/best-reasoning`, `auto/best-fast`, `auto/best-vision`, `auto/best-free`, `auto/cheap` are injected with `isCombo=true`, `comboCategory/Tier/Strategy`, `comboMembers`, `context_length`/`max_output_tokens` via existing combo field resolvers (closes #317).
-- **Injection moved after `if (connections.length===0)` branch** so both static-fallback and dynamic provider paths emit virtual combos (per agy review round 3).
+- **Root Cause**: Cloudflare `/ai/models/search` API changed response format — `task` field is now an object `{ id, name }` (e.g., "Text Generation") instead of boolean flags, and model slug `@cf/...` moved to `name` field.
+- **Fix**: Extract `parseCloudflareModelsResponse()` helper in `src/lib/cloudflareAiModels.js` handling both legacy boolean `task["text-generation"]` and modern `task.name` ("Text Generation", "Text-to-Image") formats. Accepts `@cf/...` slug from `name` or `id` field. Update `cloudflare-ai` provider in `src/app/api/providers/[id]/models/route.js` to use shared parser.
+- **Scope**: Text generation (LLM) and Text-to-Image models now sync correctly; ASR/Translation tasks filtered out.
 
 # v0.15.50 (2026-08-27)
 
