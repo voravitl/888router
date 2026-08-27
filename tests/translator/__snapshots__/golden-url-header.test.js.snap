@@ -22,6 +22,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > agentrouter → head
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > aihubmix → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > alicode → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -406,10 +425,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.47",
+    "User-Agent": "9Router/0.15.53",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.47",
-    "X-CORE-VERSION": "0.15.47",
+    "X-CLIENT-VERSION": "0.15.53",
+    "X-CORE-VERSION": "0.15.53",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -419,10 +438,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.47",
+    "User-Agent": "9Router/0.15.53",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.47",
-    "X-CORE-VERSION": "0.15.47",
+    "X-CLIENT-VERSION": "0.15.53",
+    "X-CORE-VERSION": "0.15.53",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -433,10 +452,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.47",
+    "User-Agent": "9Router/0.15.53",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.47",
-    "X-CORE-VERSION": "0.15.47",
+    "X-CLIENT-VERSION": "0.15.53",
+    "X-CORE-VERSION": "0.15.53",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -452,10 +471,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.47",
+    "User-Agent": "9Router/0.15.53",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.47",
-    "X-CORE-VERSION": "0.15.47",
+    "X-CLIENT-VERSION": "0.15.53",
+    "X-CORE-VERSION": "0.15.53",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -465,10 +484,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.47",
+    "User-Agent": "9Router/0.15.53",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.47",
-    "X-CORE-VERSION": "0.15.47",
+    "X-CLIENT-VERSION": "0.15.53",
+    "X-CORE-VERSION": "0.15.53",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -479,10 +498,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.15.47",
+    "User-Agent": "9Router/0.15.53",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.15.47",
-    "X-CORE-VERSION": "0.15.47",
+    "X-CLIENT-VERSION": "0.15.53",
+    "X-CORE-VERSION": "0.15.53",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "darwin",
     "X-PLATFORM-VERSION": "v26.0.0",
@@ -993,7 +1012,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.47",
+    "X-Msh-Version": "0.15.53",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
@@ -1004,7 +1023,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.47",
+    "X-Msh-Version": "0.15.53",
     "x-api-key": "<CRED>",
   },
   "oauth": {
@@ -1016,7 +1035,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.47",
+    "X-Msh-Version": "0.15.53",
     "x-api-key": "<CRED>",
   },
 }
@@ -1033,7 +1052,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.47",
+    "X-Msh-Version": "0.15.53",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
@@ -1044,7 +1063,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.47",
+    "X-Msh-Version": "0.15.53",
     "x-api-key": "<CRED>",
   },
   "oauth": {
@@ -1056,7 +1075,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "X-Msh-Device-Model": "darwin arm64",
     "X-Msh-Device-Name": "TCNB68417.local",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.15.47",
+    "X-Msh-Version": "0.15.53",
     "x-api-key": "<CRED>",
   },
 }
@@ -1654,6 +1673,13 @@ exports[`GOLDEN buildUrl (default executor providers) > agentrouter → url (str
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > aihubmix → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://aihubmix.com/v1/chat/completions",
+  "stream": "https://aihubmix.com/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > alicode → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
@@ -1852,8 +1878,8 @@ exports[`GOLDEN buildUrl (default executor providers) > featherless → url (str
 
 exports[`GOLDEN buildUrl (default executor providers) > felo-web → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://felo.ai/api-proxy/main/search/threads",
-  "stream": "https://felo.ai/api-proxy/main/search/threads",
+  "nonStream": "https://openapi.felo.ai/api/v1/chat/completions",
+  "stream": "https://openapi.felo.ai/api/v1/chat/completions",
 }
 `;
 

@@ -1,3 +1,20 @@
+# v0.15.53 (2026-08-28)
+
+## Feat: `9-free` 1M Context Window Support & Capability Registry Alignment
+
+- **`open-sse/providers/capabilities.js`:** Added `9-free` to `MODEL_CAPABILITIES` with `contextWindow: 1000000`, `maxOutput: 128000`, `vision: true`, `reasoning: true`, `search: true`, and `thinkingFormat: "openai"`.
+- **Combo Curation:** Curated `9-free` combo member models to ensure all members carry 1,000,000+ context window across active providers (`minimax-m3:free`, `deepseek-v4-pro-0813-free`, `kimi-k3-free`, `qwen3.8-max-free`, `nemotron-3-ultra:free`, `longcat-2.0:free`).
+- **Context Limit Resolution:** Verified `/v1/models` and `/v1/models/info` advertise `context_length: 1000000` for `9-free` and all 1M-capable combo routes.
+
+# v0.15.52 (2026-08-28)
+
+## Feat: Add AIHubMix OpenAI-Compatible Provider
+
+- **AIHubMix (`aihubmix`)** — new `apikey`-category provider pointing to `https://aihubmix.com/v1/chat/completions`. Closes #323.
+- 7 curated models: 4 `auto` router IDs (`auto`, `auto:balanced`, `auto:quality_first`, `auto:latency_critical`) + 3 free tier (`glm-5.2-free`, `dots-3-note-preview-free`, `gemini-3.7-flash-free`).
+- `models` endpoint at `https://aihubmix.com/v1/models` (850+ models available via dynamic sync).
+- Inject `import p132 from "./aihubmix.js"` into `open-sse/providers/registry/index.js`.
+
 # v0.15.51 (2026-08-27)
 
 ## Fix: Cloudflare Workers AI Model Sync Returns Empty List
