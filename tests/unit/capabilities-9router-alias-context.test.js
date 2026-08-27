@@ -40,6 +40,21 @@ describe("9router alias context capabilities (#275)", () => {
     expect(resolveKnownContextWindow(null, "9-haiku")).toBe(200000);
   });
 
+  it("resolves 9-free to a 1M context window", () => {
+    expect(getCapabilitiesForModel(null, "9-free")).toMatchObject({
+      contextWindow: 1000000,
+      maxOutput: 128000,
+      thinkingFormat: "openai",
+      reasoning: true,
+      vision: true,
+      search: true,
+    });
+  });
+
+  it("advertises 9-free limits via resolveKnownContextWindow", () => {
+    expect(resolveKnownContextWindow(null, "9-free")).toBe(1000000);
+  });
+
   // Guard against the tempting-but-wrong fix: a broad `*-opus*` / `*-sonnet*`
   // pattern would also swallow the older 200k Claude ids.
   it("leaves older Claude ids on their existing 200k caps", () => {
