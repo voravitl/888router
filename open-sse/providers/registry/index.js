@@ -131,6 +131,7 @@ import p128 from "./felo-web.js";
 import p129 from "./cheaperinference.js";
 import p130 from "./freebuff.js";
 import p131 from "./zenmux-free.js";
+import p132 from "./aihubmix.js";
 
 export default [
   p0,
@@ -265,4 +266,5 @@ export default [
   p129,
   p130,
   p131,
+  p132,
 ];
