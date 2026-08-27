@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parseCloudflareModelsResponse } from "@/lib/cloudflareAiModels";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isPublicModelsProvider } from "@/shared/constants/providers.js";
 import { KiroService } from "@/lib/oauth/services/kiro";
@@ -325,21 +326,7 @@ const PROVIDER_MODELS_CONFIG = {
     headers: { "Content-Type": "application/json" },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    parseResponse: (data) => {
-      // Workers AI returns { result: [...] } with model objects that have a
-      // richer shape than OpenAI's { id, object }. Filter to chat/text models
-      // (task.text-generation) and the image models (task.text-to-image) the
-      // registry already lists, mapping to { id, name }.
-      const list = Array.isArray(data?.result) ? data.result : [];
-      return list
-        .filter((m) => m?.id && (m?.task?.["text-generation"] || m?.task?.["text-to-image"]))
-        .map((m) => ({
-          id: m.id,
-          name: m.name || m.id,
-          description: m.description || "",
-          kind: m?.task?.["text-to-image"] ? "image" : "llm",
-        }));
-    },
+    parseResponse: parseCloudflareModelsResponse,
   },
 };
 
