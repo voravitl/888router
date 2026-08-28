@@ -1,3 +1,13 @@
+# v0.15.55 (2026-08-28)
+
+## Fix: Kilo Free Models Sync, Catalog Integration & Auto-Combo Info Resolution
+
+- **`kilo-gateway` Provider Registry:** Added `hasFree: true`, `modelsFetcher` (`https://api.kilo.ai/api/gateway/models`, type: `openrouter-free`), `passthroughModels: true`, and all active free models (`stepfun/step-3.7-flash:free`, `tencent/hy3:free`, `meituan/longcat-2.0-free`, `poolside/laguna-s-2.1:free`, etc.) to the provider definition.
+- **Kilo Free Models Endpoint:** Anchored free model filtering in `/api/providers/kilo/free-models` to accurately capture `isFree: true`, zero-pricing, and `:free` suffix models while rejecting paid models.
+- **Provider Details Page UI:** Updated `/dashboard/providers/[id]` to fetch Kilo free models for both `kilocode` and `kilo-gateway` provider routes.
+- **`/v1/models/info` Auto-Combo Support:** Integrated `resolveVirtualAutoCombo` to resolve `auto/*` zero-config combos with non-empty member validation and context metadata.
+- **Free Model Catalog Data:** Synced all 20+ active Kilo free models into `open-sse/config/freeModelCatalog.data.js`.
+
 # v0.15.54 (2026-08-28)
 
 ## Feat: `auto/best-free-1m` & `auto/free-1m` 1M-Context Auto Combos
