@@ -29,12 +29,12 @@ export async function GET() {
     const allModels = json.data || [];
 
     const freeModels = allModels
-      .filter((m) => m.isFree === true)
+      .filter((m) => m.isFree === true || (m.pricing && m.pricing.prompt === "0" && m.pricing.completion === "0") || (typeof m.id === "string" && (m.id.endsWith(":free") || m.id.includes("-free") || m.id.includes("/free"))))
       .map((m) => ({
         id: m.id,
-        name: m.name,
+        name: m.name || m.id,
         isFree: true,
-        context_length: m.context_length || 0,
+        context_length: m.context_length || m.top_provider?.context_length || 0,
       }));
 
     cachedModels = freeModels;
