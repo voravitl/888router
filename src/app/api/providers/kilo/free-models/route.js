@@ -29,7 +29,14 @@ export async function GET() {
     const allModels = json.data || [];
 
     const freeModels = allModels
-      .filter((m) => m.isFree === true || (m.pricing && m.pricing.prompt === "0" && m.pricing.completion === "0") || (typeof m.id === "string" && (m.id.endsWith(":free") || m.id.includes("-free") || m.id.includes("/free"))))
+      .filter((m) => {
+        if (!m || typeof m.id !== "string") return false;
+        if (m.isFree === true) return true;
+        if (m.pricing && m.pricing.prompt === "0" && m.pricing.completion === "0") return true;
+        if (m.id.endsWith(":free")) return true;
+        if (m.id === "kilo-auto/free" || m.id === "meituan/longcat-2.0-free" || m.id === "openrouter/free") return true;
+        return false;
+      })
       .map((m) => ({
         id: m.id,
         name: m.name || m.id,

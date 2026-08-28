@@ -61,6 +61,7 @@ async function lookup(fullId, requestedKind) {
       const virtual = resolveVirtualAutoCombo(fullId);
       if (virtual) {
         const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
+        if (!memberIds.length) return null;
         const out = {
           id: fullId,
           name: fullId,
