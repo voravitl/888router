@@ -43,6 +43,7 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
 
   const category = parsed.category || "chat";
   const tier = parsed.tier || "pro";
+  const contextMin = parsed.contextMin || (suffix.includes("1m") ? 1000000 : null);
   const strategy = parsed.strategy || (tier === "fast" ? "p2c" : tier === "free" ? "reset-aware" : "cache-optimized");
 
   // Collect all known models across providers
@@ -60,6 +61,9 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
 
       // Filter by tier
       if (tier === "free" && !isFree) continue;
+
+      // Filter by contextMin
+      if (contextMin && (caps?.contextWindow || 0) < contextMin) continue;
 
       // Filter by category
       if (category === "vision" || category === "multimodal") {
@@ -83,11 +87,21 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
   // If no candidates found, fallback to standard defaults
   if (candidates.length === 0) {
     if (tier === "free") {
-      candidates.push(
-        { modelStr: "openrouter/nvidia/llama-nemotron-embed-vl-1b-v2:free" },
-        { modelStr: "agentrouter/claude-opus-4-8" },
-        { modelStr: "bazaarlink/auto:free" }
-      );
+      if (contextMin && contextMin >= 1000000) {
+        candidates.push(
+          { modelStr: "openrouter/minimax/minimax-m3:free" },
+          { modelStr: "kgw/minimax/minimax-m3:free" },
+          { modelStr: "tokenrouter/deepseek/deepseek-v4-pro-0813-free" },
+          { modelStr: "tokenrouter/moonshotai/kimi-k3-free" },
+          { modelStr: "tokenrouter/qwen/qwen3.8-max-free" }
+        );
+      } else {
+        candidates.push(
+          { modelStr: "openrouter/nvidia/llama-nemotron-embed-vl-1b-v2:free" },
+          { modelStr: "agentrouter/claude-opus-4-8" },
+          { modelStr: "bazaarlink/auto:free" }
+        );
+      }
     } else if (category === "coding") {
       candidates.push(
         { modelStr: "anthropic/claude-3-7-sonnet" },

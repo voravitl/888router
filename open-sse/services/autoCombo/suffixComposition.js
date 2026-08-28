@@ -42,7 +42,10 @@ const TIER_SET = new Set(AUTO_TIERS);
 export function parseAutoSuffix(suffix) {
   if (typeof suffix !== "string" || suffix.length === 0) return { valid: false };
 
-  // Handle aliases like "best-free", "best-coding", "best-vision"
+  // Handle aliases like "best-free", "best-free-1m", "best-coding", "best-vision"
+  if (suffix === "best-free-1m" || suffix === "free-1m" || suffix === "free:1m" || suffix === "best-free:1m") {
+    return { valid: true, category: "chat", tier: "free", contextMin: 1000000 };
+  }
   if (suffix === "best-free" || suffix === "free") {
     return { valid: true, category: "chat", tier: "free" };
   }
