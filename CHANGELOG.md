@@ -1,3 +1,20 @@
+# v0.15.59 (2026-08-28)
+
+## Fix: `suggested-models` contextWindow fallback to `capabilities.js` (PR #341, follows up on #319)
+
+Standard OpenAI `/v1/models` returns `{ id, object, created, owned_by }` only — no `context_length`. After #337 the OpenAI-compatible providers (bai, venice, gmi, vercel, perplexity, nousresearch, tokenrouter) sync successfully but every model rendered as "NaN ctx" in the dashboard because the upstream field is absent.
+
+- **Thread `providerId` through the suggested-models path** so the `openai` filter can fall back to `open-sse/providers/capabilities.js` when upstream omits context.
+- **Upstream still wins** when present — dynamic > static, preserving the dynamic-caps precedence rule.
+- **Cache key now includes `providerId`** so two providers on the same URL never share a cached result (9-opus review).
+- **Empty-string `providerHint` guard** to defend against bad caller input.
+
+Files: `src/app/api/providers/suggested-models/filters.js`, `route.js`, `src/shared/utils/providerModelsFetcher.js`, `src/app/(dashboard)/dashboard/providers/[id]/page.js`. 14/14 unit tests pass.
+
+## CLI: 0.5.23
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
 # v0.15.58 (2026-08-28)
 
 ## Fix: `console.log` → `console.error` in `models/route.js` (PR #336, closes #330)
