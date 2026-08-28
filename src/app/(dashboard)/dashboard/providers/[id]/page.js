@@ -474,21 +474,17 @@ export default function ProviderDetailPage() {
   // Fetch dynamic models from provider API when connections are available
   useEffect(() => {
     const activeConnections = connections.filter((c) => c.isActive !== false);
-    if (activeConnections.length === 0) {
-      setDynamicModels([]);
-      return;
-    }
-
-    // Only fetch for providers that support dynamic model listing
     const supportsDynamicModels = !isCompatible && !["kilocode", "qoder"].includes(providerId);
     if (!supportsDynamicModels) return;
+
+    const targetEndpoint = activeConnections.length > 0
+      ? `/api/providers/${activeConnections[0].id}/models`
+      : `/api/providers/${providerId}/models`;
 
     // Guard against out-of-order responses / setState-after-unmount when
     // connections/providerId change rapidly or the page unmounts mid-fetch.
     const controller = new AbortController();
-    // Use the first active connection to fetch models
-    const firstConn = activeConnections[0];
-    fetch(`/api/providers/${firstConn.id}/models`, { cache: "no-store", signal: controller.signal })
+    fetch(targetEndpoint, { cache: "no-store", signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
         if (data.models && Array.isArray(data.models)) {

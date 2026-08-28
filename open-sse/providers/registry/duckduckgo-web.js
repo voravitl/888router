@@ -29,12 +29,17 @@ const duckduckgo_webConfig = {
     authType: "none",
   },
   models: [
-    { id: "gpt-5.4-mini", name: "GPT-5.4 Mini (DuckDuckGo Free)", toolCalling: false },
-    { id: "gpt-5.4-nano", name: "GPT-5.4 Nano (DuckDuckGo Free)", toolCalling: false },
-    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5 (DuckDuckGo Free)", toolCalling: false },
-    { id: "mistral-small-2603", name: "Mistral Small 4 (DuckDuckGo Free)", toolCalling: false },
-    { id: "tinfoil/gpt-oss-120b", name: "gpt-oss 120B (DuckDuckGo Free)", toolCalling: false },
-    { id: "tinfoil/gemma4-31b", name: "Gemma 4 31B (DuckDuckGo Free)", toolCalling: false },
+    { id: "gpt-4o-mini", name: "GPT-4o mini (DuckDuckGo Free)", contextLength: 128000, toolCalling: false },
+    { id: "claude-3-haiku-20240307", name: "Claude 3 Haiku (DuckDuckGo Free)", contextLength: 200000, toolCalling: false },
+    { id: "meta-llama/Llama-3.3-70B-Instruct-Turbo", name: "Llama 3.3 70B Turbo (DuckDuckGo Free)", contextLength: 128000, toolCalling: false },
+    { id: "mistralai/Mistral-Small-24B-Instruct-2501", name: "Mistral Small 24B (DuckDuckGo Free)", contextLength: 32000, toolCalling: false },
+    { id: "o3-mini", name: "o3-mini (DuckDuckGo Free)", contextLength: 200000, toolCalling: false },
+    { id: "gpt-5.4-mini", name: "GPT-5.4 Mini (DuckDuckGo Free)", contextLength: 128000, toolCalling: false },
+    { id: "gpt-5.4-nano", name: "GPT-5.4 Nano (DuckDuckGo Free)", contextLength: 128000, toolCalling: false },
+    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5 (DuckDuckGo Free)", contextLength: 200000, toolCalling: false },
+    { id: "mistral-small-2603", name: "Mistral Small 4 (DuckDuckGo Free)", contextLength: 32000, toolCalling: false },
+    { id: "tinfoil/gpt-oss-120b", name: "gpt-oss 120B (DuckDuckGo Free)", contextLength: 128000, toolCalling: false },
+    { id: "tinfoil/gemma4-31b", name: "Gemma 4 31B (DuckDuckGo Free)", contextLength: 128000, toolCalling: false },
   ],
 };
 
