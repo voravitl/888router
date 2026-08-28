@@ -1,6 +1,6 @@
 import { parseAutoSuffix } from "./suffixComposition.js";
 import { AUTO_TEMPLATE_VARIANTS } from "./builtinCatalog.js";
-import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { getCapabilitiesForModel, resolveKnownContextWindow } from "../../providers/capabilities.js";
 import { FREE_MODEL_BUDGETS } from "../../config/freeModelCatalog.js";
 import { PROVIDERS } from "../../config/providers.js";
 
@@ -63,7 +63,10 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       if (tier === "free" && !isFree) continue;
 
       // Filter by contextMin
-      if (contextMin && (caps?.contextWindow || 0) < contextMin) continue;
+      if (contextMin) {
+        const knownCw = resolveKnownContextWindow(providerId, modelId);
+        if (!knownCw || knownCw < contextMin) continue;
+      }
 
       // Filter by category
       if (category === "vision" || category === "multimodal") {
