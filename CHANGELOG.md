@@ -1,3 +1,12 @@
+# v0.15.54 (2026-08-28)
+
+## Feat: `auto/best-free-1m` & `auto/free-1m` 1M-Context Auto Combos
+
+- **`auto/best-free-1m` Zero-Config Template:** Added `auto/best-free-1m` to `AUTO_COMBO_TEMPLATES` and `AUTO_TEMPLATE_VARIANTS` with `contextMin: 1000000`.
+- **Suffix Parsing:** Added support for `best-free-1m`, `free-1m`, and `free:1m` in `parseAutoSuffix()`.
+- **Strict Context Filtering:** Enforced `resolveKnownContextWindow` in `resolveVirtualAutoCombo()` to guarantee all materialized candidates strictly carry >= 1M context window (guaranteeing `context_length: 1000000` in `/v1/models`).
+- **Capability Registry Alignment:** Registered `auto/best-free-1m` and `auto/free-1m` in `MODEL_CAPABILITIES` with `contextWindow: 1000000` and `maxOutput: 128000`.
+
 # v0.15.53 (2026-08-28)
 
 ## Feat: `9-free` 1M Context Window Support & Capability Registry Alignment
