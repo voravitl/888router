@@ -7,15 +7,6 @@
 - `models` endpoint at `https://aihubmix.com/v1/models` (850+ models available via dynamic sync).
 - Inject `import p132 from "./aihubmix.js"` into `open-sse/providers/registry/index.js`.
 
-# v0.15.52 (2026-08-28)
-
-## Feat: Add AIHubMix OpenAI-Compatible Provider
-
-- **AIHubMix (`aihubmix`)** — new `apikey`-category provider pointing to `https://aihubmix.com/v1/chat/completions`. Closes #323.
-- 7 curated models: 4 `auto` router IDs (`auto`, `auto:balanced`, `auto:quality_first`, `auto:latency_critical`) + 3 free tier (`glm-5.2-free`, `dots-3-note-preview-free`, `gemini-3.7-flash-free`).
-- `models` endpoint at `https://aihubmix.com/v1/models` (850+ models available via dynamic sync).
-- Inject `import p132 from "./aihubmix.js"` into `open-sse/providers/registry/index.js`.
-
 # v0.15.51 (2026-08-27)
 
 ## Fix: Cloudflare Workers AI Model Sync Returns Empty List
