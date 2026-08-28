@@ -53,6 +53,94 @@ describe("suggested-models 'openai' filter (closes #319)", () => {
     expect(out[2].contextLength).toBeUndefined();
     expect(out[3].contextLength).toBeUndefined();
   });
+
+  it("falls back to capabilities.js when upstream omits context (e.g. b.ai)", () => {
+    // b.ai seeds 6 models in registry; capabilities.js carries contextWindow
+    // for all of them (1M / 1M / 400K / 1M / 262K / 1M). Upstream standard
+    // OpenAI /v1/models response does NOT include context_length, so without
+    // this fallback the dashboard would render "NaN ctx" for every model.
+    const out = FILTERS["openai"](
+      [
+        { id: "deepseek-v4-flash" },
+        { id: "hy3" },
+        { id: "gpt-5.2" },
+        { id: "claude-sonnet-4-6" },
+        { id: "glm-5.2" },
+      ],
+      "bai"
+    );
+    const byId = Object.fromEntries(out.map((m) => [m.id, m.contextLength]));
+    expect(byId["deepseek-v4-flash"]).toBe(1000000);
+    expect(byId["claude-sonnet-4-6"]).toBe(1000000);
+    expect(byId["glm-5.2"]).toBe(1000000);
+    expect(byId["gpt-5.2"]).toBe(400000);
+    expect(byId["hy3"]).toBe(262144);
+  });
+
+  it("upstream context_length wins over capabilities.js fallback", () => {
+    // When the upstream response does carry a context field, prefer it —
+    // dynamic data beats a static table. (9-opus review: dynamic wins.)
+    const out = FILTERS["openai"](
+      [{ id: "deepseek-v4-flash", context_length: 32768 }],
+      "bai"
+    );
+    expect(out[0].contextLength).toBe(32768);
+  });
+
+  it("does not throw when providerHint lookup fails", () => {
+    // Unknown provider id — getCapabilitiesForModel returns the catalogue
+    // default (or null) without throwing. The filter must not crash.
+    const out = FILTERS["openai"](
+      [{ id: "anything" }],
+      "this-provider-does-not-exist-xyz"
+    );
+    expect(out[0].id).toBe("anything");
+    // No contextLength — that's fine, just don't crash.
+  });
+
+  it("ignores empty-string providerHint (no capabilities lookup)", () => {
+    // Defend against an empty string passing a truthiness check (9-opus).
+    const out = FILTERS["openai"](
+      [{ id: "deepseek-v4-flash" }],
+      ""
+    );
+    // Should not throw and should not set contextLength (no provider to lookup).
+    expect(out[0].id).toBe("deepseek-v4-flash");
+    expect(out[0].contextLength).toBeUndefined();
+  });
+});
+
+describe("providerModelsFetcher cache key (9-opus: provider-scoped)", () => {
+  it("different providerIds with the same URL produce different cache keys", async () => {
+    // Stub fetch to avoid network; we only care that the fetcher records
+    // the call so we can compare the URL it constructed (the query param
+    // `provider` differs → server-side filter is invoked correctly).
+    const originalFetch = global.fetch;
+    const seen = [];
+    global.fetch = vi.fn(async (url, opts) => {
+      seen.push({ url, key: opts?.headers?.["X-Provider-Key"] });
+      return { ok: true, json: async () => ({ data: [] }) };
+    });
+
+    try {
+      const { fetchSuggestedModels } = await import(
+        "../../src/shared/utils/providerModelsFetcher.js"
+      );
+      const fetcher = { url: "https://api.b.ai/v1/models", type: "openai" };
+
+      // First call: providerId="bai" (no key).
+      await fetchSuggestedModels(fetcher, { providerId: "bai" });
+      // Second call: providerId="venice" (same URL, no key).
+      await fetchSuggestedModels(fetcher, { providerId: "venice" });
+
+      // Both URLs should include their own providerId — the server-side
+      // filter is what picks the right contextWindow fallback.
+      expect(seen[0].url).toContain("provider=bai");
+      expect(seen[1].url).toContain("provider=venice");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
 });
 
 describe("providerModelsFetcher cache key (9-opus review: collision fix)", () => {

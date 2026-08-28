@@ -1,11 +1,43 @@
-# v0.15.56 (2026-08-28)
+# v0.15.59 (2026-08-28)
 
-## Fix: DuckDuckGo Models Catalogue, Context Lengths, and Dynamic Sync
+## Fix: `suggested-models` contextWindow fallback to `capabilities.js` (PR #341, follows up on #319)
 
-- **5 new DuckDuckGo AI Chat models** added to `open-sse/providers/registry/duckduckgo-web.js` with verified context lengths: `gpt-4o-mini` (128k), `claude-3-haiku-20240307` (200k), `meta-llama/Llama-3.3-70B-Instruct-Turbo` (128k), `mistralai/Mistral-Small-24B-Instruct-2501` (32k), `o3-mini` (200k).
-- **Free model catalog** synced with the 5 new entries (`open-sse/config/freeModelCatalog.data.js`).
-- **Provider detail page dynamic fetch** now hits `/api/providers/<providerId>/models` for public-keyless providers even when no connection row exists, gated by `isPublicModelsProvider(providerId)` to avoid 404s on private providers.
-- **Unit test** at `tests/unit/duckduckgo-web-models.test.js` asserts registry integrity, public-provider classification, and context length on the new Haiku entry.
+Standard OpenAI `/v1/models` returns `{ id, object, created, owned_by }` only — no `context_length`. After #337 the OpenAI-compatible providers (bai, venice, gmi, vercel, perplexity, nousresearch, tokenrouter) sync successfully but every model rendered as "NaN ctx" in the dashboard because the upstream field is absent.
+
+- **Thread `providerId` through the suggested-models path** so the `openai` filter can fall back to `open-sse/providers/capabilities.js` when upstream omits context.
+- **Upstream still wins** when present — dynamic > static, preserving the dynamic-caps precedence rule.
+- **Cache key now includes `providerId`** so two providers on the same URL never share a cached result (9-opus review).
+- **Empty-string `providerHint` guard** to defend against bad caller input.
+
+Files: `src/app/api/providers/suggested-models/filters.js`, `route.js`, `src/shared/utils/providerModelsFetcher.js`, `src/app/(dashboard)/dashboard/providers/[id]/page.js`. 14/14 unit tests pass.
+
+## CLI: 0.5.23
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
+# v0.15.58 (2026-08-28)
+
+## Fix: `console.log` → `console.error` in `models/route.js` (PR #336, closes #330)
+
+Two `catch` blocks in `src/app/api/models/route.js` (lines 33, 64) logged caught exceptions via `console.log`, making production error tracking indistinguishable from info-level output. Now writes to `stderr` so monitoring tooling can separate errors from informational logs.
+
+## Fix: `suggested-models` `openai` filter + private-provider bearer auth (PR #337, closes #319)
+
+- **`openai` filter added** to `src/app/api/providers/suggested-models/filters.js` — parses `{ data: [{ id, ... }] }` into `{ id, name, contextLength }`. Handles `context_length` / `contextWindow` / `maxInputTokens` variants, guards against non-numeric values producing NaN, skips null entries.
+- **Optional `X-Provider-Key` header** on `/api/providers/suggested-models` — when provided, the route forwards it as `Authorization: Bearer <key>` to the upstream `/v1/models` so private OpenAI-compatible providers (B.AI, GMI, Venice, Vercel AI Gateway, Perplexity, NousResearch, Tokenrouter) can sync.
+- **Cache key includes an FNV-1a hash of the API key** so two connections on the same provider URL never share cached results across users.
+- **Provider detail page** (`src/app/(dashboard)/dashboard/providers/[id]/page.js`) passes the active connection's `apiKey` to the fetcher when one exists.
+- **Regression test** at `tests/unit/suggested-models-openai-filter.test.js` — 7 cases: filter shape, context-length extraction, null guard, route auth header with/without key, unknown-type 400, cache-key hash distinctness.
+
+## CLI: 0.5.22
+
+Independent version bump for the `9router` npm package (CLI launcher). Root dashboard version remains independent of CLI version per repo convention.
+
+# v0.15.57 (2026-08-28)
+
+## Revert: Drop DuckDuckGo v0.15.56 Model Additions (PR #333)
+
+DuckDuckGo changed its VQD handshake protocol. The 5 new models from v0.15.56 are kept in the registry with a `notice.text` explaining the situation; re-enable when a VQD executor ships. See issue #338.
 
 # v0.15.56 (2026-08-28)
 

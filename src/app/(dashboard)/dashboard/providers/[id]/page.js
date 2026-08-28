@@ -470,7 +470,7 @@ export default function ProviderDetailPage() {
     if (!fetcher) return;
     // Use first active connection's apiKey so private providers (b.ai, gmi, etc.) can sync.
     const activeConn = connections.find((c) => c.isActive !== false);
-    fetchSuggestedModels(fetcher, { apiKey: activeConn?.apiKey }).then(setSuggestedModels);
+    fetchSuggestedModels(fetcher, { apiKey: activeConn?.apiKey, providerId }).then(setSuggestedModels);
   }, [providerId, connections]);
 
   // Fetch dynamic models from provider API when connections are available
