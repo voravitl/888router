@@ -474,10 +474,6 @@ export default function ProviderDetailPage() {
   // Fetch dynamic models from provider API when connections are available
   useEffect(() => {
     const activeConnections = connections.filter((c) => c.isActive !== false);
-    if (activeConnections.length === 0 && !isPublicModelsProvider(providerId)) {
-      setDynamicModels([]);
-      return;
-    }
     const supportsDynamicModels = !isCompatible && !["kilocode", "qoder"].includes(providerId);
     if (!supportsDynamicModels) return;
 
