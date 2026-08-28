@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - master
+      - 'chore/**'
+      - 'fix/**'
+      - 'feat/**'
   workflow_dispatch:
 
 # Prevent wasted/racing builds: cancel superseded runs on the same ref.
