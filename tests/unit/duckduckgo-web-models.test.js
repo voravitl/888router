@@ -20,8 +20,10 @@ describe("DuckDuckGo Web Provider & Models", () => {
     expect(ids).toContain("meta-llama/Llama-3.3-70B-Instruct-Turbo");
     expect(ids).toContain("mistralai/Mistral-Small-24B-Instruct-2501");
     expect(ids).toContain("o3-mini");
+    expect(duckduckgoWebConfig.models.length).toBeGreaterThanOrEqual(5);
 
     const haiku = duckduckgoWebConfig.models.find((m) => m.id === "claude-3-haiku-20240307");
+    expect(typeof haiku.contextLength).toBe("number");
     expect(haiku.contextLength).toBe(200000);
   });
 });
