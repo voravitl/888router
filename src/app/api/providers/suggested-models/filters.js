@@ -23,4 +23,23 @@ export const FILTERS = {
     (Array.isArray(models) ? models : [])
       .filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
       .map((m) => ({ id: m.id, name: m.name || m.id })),
+
+  // Generic OpenAI-compatible /v1/models: { data: [{ id, ... }] }
+  // Used by bai, venice, gmi, vercel-ai-gateway, perplexity-agent, nousresearch, tokenrouter.
+  "openai": (models) =>
+    (Array.isArray(models) ? models : [])
+      .map((m) => {
+        if (!m || typeof m !== "object") return null;
+        const id = m.id;
+        if (!id) return null;
+        const ctxRaw = m.context_length || m.contextWindow || m.maxInputTokens;
+        // Guard against non-numeric upstream values producing NaN (9-opus review).
+        const ctx = Number.isFinite(Number(ctxRaw)) ? Number(ctxRaw) : null;
+        return {
+          id,
+          name: m.name || m.display_name || id,
+          ...(ctx ? { contextLength: ctx } : {}),
+        };
+      })
+      .filter(Boolean),
 };
