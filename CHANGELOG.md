@@ -1,3 +1,21 @@
+# v0.15.56 (2026-08-28)
+
+## Fix: DuckDuckGo Models Catalogue, Context Lengths, and Dynamic Sync
+
+- **5 new DuckDuckGo AI Chat models** added to `open-sse/providers/registry/duckduckgo-web.js` with verified context lengths: `gpt-4o-mini` (128k), `claude-3-haiku-20240307` (200k), `meta-llama/Llama-3.3-70B-Instruct-Turbo` (128k), `mistralai/Mistral-Small-24B-Instruct-2501` (32k), `o3-mini` (200k).
+- **Free model catalog** synced with the 5 new entries (`open-sse/config/freeModelCatalog.data.js`).
+- **Provider detail page dynamic fetch** now hits `/api/providers/<providerId>/models` for public-keyless providers even when no connection row exists, gated by `isPublicModelsProvider(providerId)` to avoid 404s on private providers.
+- **Unit test** at `tests/unit/duckduckgo-web-models.test.js` asserts registry integrity, public-provider classification, and context length on the new Haiku entry.
+
+# v0.15.56 (2026-08-28)
+
+## Fix: DuckDuckGo Models Catalogue, Context Lengths, and Dynamic Sync
+
+- **5 new DuckDuckGo AI Chat models** added to `open-sse/providers/registry/duckduckgo-web.js` with verified context lengths: `gpt-4o-mini` (128k), `claude-3-haiku-20240307` (200k), `meta-llama/Llama-3.3-70B-Instruct-Turbo` (128k), `mistralai/Mistral-Small-24B-Instruct-2501` (32k), `o3-mini` (200k).
+- **Free model catalog** synced with the 5 new entries (`open-sse/config/freeModelCatalog.data.js`).
+- **Provider detail page dynamic fetch** now hits `/api/providers/<providerId>/models` for public-keyless providers even when no connection row exists, gated by `isPublicModelsProvider(providerId)` to avoid 404s on private providers.
+- **Unit test** at `tests/unit/duckduckgo-web-models.test.js` asserts registry integrity, public-provider classification, and context length on the new Haiku entry.
+
 # v0.15.55 (2026-08-28)
 
 ## Fix: Kilo Free Models Sync, Catalog Integration & Auto-Combo Info Resolution
