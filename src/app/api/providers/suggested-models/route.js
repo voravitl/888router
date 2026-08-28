@@ -7,6 +7,9 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const url = searchParams.get("url");
   const type = searchParams.get("type");
+  // Accept the API key via a custom header (X-Provider-Key) so it never
+  // appears in URLs / access logs / browser history (9-opus review).
+  const apiKey = request.headers.get("x-provider-key");
 
   if (!url || !type) {
     return NextResponse.json({ error: "Missing url or type" }, { status: 400 });
@@ -18,7 +21,9 @@ export async function GET(request) {
   }
 
   try {
-    const res = await fetch(url);
+    const headers = { "Content-Type": "application/json" };
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    const res = await fetch(url, { headers });
     if (!res.ok) {
       return NextResponse.json({ data: [] });
     }

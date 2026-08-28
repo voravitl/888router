@@ -468,8 +468,10 @@ export default function ProviderDetailPage() {
   useEffect(() => {
     const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
     if (!fetcher) return;
-    fetchSuggestedModels(fetcher).then(setSuggestedModels);
-  }, [providerId]);
+    // Use first active connection's apiKey so private providers (b.ai, gmi, etc.) can sync.
+    const activeConn = connections.find((c) => c.isActive !== false);
+    fetchSuggestedModels(fetcher, { apiKey: activeConn?.apiKey }).then(setSuggestedModels);
+  }, [providerId, connections]);
 
   // Fetch dynamic models from provider API when connections are available
   useEffect(() => {
