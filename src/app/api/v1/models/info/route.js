@@ -3,6 +3,7 @@ import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getComboByName } from "@/lib/localDb";
+import { resolveVirtualAutoCombo } from "open-sse/services/autoCombo/virtualFactory.js";
 import { applyComboContextFields } from "../route.js";
 
 const KIND_ENDPOINT = {
@@ -54,6 +55,27 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
 // id format: "{alias}/{modelId}" - alias may also be providerId or combo name
 async function lookup(fullId, requestedKind) {
   if (!fullId) return null;
+
+  if (fullId.startsWith("auto/")) {
+    try {
+      const virtual = resolveVirtualAutoCombo(fullId);
+      if (virtual) {
+        const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
+        if (!memberIds.length) return null;
+        const out = {
+          id: fullId,
+          name: fullId,
+          kind: "llm",
+          owned_by: "auto-combo",
+          endpoint: KIND_ENDPOINT["llm"] || "/v1/chat/completions",
+        };
+        applyComboContextFields(out, { models: memberIds });
+        return out;
+      }
+    } catch (e) {
+      console.warn(`[models/info] virtual auto-combo lookup failed for id=${fullId}:`, e?.message || e);
+    }
+  }
 
   if (!fullId.includes("/")) {
     try {
