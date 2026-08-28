@@ -10,6 +10,8 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
     expect(parseAutoSuffix("multimodal:free")).toEqual({ valid: true, category: "multimodal", tier: "free" });
     expect(parseAutoSuffix("best-coding")).toEqual({ valid: true, category: "coding", tier: "pro" });
     expect(parseAutoSuffix("best-free")).toEqual({ valid: true, category: "chat", tier: "free" });
+    expect(parseAutoSuffix("best-free-1m")).toEqual({ valid: true, category: "chat", tier: "free", contextMin: 1000000 });
+    expect(parseAutoSuffix("free-1m")).toEqual({ valid: true, category: "chat", tier: "free", contextMin: 1000000 });
   });
 
   it("dynamically materializes virtual auto combo candidates", () => {
@@ -18,6 +20,12 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
     expect(freeCombo.name).toBe("auto/best-free");
     expect(freeCombo.strategy).toBe("reset-aware");
     expect(freeCombo.models.length).toBeGreaterThan(0);
+
+    const free1mCombo = resolveVirtualAutoCombo("auto/best-free-1m");
+    expect(free1mCombo).not.toBeNull();
+    expect(free1mCombo.name).toBe("auto/best-free-1m");
+    expect(free1mCombo.strategy).toBe("reset-aware");
+    expect(free1mCombo.models.length).toBeGreaterThan(0);
 
     const codingCombo = resolveVirtualAutoCombo("auto/best-coding");
     expect(codingCombo).not.toBeNull();

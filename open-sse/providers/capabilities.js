@@ -119,6 +119,8 @@ export const MODEL_CAPABILITIES = {
   "9-sonnet": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "9-haiku":  { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 200000 },
   "9-free":   { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 128000 },
+  "auto/best-free-1m": { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 128000 },
+  "auto/free-1m":      { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 128000 },
 
   // Gemini image-gen / OpenAI image / xai image variants
   "gpt-image-1":       { imageOutput: true, tools: false },
