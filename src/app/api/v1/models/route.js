@@ -16,6 +16,8 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { OllamaService } from "@/lib/oauth/services/ollama";
+import { REGISTRY } from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials, refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
 import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
@@ -77,6 +79,53 @@ const LIVE_MODEL_RESOLVERS = {
       apiKey: conn.apiKey,
     });
     return result?.models?.length ? { models: result.models } : null;
+  },
+  // Ollama Cloud — `listAvailableModels` returns the live cloud catalog from
+  // https://ollama.com/api/tags. The static registry only seeds 7 models
+  // (see open-sse/providers/registry/ollama.js), so without this resolver the
+  // /v1/models response + Add Model to Combo dropdown only show the seed set.
+  // We accept either an apiKey (static-key Ollama Cloud) or an accessToken
+  // (OAuth) — the service accepts both.
+  ollama: async (conn) => {
+    const apiKey = conn?.apiKey || conn?.accessToken;
+    if (!apiKey) return null;
+    try {
+      const svc = new OllamaService();
+      const list = await svc.listAvailableModels(apiKey);
+      const models = (list || []).map((m) => ({ id: m.id, name: m.name || m.id }));
+      return models.length ? { models } : null;
+    } catch {
+      return null;
+    }
+  },
+
+  // Generic OpenAI-compatible resolver for every provider whose registry entry
+  // sets `modelsFetcher.type === "openai"`: bai, venice, gmi, vercel-ai-gateway,
+  // perplexity-agent, nousresearch, tokenrouter. Hits `modelsFetcher.url`
+  // directly with the connection's `apiKey` as a bearer, parses the standard
+  // `{ data: [{ id, ... }] }` shape, and surfaces every model id the upstream
+  // exposes — so newly-released models appear in /v1/models and the Add Model
+  // to Combo dropdown without any provider-specific wiring.
+  "__openai-generic__": async (conn, providerId) => {
+    const entry = REGISTRY.find((r) => r.id === providerId);
+    const fetcher = entry?.modelsFetcher;
+    if (!fetcher || fetcher.type !== "openai") return null;
+    const apiKey = conn?.apiKey;
+    if (!apiKey) return null;
+    try {
+      const res = await fetch(fetcher.url, {
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const data = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
+      const models = data
+        .map((m) => (m && typeof m === "object" && m.id ? { id: m.id, name: m.name || m.id } : null))
+        .filter(Boolean);
+      return models.length ? { models } : null;
+    } catch {
+      return null;
+    }
   },
   antigravity: async (conn) => {
     const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
@@ -509,6 +558,22 @@ export async function buildModelsList(kindFilter) {
           }
         } catch (err) {
           console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
+        }
+      }
+
+      // Generic OpenAI-compatible fallback: every provider whose registry
+      // entry has `modelsFetcher.type === "openai"` (bai, venice, gmi, vercel,
+      // perplexity, nousresearch, tokenrouter). Provides live catalog to
+      // /v1/models and the Add Model to Combo dropdown for newly-released
+      // models that aren't in the static `models: []` seed.
+      if (!liveResolver && !hasExplicitEnabledModels && rawModelIds.length === 0) {
+        try {
+          const generic = await LIVE_MODEL_RESOLVERS["__openai-generic__"](conn, providerId);
+          if (generic?.models?.length) {
+            rawModelIds = generic.models.map((m) => m.id);
+          }
+        } catch (err) {
+          console.log(`Generic openai fetch failed for ${providerId}: ${err?.message || err}`);
         }
       }
 
