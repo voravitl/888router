@@ -48,11 +48,13 @@ describe("P4/P5: Response Caching Layer (Exact SHA-256)", () => {
       expect(key1).toHaveLength(64); // SHA-256 hex string
     });
 
-    it("produces different keys for different models", () => {
+    it("produces the SAME key for different model ids with identical content (cross-model cache, #354)", () => {
+      // After #354 the cache key is provider-agnostic: a user A/B-ing the
+      // same prompt across Claude / GPT / Gemini hits the same entry.
       const body = { messages: [{ role: "user", content: "hello" }] };
       const key1 = computeResponseCacheKey(body, "gpt-4o");
       const key2 = computeResponseCacheKey(body, "claude-sonnet-4");
-      expect(key1).not.toBe(key2);
+      expect(key1).toBe(key2);
     });
 
     it("produces different keys for different messages", () => {
@@ -206,13 +208,16 @@ describe("P4/P5: Response Caching Layer (Exact SHA-256)", () => {
       expect(miss).toBeNull();
     });
 
-    it("returns null on cache miss (different model)", () => {
+    it("returns a hit on cache match (different model, identical content — #354)", () => {
+      // After #354 the cache is provider-agnostic; the same body cached
+      // under one model id hits under any other.
       const body = { messages: [{ role: "user", content: "hello" }] };
       const headers = { "x-888-response-cache": "true" };
 
       setCachedResponse(body, "gpt-4o", { choices: [{ message: { content: "hi" } }] }, headers);
-      const miss = getCachedResponse(body, "claude-sonnet-4", headers);
-      expect(miss).toBeNull();
+      const hit = getCachedResponse(body, "claude-sonnet-4", headers);
+      expect(hit).not.toBeNull();
+      expect(hit.hit).toBe(true);
     });
 
     it("returns null on cache miss (different message)", () => {
