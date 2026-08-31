@@ -868,15 +868,94 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
  * Rebuild a ReadableStream from a reader that already had `head` bytes pulled
  * (by comboStreamGuard) plus the rest of the stream.
  */
-function pipeStreamWithHead(reader, head) {
+/**
+ * Deduplicate identical SSE `data:` lines within a single stream.
+ *
+ * Some OpenRouter free-tier models (notably `minimax/minimax-m3:free`)
+ * emit the same assistant payload in two consecutive chunks, which the
+ * Claude Code client then renders twice (AskUserQuestion in duplicate,
+ * tool-call flashes doubled). The gateway is downstream of the upstream
+ * and cannot stop the duplication, so we collapse byte-identical lines
+ * before forwarding. Order of first occurrence is preserved; the second
+ * copy of any repeated line is dropped.
+ *
+ * Heuristic: hash the raw `data:` payload (excluding the SSE framing
+ * whitespace) and skip a chunk when its hash has already been emitted.
+ * The hash is 16 hex chars (FNV-1a 64-bit) — collision probability
+ * per stream is negligible for ~hundreds of chunks.
+ *
+ * Implemented as a stateful function (not TransformStream) so it
+ * works uniformly under Node's ReadableStream (vitest's test
+ * environment does not support `.pipeThrough()` on user-constructed
+ * streams).
+ */
+function createDedupState() {
+  return { seen: new Set(), lastHash: "" };
+}
+
+/**
+ * @param {Uint8Array|string} chunk
+ * @param {{ seen: Set<string>, lastHash: string }} state
+ * @returns {Uint8Array|null} the chunk with duplicate lines stripped,
+ *   or null if nothing should be forwarded.
+ */
+function dedupChunk(chunk, state) {
+  const text = typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk);
+  const lines = text.split(/(\n\n)/);
+  // Pre-collect content vs. separator tokens so we can decide which parts
+  // to keep deterministically: a kept line is appended; a duplicate line
+  // is dropped, along with the `\n\n` separator that would have followed
+  // it (otherwise we'd emit a stray blank event).
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const part = lines[i];
+    if (part === "\n\n") continue;
+    const trimmed = part.startsWith("data:") ? part.slice(5).trim() : part.trim();
+    if (!trimmed || trimmed === "[DONE]") {
+      out.push(part);
+      continue;
+    }
+    // Tiny FNV-1a 64-bit — same hash function as providerModelsFetcher.js
+    let h = 0xcbf29ce484222325n;
+    for (let j = 0; j < trimmed.length; j++) {
+      h = (h ^ BigInt(trimmed.charCodeAt(j))) * 0x100000001b3n & 0xffffffffffffffffn;
+    }
+    const hex = h.toString(16);
+    if (hex === state.lastHash) continue; // back-to-back dup of the previous line only
+    if (state.seen.has(hex)) continue;   // earlier dup — drop
+    state.seen.add(hex);
+    state.lastHash = hex;
+    out.push(part);
+  }
+  if (out.length === 0) return null;
+  const joined = out.join("\n\n");
+  return typeof chunk === "string" ? joined : new TextEncoder().encode(joined);
+}
+
+export function pipeStreamWithHead(reader, head) {
   return new ReadableStream({
     async start(controller) {
       try {
-        if (head && head.length > 0) controller.enqueue(head);
+        // Tee the rest of the stream through the dedup filter so identical
+        // SSE `data:` lines emitted by the upstream (notably some OpenRouter
+        // free models) are collapsed before reaching the client. See
+        // tests/unit/combo-pipe-stream-with-head.test.js for the
+        // reproduce/fix spec. The head is prepended verbatim — the guard
+        // already vetted it for the empty-stream verdict, so any
+        // back-to-back dup between the head and the first body chunk is
+        // still the same payload and is correctly dropped by the filter.
+        const dedupState = createDedupState();
+        if (head && head.length > 0) {
+          const filteredHead = dedupChunk(head, dedupState);
+          if (filteredHead && filteredHead.length > 0) controller.enqueue(filteredHead);
+        }
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
-          try { controller.enqueue(value); } catch { break; }
+          const filtered = dedupChunk(value, dedupState);
+          if (filtered && filtered.length > 0) {
+            try { controller.enqueue(filtered); } catch { break; }
+          }
         }
         try { controller.close(); } catch {}
       } catch (err) {
@@ -889,3 +968,5 @@ function pipeStreamWithHead(reader, head) {
     },
   });
 }
+// DEBUG
+globalThis.__dedupCalls = (globalThis.__dedupCalls || 0);
