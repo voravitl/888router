@@ -1,3 +1,37 @@
+# v0.15.60 (2026-08-31)
+
+## Fix: Ollama Cloud context windows (PR #347)
+
+Ollama models were returning wrong `contextWindow` because no `PROVIDER_CAPABILITIES.ollama` entry existed — fall-through to catalogue patterns (`*glm-5*` = 200k, `*nemotron-3*` = 128k, `*gpt-oss*` = 128k) overrode the actual per-model values from each model card on ollama.com.
+
+- `glm-5.3-flash` → **1M** (was 200k)
+- `glm-5.3` → **1M** (was 200k)
+- `nemotron-3-super` → **256K** (was 128k)
+- All other 13 ollama cloud models get exact entries verified against ollama.com model cards.
+
+Ollama `/api/tags` returns no context field, so this map is the only source of truth.
+
+## CLI: 0.5.24
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
+# v0.15.60 (2026-08-31)
+
+## Fix: Ollama Cloud context windows (PR #347)
+
+Ollama models were returning wrong `contextWindow` because no `PROVIDER_CAPABILITIES.ollama` entry existed — fall-through to catalogue patterns (`*glm-5*` = 200k, `*nemotron-3*` = 128k, `*gpt-oss*` = 128k) overrode the actual per-model values from each model card on ollama.com.
+
+- `glm-5.3-flash` → **1M** (was 200k)
+- `glm-5.3` → **1M** (was 200k)
+- `nemotron-3-super` → **256K** (was 128k)
+- All other 13 ollama cloud models get exact entries verified against ollama.com model cards.
+
+Ollama `/api/tags` returns no context field, so this map is the only source of truth.
+
+## CLI: 0.5.24
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
 # v0.15.59 (2026-08-28)
 
 ## Fix: `suggested-models` contextWindow fallback to `capabilities.js` (PR #341, follows up on #319)
