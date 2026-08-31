@@ -15,6 +15,36 @@ Ollama `/api/tags` returns no context field, so this map is the only source of t
 
 Independent version bump for the `9router` npm package (CLI launcher).
 
+# v0.15.62 (2026-08-31)
+
+## Fix: dedup duplicate SSE data: lines in pipeStreamWithHead (PR #356, closes #349)
+
+The 9-free combo (OpenRouter `minimax/minimax-m3:free`) emits the same assistant payload in two consecutive SSE chunks. pipeStreamWithHead was forwarding both verbatim, so the Claude Code client rendered AskUserQuestion prompts in duplicate, tool-call flashes doubled, and text blocks repeated. The gateway cannot stop the upstream duplication, so we collapse byte-identical `data:` lines before forwarding.
+
+- Stateful `dedupChunk(chunk, state)` in `open-sse/services/combo.js` splits on `\n\n` event boundaries, FNV-1a-64 hashes each `data:` payload (skipping [DONE] and whitespace), and drops lines that have already been emitted. Empty results are not forwarded.
+- Wire the dedup into `pipeStreamWithHead` so the head and the rest of the stream both go through it; the result is one `data:` line per distinct payload (in order of first occurrence).
+- 4 new unit tests in `tests/unit/combo-pipe-stream-with-head.test.js` (dedup, head prepending, distinct chunks no false positive).
+- 26 combo-related tests pass.
+
+## CLI: 0.5.26
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
+# v0.15.62 (2026-08-31)
+
+## Fix: dedup duplicate SSE data: lines in pipeStreamWithHead (PR #356, closes #349)
+
+The 9-free combo (OpenRouter `minimax/minimax-m3:free`) emits the same assistant payload in two consecutive SSE chunks. pipeStreamWithHead was forwarding both verbatim, so the Claude Code client rendered AskUserQuestion prompts in duplicate, tool-call flashes doubled, and text blocks repeated. The gateway cannot stop the upstream duplication, so we collapse byte-identical `data:` lines before forwarding.
+
+- Stateful `dedupChunk(chunk, state)` in `open-sse/services/combo.js` splits on `\n\n` event boundaries, FNV-1a-64 hashes each `data:` payload (skipping [DONE] and whitespace), and drops lines that have already been emitted. Empty results are not forwarded.
+- Wire the dedup into `pipeStreamWithHead` so the head and the rest of the stream both go through it; the result is one `data:` line per distinct payload (in order of first occurrence).
+- 4 new unit tests in `tests/unit/combo-pipe-stream-with-head.test.js` (dedup, head prepending, distinct chunks no false positive).
+- 26 combo-related tests pass.
+
+## CLI: 0.5.26
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
 # v0.15.61 (2026-08-31)
 
 ## Fix: /v1/models surfaces live OpenAI-compatible catalogs (PR #350, follows up on #319)
