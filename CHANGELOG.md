@@ -15,20 +15,17 @@ Ollama `/api/tags` returns no context field, so this map is the only source of t
 
 Independent version bump for the `9router` npm package (CLI launcher).
 
-# v0.15.60 (2026-08-31)
+# v0.15.61 (2026-08-31)
 
-## Fix: Ollama Cloud context windows (PR #347)
+## Fix: /v1/models surfaces live OpenAI-compatible catalogs (PR #350, follows up on #319)
 
-Ollama models were returning wrong `contextWindow` because no `PROVIDER_CAPABILITIES.ollama` entry existed — fall-through to catalogue patterns (`*glm-5*` = 200k, `*nemotron-3*` = 128k, `*gpt-oss*` = 128k) overrode the actual per-model values from each model card on ollama.com.
+`/v1/models` and the 'Add Model to Combo' dropdown only showed the static seed sets for OpenAI-compatible providers (ollama, bai, venice, gmi, vercel, perplexity, nousresearch, tokenrouter). After PR #337 wired up the sync path, the per-connection live catalog still never reached clients because nothing in the v1/models read path called the live fetcher.
 
-- `glm-5.3-flash` → **1M** (was 200k)
-- `glm-5.3` → **1M** (was 200k)
-- `nemotron-3-super` → **256K** (was 128k)
-- All other 13 ollama cloud models get exact entries verified against ollama.com model cards.
+- **Ollama entry** to `LIVE_MODEL_RESOLVERS` calls `OllamaService.listAvailableModels` (accepts either `apiKey` or `accessToken`).
+- **Generic `__openai-generic__` resolver** reads `modelsFetcher` from the registry and hits any `type: "openai"` provider's upstream directly with `Authorization: Bearer <apiKey>`. Covers bai, venice, gmi, vercel, perplexity, nousresearch, tokenrouter out of the box.
+- The v1/models call site falls through to the generic resolver when no provider-specific entry exists and the connection has an `apiKey`.
 
-Ollama `/api/tags` returns no context field, so this map is the only source of truth.
-
-## CLI: 0.5.24
+## CLI: 0.5.25
 
 Independent version bump for the `9router` npm package (CLI launcher).
 
