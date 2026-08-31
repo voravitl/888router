@@ -1,3 +1,33 @@
+# v0.15.63 (2026-09-01)
+
+## Fix: cross-model cache (PR #358, closes #354)
+
+`computeResponseCacheKey` in `open-sse/translator/concerns/responseCache.js` previously used `model || ""` as the first segment of the SHA-256 cache key, so two requests with identical content but different model ids (proxy cycle, 9-free combo failover, manual model switch) never shared a cache entry. Every model change re-fetched the entire conversation from cold cache.
+
+- Drop the `model` segment from the cache key.
+- Add a `cacheClass` segment (`'plain' | 'tool' | 'structured'`) so tool-calling and response_format responses don't collide with plain text completions.
+- New unit tests in `tests/unit/response-cache-key.test.js` (4 cases) and updated pre-existing assertions in `tests/unit/response-cache.test.js`.
+- 2007/2007 unit tests pass.
+
+## CLI: 0.5.27
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
+# v0.15.63 (2026-09-01)
+
+## Fix: cross-model cache (PR #358, closes #354)
+
+`computeResponseCacheKey` in `open-sse/translator/concerns/responseCache.js` previously used `model || ""` as the first segment of the SHA-256 cache key, so two requests with identical content but different model ids (proxy cycle, 9-free combo failover, manual model switch) never shared a cache entry. Every model change re-fetched the entire conversation from cold cache.
+
+- Drop the `model` segment from the cache key.
+- Add a `cacheClass` segment (`'plain' | 'tool' | 'structured'`) so tool-calling and response_format responses don't collide with plain text completions.
+- New unit tests in `tests/unit/response-cache-key.test.js` (4 cases) and updated pre-existing assertions in `tests/unit/response-cache.test.js`.
+- 2007/2007 unit tests pass.
+
+## CLI: 0.5.27
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
 # v0.15.60 (2026-08-31)
 
 ## Fix: Ollama Cloud context windows (PR #347)
