@@ -171,6 +171,32 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
+  // Ollama Cloud context windows (https://ollama.com/library/<model>).
+  // Per-provider overrides sit above the generic *glm-5* (200k) / *nemotron-3*
+  // (128k) / *gpt-oss* (128k) catalogue patterns. Each entry below is the
+  // cloud context — local Ollama contexts can be lower (e.g. 192k for
+  // minimax-m2.7:q3) but the gateway always sends to cloud, so advertise cloud.
+  "ollama": {
+    "glm-5.3-flash":   { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 131072 },
+    "glm-5.3":         { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 131072 },
+    "glm-5.1":         { reasoning: true,        thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 200000,  maxOutput: 128000 },
+    "kimi-k3":         { reasoning: true,        thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 131072 },
+    "kimi-k2.7":       { reasoning: true,        thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 256000,  maxOutput: 64000 },
+    "kimi-k2.6":       { reasoning: true,        thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 256000,  maxOutput: 64000 },
+    "qwen3.5:397b":    { reasoning: true,        thinkingFormat: "qwen",  thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 65536 },
+    "qwen3.5":         { reasoning: true,        thinkingFormat: "qwen",  thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 65536 },
+    "deepseek-v4-pro":         { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-flash":       { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-flash:0731":  { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 384000 },
+    "minimax-m3":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 512000 },
+    "minimax-m2.7":     { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 200000,  maxOutput: 131072 },
+    "mistral-large-3:675b": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
+    "gpt-oss:120b":     { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 128000,  maxOutput: 64000 },
+    "gpt-oss:20b":      { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 128000,  maxOutput: 64000 },
+    "nemotron-3-ultra": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
+    "nemotron-3-super": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000,  maxOutput: 64000 },
+    "gemma4:31b":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 128000, maxOutput: 64000 },
+  },
   "opencode": {
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
