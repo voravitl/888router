@@ -33,10 +33,36 @@ function getHeader(headers, name) {
 /**
  * Generate SHA-256 cache key from comprehensive request fingerprint
  */
+/**
+ * Classify the request shape so structurally-different responses don't
+ * collide under the cross-model cache (issue #354). `plain` = standard
+ * text completion, `tool` = function-calling or tool_use outputs,
+ * `structured` = response_format / JSON-schema. Anything that mixes
+ * modes falls back to `structured` (the most specific bucket).
+ */
+function classifyCacheShape(body) {
+  if (!body || typeof body !== "object") return "plain";
+  if (Array.isArray(body.tools) && body.tools.length > 0) return "tool";
+  if (body.tool_choice && body.tool_choice !== "none") return "tool";
+  if (body.response_format) return "structured";
+  return "plain";
+}
+
 export function computeResponseCacheKey(body, model) {
   if (!body || typeof body !== "object") return null;
 
   try {
+    // Cache key deliberately omits the `model` segment. Two requests with
+    // identical content but different model ids are treated as the same
+    // cache entry — the gateway cannot cache-control which upstream
+    // provider actually serves the response, and users A/B-ing the same
+    // prompts across Claude / GPT / Gemini hit the same upstream KV
+    // cache (or the cached upstream response) instead of re-fetching
+    // identical content. Issue #354.
+    //
+    // `cacheClass` is appended to keep plain text completions from
+    // colliding with tool-calling or structured-output responses, so
+    // structurally-different shapes still get distinct cache keys.
     const messages = body.messages || body.input || body.contents || [];
     const system = body.system || "";
     // Gemini uses systemInstruction
@@ -56,8 +82,9 @@ export function computeResponseCacheKey(body, model) {
     const user = body.user ?? "";
     const logprobs = body.logprobs ?? "";
     const fmt = body.response_format ? JSON.stringify(body.response_format) : "";
+    const cacheClass = classifyCacheShape(body);
 
-    const rawString = `${model || ""}:${JSON.stringify(messages)}:${JSON.stringify(system)}:${systemInstruction}:${JSON.stringify(tools)}:${temp}:${topP}:${topK}:${maxTokens}:${n}:${stop}:${presencePenalty}:${frequencyPenalty}:${seed}:${user}:${logprobs}:${fmt}`;
+    const rawString = `${cacheClass}:${JSON.stringify(messages)}:${JSON.stringify(system)}:${systemInstruction}:${JSON.stringify(tools)}:${temp}:${topP}:${topK}:${maxTokens}:${n}:${stop}:${presencePenalty}:${frequencyPenalty}:${seed}:${user}:${logprobs}:${fmt}`;
     return createHash("sha256").update(rawString).digest("hex");
   } catch (e) {
     console.warn("[ResponseCache] computeResponseCacheKey failed:", e.message);
