@@ -157,7 +157,7 @@ function buildChatPayload({ model, body, vqd }) {
   };
 }
 
-export class DuckduckgoWebExecutor extends BaseExecutor {
+class DuckduckgoWebExecutor extends BaseExecutor {
   constructor(config) {
     super(config?.id || "duckduckgo-web", config);
     // Provider is noAuth — DuckDuckGo gates by fingerprint, not apiKey.
