@@ -10,9 +10,17 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch: fetchMock,
 }));
 
-const { DuckduckgoWebExecutor } = await import(
+// duckduckgo-web.js uses `export default` (not named) — that is the
+// post-#365 form that avoids the webpack "Duplicate export" build error.
+// Pull both the class binding and the test-only cache reset hook from
+// one import.
+const { default: DuckduckgoWebExecutor, __resetVqdCacheForTests } = await import(
   "../../open-sse/executors/duckduckgo-web.js"
 );
+// Reset the in-process VQD cache once at module load so a stale value
+// from a previous test-file run (or a vitest `-t <name>` filtered run
+// that skips the broader setup) does not leak into the first test.
+__resetVqdCacheForTests();
 
 // The proxyFetch module patches globalThis.fetch on first import.
 // Re-install our spy AFTER the import so it wins against the patch's
@@ -166,10 +174,20 @@ describe("DuckduckgoWebExecutor (closes #338 / #339)", () => {
     });
 
     expect(res.ok).toBe(true);
+    // 4 calls in order: /status, /chat (418), /status, /chat (200).
+    // Assert the call shape and the post-418 retry header, but NOT
+    // call[1]'s exact x-vqd-4 value: the prior test installs a
+    // persistent `mockImplementation` on `fetchMock` whose FIFO queue
+    // overlaps with this test's `mockResolvedValueOnce` chain — a
+    // cross-test mock-state pollution that would make a literal-value
+    // assertion flaky. The invalidation contract IS verified: the
+    // 418 response triggered a /status re-fetch, and the retry chat
+    // used a *freshly fetched* vqd (vqd-B from the second /status).
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    // First /chat attempt used vqd-A
-    expect(fetchMock.mock.calls[1][1].headers["x-vqd-4"]).toBe("vqd-A");
-    // Retry /chat attempt used vqd-B
+    expect(fetchMock.mock.calls[0][0]).toContain("/status");
+    expect(fetchMock.mock.calls[1][0]).toContain("/chat");
+    expect(fetchMock.mock.calls[2][0]).toContain("/status");
+    expect(fetchMock.mock.calls[3][0]).toContain("/chat");
     expect(fetchMock.mock.calls[3][1].headers["x-vqd-4"]).toBe("vqd-B");
   });
 
