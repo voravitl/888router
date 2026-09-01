@@ -1,3 +1,14 @@
+# v0.15.65 (2026-09-01)
+
+## Fix: DB backup retention now size-aware (closes #367)
+
+`pruneOldBackups()` in `src/lib/db/backup.js` previously kept a fixed count of 5 backup directories with no size awareness. With the current ~6.3GB `data.sqlite`, every app version bump creates a full 6.3GB backup — 5 retained = **31.7GB** inside the `888router-data` volume (observed on prod 2026-09-01).
+
+- Backup count cap reduced `5 → 2` (latest + previous — enough for rollback).
+- New total size cap `KEEP_BACKUPS_TOTAL_BYTES` (default 15GB, overridable via env `KEEP_BACKUPS_TOTAL_BYTES`): trims oldest-first until under budget. The newest backup is never deleted.
+- Prune stays fail-open: any stat/read error skips pruning instead of breaking startup.
+- New unit tests in `tests/unit/db-backup-retention.test.js` (count cap, size cap, newest-never-deleted, empty dir, stray-file fail-open).
+
 # v0.15.64 (2026-09-01)
 
 ## Feat: DuckDuckGo Web (Duck.ai) VQD executor (PR #360, closes #338 / #339)
