@@ -1,3 +1,31 @@
+# v0.15.66 (2026-09-01)
+
+## Fix: stream accumulator now counts tool calls (closes #369)
+
+`accumulatedContent` in `open-sse/utils/stream.js` only tracked text/thinking deltas, not tool_use (Claude), tool_calls (OpenAI), or functionCall (Gemini). Tool-only responses — common in agentic Claude Code sessions — were recorded in `requestDetails` as `status="empty"` with `[Empty streaming response]`, hiding the real tool-call traffic shape and producing false-positive alerts.
+
+Observed on prod 2026-09-01: 152 glm-5.3 requests over 2h all marked "empty" while Claude Code was actually receiving valid tool calls and continuing the loop. The accumulation gap made the agent loop pattern impossible to diagnose from the dashboard.
+
+- Add `accumulatedToolCalls` covering Claude `content_block_start` (tool_use), OpenAI `delta.tool_calls`, and Gemini `parts[].functionCall`.
+- Dedup OpenAI deltas by **index as Number** (some upstreams emit string `"0"`, others int `0`).
+- Cap at 64 entries (`MAX_TRACKED_TOOL_CALLS`) to defend against runaway-index abuse.
+- `streamingHandler.js` records `status='success'` and stores the tool-call list in `requestDetails.response.toolCalls` when content is empty but tools are present.
+- New unit tests in `tests/unit/stream-tool-accumulator.test.js` (7/7 green) cover OpenAI id-based + index-based dedup, Claude content_block_start, mixed text+tools, plain text, string-index coercion, runaway-index cap.
+
+# v0.15.66 (2026-09-01)
+
+## Fix: stream accumulator now counts tool calls (closes #369)
+
+`accumulatedContent` in `open-sse/utils/stream.js` only tracked text/thinking deltas, not tool_use (Claude), tool_calls (OpenAI), or functionCall (Gemini). Tool-only responses — common in agentic Claude Code sessions — were recorded in `requestDetails` as `status="empty"` with `[Empty streaming response]`, hiding the real tool-call traffic shape and producing false-positive alerts.
+
+Observed on prod 2026-09-01: 152 glm-5.3 requests over 2h all marked "empty" while Claude Code was actually receiving valid tool calls and continuing the loop. The accumulation gap made the agent loop pattern impossible to diagnose from the dashboard.
+
+- Add `accumulatedToolCalls` covering Claude `content_block_start` (tool_use), OpenAI `delta.tool_calls`, and Gemini `parts[].functionCall`.
+- Dedup OpenAI deltas by **index as Number** (some upstreams emit string `"0"`, others int `0`).
+- Cap at 64 entries (`MAX_TRACKED_TOOL_CALLS`) to defend against runaway-index abuse.
+- `streamingHandler.js` records `status='success'` and stores the tool-call list in `requestDetails.response.toolCalls` when content is empty but tools are present.
+- New unit tests in `tests/unit/stream-tool-accumulator.test.js` (7/7 green) cover OpenAI id-based + index-based dedup, Claude content_block_start, mixed text+tools, plain text, string-index coercion, runaway-index cap.
+
 # v0.15.65 (2026-09-01)
 
 ## Fix: DB backup retention now size-aware (closes #367)
