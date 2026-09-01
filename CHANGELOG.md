@@ -1,3 +1,19 @@
+# v0.15.68 (2026-09-01)
+
+## Release: stream tool-call accumulator (#371) + backup retention (#368)
+
+Realigns version metadata. Both fixes are already on master from their respective PRs. PR #372's squash-merge left package.json at 0.15.67 instead of 0.15.66 (squash-survival drift). 0.15.68 is the next patch step so the on-disk version is monotonic and matches the CHANGELOG sequence.
+
+No code change.
+
+# v0.15.68 (2026-09-01)
+
+## Release: stream tool-call accumulator (#371) + backup retention (#368)
+
+Realigns version metadata. Both fixes are already on master from their respective PRs. PR #372's squash-merge left package.json at 0.15.67 instead of 0.15.66 (squash-survival drift). 0.15.68 is the next patch step so the on-disk version is monotonic and matches the CHANGELOG sequence.
+
+No code change.
+
 # v0.15.66 (2026-09-01)
 
 ## Fix: stream accumulator now counts tool calls (closes #369)
