@@ -62,6 +62,13 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
+  // Tool-call accumulator: null = none seen yet (avoid allocating an empty
+  // array for plain text responses), [] = at least one tool delta was seen.
+  // Mirrors the text/thinking pattern so requestDetails reflects the full
+  // shape the client actually received — otherwise tool-only responses are
+  // recorded as "[Empty streaming response]" and dashboards incorrectly show
+  // them as failures.
+  let accumulatedToolCalls = null;
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -251,7 +258,17 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.delta.thinking.length;
           accumulatedThinking += parsed.delta.thinking;
         }
-        
+        // Claude format - tool_use block (content_block_start with type=tool_use
+        // carries the tool id/name/input_signature; the actual input deltas come
+        // later as input_json_delta). A single start is enough to mark the
+        // response as carrying a tool call.
+        if (parsed.delta?.type === "tool_use" || (parsed.content_block?.type === "tool_use")) {
+          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+          const id = parsed.delta?.id || parsed.content_block?.id || `tool_${accumulatedToolCalls.length}`;
+          if (!accumulatedToolCalls.some((c) => c.id === id)) {
+            accumulatedToolCalls.push({ id, name: parsed.delta?.name || parsed.content_block?.name || null });
+          }
+        }
         // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
           totalContentLength += parsed.choices[0].delta.content.length;
@@ -261,6 +278,29 @@ export function createSSEStream(options = {}) {
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        }
+        // OpenAI format - tool_calls (streaming: each delta has a partial
+        // tool_call with index). Dedup by index so subsequent argument-only
+        // deltas for the same call don't create a second entry. When a
+        // delta carries both id and index, store the id (it's the canonical
+        // client-facing identifier); otherwise fall back to the index key.
+        const oaToolCallDeltas = parsed.choices?.[0]?.delta?.tool_calls;
+        if (Array.isArray(oaToolCallDeltas) && oaToolCallDeltas.length > 0) {
+          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+          for (const tc of oaToolCallDeltas) {
+            const index = tc.index ?? accumulatedToolCalls.length;
+            const existing = accumulatedToolCalls.find((c) => c.index === index);
+            if (existing) {
+              if (tc.id && existing.id !== tc.id) existing.id = tc.id;
+              if (tc.function?.name && !existing.name) existing.name = tc.function.name;
+            } else {
+              accumulatedToolCalls.push({
+                id: tc.id || `tc_index_${index}`,
+                name: tc.function?.name || null,
+                index,
+              });
+            }
+          }
         }
         
         // Gemini format
@@ -274,6 +314,15 @@ export function createSSEStream(options = {}) {
               } else {
                 accumulatedContent += part.text;
               }
+            }
+            // Gemini functionCall (single non-streaming response carries the
+            // full call; mark it so the response isn't logged as empty).
+            if (part.functionCall && part.functionCall.name) {
+              if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+              accumulatedToolCalls.push({
+                id: part.functionCall.id || `gemini_fc_${accumulatedToolCalls.length}`,
+                name: part.functionCall.name,
+              });
             }
           }
         }
@@ -378,7 +427,8 @@ export function createSSEStream(options = {}) {
           if (onStreamComplete) {
             onStreamComplete({
               content: accumulatedContent,
-              thinking: accumulatedThinking
+              thinking: accumulatedThinking,
+              toolCalls: accumulatedToolCalls
             }, usage, ttftAt);
           }
           return;
@@ -455,7 +505,8 @@ export function createSSEStream(options = {}) {
         if (onStreamComplete) {
           onStreamComplete({
             content: accumulatedContent,
-            thinking: accumulatedThinking
+            thinking: accumulatedThinking,
+            toolCalls: accumulatedToolCalls
           }, state?.usage, ttftAt);
         }
       } catch (error) {
