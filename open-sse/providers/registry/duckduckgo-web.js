@@ -16,7 +16,7 @@ const duckduckgo_webConfig = {
     textIcon: "DDG",
     website: "https://duckduckgo.com/chat",
     notice: {
-      text: "Keyless 100% Free AI Chat provided by DuckDuckGo. No API Key or cookie required. Note: v0.15.57 reverted the 5 new model additions from v0.15.56 — DDG upstream changed its VQD handshake protocol and the 888router translator does not yet implement the new flow. Re-enable once a VQD executor ships.",
+      text: "Keyless 100% Free AI Chat provided by DuckDuckGo. No API Key or cookie required. Live VQD handshake now wired via the executor (PR for #338 / #339).",
       apiKeyUrl: "https://duckduckgo.com/chat",
     },
   },
