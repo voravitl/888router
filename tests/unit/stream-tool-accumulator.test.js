@@ -95,4 +95,30 @@ describe("accumulatedToolCalls in createSSETransformStreamWithLogger", () => {
     expect(captured.content).toBe("Hello world");
     expect(captured.toolCalls).toBeNull();
   });
+
+  it("OpenAI: string 'index' is coerced to number for dedup (mixed with int index)", async () => {
+    const captured = await runStream([
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":"0","id":"call_a","function":{"name":"a","arguments":""}}]}}]}`,
+      `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}`,
+      `data: [DONE]`,
+    ]);
+    // Without coercion, "0" !== 0 produces 2 entries; with Number() coercion they merge.
+    expect(captured.toolCalls).toHaveLength(1);
+    expect(captured.toolCalls[0].name).toBe("a");
+    expect(captured.toolCalls[0].index).toBe(0);
+  });
+
+  it("OpenAI: runaway index is capped at MAX_TRACKED_TOOL_CALLS (64)", async () => {
+    const lines = [];
+    for (let i = 0; i < 200; i++) {
+      lines.push(
+        `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":${i},"id":"call_${i}","function":{"name":"f${i}","arguments":"{}"}}]}}]}`,
+      );
+    }
+    lines.push(`data: [DONE]`);
+    const captured = await runStream(lines);
+    expect(captured.toolCalls).toHaveLength(64);
+    expect(captured.toolCalls[0].name).toBe("f0");
+    expect(captured.toolCalls[63].name).toBe("f63");
+  });
 });

@@ -68,6 +68,10 @@ export function createSSEStream(options = {}) {
   // shape the client actually received — otherwise tool-only responses are
   // recorded as "[Empty streaming response]" and dashboards incorrectly show
   // them as failures.
+  // Cap protects against abusive upstreams that emit a runaway index — the
+  // record only needs enough entries for the dashboard summary, not the
+  // full call list.
+  const MAX_TRACKED_TOOL_CALLS = 64;
   let accumulatedToolCalls = null;
   let ttftAt = null;
   let sseLineCount = 0;
@@ -258,15 +262,15 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.delta.thinking.length;
           accumulatedThinking += parsed.delta.thinking;
         }
-        // Claude format - tool_use block (content_block_start with type=tool_use
-        // carries the tool id/name/input_signature; the actual input deltas come
-        // later as input_json_delta). A single start is enough to mark the
-        // response as carrying a tool call.
-        if (parsed.delta?.type === "tool_use" || (parsed.content_block?.type === "tool_use")) {
+        // Claude format - tool_use block. The id/name arrive on
+        // content_block_start with type=tool_use; subsequent input_json_delta
+        // deltas carry no id. A single start is enough to mark the response as
+        // carrying a tool call.
+        if (parsed.content_block?.type === "tool_use" && (accumulatedToolCalls?.length ?? 0) < MAX_TRACKED_TOOL_CALLS) {
           if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-          const id = parsed.delta?.id || parsed.content_block?.id || `tool_${accumulatedToolCalls.length}`;
+          const id = parsed.content_block.id || `tool_${accumulatedToolCalls.length}`;
           if (!accumulatedToolCalls.some((c) => c.id === id)) {
-            accumulatedToolCalls.push({ id, name: parsed.delta?.name || parsed.content_block?.name || null });
+            accumulatedToolCalls.push({ id, name: parsed.content_block.name || null });
           }
         }
         // OpenAI format - content
@@ -284,11 +288,14 @@ export function createSSEStream(options = {}) {
         // deltas for the same call don't create a second entry. When a
         // delta carries both id and index, store the id (it's the canonical
         // client-facing identifier); otherwise fall back to the index key.
+        // Coerce index to Number — upstreams have been observed emitting
+        // either string or integer, and strict equality would miss matches.
         const oaToolCallDeltas = parsed.choices?.[0]?.delta?.tool_calls;
         if (Array.isArray(oaToolCallDeltas) && oaToolCallDeltas.length > 0) {
           if (accumulatedToolCalls === null) accumulatedToolCalls = [];
           for (const tc of oaToolCallDeltas) {
-            const index = tc.index ?? accumulatedToolCalls.length;
+            if (accumulatedToolCalls.length >= MAX_TRACKED_TOOL_CALLS) break;
+            const index = Number(tc.index ?? accumulatedToolCalls.length);
             const existing = accumulatedToolCalls.find((c) => c.index === index);
             if (existing) {
               if (tc.id && existing.id !== tc.id) existing.id = tc.id;
@@ -319,10 +326,12 @@ export function createSSEStream(options = {}) {
             // full call; mark it so the response isn't logged as empty).
             if (part.functionCall && part.functionCall.name) {
               if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-              accumulatedToolCalls.push({
-                id: part.functionCall.id || `gemini_fc_${accumulatedToolCalls.length}`,
-                name: part.functionCall.name,
-              });
+              if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+                accumulatedToolCalls.push({
+                  id: part.functionCall.id || `gemini_fc_${accumulatedToolCalls.length}`,
+                  name: part.functionCall.name,
+                });
+              }
             }
           }
         }
