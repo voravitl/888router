@@ -168,16 +168,31 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       total: Date.now() - requestStartTime
     };
     const hasText = typeof contentObj?.content === "string" && contentObj.content.length > 0;
-    const safeContent = hasText ? contentObj.content : "[Empty streaming response]";
+    // Tool-only responses (no text/thinking but ≥1 tool_use/tool_call) are
+    // not empty from the client's perspective — Claude Code et al. consume
+    // them and continue the agent loop. Recording these as "empty" produces
+    // false-positive alerts and hides the real tool-call traffic shape.
+    const hasToolCalls = Array.isArray(contentObj?.toolCalls) && contentObj.toolCalls.length > 0;
+    const hasResponse = hasText || hasToolCalls;
+    const safeContent = hasText
+      ? contentObj.content
+      : hasToolCalls
+        ? `[Tool calls: ${contentObj.toolCalls.map((c) => c.name || c.id).join(", ")}]`
+        : "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
+    const safeToolCalls = hasToolCalls ? contentObj.toolCalls : null;
 
-    // An empty streamed reply (reasoning model exhausted budget on thinking)
-    // is a real failure from the client's perspective even though upstream
-    // returned 200. Mark it so single-model requests get an traceable row and
-    // combos observe it (the comboStreamGuard path already prevents this from
-    // reaching the client for combos; single-model requests rely on this log).
-    const status = hasText ? "success" : "empty";
-    const note = hasText ? null : { reason: "empty-stream-content", finishReason: contentObj?.finishReason || null };
+    // An empty streamed reply (reasoning model exhausted budget on thinking,
+    // or upstream sent nothing) is a real failure from the client's
+    // perspective even though upstream returned 200. Mark it so single-model
+    // requests get an traceable row and combos observe it (the comboStreamGuard
+    // path already prevents this from reaching the client for combos;
+    // single-model requests rely on this log). Tool-call-only responses are
+    // NOT empty.
+    const status = hasResponse ? "success" : "empty";
+    const note = hasResponse
+      ? null
+      : { reason: "empty-stream-content", finishReason: contentObj?.finishReason || null };
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId, clientModel: clientModel || clientRawRequest?.body?.model || null,
@@ -186,7 +201,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
-      response: { content: safeContent, thinking: safeThinking, type: "streaming", note },
+      response: { content: safeContent, thinking: safeThinking, toolCalls: safeToolCalls, type: "streaming", note },
       status,
       prunerStats,
       rtkStats,
