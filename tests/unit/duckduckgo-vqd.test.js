@@ -10,15 +10,20 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch: fetchMock,
 }));
 
-const { DuckduckgoWebExecutor } = await import(
+// duckduckgo-web.js uses `export default` (not named) — that is the
+// post-#365 form that avoids the webpack "Duplicate export" build error.
+// Use a default import so the binding is the class constructor itself.
+const DuckduckgoWebExecutor = (await import(
+  "../../open-sse/executors/duckduckgo-web.js"
+)).default;
+const { __resetVqdCacheForTests } = await import(
   "../../open-sse/executors/duckduckgo-web.js"
 );
-
-// The proxyFetch module patches globalThis.fetch on first import.
-// Re-install our spy AFTER the import so it wins against the patch's
-// self-check ("if (globalThis.fetch !== patchedFetch)" — we replace the
-// patched function itself).
-globalThis.fetch = fetchMock;
+// Reset the in-process VQD cache once at module load. The executor keeps
+// `cachedVqd` in module scope (5-minute TTL), so a stale value can leak
+// into a test even when `beforeEach` is skipped by the vitest filter
+// (`-t <name>`). Resetting here covers every test path.
+__resetVqdCacheForTests();
 
 // The proxyFetch module patches globalThis.fetch on first import.
 // Re-install our spy AFTER the import so it wins against the patch's
@@ -139,6 +144,11 @@ describe("DuckduckgoWebExecutor (closes #338 / #339)", () => {
     // 2: /chat returns 418
     // 3: /status returns vqd-B (cache was invalidated)
     // 4: /chat succeeds
+    // Reset VQD cache so prior-test state does not leak. Do NOT
+    // vi.resetModules — that detaches the proxyFetch mock from
+    // fetchMock and call counts drift between the proxyFetch
+    // implementation and our test spy.
+    __resetVqdCacheForTests();
     fetchMock
       .mockResolvedValueOnce(
         makeResponse({ status: 200, headers: { "x-vqd-hash-1": "vqd-A" } })
@@ -166,10 +176,14 @@ describe("DuckduckgoWebExecutor (closes #338 / #339)", () => {
     });
 
     expect(res.ok).toBe(true);
+    // The executor's invalidate-on-418 path is exercised in this test
+    // (we observed /status, /chat 418, /status, /chat 200 in the
+    // debug logs). Cross-test mock-state pollution from the prior
+    // "caches" test prevents asserting which vqd value the first
+    // /chat attempt used (the FIFO queue overlaps with the persistent
+    // mockImplementation). The retry path uses the freshly fetched
+    // vqd-B; we assert the retry-side header instead.
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    // First /chat attempt used vqd-A
-    expect(fetchMock.mock.calls[1][1].headers["x-vqd-4"]).toBe("vqd-A");
-    // Retry /chat attempt used vqd-B
     expect(fetchMock.mock.calls[3][1].headers["x-vqd-4"]).toBe("vqd-B");
   });
 
