@@ -1,3 +1,41 @@
+# v0.15.64 (2026-09-01)
+
+## Feat: DuckDuckGo Web (Duck.ai) VQD executor (PR #360, closes #338 / #339)
+
+The `duckduckgo-web` provider was reverted in v0.15.57 because the 888router translator did not implement the new VQD handshake. This release adds a new executor at `open-sse/executors/duckduckgo-web.js` that:
+
+- Fetches a dynamic `x-vqd-4` token from `GET /duckchat/v1/status` with the Chrome 138 fingerprint + the essential cookies (`5`, `dcm`, `dcs`).
+- Caches the token in-process for 5 minutes; invalidates on 418/429 and retries.
+- Builds the chat payload + the static anti-bot headers (`x-fe-version`, `x-fe-signals`, `x-vqd-hash-1`, the dynamic `x-vqd-4`) and POSTs to `/duckchat/v1/chat`.
+- Returns the SSE response as a streaming `Response`.
+
+Static `X_VQD_HASH_1` and anti-bot constants are module-level. The registry `notice.text` no longer warns about the missing VQD executor.
+
+Caveat: live verification (real `/duckchat/v1/status` + `/duckchat/v1/chat`) was not possible in this session. One unit test is still red due to a known interaction with the `proxyFetch` self-patch (test infrastructure, not the executor) — tracked as follow-up.
+
+## CLI: 0.5.28
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
+# v0.15.64 (2026-09-01)
+
+## Feat: DuckDuckGo Web (Duck.ai) VQD executor (PR #360, closes #338 / #339)
+
+The `duckduckgo-web` provider was reverted in v0.15.57 because the 888router translator did not implement the new VQD handshake. This release adds a new executor at `open-sse/executors/duckduckgo-web.js` that:
+
+- Fetches a dynamic `x-vqd-4` token from `GET /duckchat/v1/status` with the Chrome 138 fingerprint + the essential cookies (`5`, `dcm`, `dcs`).
+- Caches the token in-process for 5 minutes; invalidates on 418/429 and retries.
+- Builds the chat payload + the static anti-bot headers (`x-fe-version`, `x-fe-signals`, `x-vqd-hash-1`, the dynamic `x-vqd-4`) and POSTs to `/duckchat/v1/chat`.
+- Returns the SSE response as a streaming `Response`.
+
+Static `X_VQD_HASH_1` and anti-bot constants are module-level. The registry `notice.text` no longer warns about the missing VQD executor.
+
+Caveat: live verification (real `/duckchat/v1/status` + `/duckchat/v1/chat`) was not possible in this session. One unit test is still red due to a known interaction with the `proxyFetch` self-patch (test infrastructure, not the executor) — tracked as follow-up.
+
+## CLI: 0.5.28
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
 # v0.15.63 (2026-09-01)
 
 ## Fix: cross-model cache (PR #358, closes #354)
@@ -10,6 +48,44 @@
 - 2007/2007 unit tests pass.
 
 ## CLI: 0.5.27
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
+# v0.15.64 (2026-09-01)
+
+## Feat: DuckDuckGo Web (Duck.ai) VQD executor (PR #360, closes #338 / #339)
+
+The `duckduckgo-web` provider was reverted in v0.15.57 because the 888router translator did not implement the new VQD handshake. This release adds a new executor at `open-sse/executors/duckduckgo-web.js` that:
+
+- Fetches a dynamic `x-vqd-4` token from `GET /duckchat/v1/status` with the Chrome 138 fingerprint + the essential cookies (`5`, `dcm`, `dcs`).
+- Caches the token in-process for 5 minutes; invalidates on 418/429 and retries.
+- Builds the chat payload + the static anti-bot headers (`x-fe-version`, `x-fe-signals`, `x-vqd-hash-1`, the dynamic `x-vqd-4`) and POSTs to `/duckchat/v1/chat`.
+- Returns the SSE response as a streaming `Response`.
+
+Static `X_VQD_HASH_1` and anti-bot constants are module-level. The registry `notice.text` no longer warns about the missing VQD executor.
+
+Caveat: live verification (real `/duckchat/v1/status` + `/duckchat/v1/chat`) was not possible in this session. One unit test is still red due to a known interaction with the `proxyFetch` self-patch (test infrastructure, not the executor) — tracked as follow-up.
+
+## CLI: 0.5.28
+
+Independent version bump for the `9router` npm package (CLI launcher).
+
+# v0.15.64 (2026-09-01)
+
+## Feat: DuckDuckGo Web (Duck.ai) VQD executor (PR #360, closes #338 / #339)
+
+The `duckduckgo-web` provider was reverted in v0.15.57 because the 888router translator did not implement the new VQD handshake. This release adds a new executor at `open-sse/executors/duckduckgo-web.js` that:
+
+- Fetches a dynamic `x-vqd-4` token from `GET /duckchat/v1/status` with the Chrome 138 fingerprint + the essential cookies (`5`, `dcm`, `dcs`).
+- Caches the token in-process for 5 minutes; invalidates on 418/429 and retries.
+- Builds the chat payload + the static anti-bot headers (`x-fe-version`, `x-fe-signals`, `x-vqd-hash-1`, the dynamic `x-vqd-4`) and POSTs to `/duckchat/v1/chat`.
+- Returns the SSE response as a streaming `Response`.
+
+Static `X_VQD_HASH_1` and anti-bot constants are module-level. The registry `notice.text` no longer warns about the missing VQD executor.
+
+Caveat: live verification (real `/duckchat/v1/status` + `/duckchat/v1/chat`) was not possible in this session. One unit test is still red due to a known interaction with the `proxyFetch` self-patch (test infrastructure, not the executor) — tracked as follow-up.
+
+## CLI: 0.5.28
 
 Independent version bump for the `9router` npm package (CLI launcher).
 
