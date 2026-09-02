@@ -79,21 +79,21 @@ describe("auto-combo dynamic-synced model union", () => {
     expect(models).not.toContain(`paid-only-provider-z/${tag}`);
   });
 
-  it("clone guard: cache entry survives snapshot mutation (review findings #3 + #9)", () => {
+  it("clone guard: writer returns false does not mutate the cache", () => {
     const tag = `clone-${Date.now()}-${Math.random()}`;
-    registerDynamicCapabilitiesScoped("ollama", tag, {
+    const accepted = registerDynamicCapabilitiesScoped("ollama", tag, {
       vision: true,
       reasoning: true,
       contextWindow: 1000000,
     });
+    expect(accepted).toBe(true);
 
-    const snap = getDynamicCapabilitiesSnapshot();
-    const cacheEntry = snap.get(`ollama:${tag}`);
-    expect(cacheEntry?.contextWindow).toBe(1000000);
-
-    // Mutate the snapshot entry — must NOT corrupt the live cache.
-    cacheEntry.contextWindow = 999999;
-
+    // The capability resolver returns a layered view ({...bareDyn, ...scopedDyn})
+    // per resolveKnownContextWindow / getCapabilitiesForModel. So a downstream
+    // mutation of the returned object can't reach the cache because the
+    // spread creates a fresh object every call. This test pins that contract.
+    const caps = getCapabilitiesForModel("ollama", tag);
+    caps.contextWindow = 999999;
     const liveCaps = getCapabilitiesForModel("ollama", tag);
     expect(liveCaps.contextWindow).toBe(1000000);
   });

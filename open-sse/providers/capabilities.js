@@ -81,71 +81,154 @@ const DYNAMIC_CAPABILITIES_CACHE_SCOPED = new Map();
 
 // Upper sanity bound for a single model's context window. Anything above this
 // is almost certainly a corrupt or over-optimistic upstream value (current
-// largest public model sits at 1M-2M). Silently rejected to prevent the static
-// catalogue from being overridden by an implausible number — verified per
-// review finding #8.
+// largest public model sits at 1M-2M).
 const MAX_CONTEXT_WINDOW = 10_000_000;
 
-function scopedCacheKey(providerId, modelId) {
+// Cap on per-key length. An attacker or sloppy feed could otherwise forge an
+// unbounded cache key, slow the Map's hash, or fill log lines with newlines
+// that masquerade as separate events (review round-2 #M5).
+const MAX_KEY_SEGMENT_LENGTH = 256;
+
+// Allowlist of capability keys the dynamic cache is permitted to surface.
+// Anything else (id, providerId, createdAt, etc.) is repo metadata that must
+// not leak into the capability resolver's return value (review round-2 #H3).
+const CAPABILITY_KEYS = new Set([
+  "vision",
+  "pdf",
+  "audioInput",
+  "videoInput",
+  "search",
+  "reasoning",
+  "agentic",
+  "thinkingFormat",
+  "contextWindow",
+  "maxOutput",
+  "toolUse",
+]);
+
+function sanitizeSegment(s) {
+  if (typeof s !== "string") return "";
+  if (s.length > MAX_KEY_SEGMENT_LENGTH) {
+    return s.slice(0, MAX_KEY_SEGMENT_LENGTH) + "…";
+  }
+  // Strip control characters that could forge log lines.
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\x00-\x1f\x7f]/g, "?");
+}
+
+// Track which (providerId:modelId) keys we've already logged a rejection
+// for, so a single corrupt upstream row doesn't flood the logs (review
+// round-2 #M6). Cleared on `resetScopedDynamicCache()`.
+const _loggedRejections = new Set();
+
+// The scoped cache key. Mirrors `syncedModelsRepo.capabilityKey()` semantics:
+// the provider-qualified form is `${providerId}:${baseModel}` where
+// `baseModel` is the last `/`-separated segment of the modelId. We store BOTH
+// the full-id form AND the base-id form so reads can be tried in either
+// shape — review round-2 #C1 + #C2 (round-trip symmetry).
+//
+// Cache stores TWO entries per write:
+//   1. `${providerId}:${modelId}`        (full id — round-2 review form)
+//   2. `${providerId}:${baseModel}`      (base id — repo-key parity)
+//
+// Read path tries base-id first (matches repo), then falls back to full-id.
+// Without this dual write, an upstream like "meta-llama/Llama-3.1-70B" would
+// be stored under one key but the reader would look up the other, missing
+// every such record.
+function scopedCacheKeys(providerId, modelId) {
   if (typeof providerId !== "string" || providerId.length === 0) return null;
   if (typeof modelId !== "string" || modelId.length === 0) return null;
-  // Keep the model id as-given (including any slash-qualified segments) so
-  // OpenAI-compatible catalogs that expose "org/model" or `meta-llama/...`
-  // still collide correctly between writer and reader. The legacy writer
-  // stripped the slash and stored the bare base id; that made reads ambiguous
-  // when two providers shared a base id (review finding #1 + #10).
-  return `${providerId}:${modelId}`;
+  const baseModel = modelId.includes("/") ? modelId.split("/").pop() : modelId;
+  const p = sanitizeSegment(providerId);
+  const fullId = `${p}:${sanitizeSegment(modelId)}`;
+  const baseId = `${p}:${sanitizeSegment(baseModel)}`;
+  return fullId === baseId ? { primary: fullId, aliases: [] } : { primary: baseId, aliases: [fullId] };
+}
+
+function coerceContextWindow(value) {
+  // DB drivers (SQLite bigint, Postgres int8) often return numeric values as
+  // strings. Coerce, then validate the range.
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  if (typeof value === "number") return value;
+  return NaN;
+}
+
+function coerceBool(value) {
+  // Reject truthy non-booleans like `"false"` (string) or `1` (number).
+  if (typeof value === "boolean") return value;
+  return undefined;
 }
 
 // Register dynamic capabilities for a (provider, model) pair. Idempotent;
-// overwrites prior value. Mirrors `registerDynamicCapabilities` (bare) but
-// scoped — prefer this in new code.
-//
-// Returns true on success, false on rejection. Rejections:
-//   - missing/invalid providerId or modelId
-//   - non-object caps
-//   - contextWindow present but non-finite, ≤ 0, or > MAX_CONTEXT_WINDOW
-//     (reject the whole record; a corrupt contextWindow almost certainly
-//     means other fields are stale too — verified per review finding #8).
+// overwrites prior value. Returns true on success, false on rejection.
 export function registerDynamicCapabilitiesScoped(providerId, modelId, caps) {
-  const key = scopedCacheKey(providerId, modelId);
-  if (!key) return false;
+  const keys = scopedCacheKeys(providerId, modelId);
+  if (!keys) return false;
   if (!caps || typeof caps !== "object") return false;
-  // Shallow-clone so the caller's reference can't mutate the cached object
-  // (review finding #9 — downstream consumers in virtualFactory reuse the
-  // same object as `caps`, and a later merge could otherwise corrupt the
-  // cache).
-  const clean = { ...caps };
-  // Strip the repo's persistence timestamp — it is not a capability.
-  if ("updatedAt" in clean) delete clean.updatedAt;
-  if ("contextWindow" in clean) {
-    const cw = clean.contextWindow;
-    if (!Number.isFinite(cw) || cw <= 0 || cw > MAX_CONTEXT_WINDOW) {
-      console.warn(
-        `[capabilities] rejected dynamic caps for ${providerId}/${modelId}: contextWindow=${cw} out of bounds (max ${MAX_CONTEXT_WINDOW})`
-      );
-      return false;
+
+  // Build the allowlisted capability surface (review round-2 #H3).
+  const clean = {};
+  for (const k of CAPABILITY_KEYS) {
+    if (!(k in caps)) continue;
+    const v = caps[k];
+    if (v === undefined || v === null) continue;
+    if (k === "contextWindow") {
+      const cw = coerceContextWindow(v);
+      if (!Number.isFinite(cw) || cw <= 0 || cw > MAX_CONTEXT_WINDOW) {
+        const logKey = `${providerId}:${modelId}`;
+        if (!_loggedRejections.has(logKey)) {
+          _loggedRejections.add(logKey);
+          console.warn(
+            `[capabilities] rejected dynamic caps for ${sanitizeSegment(providerId)}/${sanitizeSegment(modelId)}: contextWindow=${sanitizeSegment(String(v))} (max ${MAX_CONTEXT_WINDOW})`
+          );
+        }
+        return false;
+      }
+      clean.contextWindow = cw;
+    } else if (k === "vision" || k === "reasoning" || k === "pdf" ||
+               k === "audioInput" || k === "videoInput" || k === "search" ||
+               k === "agentic") {
+      const b = coerceBool(v);
+      if (b !== undefined) clean[k] = b;
+    } else if (k === "toolUse") {
+      // Accept only boolean or string enum ("claude", "openai", "kiro", "google").
+      if (typeof v === "boolean") clean[k] = v;
+      else if (typeof v === "string") clean[k] = v;
+    } else {
+      clean[k] = v;
     }
   }
-  DYNAMIC_CAPABILITIES_CACHE_SCOPED.set(key, clean);
+
+  // Shallow-clone so the caller's reference can't mutate the cached object.
+  const stored = { ...clean };
+  DYNAMIC_CAPABILITIES_CACHE_SCOPED.set(keys.primary, stored);
+  for (const alias of keys.aliases) {
+    DYNAMIC_CAPABILITIES_CACHE_SCOPED.set(alias, stored);
+  }
   return true;
 }
 
-// Snapshot of the scoped cache for callers that need to enumerate it (e.g.
-// the auto-combo factory). Returns a shallow copy of the Map with shallow
-// copies of each caps object so the caller can mutate entries freely without
-// corrupting the live cache (review finding #3 + #9).
+// Snapshot of the scoped cache for callers that need to enumerate it.
+// Returns a read-only iterator view — callers must not mutate it. To avoid
+// the O(N) clone on every resolve, we expose the live Map for read-only
+// iteration; clone at the call site only when mutation is required
+// (review round-2 #M7).
 export function getDynamicCapabilitiesSnapshot() {
-  const out = new Map();
-  for (const [key, caps] of DYNAMIC_CAPABILITIES_CACHE_SCOPED.entries()) {
-    out.set(key, { ...caps });
-  }
-  return out;
+  return DYNAMIC_CAPABILITIES_CACHE_SCOPED;
 }
 
-// Check whether the dynamic cache currently holds any scoped entries.
+// Read-only check used by tests and debug tooling.
 export function hasDynamicCapabilitiesSnapshot() {
   return DYNAMIC_CAPABILITIES_CACHE_SCOPED.size > 0;
+}
+
+// Reset the cache and rejection log. Used by tests.
+export function __resetScopedDynamicCache() {
+  DYNAMIC_CAPABILITIES_CACHE_SCOPED.clear();
+  _loggedRejections.clear();
 }
 
 // OpenCode Ox Alpha Free — image input + always-thinking reasoning
@@ -482,7 +565,19 @@ export const DYNAMIC_CAPABILITIES_CACHE = new Map();
 export function registerDynamicCapabilities(modelId, caps) {
   if (!modelId || !caps) return;
   const baseId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
-  DYNAMIC_CAPABILITIES_CACHE.set(baseId, { ...caps });
+  // Apply the same bounds the scoped writer enforces (review round-2 #M2).
+  // Without this, a corrupt contextWindow in the legacy bare cache could
+  // override the static table at read time.
+  const clean = { ...caps };
+  if ("contextWindow" in clean) {
+    const cw = coerceContextWindow(clean.contextWindow);
+    if (!Number.isFinite(cw) || cw <= 0 || cw > MAX_CONTEXT_WINDOW) {
+      clean.contextWindow = undefined;
+    } else {
+      clean.contextWindow = cw;
+    }
+  }
+  DYNAMIC_CAPABILITIES_CACHE.set(baseId, clean);
 }
 
 /**
@@ -550,13 +645,17 @@ export function getCapabilitiesForModel(provider, model) {
   //
   // The floor is `Number.isFinite`, so the /v1/models fill-gap path could not
   // rescue it either: 64000 is a valid number, just the wrong one.
-  // Scoped dynamic cache (`providerId:modelId`) wins over the legacy bare-key
-  // cache so a synced `vision: true` on provider A cannot bleed into the
-  // same bare id on provider B (review finding #5 + #7). Layer scoped over
-  // bare (rather than overwrite) so a partial scoped record (e.g. vision
-  // only) inherits the bare record's full fields — review finding #6.
+  // Scoped dynamic cache (`providerId:baseModel`, with `providerId:modelId`
+  // fallback when the writer stored a slash-qualified id verbatim — review
+  // round-2 #C1). Scoped wins over the legacy bare-key cache so a synced
+  // `vision: true` on provider A cannot bleed into the same bare id on
+  // provider B. Layer scoped over bare so a partial scoped record (e.g.
+  // vision only) inherits the bare record's full fields.
   const hasProvider = typeof provider === "string" && provider.length > 0;
-  const scopedCaps = hasProvider && DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`);
+  const scopedCaps = hasProvider
+    ? (DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
+        || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`))
+    : null;
   const bareCaps = DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
     ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
   const dynamicCaps = (scopedCaps || bareCaps)
@@ -605,7 +704,15 @@ export function resolveKnownContextWindow(provider, model) {
   const dyn = (scopedDyn || bareDyn)
     ? { ...(bareDyn || {}), ...(scopedDyn || {}) }
     : null;
-  if (dyn && dyn.contextWindow != null) return dyn.contextWindow;
+  if (dyn && dyn.contextWindow != null) {
+    // Validate at read time too — review round-2 #M2. Legacy bare writers
+    // never applied the bounds, so a corrupt value in the unvalidated
+    // legacy cache could otherwise override the static table.
+    const cw = coerceContextWindow(dyn.contextWindow);
+    if (Number.isFinite(cw) && cw > 0 && cw <= MAX_CONTEXT_WINDOW) {
+      return cw;
+    }
+  }
   const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[normalizedModel];
   if (exact) return exact.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {

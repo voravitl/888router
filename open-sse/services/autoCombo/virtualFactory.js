@@ -29,14 +29,36 @@ export function isFreeCandidate(provider, modelId) {
 // Track whether the scoped dynamic cache has been hydrated at least once in
 // this process. /v1/models warms it on every request, but a cold serverless
 // instance whose first hit is a chat completion would otherwise contribute an
-// empty dynamic union (review finding #15 — implicit ordering contract).
+// empty dynamic union (review round-2 #F7).
 //
 // The hydrator is opt-in via setDynamicCapabilitiesHydrator() so production
 // wiring is explicit (avoid importing the DB layer at module load).
+//
+// SYNC contract enforced at install time (review round-2 #H1): any function
+// that returns a thenable (Promise) is rejected loudly so we never silently
+// drop a Promise on the floor and risk an unhandledRejection.
 let dynamicHydrated = false;
 let hydrateFn = null;
 
 export function setDynamicCapabilitiesHydrator(fn) {
+  if (fn != null && typeof fn !== "function") {
+    throw new TypeError(
+      "[autoCombo] setDynamicCapabilitiesHydrator requires a sync function"
+    );
+  }
+  if (fn != null) {
+    // Probe the return value with no input — a thenable is an immediate reject.
+    try {
+      const probe = fn();
+      if (probe != null && typeof probe.then === "function") {
+        throw new TypeError(
+          "[autoCombo] hydrator must be synchronous; rejected a thenable"
+        );
+      }
+    } catch (e) {
+      if (e instanceof TypeError) throw e;
+    }
+  }
   hydrateFn = typeof fn === "function" ? fn : null;
   dynamicHydrated = false;
 }
@@ -50,9 +72,6 @@ function getHydratedSnapshot() {
   if (dynamicHydrated || !hydrateFn) {
     return getDynamicCapabilitiesSnapshot();
   }
-  // Synchronous hydrator only. If a future need requires async, the caller
-  // must pre-warm via setDynamicCapabilitiesHydrator() + a one-shot
-  // hydrateDynamicCapabilities() entry point.
   try {
     const rows = hydrateFn();
     if (rows && typeof rows[Symbol.iterator] === "function") {
@@ -64,8 +83,10 @@ function getHydratedSnapshot() {
       }
     }
     dynamicHydrated = true;
-  } catch {
-    // Best-effort — fall through to whatever the cache already holds.
+  } catch (e) {
+    // Review round-2 #M9: log the error instead of swallowing it silently —
+    // a broken DB layer must not be indistinguishable from an empty cache.
+    console.error(`[autoCombo] dynamic hydrator failed: ${e?.message || e}`);
   }
   return getDynamicCapabilitiesSnapshot();
 }
@@ -81,11 +102,6 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
     return null;
   }
 
-  // Lazy-load the dynamic caps cache so chat-only cold starts see the same
-  // view /v1/models would have served (review finding #15). Sync helper —
-  // the production call sites assume a sync resolver.
-  const dynSnapshot = getHydratedSnapshot();
-
   const suffix = modelStr.slice(5);
   const template = AUTO_TEMPLATE_VARIANTS[modelStr];
   const parsed = template || parseAutoSuffix(suffix);
@@ -93,6 +109,13 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
   if (!parsed || (!parsed.category && !parsed.tier)) {
     return null;
   }
+
+  // Defer the snapshot read until after the parse check so calls that bail
+  // (non-auto /, invalid combo) don't pay the iteration cost (review
+  // round-2 #M7). The hydrator is also invoked here, lazily — production
+  // install runs from /v1/models so the cache is already populated in
+  // steady state, but a chat-only cold start still warms it on first use.
+  const dynSnapshot = getHydratedSnapshot();
 
   const category = parsed.category || "chat";
   const tier = parsed.tier || "pro";
@@ -110,10 +133,11 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       if (!modelId) continue;
 
       const caps = getCapabilitiesForModel(providerId, modelId);
-      const isFree = isFreeCandidate(providerId, modelId) || providerConfig.hasFree === true;
-
-      // Filter by tier
-      if (tier === "free" && !isFree) continue;
+      // Free-tier gate uses ONLY model-level free status (isFreeCandidate).
+      // Review round-2 #H2 — `providerConfig.hasFree` means "this provider
+      // offers some free models", not "this model is free". Routing a paid
+      // model into a free-tier request was a billing-correctness bug.
+      const isFree = isFreeCandidate(providerId, modelId);
 
       // Filter by contextMin
       if (contextMin) {
@@ -168,7 +192,7 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       // Skip models already covered by the static loop.
       if (seen.has(`${providerId}/${modelId}`)) continue;
 
-      const isFree = isFreeCandidate(providerId, modelId) || PROVIDERS[providerId].hasFree === true;
+      const isFree = isFreeCandidate(providerId, modelId);
       if (tier === "free" && !isFree) continue;
 
       if (contextMin) {
