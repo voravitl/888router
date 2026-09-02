@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Modal } from "./Modal";
-import { Badge } from "./Badge";
+import Modal from "./Modal";
+import Badge from "./Badge";
 
 export const STRATEGY_DETAILS = [
   {
