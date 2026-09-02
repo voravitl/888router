@@ -152,6 +152,8 @@ export default function CombosPage() {
     } catch (error) {
       console.log("Error updating combo strategy:", error);
     }
+  };
+
   const [showStrategyHelpModal, setShowStrategyHelpModal] = useState(false);
   const [strategyHelpActiveId, setStrategyHelpActiveId] = useState(null);
   const [targetComboForStrategySelect, setTargetComboForStrategySelect] = useState(null);
