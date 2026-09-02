@@ -1,3 +1,13 @@
+# v0.15.72 (2026-09-02)
+
+## Feat: Ollama Cloud Per-Token Pricing & Monthly Credits Quota Tracker
+
+- `open-sse/providers/registry/ollama.js`: update notice to reflect new September 2026 per-token billing model with monthly credits (Pro $20/mo = $60 credits, Max $100/mo = $300 credits, Team $500/mo = $1,000 credits).
+- `open-sse/services/usage/misc.js`: update `getOllamaUsage()` to support monthly credits quota tracking ($60/$300/$1000) with UTC month-end reset calculation and USD credit units.
+- `open-sse/services/usage.js`: pass `providerSpecificData` and `apiKey` to `getOllamaUsage()`.
+- `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js`: update `parseQuotaData("ollama", ...)` to extract `name`, `unit: "USD"`, and `remainingPercentage` for the Provider Limits / Quota dashboard.
+- `tests/unit/ollama-quota-usage.test.js`: add comprehensive unit tests covering Free, Pro, Max, Team plan allocations and quota data normalization.
+
 # v0.15.71 (2026-09-02)
 
 ## Feat: interactive Strategy Guide and help modal for all 10 load balancing options

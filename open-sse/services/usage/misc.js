@@ -47,19 +47,55 @@ export async function getIflowUsage(accessToken) {
 /**
  * Ollama Cloud Usage
  * Ollama Cloud uses an API key from ollama.com/settings/keys
- * and has no public usage API — free tier has light usage limits (resets every 5h & 7d).
- * This returns an informational message with the plan details.
+ * and transitioned (Sept 2026) to a per-token pricing model with monthly credits:
+ * - Free: Pay-as-you-go access at published per-token rates
+ * - Pro ($20/mo): Includes $60 monthly credits
+ * - Max ($100/mo): Includes $300 monthly credits
+ * - Team ($500/mo): Includes $1,000 shared monthly credits
  */
-export async function getOllamaUsage(accessToken, providerSpecificData) {
+export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) {
   try {
-    // Ollama Cloud does not expose a public quota/usage API.
-    // The provider is configured as noAuth with a notice explaining limits.
-    // We return a graceful message so the UI shows a friendly state instead of an error.
-    const plan = providerSpecificData?.plan || "Free";
+    const rawPlan = providerSpecificData?.plan || "Free";
+    const planNormalized = typeof rawPlan === "string" ? rawPlan.toLowerCase() : "free";
+
+    let monthlyCredits = 0;
+    let planLabel = "Free (Pay-As-You-Go)";
+
+    if (planNormalized.includes("team")) {
+      monthlyCredits = 1000;
+      planLabel = "Team ($500/mo)";
+    } else if (planNormalized.includes("max")) {
+      monthlyCredits = 300;
+      planLabel = "Max ($100/mo)";
+    } else if (planNormalized.includes("pro")) {
+      monthlyCredits = 60;
+      planLabel = "Pro ($20/mo)";
+    }
+
+    // Calculate month-end reset timestamp (1st of next month UTC)
+    const now = new Date();
+    const nextMonthReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0));
+    const resetAt = nextMonthReset.toISOString();
+
+    const quotas = {};
+    if (monthlyCredits > 0) {
+      quotas["monthly_credits"] = {
+        name: "Monthly Credits",
+        used: 0,
+        total: monthlyCredits,
+        remaining: monthlyCredits,
+        remainingPercentage: 100,
+        unit: "USD",
+        resetAt,
+      };
+    }
+
     return {
-      plan,
-      message: "Ollama Cloud uses a free tier with light usage limits (resets every 5h & 7d). For detailed usage tracking, visit ollama.com/settings/keys.",
-      quotas: [],
+      plan: planLabel,
+      message: monthlyCredits > 0
+        ? `Ollama Cloud ${planLabel}: includes $${monthlyCredits} monthly usage credits. Billed per token.`
+        : "Ollama Cloud Free Tier: Pay-as-you-go per token. Usage and costs tracked per request in 888router Usage Stats.",
+      quotas,
     };
   } catch (error) {
     return { message: "Unable to fetch Ollama Cloud usage." };

@@ -10,7 +10,7 @@ const ollamaConfig = {
     textIcon: "OL",
     website: "https://ollama.com",
     notice: {
-      text: "Free tier: light usage, 1 cloud model at a time (limits reset every 5h & 7d). Pro $20/mo · Max $100/mo.",
+      text: "Per-token pricing model. Pro ($20/mo = $60 credits) · Max ($100/mo = $300 credits) · Team ($500/mo = $1,000 credits) · Free tier pay-as-you-go.",
       apiKeyUrl: "https://ollama.com/settings/keys",
     },
   },
