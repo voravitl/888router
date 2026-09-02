@@ -58,15 +58,19 @@ export function setDynamicCapabilitiesHydrator(fn) {
     } catch (e) {
       // The probe itself throwing isn't a contract violation — let it
       // surface on the first real call instead of failing the install.
-      // (Originally caught only TypeError; a sloppy hydrator could still
-      // raise legitimate runtime errors that the caller wants to see.)
     }
   }
-  // Idempotent install: re-installing the same fn reference must NOT reset
-  // dynamicHydrated (which would force a full re-hydration per /v1/models
-  // hit, review round-3 #M5).
-  if (hydrateFn === fn) return;
-  hydrateFn = typeof fn === "function" ? fn : null;
+  // Idempotent install — guard by *value*, not by reference. The chat handler
+  // passes `getScopedDynamicCapabilities` on every call; ES module identity
+  // keeps the function identical across calls so the same-reference check
+  // would normally hold, but a hot-reload or test stub that re-imports the
+  // module could yield a different function with the same identity-stable
+  // body. Comparing against the currently installed function catches both
+  // cases — and crucially it means two consecutive `set`(...)` calls never
+  // reset `dynamicHydrated`.
+  const next = typeof fn === "function" ? fn : null;
+  if (hydrateFn === next) return;
+  hydrateFn = next;
   dynamicHydrated = false;
 }
 

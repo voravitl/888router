@@ -86,13 +86,11 @@ export async function getModelInfo(modelStr) {
  * Check if model is a combo and get models list
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
-// Module-scoped hydrator reference so setDynamicCapabilitiesHydrator's
-// idempotency guard can fire — a fresh closure per request would reset
-// `dynamicHydrated` on every chat call, defeating the guard.
-//
-// We pass the identity-stable `getScopedDynamicCapabilities` accessor
-// directly (review round-5 #10) so there is no module-s state, no
-// race-prone closure capture, and no re-install side effect.
+// `getScopedDynamicCapabilities` is identity-stable across dynamic imports
+// (same module namespace object), so re-installing it per request is a no-op
+// and does not reset the factory's hydration flag. Two dynamic imports per
+// request avoid a circular dependency with open-sse/...; the runtime cost is
+// a single resolved promise per call.
 export async function getComboModels(modelStr) {
   if (modelStr && modelStr.startsWith("auto/")) {
     const { resolveVirtualAutoCombo, setDynamicCapabilitiesHydrator } = await import(
