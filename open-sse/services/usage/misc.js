@@ -46,59 +46,110 @@ export async function getIflowUsage(accessToken) {
 
 /**
  * Ollama Cloud Usage
- * Ollama Cloud uses an API key from ollama.com/settings/keys
- * and transitioned (Sept 2026) to a per-token pricing model with monthly credits:
- * - Free: Pay-as-you-go access at published per-token rates
- * - Pro ($20/mo): Includes $60 monthly credits
- * - Max ($100/mo): Includes $300 monthly credits
- * - Team ($500/mo): Includes $1,000 shared monthly credits
+ * Calls https://ollama.com/api/usage with the API key (same pattern as xai).
+ * Response: { limits: { monthly: { usage: 0.315, models: [...] } }, activity: { cost: "0.00000" } }
+ * Plans:
+ * - Free: Pay-as-you-go (no ceiling)
+ * - Pro ($20/mo): $60 monthly credits
+ * - Max ($100/mo): $300 monthly credits
+ * - Team ($500/mo): $1,000 shared monthly credits
  */
 export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) {
+  const token = apiKey || accessToken;
+  if (!token) return { message: "Ollama API key not available." };
+
   try {
-    const rawPlan = providerSpecificData?.plan || "Free";
-    const planNormalized = typeof rawPlan === "string" ? rawPlan.toLowerCase() : "free";
+    const res = await proxyAwareFetch("https://ollama.com/api/usage", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-    let monthlyCredits = 0;
-    let planLabel = "Free (Pay-As-You-Go)";
-
-    if (planNormalized.includes("team")) {
-      monthlyCredits = 1000;
-      planLabel = "Team ($500/mo)";
-    } else if (planNormalized.includes("max")) {
-      monthlyCredits = 300;
-      planLabel = "Max ($100/mo)";
-    } else if (planNormalized.includes("pro")) {
-      monthlyCredits = 60;
-      planLabel = "Pro ($20/mo)";
+    if (res.status === 401 || res.status === 403) {
+      return { message: "Ollama API key invalid or expired. Re-enter key in Settings." };
     }
 
-    // Calculate month-end reset timestamp (1st of next month UTC)
+    let data = null;
+    if (res.ok) {
+      data = await res.json().catch(() => null);
+    }
+
+    // Calculate month-end reset (1st of next month UTC)
     const now = new Date();
     const nextMonthReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0));
     const resetAt = nextMonthReset.toISOString();
 
+    // Resolve plan label & monthly credit ceiling from providerSpecificData
+    const rawPlan = providerSpecificData?.plan || "Free";
+    const planNormalized = typeof rawPlan === "string" ? rawPlan.toLowerCase() : "free";
+    let monthlyCredits = 0;
+    let planLabel = "Free (Pay-As-You-Go)";
+    if (planNormalized.includes("team")) { monthlyCredits = 1000; planLabel = "Team ($500/mo)"; }
+    else if (planNormalized.includes("max")) { monthlyCredits = 300; planLabel = "Max ($100/mo)"; }
+    else if (planNormalized.includes("pro")) { monthlyCredits = 60; planLabel = "Pro ($20/mo)"; }
+
+    if (!data) {
+      // No live data — fall back to plan-only display
+      const quotas = {};
+      if (monthlyCredits > 0) {
+        quotas["Monthly Credits"] = {
+          name: "Monthly Credits", used: 0, total: monthlyCredits,
+          remainingPercentage: 100, unit: "USD", resetAt,
+        };
+      }
+      return {
+        plan: planLabel,
+        message: monthlyCredits === 0 ? "Ollama Cloud Free Tier: Pay-as-you-go per token." : undefined,
+        quotas,
+      };
+    }
+
+    // Parse live API data
+    const monthlyUsed = parseFloat(data?.limits?.monthly?.usage ?? 0) || 0;
+    const activityCost = parseFloat(data?.activity?.cost ?? 0) || 0;
+
     const quotas = {};
+
     if (monthlyCredits > 0) {
-      quotas["monthly_credits"] = {
+      // Paid plan: show used/total credits bar
+      const used = Math.min(monthlyUsed, monthlyCredits);
+      const remaining = Math.max(0, monthlyCredits - used);
+      quotas["Monthly Credits"] = {
         name: "Monthly Credits",
-        used: 0,
+        used: Math.round(used * 10000) / 10000,
         total: monthlyCredits,
-        remaining: monthlyCredits,
+        remainingPercentage: Math.round((remaining / monthlyCredits) * 100),
+        unit: "USD",
+        resetAt,
+      };
+    } else {
+      // Free tier: show monthly spend (pay-as-you-go, no ceiling)
+      quotas["Monthly Spend"] = {
+        name: "Monthly Spend",
+        used: Math.round(monthlyUsed * 10000) / 10000,
+        total: 0,           // 0 → no ceiling (unlimited bar)
         remainingPercentage: 100,
         unit: "USD",
         resetAt,
       };
+      // Show 4-week activity separately when it differs from monthly
+      if (activityCost > 0 && Math.abs(activityCost - monthlyUsed) > 0.0001) {
+        quotas["4-Week Activity"] = {
+          name: "4-Week Activity",
+          used: Math.round(activityCost * 10000) / 10000,
+          total: 0,
+          remainingPercentage: 100,
+          unit: "USD",
+          resetAt: null,
+        };
+      }
     }
 
-    return {
-      plan: planLabel,
-      message: monthlyCredits > 0
-        ? `Ollama Cloud ${planLabel}: includes $${monthlyCredits} monthly usage credits. Billed per token.`
-        : "Ollama Cloud Free Tier: Pay-as-you-go per token. Usage and costs tracked per request in 888router Usage Stats.",
-      quotas,
-    };
+    return { plan: planLabel, quotas };
   } catch (error) {
-    return { message: "Unable to fetch Ollama Cloud usage." };
+    return { message: `Unable to fetch Ollama Cloud usage: ${error.message}` };
   }
 }
 
