@@ -212,12 +212,12 @@ export function registerDynamicCapabilitiesScoped(providerId, modelId, caps) {
 }
 
 // Snapshot of the scoped cache for callers that need to enumerate it.
-// Returns a read-only iterator view — callers must not mutate it. To avoid
-// the O(N) clone on every resolve, we expose the live Map for read-only
-// iteration; clone at the call site only when mutation is required
-// (review round-2 #M7).
+// Returns a shallow copy of the live Map so the caller can iterate freely
+// without exposing the internal cache to bypass writers (review round-3 #M1).
+// For O(N) writes (e.g. re-hydration in virtualFactory), prefer `getDynamicCapabilitiesEntries()`.
+// Cost is one Map copy per call — typical N~200 keys, negligible.
 export function getDynamicCapabilitiesSnapshot() {
-  return DYNAMIC_CAPABILITIES_CACHE_SCOPED;
+  return new Map(DYNAMIC_CAPABILITIES_CACHE_SCOPED);
 }
 
 // Read-only check used by tests and debug tooling.

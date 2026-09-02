@@ -88,7 +88,18 @@ export async function getModelInfo(modelStr) {
  */
 export async function getComboModels(modelStr) {
   if (modelStr && modelStr.startsWith("auto/")) {
-    const { resolveVirtualAutoCombo } = await import("open-sse/services/autoCombo/virtualFactory.js");
+    const { resolveVirtualAutoCombo, setDynamicCapabilitiesHydrator } = await import(
+      "open-sse/services/autoCombo/virtualFactory.js"
+    );
+    const { DYNAMIC_CAPABILITIES_CACHE_SCOPED } = await import(
+      "open-sse/providers/capabilities.js"
+    );
+    // Install the sync hydrator on the chat-handler's first auto/* call so
+    // the cold-start scenario (instance whose first hit is a chat completion)
+    // doesn't depend on /v1/models having warmed the cache first.
+    // Idempotent: setDynamicCapabilitiesHydrator skips re-install if the fn
+    // reference hasn't changed.
+    setDynamicCapabilitiesHydrator(() => DYNAMIC_CAPABILITIES_CACHE_SCOPED);
     const virtual = resolveVirtualAutoCombo(modelStr);
     if (virtual && virtual.models && virtual.models.length > 0) {
       return virtual.models;

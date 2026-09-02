@@ -10,11 +10,7 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases } f
 import { AUTO_COMBO_TEMPLATES } from "open-sse/services/autoCombo/builtinCatalog.js";
 import { resolveVirtualAutoCombo } from "open-sse/services/autoCombo/virtualFactory.js";
 import { getAllModelDynamicCapabilities } from "@/lib/db";
-import {
-  registerDynamicCapabilitiesScoped,
-  DYNAMIC_CAPABILITIES_CACHE_SCOPED,
-} from "open-sse/providers/capabilities.js";
-import { setDynamicCapabilitiesHydrator } from "open-sse/services/autoCombo/virtualFactory.js";
+import { registerDynamicCapabilitiesScoped } from "open-sse/providers/capabilities.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -520,14 +516,6 @@ export async function buildModelsList(kindFilter) {
       // (review round-2 #M6 dedupe), so a silent no-op here is intentional.
       registerDynamicCapabilitiesScoped(providerId, baseId, caps);
     }
-
-    // Install a sync hydrator so the auto-combo factory's first resolve in
-    // this process (chat-only cold start) doesn't miss dynamic-synced models.
-    // Review round-2 #H4. The hydrator returns whatever's currently in the
-    // in-memory scoped cache (same key format as the loop above). It's safe
-    // to re-install — the function resets dynamicHydrated=false and the
-    // factory re-runs it on the next resolve.
-    setDynamicCapabilitiesHydrator(() => DYNAMIC_CAPABILITIES_CACHE_SCOPED);
 
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;

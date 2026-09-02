@@ -52,14 +52,21 @@ export function setDynamicCapabilitiesHydrator(fn) {
       const probe = fn();
       if (probe != null && typeof probe.then === "function") {
         throw new TypeError(
-          "[autoCombo] hydrator must be synchronous; rejected a thenable"
+          "[autoCombo] hydrator must be synchronous; received a Promise"
         );
       }
     } catch (e) {
-      if (e instanceof TypeError) throw e;
+      // The probe itself throwing isn't a contract violation — let it
+      // surface on the first real call instead of failing the install.
+      // (Originally caught only TypeError; a sloppy hydrator could still
+      // raise legitimate runtime errors that the caller wants to see.)
     }
   }
-  hydrateFn = typeof fn === "function" ? fn : null;
+  // Idempotent install: re-installing the same fn reference must NOT reset
+  // dynamicHydrated (which would force a full re-hydration per /v1/models
+  // hit, review round-3 #M5).
+  if (hydrateFn === fn) return;
+  hydrateFn = fn ?? null;
   dynamicHydrated = false;
 }
 
