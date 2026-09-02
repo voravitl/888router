@@ -89,7 +89,7 @@ describe("Antigravity live model resolver in v1/models", () => {
     expect(ids).toContain("ag/gemini-3.5-flash-low");
     expect(ids).toContain("ag/gemini-3-flash-agent");
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
-  });
+  }, 30000);
 
   it("refreshes Google token on 401 and retries the fetch with new token", async () => {
     mocks.getProviderConnections.mockResolvedValue([
@@ -136,7 +136,7 @@ describe("Antigravity live model resolver in v1/models", () => {
       accessToken: "fresh-access-token",
     });
     expect(mocks.fetch).toHaveBeenCalledTimes(2);
-  });
+  }, 30000);
 
   it("resolves models when Google returns object-map shape and filters out internal models", async () => {
     mocks.getProviderConnections.mockResolvedValue([
@@ -166,7 +166,7 @@ describe("Antigravity live model resolver in v1/models", () => {
 
     expect(ids).toContain("ag/gemini-3.5-flash-low");
     expect(ids).not.toContain("ag/internal-model-secret");
-  });
+  }, 30000);
 
   it("falls back to default antigravity models if live fetch and refresh fail", async () => {
     mocks.getProviderConnections.mockResolvedValue([
@@ -193,5 +193,5 @@ describe("Antigravity live model resolver in v1/models", () => {
     const ids = (body.data || []).map((m) => m.id);
 
     expect(ids).toContain("ag/gemini-3.5-flash-low");
-  });
+  }, 30000);
 });

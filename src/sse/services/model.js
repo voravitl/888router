@@ -86,9 +86,20 @@ export async function getModelInfo(modelStr) {
  * Check if model is a combo and get models list
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
+// `getScopedDynamicCapabilities` is identity-stable across dynamic imports
+// (same module namespace object), so re-installing it per request is a no-op
+// and does not reset the factory's hydration flag. Two dynamic imports per
+// request avoid a circular dependency with open-sse/...; the runtime cost is
+// a single resolved promise per call.
 export async function getComboModels(modelStr) {
   if (modelStr && modelStr.startsWith("auto/")) {
-    const { resolveVirtualAutoCombo } = await import("open-sse/services/autoCombo/virtualFactory.js");
+    const { resolveVirtualAutoCombo, setDynamicCapabilitiesHydrator } = await import(
+      "open-sse/services/autoCombo/virtualFactory.js"
+    );
+    const { getScopedDynamicCapabilities } = await import(
+      "open-sse/providers/capabilities.js"
+    );
+    setDynamicCapabilitiesHydrator(getScopedDynamicCapabilities);
     const virtual = resolveVirtualAutoCombo(modelStr);
     if (virtual && virtual.models && virtual.models.length > 0) {
       return virtual.models;
