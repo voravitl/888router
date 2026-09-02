@@ -510,10 +510,15 @@ export async function buildModelsList(kindFilter) {
       if (colon <= 0) continue;
       const providerId = scopedKey.slice(0, colon);
       const baseId = scopedKey.slice(colon + 1);
-      try {
-        registerDynamicCapabilitiesScoped(providerId, baseId, caps);
-      } catch (e) {
-        // writer is fail-open; a single bad row must not break /v1/models.
+      // registerDynamicCapabilitiesScoped returns false on rejection (invalid
+      // providerId/modelId, non-object caps, or contextWindow outside the
+      // sanity bound). Log so a misconfigured upstream is visible without
+      // breaking /v1/models — review finding #11.
+      const accepted = registerDynamicCapabilitiesScoped(providerId, baseId, caps);
+      if (!accepted) {
+        console.log(
+          `[v1/models] dropped dynamic caps row key=${scopedKey}: rejected by scoped writer`
+        );
       }
     }
 

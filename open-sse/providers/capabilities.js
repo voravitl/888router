@@ -73,40 +73,79 @@ function stripThinkingSuffix(model) {
 }
 
 // Scoped in-memory dynamic capabilities cache (additive, does not replace the
-// legacy bare-key cache). Keys are `providerId:baseId` — matches the DB row
+// legacy bare-key cache). Keys are `providerId:modelId` — matches the DB row
 // key in `syncedModelsRepo.capabilityKey()` — so a synced `vision: true` on
 // provider A cannot bleed into the same bare id on provider B (review finding
 // #5: PR #292 lesson). Read path consults scoped first, then bare legacy.
 const DYNAMIC_CAPABILITIES_CACHE_SCOPED = new Map();
 
+// Upper sanity bound for a single model's context window. Anything above this
+// is almost certainly a corrupt or over-optimistic upstream value (current
+// largest public model sits at 1M-2M). Silently rejected to prevent the static
+// catalogue from being overridden by an implausible number — verified per
+// review finding #8.
+const MAX_CONTEXT_WINDOW = 10_000_000;
+
 function scopedCacheKey(providerId, modelId) {
-  if (!providerId || !modelId) return null;
-  const baseId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
-  return `${providerId}:${baseId}`;
+  if (typeof providerId !== "string" || providerId.length === 0) return null;
+  if (typeof modelId !== "string" || modelId.length === 0) return null;
+  // Keep the model id as-given (including any slash-qualified segments) so
+  // OpenAI-compatible catalogs that expose "org/model" or `meta-llama/...`
+  // still collide correctly between writer and reader. The legacy writer
+  // stripped the slash and stored the bare base id; that made reads ambiguous
+  // when two providers shared a base id (review finding #1 + #10).
+  return `${providerId}:${modelId}`;
 }
 
 // Register dynamic capabilities for a (provider, model) pair. Idempotent;
 // overwrites prior value. Mirrors `registerDynamicCapabilities` (bare) but
 // scoped — prefer this in new code.
+//
+// Returns true on success, false on rejection. Rejections:
+//   - missing/invalid providerId or modelId
+//   - non-object caps
+//   - contextWindow present but non-finite, ≤ 0, or > MAX_CONTEXT_WINDOW
+//     (reject the whole record; a corrupt contextWindow almost certainly
+//     means other fields are stale too — verified per review finding #8).
 export function registerDynamicCapabilitiesScoped(providerId, modelId, caps) {
-  if (!providerId || !modelId || !caps || typeof caps !== "object") return;
   const key = scopedCacheKey(providerId, modelId);
-  if (!key) return;
-  const { updatedAt, ...clean } = caps;
-  if (!Number.isFinite(clean.contextWindow) || clean.contextWindow <= 0) {
-    // Mirror the repo-level validity guard: a malformed context window must
-    // not permanently override the static catalogue.
-    delete clean.contextWindow;
+  if (!key) return false;
+  if (!caps || typeof caps !== "object") return false;
+  // Shallow-clone so the caller's reference can't mutate the cached object
+  // (review finding #9 — downstream consumers in virtualFactory reuse the
+  // same object as `caps`, and a later merge could otherwise corrupt the
+  // cache).
+  const clean = { ...caps };
+  // Strip the repo's persistence timestamp — it is not a capability.
+  if ("updatedAt" in clean) delete clean.updatedAt;
+  if ("contextWindow" in clean) {
+    const cw = clean.contextWindow;
+    if (!Number.isFinite(cw) || cw <= 0 || cw > MAX_CONTEXT_WINDOW) {
+      console.warn(
+        `[capabilities] rejected dynamic caps for ${providerId}/${modelId}: contextWindow=${cw} out of bounds (max ${MAX_CONTEXT_WINDOW})`
+      );
+      return false;
+    }
   }
   DYNAMIC_CAPABILITIES_CACHE_SCOPED.set(key, clean);
+  return true;
 }
 
-// Read-only snapshot of the scoped cache (Map<`providerId:baseId`, caps>).
-// Auto-combo factory iterates this to union dynamic-synced models with the
-// static registry without per-model patches. Returned Map is the live one —
-// callers must not mutate it.
+// Snapshot of the scoped cache for callers that need to enumerate it (e.g.
+// the auto-combo factory). Returns a shallow copy of the Map with shallow
+// copies of each caps object so the caller can mutate entries freely without
+// corrupting the live cache (review finding #3 + #9).
 export function getDynamicCapabilitiesSnapshot() {
-  return DYNAMIC_CAPABILITIES_CACHE_SCOPED;
+  const out = new Map();
+  for (const [key, caps] of DYNAMIC_CAPABILITIES_CACHE_SCOPED.entries()) {
+    out.set(key, { ...caps });
+  }
+  return out;
+}
+
+// Check whether the dynamic cache currently holds any scoped entries.
+export function hasDynamicCapabilitiesSnapshot() {
+  return DYNAMIC_CAPABILITIES_CACHE_SCOPED.size > 0;
 }
 
 // OpenCode Ox Alpha Free — image input + always-thinking reasoning
@@ -511,17 +550,18 @@ export function getCapabilitiesForModel(provider, model) {
   //
   // The floor is `Number.isFinite`, so the /v1/models fill-gap path could not
   // rescue it either: 64000 is a valid number, just the wrong one.
-  // Scoped dynamic cache (`providerId:baseId`) wins over the legacy bare-key
+  // Scoped dynamic cache (`providerId:modelId`) wins over the legacy bare-key
   // cache so a synced `vision: true` on provider A cannot bleed into the
-  // same bare id on provider B. Falls back to bare for legacy writers.
-  const scopedCaps = provider && (
-    DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
-    || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`)
-  );
-  const dynamicCaps = scopedCaps
-    ?? DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
-    ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel)
-    ?? null;
+  // same bare id on provider B (review finding #5 + #7). Layer scoped over
+  // bare (rather than overwrite) so a partial scoped record (e.g. vision
+  // only) inherits the bare record's full fields — review finding #6.
+  const hasProvider = typeof provider === "string" && provider.length > 0;
+  const scopedCaps = hasProvider && DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`);
+  const bareCaps = DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
+    ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
+  const dynamicCaps = (scopedCaps || bareCaps)
+    ? { ...(bareCaps || {}), ...(scopedCaps || {}) }
+    : null;
 
   if (!catalogueCaps && !dynamicCaps && !providerCaps) return { ...DEFAULT_CAPABILITIES };
   return {
@@ -556,12 +596,15 @@ export function resolveKnownContextWindow(provider, model) {
   // A synced model (e.g. kiro live catalog) may carry a contextWindow the
   // static table doesn't know yet. Without this, combo MIN context ignores
   // live caps.
-  const scopedDyn = provider && (
-    DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
-    || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`)
-  );
-  if (scopedDyn && scopedDyn.contextWindow != null) return scopedDyn.contextWindow;
-  const dyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel) || DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
+  const hasProvider = typeof provider === "string" && provider.length > 0;
+  const scopedDyn = hasProvider && DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`);
+  // Layer scoped over bare so a partial scoped record with a valid bare
+  // sibling still wins on the bare-only fields (review finding #6).
+  const bareDyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
+    ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
+  const dyn = (scopedDyn || bareDyn)
+    ? { ...(bareDyn || {}), ...(scopedDyn || {}) }
+    : null;
   if (dyn && dyn.contextWindow != null) return dyn.contextWindow;
   const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[normalizedModel];
   if (exact) return exact.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
