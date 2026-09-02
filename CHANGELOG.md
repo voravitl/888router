@@ -1,3 +1,43 @@
+# v0.15.69 (2026-09-02)
+
+## Feat: auto-combo sees dynamic-synced models (closes #374)
+
+`resolveVirtualAutoCombo()` scanned `PROVIDERS[providerId].models` (static array) only — new models synced at runtime (e.g. ollama cloud glm-5.3) were hidden from `auto/*` until somebody hand-patched the registry.
+
+Adds a 3-layer mechanism:
+
+- `open-sse/providers/capabilities.js`: `DYNAMIC_CAPABILITIES_CACHE_SCOPED` keyed by `providerId:modelId` (DB-key parity, prevents cross-provider bleed per review finding #5), `registerDynamicCapabilitiesScoped()` writer with `MAX_CONTEXT_WINDOW = 10M` sanity bound + boolean coercion + sanitized log segments, `getCapabilitiesForModel()` + `resolveKnownContextWindow()` consult scoped first then bare.
+- `src/app/api/v1/models/route.js`: hydrate the scoped cache after `getAllModelDynamicCapabilities()` so combo resolver + caps reader see the same view `/v1/models` serves.
+- `open-sse/services/autoCombo/virtualFactory.js`: union loop filters dynamic-synced models by tier/contextMin/category using the same gates as the static loop. Skips providers not in `PROVIDERS` and models already in the static loop.
+
+Chat handler (`src/sse/services/model.js`) installs the sync hydrator on the first `auto/*` call so cold starts (chat-first instance) don't depend on `/v1/models` having warmed the cache. Hydrator is identity-stable across imports, idempotent install.
+
+Test (`tests/unit/auto-combo-dynamic-sync.test.js`) covers bleed guard, scoped+bare layering, sanity-bound rejection, non-active provider exclusion, free-tier filter, writer rejection of bad input.
+
+## Fix: antigravity-live-resolver timeout (closes #375)
+
+Master run 33486581967 passed at 4722ms / 5000ms default vitest cap (94% budget — marginal-latency flake on a hard CI gate). PR #374 widened the import graph via `registerDynamicCapabilitiesScoped` and pushed both PR runs over the cap. Sibling files (`antigravity-cache.test.js`) use explicit 60s–180s timeouts; raise all four cases in this file to 30s.
+
+# v0.15.69 (2026-09-02)
+
+## Feat: auto-combo sees dynamic-synced models (closes #374)
+
+`resolveVirtualAutoCombo()` scanned `PROVIDERS[providerId].models` (static array) only — new models synced at runtime (e.g. ollama cloud glm-5.3) were hidden from `auto/*` until somebody hand-patched the registry.
+
+Adds a 3-layer mechanism:
+
+- `open-sse/providers/capabilities.js`: `DYNAMIC_CAPABILITIES_CACHE_SCOPED` keyed by `providerId:modelId` (DB-key parity, prevents cross-provider bleed per review finding #5), `registerDynamicCapabilitiesScoped()` writer with `MAX_CONTEXT_WINDOW = 10M` sanity bound + boolean coercion + sanitized log segments, `getCapabilitiesForModel()` + `resolveKnownContextWindow()` consult scoped first then bare.
+- `src/app/api/v1/models/route.js`: hydrate the scoped cache after `getAllModelDynamicCapabilities()` so combo resolver + caps reader see the same view `/v1/models` serves.
+- `open-sse/services/autoCombo/virtualFactory.js`: union loop filters dynamic-synced models by tier/contextMin/category using the same gates as the static loop. Skips providers not in `PROVIDERS` and models already in the static loop.
+
+Chat handler (`src/sse/services/model.js`) installs the sync hydrator on the first `auto/*` call so cold starts (chat-first instance) don't depend on `/v1/models` having warmed the cache. Hydrator is identity-stable across imports, idempotent install.
+
+Test (`tests/unit/auto-combo-dynamic-sync.test.js`) covers bleed guard, scoped+bare layering, sanity-bound rejection, non-active provider exclusion, free-tier filter, writer rejection of bad input.
+
+## Fix: antigravity-live-resolver timeout (closes #375)
+
+Master run 33486581967 passed at 4722ms / 5000ms default vitest cap (94% budget — marginal-latency flake on a hard CI gate). PR #374 widened the import graph via `registerDynamicCapabilitiesScoped` and pushed both PR runs over the cap. Sibling files (`antigravity-cache.test.js`) use explicit 60s–180s timeouts; raise all four cases in this file to 30s.
+
 # v0.15.68 (2026-09-01)
 
 ## Release: stream tool-call accumulator (#371) + backup retention (#368)
@@ -5,6 +45,46 @@
 Realigns version metadata. Both fixes are already on master from their respective PRs. PR #372's squash-merge left package.json at 0.15.67 instead of 0.15.66 (squash-survival drift). 0.15.68 is the next patch step so the on-disk version is monotonic and matches the CHANGELOG sequence.
 
 No code change.
+
+# v0.15.69 (2026-09-02)
+
+## Feat: auto-combo sees dynamic-synced models (closes #374)
+
+`resolveVirtualAutoCombo()` scanned `PROVIDERS[providerId].models` (static array) only — new models synced at runtime (e.g. ollama cloud glm-5.3) were hidden from `auto/*` until somebody hand-patched the registry.
+
+Adds a 3-layer mechanism:
+
+- `open-sse/providers/capabilities.js`: `DYNAMIC_CAPABILITIES_CACHE_SCOPED` keyed by `providerId:modelId` (DB-key parity, prevents cross-provider bleed per review finding #5), `registerDynamicCapabilitiesScoped()` writer with `MAX_CONTEXT_WINDOW = 10M` sanity bound + boolean coercion + sanitized log segments, `getCapabilitiesForModel()` + `resolveKnownContextWindow()` consult scoped first then bare.
+- `src/app/api/v1/models/route.js`: hydrate the scoped cache after `getAllModelDynamicCapabilities()` so combo resolver + caps reader see the same view `/v1/models` serves.
+- `open-sse/services/autoCombo/virtualFactory.js`: union loop filters dynamic-synced models by tier/contextMin/category using the same gates as the static loop. Skips providers not in `PROVIDERS` and models already in the static loop.
+
+Chat handler (`src/sse/services/model.js`) installs the sync hydrator on the first `auto/*` call so cold starts (chat-first instance) don't depend on `/v1/models` having warmed the cache. Hydrator is identity-stable across imports, idempotent install.
+
+Test (`tests/unit/auto-combo-dynamic-sync.test.js`) covers bleed guard, scoped+bare layering, sanity-bound rejection, non-active provider exclusion, free-tier filter, writer rejection of bad input.
+
+## Fix: antigravity-live-resolver timeout (closes #375)
+
+Master run 33486581967 passed at 4722ms / 5000ms default vitest cap (94% budget — marginal-latency flake on a hard CI gate). PR #374 widened the import graph via `registerDynamicCapabilitiesScoped` and pushed both PR runs over the cap. Sibling files (`antigravity-cache.test.js`) use explicit 60s–180s timeouts; raise all four cases in this file to 30s.
+
+# v0.15.69 (2026-09-02)
+
+## Feat: auto-combo sees dynamic-synced models (closes #374)
+
+`resolveVirtualAutoCombo()` scanned `PROVIDERS[providerId].models` (static array) only — new models synced at runtime (e.g. ollama cloud glm-5.3) were hidden from `auto/*` until somebody hand-patched the registry.
+
+Adds a 3-layer mechanism:
+
+- `open-sse/providers/capabilities.js`: `DYNAMIC_CAPABILITIES_CACHE_SCOPED` keyed by `providerId:modelId` (DB-key parity, prevents cross-provider bleed per review finding #5), `registerDynamicCapabilitiesScoped()` writer with `MAX_CONTEXT_WINDOW = 10M` sanity bound + boolean coercion + sanitized log segments, `getCapabilitiesForModel()` + `resolveKnownContextWindow()` consult scoped first then bare.
+- `src/app/api/v1/models/route.js`: hydrate the scoped cache after `getAllModelDynamicCapabilities()` so combo resolver + caps reader see the same view `/v1/models` serves.
+- `open-sse/services/autoCombo/virtualFactory.js`: union loop filters dynamic-synced models by tier/contextMin/category using the same gates as the static loop. Skips providers not in `PROVIDERS` and models already in the static loop.
+
+Chat handler (`src/sse/services/model.js`) installs the sync hydrator on the first `auto/*` call so cold starts (chat-first instance) don't depend on `/v1/models` having warmed the cache. Hydrator is identity-stable across imports, idempotent install.
+
+Test (`tests/unit/auto-combo-dynamic-sync.test.js`) covers bleed guard, scoped+bare layering, sanity-bound rejection, non-active provider exclusion, free-tier filter, writer rejection of bad input.
+
+## Fix: antigravity-live-resolver timeout (closes #375)
+
+Master run 33486581967 passed at 4722ms / 5000ms default vitest cap (94% budget — marginal-latency flake on a hard CI gate). PR #374 widened the import graph via `registerDynamicCapabilitiesScoped` and pushed both PR runs over the cap. Sibling files (`antigravity-cache.test.js`) use explicit 60s–180s timeouts; raise all four cases in this file to 30s.
 
 # v0.15.68 (2026-09-01)
 
