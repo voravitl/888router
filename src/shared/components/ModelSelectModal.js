@@ -51,6 +51,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [syncedModels, setSyncedModels] = useState({});
 
   useEffect(() => {
     if (!isOpen) return;
@@ -74,9 +75,41 @@ export default function ModelSelectModal({
       .then((res) => (res.ok ? res.json() : { disabled: {} }))
       .then((data) => setDisabledModels(data.disabled || {}))
       .catch(() => setDisabledModels({}));
+
+    fetch("/api/models/synced")
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data) => setSyncedModels(data || {}))
+      .catch(() => setSyncedModels({}));
   }, [isOpen]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
+
+  // Helper to extract synced models for a specific provider
+  const getSyncedModelsForProvider = useCallback((providerId, targetAlias) => {
+    const activeConns = (filteredActiveProviders || []).filter((p) => p.provider === providerId);
+    const connIds = new Set(activeConns.map((c) => c.id));
+    connIds.add(providerId);
+
+    const found = [];
+    const seenIds = new Set();
+
+    for (const [key] of Object.entries(syncedModels || {})) {
+      const colon = key.indexOf(":");
+      if (colon <= 0) continue;
+      const connId = key.slice(0, colon);
+      const modelId = key.slice(colon + 1);
+      if (connIds.has(connId) && !seenIds.has(modelId)) {
+        seenIds.add(modelId);
+        found.push({
+          id: modelId,
+          name: modelId,
+          value: `${targetAlias}/${modelId}`,
+          isCustom: true,
+        });
+      }
+    }
+    return found;
+  }, [filteredActiveProviders, syncedModels]);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
@@ -91,9 +124,6 @@ export default function ModelSelectModal({
 
     // Filter a models[] array by kindFilter (keep only matching kind)
     const filterByKind = (models) => {
-      // No kindFilter means the LLM selector. Keep custom models visible because
-      // user-added models may have typed capabilities (for example imageToText)
-      // while still being valid chat/combo targets.
       if (!kindFilter) return models.filter((m) => m.isPlaceholder || m.isCustom || !getModelKind(m) || getModelKind(m) === "llm");
       if (!TYPED_KINDS.has(kindFilter)) return models;
       return models.filter((m) => m.isPlaceholder || getModelKind(m) === kindFilter);
@@ -138,14 +168,17 @@ export default function ModelSelectModal({
 
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
-          .map(([aliasName, fullModel]) => ({
-            id: fullModel.replace(`${alias}/`, ""),
-            name: aliasName,
-            value: fullModel,
-          }));
+          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`) || fullModel.startsWith(`${providerId}/`))
+          .map(([aliasName, fullModel]) => {
+            const rawId = fullModel.startsWith(`${alias}/`) ? fullModel.slice(alias.length + 1) : fullModel.slice(providerId.length + 1);
+            return {
+              id: rawId,
+              name: aliasName,
+              value: `${alias}/${rawId}`,
+            };
+          });
         const customRegisteredModels = customModels
-          .filter((m) => m.providerAlias === alias)
+          .filter((m) => m.providerAlias === alias || m.providerAlias === providerId)
           .map((m) => ({
             id: m.id,
             name: m.name || m.id,
@@ -153,36 +186,38 @@ export default function ModelSelectModal({
             kind: getModelKind(m),
             isCustom: true,
           }));
+        const syncedRegisteredModels = getSyncedModelsForProvider(providerId, alias);
 
-        // For typed kinds, only include hardcoded typed models (aliases are typically LLM-only and lack type info)
         let combined = aliasModels;
         if (kindFilter && TYPED_KINDS.has(kindFilter)) {
           const registeredTyped = customRegisteredModels.filter((m) => getModelKind(m) === kindFilter);
           combined = [
             ...registeredTyped,
             ...getModelsByProviderId(providerId)
-            .filter((m) => getModelKind(m) === kindFilter)
-            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
-            .filter((m) => !registeredTyped.some((registered) => registered.value === m.value)),
+              .filter((m) => getModelKind(m) === kindFilter)
+              .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
+              .filter((m) => !registeredTyped.some((registered) => registered.value === m.value)),
           ];
-          // Fallback: provider-as-model when no hardcoded models match (tts/image/webFetch only)
           if (combined.length === 0 && ALLOW_PROVIDER_FALLBACK_KINDS.has(kindFilter)) {
             const supports = (providerInfo.serviceKinds || ["llm"]).includes(kindFilter);
             if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
           }
         } else {
-          // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
           const registeredLlms = customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
-          const seen = new Set([...aliasModels, ...registeredLlms].map((m) => m.value));
           const hardcoded = getModelsByProviderId(providerId)
             .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
-            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
-            .filter((m) => !seen.has(m.value));
-          combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...hardcoded];
+            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }));
+
+          const merged = [...registeredLlms, ...syncedRegisteredModels, ...aliasModels, ...hardcoded];
+          const seen = new Set();
+          combined = merged.filter((m) => {
+            if (seen.has(m.value)) return false;
+            seen.add(m.value);
+            return true;
+          });
         }
 
         if (combined.length > 0) {
-          // Check for custom name from providerNodes (for compatible providers)
           const matchedNode = providerNodes.find(node => node.id === providerId);
           const displayName = matchedNode?.name || providerInfo.name;
 
@@ -194,39 +229,41 @@ export default function ModelSelectModal({
           };
         }
       } else if (isCustomProvider) {
-        // Custom (openai/anthropic-compatible) providers are LLM-only — skip for typed media kinds
         if (kindFilter && TYPED_KINDS.has(kindFilter)) return;
-        // Find connection object to get prefix synchronously without waiting for providerNodes fetch
         const connection = activeProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
         const displayName = matchedNode?.name || connection?.name || providerInfo.name;
         const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
 
-        // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
-        // so we must filter by providerId, not by the display prefix.
         const nodeModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
-          .map(([aliasName, fullModel]) => ({
-            id: fullModel.replace(`${providerId}/`, ""),
-            name: aliasName,
-            value: `${nodePrefix}/${fullModel.replace(`${providerId}/`, "")}`,
-          }));
+          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`) || fullModel.startsWith(`${nodePrefix}/`))
+          .map(([aliasName, fullModel]) => {
+            const rawId = fullModel.startsWith(`${providerId}/`) ? fullModel.slice(providerId.length + 1) : fullModel.slice(nodePrefix.length + 1);
+            return {
+              id: rawId,
+              name: aliasName,
+              value: `${nodePrefix}/${rawId}`,
+            };
+          });
 
-        // Merge custom models registered via /api/models/custom for this provider
-        // providerAlias in DB uses the raw providerId, not the display prefix
         const registeredCustom = customModels
-          .filter((m) => m.providerAlias === providerId)
+          .filter((m) => m.providerAlias === providerId || m.providerAlias === nodePrefix)
           .map((m) => ({
             id: m.id,
             name: m.name || m.id,
             value: `${nodePrefix}/${m.id}`,
             isCustom: true,
           }));
-        const seen = new Set(nodeModels.map((m) => m.value));
-        const mergedModels = [...nodeModels, ...registeredCustom.filter((m) => !seen.has(m.value))];
 
-        // Always show compatible providers that are connected, even with no aliases.
-        // When no aliases exist, show a placeholder so users know it's available.
+        const syncedModelsList = getSyncedModelsForProvider(providerId, nodePrefix);
+
+        const seen = new Set();
+        const mergedModels = [...nodeModels, ...registeredCustom, ...syncedModelsList].filter((m) => {
+          if (seen.has(m.value)) return false;
+          seen.add(m.value);
+          return true;
+        });
+
         const modelsToShow = mergedModels.length > 0 ? mergedModels : [{
           id: `__placeholder__${providerId}`,
           name: `${nodePrefix}/model-id`,
@@ -244,34 +281,33 @@ export default function ModelSelectModal({
         };
       } else {
         const hardcodedModels = getModelsByProviderId(providerId);
-        const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
 
-        // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
-        // Otherwise only show aliases where aliasName === modelId ("Add Model" button pattern)
-        const hasHardcoded = hardcodedModels.length > 0;
+        // Aliases targeting this provider
         const customAliasModels = Object.entries(modelAliases)
-          .filter(([aliasName, fullModel]) =>
-            fullModel.startsWith(`${alias}/`) &&
-            (hasHardcoded ? aliasName === fullModel.replace(`${alias}/`, "") : true) &&
-            !hardcodedIds.has(fullModel.replace(`${alias}/`, ""))
+          .filter(([, fullModel]) =>
+            fullModel.startsWith(`${alias}/`) || fullModel.startsWith(`${providerId}/`)
           )
           .map(([aliasName, fullModel]) => {
-            const modelId = fullModel.replace(`${alias}/`, "");
-            return { id: modelId, name: aliasName, value: fullModel, isCustom: true };
+            const modelId = fullModel.startsWith(`${alias}/`) ? fullModel.slice(alias.length + 1) : fullModel.slice(providerId.length + 1);
+            return { id: modelId, name: aliasName, value: `${alias}/${modelId}`, isCustom: true };
           });
 
-        // Custom models registered via /api/models/custom (provider "Add Model" button)
-        const customAliasIds = new Set(customAliasModels.map((m) => m.id));
+        // Custom models registered via /api/models/custom
         const customRegisteredModels = customModels
-          .filter((m) => m.providerAlias === alias && !hardcodedIds.has(m.id) && !customAliasIds.has(m.id))
+          .filter((m) => m.providerAlias === alias || m.providerAlias === providerId)
           .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
+
+        // Synced models from /api/models/synced
+        const syncedRegisteredModels = getSyncedModelsForProvider(providerId, alias);
 
         const merged = [
           ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
-          ...customAliasModels,
           ...customRegisteredModels,
+          ...syncedRegisteredModels,
+          ...customAliasModels,
         ];
-        // Dedupe by value (alias may equal hardcoded id, causing React key collision)
+
+        // Dedupe by value
         const seen = new Set();
         let allModels = filterByKind(merged.filter((m) => {
           if (seen.has(m.value)) return false;
@@ -279,8 +315,6 @@ export default function ModelSelectModal({
           return true;
         }));
 
-        // Provider-as-model fallback: providers that support the kind but have no hardcoded models
-        // can still be picked (value = providerAlias). Skips embedding (always needs model).
         if (allModels.length === 0 && kindFilter && ALLOW_PROVIDER_FALLBACK_KINDS.has(kindFilter)) {
           const supports = (providerInfo.serviceKinds || ["llm"]).includes(kindFilter);
           if (supports) {
@@ -312,7 +346,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, getSyncedModelsForProvider]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
@@ -406,6 +440,22 @@ export default function ModelSelectModal({
 
       {/* Models grouped by provider - compact */}
       <div className="max-h-[400px] overflow-y-auto space-y-3">
+        {/* Manual custom model add from search query */}
+        {searchQuery.trim() && (
+          <div className="pb-2 border-b border-border/50">
+            <button
+              onClick={() => handleSelect({ id: searchQuery.trim(), name: searchQuery.trim(), value: searchQuery.trim(), isCustom: true })}
+              className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium border border-dashed border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 transition-colors flex items-center justify-between gap-2"
+            >
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="material-symbols-outlined text-[14px]">add_circle</span>
+                <span className="truncate">Add custom model: <strong className="font-mono">{searchQuery.trim()}</strong></span>
+              </span>
+              <span className="text-[10px] text-text-muted shrink-0">Click to use</span>
+            </button>
+          </div>
+        )}
+
         {/* Combos section - always first */}
         {filteredCombos.length > 0 && (
           <div>
