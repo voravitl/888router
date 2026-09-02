@@ -86,20 +86,24 @@ export async function getModelInfo(modelStr) {
  * Check if model is a combo and get models list
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
+// Module-scoped hydrator reference so setDynamicCapabilitiesHydrator's
+// idempotency guard (review round-4 #H1) can actually fire — a fresh closure
+// per request would reset `dynamicHydrated` on every chat call, defeating
+// the round-3 fix.
+let _dynamicHydrator = null;
+
 export async function getComboModels(modelStr) {
   if (modelStr && modelStr.startsWith("auto/")) {
     const { resolveVirtualAutoCombo, setDynamicCapabilitiesHydrator } = await import(
       "open-sse/services/autoCombo/virtualFactory.js"
     );
-    const { DYNAMIC_CAPABILITIES_CACHE_SCOPED } = await import(
-      "open-sse/providers/capabilities.js"
-    );
-    // Install the sync hydrator on the chat-handler's first auto/* call so
-    // the cold-start scenario (instance whose first hit is a chat completion)
-    // doesn't depend on /v1/models having warmed the cache first.
-    // Idempotent: setDynamicCapabilitiesHydrator skips re-install if the fn
-    // reference hasn't changed.
-    setDynamicCapabilitiesHydrator(() => DYNAMIC_CAPABILITIES_CACHE_SCOPED);
+    if (!_dynamicHydrator) {
+      const { DYNAMIC_CAPABILITIES_CACHE_SCOPED } = await import(
+        "open-sse/providers/capabilities.js"
+      );
+      _dynamicHydrator = () => DYNAMIC_CAPABILITIES_CACHE_SCOPED;
+    }
+    setDynamicCapabilitiesHydrator(_dynamicHydrator);
     const virtual = resolveVirtualAutoCombo(modelStr);
     if (virtual && virtual.models && virtual.models.length > 0) {
       return virtual.models;

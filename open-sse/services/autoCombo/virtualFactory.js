@@ -66,7 +66,7 @@ export function setDynamicCapabilitiesHydrator(fn) {
   // dynamicHydrated (which would force a full re-hydration per /v1/models
   // hit, review round-3 #M5).
   if (hydrateFn === fn) return;
-  hydrateFn = fn ?? null;
+  hydrateFn = typeof fn === "function" ? fn : null;
   dynamicHydrated = false;
 }
 
