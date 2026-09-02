@@ -32,6 +32,7 @@ const ollamaConfig = {
   serviceKinds: ["llm"],
   features: {
     usage: true,
+    usageApikey: true,
   },
 };
 
