@@ -1,6 +1,6 @@
 import { parseAutoSuffix } from "./suffixComposition.js";
 import { AUTO_TEMPLATE_VARIANTS } from "./builtinCatalog.js";
-import { getCapabilitiesForModel, resolveKnownContextWindow } from "../../providers/capabilities.js";
+import { getCapabilitiesForModel, resolveKnownContextWindow, getDynamicCapabilitiesSnapshot } from "../../providers/capabilities.js";
 import { FREE_MODEL_BUDGETS } from "../../config/freeModelCatalog.js";
 import { PROVIDERS } from "../../config/providers.js";
 
@@ -82,6 +82,51 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
         provider: providerId,
         modelId,
         caps,
+        isFree,
+      });
+    }
+  }
+
+  // Union dynamic-synced models from the in-memory scoped cache so combo
+  // resolution stays current without per-model registry edits (the original
+  // motivation: ollama cloud added glm-5.3 without a registry patch). Capped
+  // to providerIds already scanned above — non-active providers stay excluded.
+  // Scoped cache key is `${providerId}:${baseId}` (review finding #5).
+  const dynMap = (typeof getDynamicCapabilitiesSnapshot === "function")
+    ? getDynamicCapabilitiesSnapshot()
+    : null;
+  const seen = new Set(candidates.map((c) => c.modelStr));
+  if (dynMap && dynMap.size > 0) {
+    for (const [scopedKey, dynCaps] of dynMap.entries()) {
+      const colon = scopedKey.indexOf(":");
+      if (colon <= 0) continue;
+      const providerId = scopedKey.slice(0, colon);
+      const modelId = scopedKey.slice(colon + 1);
+      // Skip providers we didn't enter above (non-active providers excluded).
+      if (!PROVIDERS[providerId]) continue;
+      // Skip models already covered by the static loop.
+      if (seen.has(`${providerId}/${modelId}`)) continue;
+
+      const isFree = isFreeCandidate(providerId, modelId) || PROVIDERS[providerId].hasFree === true;
+      if (tier === "free" && !isFree) continue;
+
+      if (contextMin) {
+        const knownCw = resolveKnownContextWindow(providerId, modelId);
+        if (!knownCw || knownCw < contextMin) continue;
+      }
+
+      if (category === "vision" || category === "multimodal") {
+        if (!dynCaps.vision) continue;
+      }
+      if (category === "reasoning") {
+        if (!dynCaps.reasoning) continue;
+      }
+
+      candidates.push({
+        modelStr: `${providerId}/${modelId}`,
+        provider: providerId,
+        modelId,
+        caps: dynCaps,
         isFree,
       });
     }

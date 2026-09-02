@@ -10,6 +10,7 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases } f
 import { AUTO_COMBO_TEMPLATES } from "open-sse/services/autoCombo/builtinCatalog.js";
 import { resolveVirtualAutoCombo } from "open-sse/services/autoCombo/virtualFactory.js";
 import { getAllModelDynamicCapabilities } from "@/lib/db";
+import { registerDynamicCapabilitiesScoped } from "open-sse/providers/capabilities.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -497,6 +498,23 @@ export async function buildModelsList(kindFilter) {
       syncedCapabilitiesById = await getAllModelDynamicCapabilities();
     } catch (e) {
       console.log("Could not load synced dynamic capabilities:", e?.message);
+    }
+
+    // Hydrate the in-memory scoped cache so `getCapabilitiesForModel()` (used by
+    // combo resolver, kiro live caps, etc.) sees the same synced caps /v1/models
+    // serves. Cache key per `syncedModelsRepo.capabilityKey()` — split on first
+    // `:` to recover `providerId:baseId`. Provider scope prevents cross-provider
+    // bleed when two providers share a bare id (review finding #5).
+    for (const [scopedKey, caps] of syncedCapabilitiesById.entries()) {
+      const colon = scopedKey.indexOf(":");
+      if (colon <= 0) continue;
+      const providerId = scopedKey.slice(0, colon);
+      const baseId = scopedKey.slice(colon + 1);
+      try {
+        registerDynamicCapabilitiesScoped(providerId, baseId, caps);
+      } catch (e) {
+        // writer is fail-open; a single bad row must not break /v1/models.
+      }
     }
 
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {

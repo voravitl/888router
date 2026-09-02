@@ -72,6 +72,43 @@ function stripThinkingSuffix(model) {
   return model.replace(/\([^()]+\)\s*$/, "").trim();
 }
 
+// Scoped in-memory dynamic capabilities cache (additive, does not replace the
+// legacy bare-key cache). Keys are `providerId:baseId` — matches the DB row
+// key in `syncedModelsRepo.capabilityKey()` — so a synced `vision: true` on
+// provider A cannot bleed into the same bare id on provider B (review finding
+// #5: PR #292 lesson). Read path consults scoped first, then bare legacy.
+const DYNAMIC_CAPABILITIES_CACHE_SCOPED = new Map();
+
+function scopedCacheKey(providerId, modelId) {
+  if (!providerId || !modelId) return null;
+  const baseId = modelId.includes("/") ? modelId.split("/").pop() : modelId;
+  return `${providerId}:${baseId}`;
+}
+
+// Register dynamic capabilities for a (provider, model) pair. Idempotent;
+// overwrites prior value. Mirrors `registerDynamicCapabilities` (bare) but
+// scoped — prefer this in new code.
+export function registerDynamicCapabilitiesScoped(providerId, modelId, caps) {
+  if (!providerId || !modelId || !caps || typeof caps !== "object") return;
+  const key = scopedCacheKey(providerId, modelId);
+  if (!key) return;
+  const { updatedAt, ...clean } = caps;
+  if (!Number.isFinite(clean.contextWindow) || clean.contextWindow <= 0) {
+    // Mirror the repo-level validity guard: a malformed context window must
+    // not permanently override the static catalogue.
+    delete clean.contextWindow;
+  }
+  DYNAMIC_CAPABILITIES_CACHE_SCOPED.set(key, clean);
+}
+
+// Read-only snapshot of the scoped cache (Map<`providerId:baseId`, caps>).
+// Auto-combo factory iterates this to union dynamic-synced models with the
+// static registry without per-model patches. Returned Map is the live one —
+// callers must not mutate it.
+export function getDynamicCapabilitiesSnapshot() {
+  return DYNAMIC_CAPABILITIES_CACHE_SCOPED;
+}
+
 // OpenCode Ox Alpha Free — image input + always-thinking reasoning
 // (models.dev reasoning_options [low, high, max]; videoInput stays false until
 // the common video transport is end-to-end). Shared by the provider/id pairs
@@ -474,8 +511,17 @@ export function getCapabilitiesForModel(provider, model) {
   //
   // The floor is `Number.isFinite`, so the /v1/models fill-gap path could not
   // rescue it either: 64000 is a valid number, just the wrong one.
-  const dynamicCaps =
-    DYNAMIC_CAPABILITIES_CACHE.get(baseModel) ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel) ?? null;
+  // Scoped dynamic cache (`providerId:baseId`) wins over the legacy bare-key
+  // cache so a synced `vision: true` on provider A cannot bleed into the
+  // same bare id on provider B. Falls back to bare for legacy writers.
+  const scopedCaps = provider && (
+    DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
+    || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`)
+  );
+  const dynamicCaps = scopedCaps
+    ?? DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
+    ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel)
+    ?? null;
 
   if (!catalogueCaps && !dynamicCaps && !providerCaps) return { ...DEFAULT_CAPABILITIES };
   return {
@@ -505,9 +551,16 @@ export function resolveKnownContextWindow(provider, model) {
     return providerEntry.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   }
   const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
-  // Dynamic runtime/DB caps take precedence over static patterns — a synced
-  // model (e.g. kiro live catalog) may carry a contextWindow the static table
-  // doesn't know yet. Without this, combo MIN context ignores live caps.
+  // Scoped dynamic runtime/DB caps take precedence over bare-key legacy so
+  // cross-provider bleed is impossible (review finding #5: PR #292 lesson).
+  // A synced model (e.g. kiro live catalog) may carry a contextWindow the
+  // static table doesn't know yet. Without this, combo MIN context ignores
+  // live caps.
+  const scopedDyn = provider && (
+    DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
+    || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`)
+  );
+  if (scopedDyn && scopedDyn.contextWindow != null) return scopedDyn.contextWindow;
   const dyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel) || DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
   if (dyn && dyn.contextWindow != null) return dyn.contextWindow;
   const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[normalizedModel];
