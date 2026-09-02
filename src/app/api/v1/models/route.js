@@ -18,7 +18,7 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { OllamaService } from "@/lib/oauth/services/ollama";
-import { REGISTRY } from "open-sse/providers/registry/index.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials, refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
 import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
