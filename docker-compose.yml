@@ -44,6 +44,11 @@ services:
     depends_on:
       - headroom
       - searxng
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Liveness via the version API — tells orchestration when the gateway is
     # actually serving (not just the container started).
     healthcheck:
@@ -70,6 +75,11 @@ services:
       MKL_NUM_THREADS: "2"
       VECLIB_MAXIMUM_THREADS: "2"
       NUMEXPR_NUM_THREADS: "2"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Image default checks /readyz (includes upstream) with a 5s timeout — flaps
     # unhealthy when Anthropic is slow. Liveness is enough for "is the proxy up".
     healthcheck:
@@ -97,6 +107,11 @@ services:
       # Require the secret — never ship a known-in-git default (CSRF/session risk).
       # SearXNG overrides secret_key from this env at runtime.
       SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       # Image ships wget (not curl); --spider fails on non-2xx.
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]

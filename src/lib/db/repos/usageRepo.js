@@ -9,9 +9,13 @@ function maskApiKey(key) {
   return key.slice(0, 8) + "***";
 }
 
-const PENDING_TIMEOUT_MS = 60 * 1000;
-const RING_CAP = 50;
-const CONN_CACHE_TTL_MS = 30 * 1000;
+const RING_CAP = 200;
+const PENDING_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes safety timeout for stuck requests
+const CONN_CACHE_TTL_MS = 5000;
+const USAGE_PRUNE_THROTTLE_MS = 5 * 60 * 1000; // 5 min throttle for pruning
+const DEFAULT_USAGE_RETENTION_DAYS = 30;
+const DEFAULT_MAX_USAGE_RECORDS = 50000;
+let lastUsagePruneTs = 0;
 const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
 
 // In-memory state shared across Next.js modules
@@ -302,6 +306,22 @@ export async function saveRequestUsage(entry) {
       const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
       const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
       db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+
+      // Time-based and count-capped pruning for usageHistory to prevent unbounded log/db growth
+      const nowMs = Date.now();
+      if (nowMs - lastUsagePruneTs >= USAGE_PRUNE_THROTTLE_MS) {
+        const cutoff = new Date(nowMs - DEFAULT_USAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+        db.run(`DELETE FROM usageHistory WHERE timestamp < ?`, [cutoff]);
+        const cnt = db.get(`SELECT COUNT(*) as c FROM usageHistory`);
+        if (cnt && cnt.c > DEFAULT_MAX_USAGE_RECORDS) {
+          db.run(
+            `DELETE FROM usageHistory WHERE id IN (SELECT id FROM usageHistory ORDER BY id ASC LIMIT ?)`,
+            [cnt.c - DEFAULT_MAX_USAGE_RECORDS]
+          );
+        }
+        lastUsagePruneTs = nowMs;
+      }
+
       inserted = true;
     });
 

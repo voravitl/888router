@@ -36,6 +36,20 @@ export async function resolveModelAlias(alias) {
  * Get full model info (parse or resolve)
  */
 export async function getModelInfo(modelStr) {
+  if (!modelStr) return { provider: null, model: null };
+
+  if (modelStr.startsWith("auto/")) {
+    return { provider: null, model: modelStr };
+  }
+
+  // Check if modelStr itself is a saved combo name
+  if (!modelStr.includes("/")) {
+    const directCombo = await getComboByName(modelStr);
+    if (directCombo) {
+      return { provider: null, model: modelStr };
+    }
+  }
+
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
@@ -73,10 +87,6 @@ export async function getModelInfo(modelStr) {
     // Return null provider to signal this should be handled as combo
     // The caller (handleChat) will detect this and handle it as combo
     return { provider: null, model: parsed.model };
-  }
-
-  if (modelStr && modelStr.startsWith("auto/")) {
-    return { provider: null, model: modelStr };
   }
 
   return getModelInfoCore(modelStr, getModelAliases);

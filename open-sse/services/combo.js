@@ -890,12 +890,12 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
  * streams).
  */
 function createDedupState() {
-  return { seen: new Set(), lastHash: "" };
+  return { lastHash: "" };
 }
 
 /**
  * @param {Uint8Array|string} chunk
- * @param {{ seen: Set<string>, lastHash: string }} state
+ * @param {{ lastHash: string }} state
  * @returns {Uint8Array|null} the chunk with duplicate lines stripped,
  *   or null if nothing should be forwarded.
  */
@@ -922,8 +922,6 @@ function dedupChunk(chunk, state) {
     }
     const hex = h.toString(16);
     if (hex === state.lastHash) continue; // back-to-back dup of the previous line only
-    if (state.seen.has(hex)) continue;   // earlier dup — drop
-    state.seen.add(hex);
     state.lastHash = hex;
     out.push(part);
   }

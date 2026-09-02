@@ -4,6 +4,7 @@ import {
   getCapabilitiesForModel,
   resolveKnownContextWindow,
   getDynamicCapabilitiesSnapshot,
+  registerDynamicCapabilitiesScoped,
 } from "../../providers/capabilities.js";
 import { FREE_MODEL_BUDGETS } from "../../config/freeModelCatalog.js";
 import { PROVIDERS } from "../../config/providers.js";
@@ -86,11 +87,10 @@ function getHydratedSnapshot() {
   try {
     const rows = hydrateFn();
     if (rows && typeof rows[Symbol.iterator] === "function") {
-      const writer = require("../../providers/capabilities.js").registerDynamicCapabilitiesScoped;
       for (const [key, caps] of rows.entries()) {
         const colon = key.indexOf(":");
         if (colon <= 0) continue;
-        writer(key.slice(0, colon), key.slice(colon + 1), caps);
+        registerDynamicCapabilitiesScoped(key.slice(0, colon), key.slice(colon + 1), caps);
       }
     }
     dynamicHydrated = true;

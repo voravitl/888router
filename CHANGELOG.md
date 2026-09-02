@@ -1,3 +1,14 @@
+# v0.15.70 (2026-09-02)
+
+## Fix: combo synced models selection, gateway stream dedup & log retention cleanup
+
+- `src/shared/components/ModelSelectModal.js`: fetch and merge synced models from `/api/models/synced`, fix alias and custom model matching, allow adding custom model directly from search query.
+- `src/sse/services/model.js`: prioritize `auto/*` and saved combo resolution at start of `getModelInfo()` before slash splitting.
+- `open-sse/services/autoCombo/virtualFactory.js`: replace in-function `require()` with top-level ESM import of `registerDynamicCapabilitiesScoped`.
+- `open-sse/services/combo.js`: fix `dedupChunk()` to only drop back-to-back duplicate data lines (`hex === state.lastHash`), removing global `seen` hash set that dropped recurring stream tokens.
+- `src/lib/db/repos/usageRepo.js`: add automatic time-based (30d) and count-capped (50,000 records) pruning on `usageHistory` table to prevent unbounded database/disk growth.
+- `docker-compose.yml`: add Docker json-file logging options (`max-size: 10m`, `max-file: 3`) across services.
+
 # v0.15.69 (2026-09-02)
 
 ## Feat: auto-combo sees dynamic-synced models (closes #374)

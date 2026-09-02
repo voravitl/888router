@@ -78,4 +78,15 @@ describe("pipeStreamWithHead (closes #349 investigation)", () => {
     const out = await collect(pipeStreamWithHead(fakeReader(chunks), null));
     expect(out.length).toBe(3);
   });
+
+  it("preserves non-consecutive duplicate tokens throughout the stream (spaces, keywords, punctuation)", async () => {
+    // Non-consecutive duplicate tokens (e.g. repeated spaces, keywords, code brackets)
+    // must NOT be dropped by global deduping.
+    const spaceChunk = enc("data: {\"choices\":[{\"delta\":{\"content\":\" \"}}]}\n\n");
+    const wordA = enc("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n");
+    const wordB = enc("data: {\"choices\":[{\"delta\":{\"content\":\"world\"}}]}\n\n");
+    const chunks = [wordA, spaceChunk, wordB, spaceChunk, wordA, enc("data: [DONE]\n\n")];
+    const out = await collect(pipeStreamWithHead(fakeReader(chunks), null));
+    expect(out.length).toBe(6);
+  });
 });
