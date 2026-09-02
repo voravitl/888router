@@ -220,6 +220,14 @@ export function getDynamicCapabilitiesSnapshot() {
   return new Map(DYNAMIC_CAPABILITIES_CACHE_SCOPED);
 }
 
+// Live accessor for the scoped cache. Read-only by convention — callers must
+// not write to the Map directly; use registerDynamicCapabilitiesScoped
+// instead. Exported so producers can hand a stable, identity-stable
+// reference to the auto-combo factory (review round-5 #10).
+export function getScopedDynamicCapabilities() {
+  return DYNAMIC_CAPABILITIES_CACHE_SCOPED;
+}
+
 // Read-only check used by tests and debug tooling.
 export function hasDynamicCapabilitiesSnapshot() {
   return DYNAMIC_CAPABILITIES_CACHE_SCOPED.size > 0;
