@@ -1,3 +1,11 @@
+# v0.15.71 (2026-09-02)
+
+## Feat: interactive Strategy Guide and help modal for all 10 load balancing options
+
+- `src/shared/components/StrategyHelpModal.js`: new comprehensive modal component explaining all 10 load balancing & failover strategies (`fallback`, `round-robin`, `cache-optimized`, `p2c`, `reset-aware`, `cost-optimized`, `headroom`, `least-used`, `random`, `fusion`) with category filters, keyword search, detailed mechanisms, and "Best For" guidance.
+- `src/app/(dashboard)/dashboard/combos/page.js`: add "Strategy Guide" button in page header and interactive help icon `(?)` next to every combo's strategy selector.
+- `src/shared/components/Badge.js`: add `purple` badge variant support.
+
 # v0.15.70 (2026-09-02)
 
 ## Fix: combo synced models selection, gateway stream dedup & log retention cleanup
