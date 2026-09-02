@@ -38,6 +38,7 @@ export { default as Tooltip } from "./Tooltip";
 export { default as ProviderInfoCard } from "./ProviderInfoCard";
 export { default as CapacityBadges } from "./CapacityBadges";
 export { default as ProviderMcpSetupModal } from "./ProviderMcpSetupModal";
+export { StrategyHelpModal, STRATEGY_DETAILS } from "./StrategyHelpModal";
 
 // Layouts
 export * from "./layouts";

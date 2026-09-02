@@ -5,7 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, StrategyHelpModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelContextWindows, resolveContextWindow } from "@/shared/hooks/useModelContextWindows";
 import { withClaudeCodeSuffix } from "@/shared/utils/claudeCodeModelId";
@@ -172,24 +172,68 @@ export default function CombosPage() {
     });
   };
 
+  const [showStrategyHelpModal, setShowStrategyHelpModal] = useState(false);
+  const [strategyHelpActiveId, setStrategyHelpActiveId] = useState(null);
+  const [targetComboForStrategySelect, setTargetComboForStrategySelect] = useState(null);
+
+  const handleOpenStrategyHelp = (strategyId = null, comboName = null) => {
+    setStrategyHelpActiveId(strategyId || "fallback");
+    setTargetComboForStrategySelect(comboName);
+    setShowStrategyHelpModal(true);
+  };
+
+  const handleSelectStrategyFromModal = (newStrategyId) => {
+    if (targetComboForStrategySelect) {
+      handleSetComboStrategy(targetComboForStrategySelect, { fallbackStrategy: newStrategyId });
+    }
+  };
+
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm text-text-muted mt-1">
-            Group models under one name, then pick a strategy per combo:
+            Group models under one name, then choose a load balancing & failover strategy per combo:
           </p>
-          <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
-            <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
-            <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
-            <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
-            <li><span className="font-medium text-text-main">Capability auto-switch (vision/PDF)</span> — sends image/PDF/audio requests to a model that supports them first</li>
-          </ul>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
+              <span>🥇 Fallback (Order)</span>
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
+              <span>🔄 Round Robin</span>
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
+              <span>🎯 Cache-Optimized</span>
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
+              <span>⚡ P2C</span>
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
+              <span>🧬 Fusion Panel</span>
+            </span>
+            <button
+              onClick={() => handleOpenStrategyHelp(null, null)}
+              className="text-primary hover:underline font-medium inline-flex items-center gap-0.5"
+            >
+              <span>View all 10 strategies &rarr;</span>
+            </button>
+          </div>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-          Create Combo
-        </Button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto shrink-0">
+          <Button
+            variant="secondary"
+            icon="help"
+            onClick={() => handleOpenStrategyHelp(null, null)}
+            className="w-full sm:w-auto whitespace-nowrap"
+            title="Load Balancing & Failover Strategy Guide"
+          >
+            Strategy Guide
+          </Button>
+          <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
+            Create Combo
+          </Button>
+        </div>
       </div>
 
       {/* Zero-config auto/* templates (OmniRoute parity) — call directly without saving */}
@@ -225,6 +269,7 @@ export default function CombosPage() {
               onDelete={() => handleDelete(combo.id)}
               strategy={comboStrategies[combo.name] || {}}
               onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
+              onOpenStrategyHelp={handleOpenStrategyHelp}
             />
           ))}
         </div>
@@ -265,6 +310,17 @@ export default function CombosPage() {
         message={confirmState?.message}
         variant="danger"
       />
+
+      {/* Strategy Help Modal */}
+      <StrategyHelpModal
+        isOpen={showStrategyHelpModal}
+        onClose={() => {
+          setShowStrategyHelpModal(false);
+          setTargetComboForStrategySelect(null);
+        }}
+        selectedStrategy={strategyHelpActiveId}
+        onSelectStrategy={targetComboForStrategySelect ? handleSelectStrategyFromModal : null}
+      />
     </div>
   );
 }
@@ -282,7 +338,7 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — fan-out panel + AI Judge synthesis 🧬" },
 ];
 
-function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], modelAliases = {}, copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], modelAliases = {}, copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, onOpenStrategyHelp }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
@@ -373,14 +429,30 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
 
         {/* Actions */}
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3 sm:shrink-0">
-          {/* Strategy selector — always visible */}
-          <div className="w-full sm:w-[200px]">
-            <Select
-              options={STRATEGY_OPTIONS}
-              value={current}
-              onChange={(e) => onSetStrategy({ fallbackStrategy: e.target.value })}
-              selectClassName="py-1.5 text-xs"
-            />
+          {/* Strategy selector with Help icon */}
+          <div className="flex items-center gap-1.5 w-full sm:w-[225px]">
+            <div className="flex-1 min-w-0">
+              <Select
+                options={STRATEGY_OPTIONS}
+                value={current}
+                onChange={(e) => onSetStrategy({ fallbackStrategy: e.target.value })}
+                selectClassName="py-1.5 text-xs"
+              />
+            </div>
+            {onOpenStrategyHelp && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenStrategyHelp(current, combo.name);
+                }}
+                className="size-7 rounded-lg text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center shrink-0 border border-transparent hover:border-border/60"
+                title="Strategy Guide & Details"
+                aria-label="Strategy Guide"
+              >
+                <span className="material-symbols-outlined text-[16px]">help</span>
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-1 sm:flex">
