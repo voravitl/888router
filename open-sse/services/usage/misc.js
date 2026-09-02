@@ -46,51 +46,56 @@ export async function getIflowUsage(accessToken) {
 
 /**
  * Ollama Cloud Usage
- * Calls https://ollama.com/api/usage with the API key (same pattern as xai).
- * Response: { limits: { monthly: { usage: 0.315, models: [...] } }, activity: { cost: "0.00000" } }
- * Plans:
- * - Free: Pay-as-you-go (no ceiling)
- * - Pro ($20/mo): $60 monthly credits
- * - Max ($100/mo): $300 monthly credits
- * - Team ($500/mo): $1,000 shared monthly credits
+ * Calls https://ollama.com/api/usage and https://ollama.com/api/me.
+ *
+ * KEY: limits.monthly.usage is a FRACTION (0.0–1.0), NOT a USD amount.
+ *   - Pro  ($20/mo) = $60  credits → used = 0.315 * 60  = $18.90
+ *   - Max  ($100/mo) = $300 credits → used = fraction * 300
+ *   - Team ($500/mo) = $1000 credits → used = fraction * 1000
+ *   - Free (pay-as-you-go): no ceiling; fraction * 0 → show fraction% as a progress indicator
+ *
+ * Plan map (from /api/me response.Plan field):
+ *   "pro" → $60, "max" → $300, "team" → $1000, else → 0 (free)
  */
 export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) {
   const token = apiKey || accessToken;
   if (!token) return { message: "Ollama API key not available." };
 
-  try {
-    const res = await proxyAwareFetch("https://ollama.com/api/usage", {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
+  // Calculate month-end reset (1st of next month UTC)
+  const now = new Date();
+  const nextMonthReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0));
+  const resetAt = nextMonthReset.toISOString();
 
-    if (res.status === 401 || res.status === 403) {
+  try {
+    // Fetch usage + user plan in parallel
+    const [usageRes, meRes] = await Promise.all([
+      proxyAwareFetch("https://ollama.com/api/usage", {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      }),
+      proxyAwareFetch("https://ollama.com/api/me", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: "{}",
+      }).catch(() => null),
+    ]);
+
+    if (usageRes.status === 401 || usageRes.status === 403) {
       return { message: "Ollama API key invalid or expired. Re-enter key in Settings." };
     }
 
-    let data = null;
-    if (res.ok) {
-      data = await res.json().catch(() => null);
-    }
+    const usageData = usageRes.ok ? await usageRes.json().catch(() => null) : null;
+    const meData    = meRes?.ok  ? await meRes.json().catch(() => null)     : null;
 
-    // Calculate month-end reset (1st of next month UTC)
-    const now = new Date();
-    const nextMonthReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0));
-    const resetAt = nextMonthReset.toISOString();
-
-    // Resolve plan label & monthly credit ceiling from providerSpecificData
-    const rawPlan = providerSpecificData?.plan || "Free";
-    const planNormalized = typeof rawPlan === "string" ? rawPlan.toLowerCase() : "free";
+    // Resolve plan: prefer /api/me response, fall back to providerSpecificData
+    const planRaw = (meData?.Plan || providerSpecificData?.plan || "free").toLowerCase();
     let monthlyCredits = 0;
     let planLabel = "Free (Pay-As-You-Go)";
-    if (planNormalized.includes("team")) { monthlyCredits = 1000; planLabel = "Team ($500/mo)"; }
-    else if (planNormalized.includes("max")) { monthlyCredits = 300; planLabel = "Max ($100/mo)"; }
-    else if (planNormalized.includes("pro")) { monthlyCredits = 60; planLabel = "Pro ($20/mo)"; }
+    if (planRaw.includes("team")) { monthlyCredits = 1000; planLabel = "Team ($500/mo)"; }
+    else if (planRaw.includes("max")) { monthlyCredits = 300;  planLabel = "Max ($100/mo)"; }
+    else if (planRaw.includes("pro")) { monthlyCredits = 60;   planLabel = "Pro ($20/mo)"; }
 
-    if (!data) {
+    if (!usageData) {
       // No live data — fall back to plan-only display
       const quotas = {};
       if (monthlyCredits > 0) {
@@ -106,45 +111,32 @@ export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) 
       };
     }
 
-    // Parse live API data
-    const monthlyUsed = parseFloat(data?.limits?.monthly?.usage ?? 0) || 0;
-    const activityCost = parseFloat(data?.activity?.cost ?? 0) || 0;
-
+    // limits.monthly.usage is a 0.0–1.0 FRACTION of the monthly credit ceiling
+    const usageFraction = parseFloat(usageData?.limits?.monthly?.usage ?? 0) || 0;
     const quotas = {};
 
     if (monthlyCredits > 0) {
-      // Paid plan: show used/total credits bar
-      const used = Math.min(monthlyUsed, monthlyCredits);
-      const remaining = Math.max(0, monthlyCredits - used);
+      // Convert fraction → actual USD
+      const usedUsd  = Math.round(usageFraction * monthlyCredits * 100) / 100;
+      const remaining = Math.max(0, monthlyCredits - usedUsd);
       quotas["Monthly Credits"] = {
         name: "Monthly Credits",
-        used: Math.round(used * 10000) / 10000,
+        used:  usedUsd,
         total: monthlyCredits,
         remainingPercentage: Math.round((remaining / monthlyCredits) * 100),
         unit: "USD",
         resetAt,
       };
     } else {
-      // Free tier: show monthly spend (pay-as-you-go, no ceiling)
-      quotas["Monthly Spend"] = {
-        name: "Monthly Spend",
-        used: Math.round(monthlyUsed * 10000) / 10000,
-        total: 0,           // 0 → no ceiling (unlimited bar)
-        remainingPercentage: 100,
-        unit: "USD",
+      // Free tier: show the fraction as a percentage (no dollar ceiling)
+      quotas["Monthly Usage"] = {
+        name: "Monthly Usage",
+        used:  Math.round(usageFraction * 100 * 100) / 100,   // convert to percent
+        total: 100,
+        remainingPercentage: Math.round((1 - usageFraction) * 100),
+        unit: "%",
         resetAt,
       };
-      // Show 4-week activity separately when it differs from monthly
-      if (activityCost > 0 && Math.abs(activityCost - monthlyUsed) > 0.0001) {
-        quotas["4-Week Activity"] = {
-          name: "4-Week Activity",
-          used: Math.round(activityCost * 10000) / 10000,
-          total: 0,
-          remainingPercentage: 100,
-          unit: "USD",
-          resetAt: null,
-        };
-      }
     }
 
     return { plan: planLabel, quotas };
