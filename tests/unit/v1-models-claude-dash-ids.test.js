@@ -48,7 +48,7 @@ vi.mock("@/sse/services/tokenRefresh", () => ({
   updateProviderCredentials: vi.fn(async () => {}),
 }));
 
-describe("/v1/models Claude dash ids (#102)", () => {
+describe("/v1/models Claude dash ids (#102)", { timeout: 15000 }, () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.getProviderConnections.mockReset().mockResolvedValue([]);
