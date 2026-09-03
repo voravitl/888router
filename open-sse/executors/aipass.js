@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS, resolveAipassHost } from "../config/providers.js";
+import { PROVIDERS } from "../config/providers.js";
 import {
   hasConnectedClients,
   BridgeJob,
@@ -8,7 +8,6 @@ import {
   advanceAipassConversation,
   parsePart,
 } from "../services/aipassBridge.js";
-import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // Extract last user message and image parts for AiPASS upstream
 function extractLastUserMessage(messages) {
@@ -50,6 +49,20 @@ function extractLastUserMessage(messages) {
   return { text: "", parts: [] };
 }
 
+// Poll hasConnectedClients until the extension's SSE reconnects or the window
+// closes. Aborting the request short-circuits the wait.
+async function waitForReconnect(windowMs, pollMs, signal) {
+  const deadline = Date.now() + windowMs;
+  let waited = 0;
+  while (Date.now() < deadline) {
+    if (signal?.aborted) return waited;
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    waited += pollMs;
+    if (hasConnectedClients()) return waited;
+  }
+  return waited;
+}
+
 export class AipassExecutor extends BaseExecutor {
   constructor(config = null) {
     super("aipass", config || PROVIDERS.aipass);
@@ -61,45 +74,30 @@ export class AipassExecutor extends BaseExecutor {
   }
 
   getBaseUrls() {
-    return [PROVIDERS.aipass?.transport?.baseUrl || "http://127.0.0.1:8787/v1"];
+    return ["bridge://aipass-hub"];
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    // Mode 1: Built-in Hub if Extension is connected directly to 888router
+  async execute({ model, body, stream, signal, log }) {
+    // The hub (extension SSE) is the only transport: the old standalone-bridge
+    // fallback at 127.0.0.1:8787 collided with the headroom container port and
+    // ECONNREFUSED'd 502s whenever the extension's SSE was mid-reconnect.
     if (hasConnectedClients()) {
       return this.executeViaBridgeHub({ model, body, stream, signal, log });
     }
 
-    // Mode 2: Standalone Bridge fallback on http://127.0.0.1:8787
-    const host = resolveAipassHost(credentials);
-    const targetUrl = `${host}/v1/chat/completions`;
-    log?.info?.("AIPASS", `No extension connected to 888router; falling back to standalone bridge at ${targetUrl}`);
+    // The extension's MV3 worker cycles its SSE every ~4 minutes; wait briefly
+    // for the reconnect instead of failing the request outright.
+    const RECONNECT_POLL_MS = 500;
+    const RECONNECT_WINDOW_MS = 4000;
+    const waited = await waitForReconnect(RECONNECT_WINDOW_MS, RECONNECT_POLL_MS, signal);
+    if (hasConnectedClients()) {
+      log?.info?.("AIPASS", `Extension reconnected after ${waited}ms; proceeding via hub`);
+      return this.executeViaBridgeHub({ model, body, stream, signal, log });
+    }
 
-    const payload = {
-      ...body,
-      model,
-      stream: !!stream,
-    };
-
-    const token = credentials?.apiKey || credentials?.providerSpecificData?.token || process.env.AIPASS_BRIDGE_TOKEN;
-    const headers = {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-    };
-
-    const upstreamResp = await proxyAwareFetch(targetUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-      signal,
-    }, proxyOptions);
-
-    return {
-      response: upstreamResp,
-      url: targetUrl,
-      headers: { "Content-Type": stream ? "text/event-stream; charset=utf-8" : "application/json" },
-      transformedBody: payload,
-    };
+    throw new Error(
+      "AiPASS Chrome extension not connected — open de.aipass.net/chat and check the bridge popup (no standalone fallback: port 8787 belongs to headroom)"
+    );
   }
 
   async executeViaBridgeHub({ model, body, stream, signal, log }) {

@@ -4,6 +4,7 @@ import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { hasConnectedClients } from "open-sse/services/aipassBridge.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -701,6 +702,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetch(`${host}/api/tags`);
         return { valid: res.ok, error: res.ok ? null : `Ollama not reachable at ${host}` };
       }
+      case "aipass": {
+        if (hasConnectedClients()) {
+          return { valid: true, error: null };
+        }
+        return {
+          valid: false,
+          error: "AiPASS Chrome extension not connected — load the extension and open de.aipass.net/chat",
+        };
+      }
       case "deepgram": {
         const res = await fetchWithConnectionProxy("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -872,6 +882,19 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
  * Test a single connection by ID, update DB, and return result.
  */
 export async function testSingleConnection(id) {
+  // Virtual noAuth connections (aipass-virtual) have no DB row — test them by
+  // whether the extension hub currently has a client attached, without the
+  // DB round-trip that would 404 on a synthesized id.
+  if (id === "aipass-virtual") {
+    const valid = hasConnectedClients();
+    return {
+      valid,
+      error: valid ? null : "AiPASS Chrome extension not connected — open de.aipass.net/chat",
+      latencyMs: 0,
+      testedAt: new Date().toISOString(),
+    };
+  }
+
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
 

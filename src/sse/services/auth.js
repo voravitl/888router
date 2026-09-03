@@ -40,6 +40,22 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // excluded, resolve only that one (avoids N+1 sequential resolves).
     // Specific pool → legacy "noauth" id. Returns null when none eligible.
     async function pickVirtualNoAuthConnection(providerId, excludeSet) {
+      if (providerId === "aipass" || providerId === "ollama-local") {
+        return {
+          id: "noauth",
+          connectionId: "noauth",
+          connectionName: "Local Bridge",
+          isActive: true,
+          accessToken: "public",
+          providerSpecificData: {
+            connectionProxyEnabled: false,
+            connectionProxyUrl: "",
+            connectionNoProxy: "",
+            connectionProxyPoolId: null,
+            vercelRelayUrl: "",
+          },
+        };
+      }
       const settings = await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
       const specificPoolId = override.proxyPoolId || "";
