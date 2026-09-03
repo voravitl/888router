@@ -4,6 +4,7 @@ import {
   ALIAS_TO_ID,
   getProviderAlias,
   isAnthropicCompatibleProvider,
+  isPublicModelsProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
@@ -469,6 +470,23 @@ export async function buildModelsList(kindFilter) {
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
       activeConnectionByProvider.set(conn.provider, conn);
+    }
+  }
+
+  // noAuth zero-config providers (aipass, …) have no DB connection row, so the
+  // provider loop above never sees them and their models vanish from
+  // /v1/models. Inject a virtual active connection per public/noAuth provider —
+  // same pattern as the Dashboard's /api/providers injection. The static
+  // branch below (connections.length === 0) reads PROVIDER_MODELS directly and
+  // is untouched by this.
+  for (const providerId of Object.keys(AI_PROVIDERS)) {
+    if (isPublicModelsProvider(providerId) && !activeConnectionByProvider.has(providerId)) {
+      activeConnectionByProvider.set(providerId, {
+        id: `${providerId}-virtual`,
+        provider: providerId,
+        isActive: true,
+        providerSpecificData: { virtual: true },
+      });
     }
   }
 

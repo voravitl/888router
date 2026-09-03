@@ -4,6 +4,7 @@ import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { hasConnectedClients } from "open-sse/services/aipassBridge.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -700,6 +701,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const host = resolveOllamaLocalHost(connection);
         const res = await fetch(`${host}/api/tags`);
         return { valid: res.ok, error: res.ok ? null : `Ollama not reachable at ${host}` };
+      }
+      case "aipass": {
+        if (hasConnectedClients()) {
+          return { valid: true, error: null };
+        }
+        return {
+          valid: false,
+          error: "AiPASS Chrome extension not connected — load the extension and open de.aipass.net/chat",
+        };
       }
       case "deepgram": {
         const res = await fetchWithConnectionProxy("https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${connection.apiKey}` } }, effectiveProxy);

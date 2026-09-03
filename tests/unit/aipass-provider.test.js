@@ -158,30 +158,55 @@ describe("AiPASS TH Provider & Bridge Test Suite", () => {
     expect(hasConnectedClients()).toBe(false);
   });
 
-  it("conforms AipassExecutor return contract: { response, url, headers, transformedBody }", async () => {
+  it("executor fails fast with a clear error when no extension is connected (no standalone fallback)", async () => {
     const executor = new AipassExecutor();
 
-    const result = await executor.execute({
+    await expect(executor.execute({
       model: "claude-sonnet-5@default",
       body: { messages: [{ role: "user", content: "hello" }] },
       stream: false,
-      credentials: {},
       signal: null,
-    });
+    })).rejects.toThrow(/AiPASS Chrome extension not connected/);
 
-    expect(result).toHaveProperty("response");
-    expect(result).toHaveProperty("url");
-    expect(result).toHaveProperty("headers");
-    expect(result).toHaveProperty("transformedBody");
-    expect(result.response.status).toBe(200);
+    // The dead 8787 fallback must not fire at all.
+    expect(mockProxyAwareFetch).not.toHaveBeenCalled();
+  });
 
-    const data = await result.response.json();
-    expect(data.choices[0].message.content).toBe("Standalone bridge reply");
-    expect(mockProxyAwareFetch).toHaveBeenCalledWith(
-      expect.stringContaining("http://127.0.0.1:8787/v1/chat/completions"),
-      expect.objectContaining({ method: "POST" }),
-      null
-    );
+  it("executor uses the hub as its only transport when an extension is connected", async () => {
+    const client = {
+      id: "client-hub",
+      send: (event, data) => {
+        if (event !== "job") return;
+        const { jobId, kind } = data;
+        if (kind === "loader") {
+          setTimeout(() => handleExtLoader({ jobId, raw: "[]" }), 5);
+        } else if (kind === "create") {
+          setTimeout(() => handleExtLoader({
+            jobId,
+            raw: JSON.stringify([{ conversationId: "conv-1234567890123456" }]),
+          }), 5);
+        } else if (kind === "chat") {
+          setTimeout(() => {
+            handleExtChunk({ jobId, part: { kind: "text", text: "Hub answer text" } });
+            handleExtDone({ jobId, finishReason: "stop" });
+          }, 5);
+        }
+      },
+    };
+    const unregister = registerExtClient(client);
+    try {
+      const executor = new AipassExecutor();
+      const result = await executor.execute({
+        model: "claude-sonnet-5@default",
+        body: { messages: [{ role: "user", content: "hello" }] },
+        stream: false,
+        signal: null,
+      });
+      expect(result.url).toBe("bridge://aipass-hub");
+      expect(mockProxyAwareFetch).not.toHaveBeenCalled();
+    } finally {
+      unregister();
+    }
   });
 
   it("aborts BridgeJob when abort signal is triggered", async () => {
@@ -477,10 +502,34 @@ describe("AiPASS TH Provider & Bridge Test Suite", () => {
   });
 
   it("parses quota and credit status from loader JSON", async () => {
-    const usage = await getAipassUsage("dummy", {});
-    expect(usage.plan).toBe("AiPASS Citizen Free");
-    expect(usage.quotas.credits.total).toBe(10000);
-    expect(usage.quotas.credits.used).toBe(1500);
-    expect(usage.quotas.credits.remainingPercentage).toBe(85);
+    const client = {
+      id: "client-quota",
+      send: (event, data) => {
+        if (event === "job" && data.kind === "loader") {
+          setTimeout(() => handleExtLoader({
+            jobId: data.jobId,
+            raw: JSON.stringify({
+              success: true,
+              creditStatusFetchedAt: Date.now(),
+              creditStatus: {
+                periodEndsAt: "2026-09-30T23:59:59Z",
+                creditsDecimals: 6,
+                credits: { limit: "10000000000", used: "1500000000", available: "8500000000" },
+              },
+            }),
+          }), 5);
+        }
+      },
+    };
+    const unregister = registerExtClient(client);
+    try {
+      const usage = await getAipassUsage();
+      expect(usage.plan).toBe("AiPASS Citizen Free");
+      expect(usage.quotas.credits.total).toBe(10000);
+      expect(usage.quotas.credits.used).toBe(1500);
+      expect(usage.quotas.credits.remainingPercentage).toBe(85);
+    } finally {
+      unregister();
+    }
   });
 });

@@ -17,7 +17,7 @@ const aipassConfig = {
     textIcon: "AiPASS",
     website: "https://de.aipass.net/chat",
     notice: {
-      text: "Free access to 30+ pro AI models (Claude Sonnet 5, Gemini 3.1 Flash Lite, GPT-Image-2) for Thai citizens via AiPASS Browser Extension or Standalone Bridge.",
+      text: "Free access to 30+ pro AI models (Claude Sonnet 5, Gemini 3.1 Flash Lite, GPT-Image-2) for Thai citizens via the AiPASS Chrome Extension.",
       apiKeyUrl: "https://de.aipass.net/chat",
     },
   },
@@ -25,7 +25,9 @@ const aipassConfig = {
   authType: "none",
   authHint: "Zero credentials stored. Connects via AiPASS Chrome Extension to your logged-in de.aipass.net tab.",
   transport: {
-    baseUrl: "http://127.0.0.1:8787/v1",
+    // Extension SSE hub inside 888router (/ext/events) — not an HTTP base URL.
+    // A 127.0.0.1:8787 default here collided with the headroom container port.
+    baseUrl: "bridge://aipass-hub",
     format: "openai",
     authType: "none",
   },

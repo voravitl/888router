@@ -14,6 +14,43 @@ let connected = false;
 let lastError = '';
 const jobTabs = new Map();
 
+// The content script's keepalive port only exists while a de.aipass.net tab is
+// open. With no tab the worker is evicted, the SSE stream dies with it, and the
+// bridge reports the extension as gone until the one-minute alarm revives it —
+// so an offscreen document holds a port of its own, which is a context Chrome
+// does not discard.
+//
+// One in-flight creation at a time: hasDocument() then createDocument() is
+// check-then-act, and this is called from the alarm, from connect(), and on a
+// port dropping. Same shape as connect() and the model refresh below.
+let offscreenSetup = null;
+
+function ensureOffscreenDocument() {
+  if (typeof chrome.offscreen === 'undefined') return Promise.resolve();
+  if (offscreenSetup) return offscreenSetup;
+  offscreenSetup = (async () => {
+    try {
+      if (await chrome.offscreen.hasDocument?.()) return;
+      await chrome.offscreen.createDocument({
+        url: 'offscreen.html',
+        // The enum has no value for "keep the worker alive", which is the only
+        // thing this document does. BLOBS is a stand-in; nothing here handles a
+        // blob, and the justification says what is really going on.
+        reasons: ['BLOBS'],
+        justification: 'Holds a port open so the service worker survives while no aipass tab is open',
+      });
+    } catch (err) {
+      // Losing a creation race is the outcome we wanted anyway.
+      if (!/single offscreen document/i.test(String(err?.message ?? err))) {
+        console.warn('[aipass-bg] offscreen document:', err);
+      }
+    } finally {
+      offscreenSetup = null;
+    }
+  })();
+  return offscreenSetup;
+}
+
 const bridgeUrl = async () => {
   try {
     const res = await chrome.storage.local.get('bridgeUrl');
@@ -116,6 +153,8 @@ async function connect() {
   const signal = controller.signal;
   const cycle = setTimeout(() => controller?.abort(), CYCLE_MS);
 
+  ensureOffscreenDocument();
+
   try {
     const res = await fetch(`${await bridgeUrl()}/ext/events`, {
       headers: { accept: 'text/event-stream' },
@@ -159,12 +198,18 @@ async function connect() {
   }
 }
 
-// A content script holds this port open so Chrome does not evict the worker.
+// A content script and the offscreen document each hold one of these open, which
+// is what stops Chrome evicting the worker.
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'keepalive') return;
-  connect(); // a de.aipass.net tab just appeared (or the worker just woke)
+  if (port.name !== 'keepalive' && port.name !== 'offscreen-keepalive') return;
+  connect(); // a tab just appeared, or the worker just woke
   port.onMessage.addListener(() => {});
-  port.onDisconnect.addListener(() => { void chrome.runtime.lastError; });
+  port.onDisconnect.addListener(() => {
+    void chrome.runtime.lastError;
+    // The content port cycles by design every four minutes; the offscreen one
+    // dropping means the document itself went away.
+    if (port.name === 'offscreen-keepalive') ensureOffscreenDocument();
+  });
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -192,10 +237,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'reconnect') { controller?.abort(); connect(); sendResponse({ ok: true }); return true; }
 });
 
-// The worker can be evicted at any time; the alarm brings it back and the
-// connect() guard makes a duplicate call harmless.
+// The worker can still be evicted; the alarm brings it back, and the connect()
+// guard makes a duplicate call harmless.
 chrome.alarms.create('keepalive', { periodInMinutes: 1 });
-chrome.alarms.onAlarm.addListener(() => connect());
-chrome.runtime.onStartup.addListener(() => connect());
-chrome.runtime.onInstalled.addListener(() => connect());
+chrome.alarms.onAlarm.addListener(() => {
+  ensureOffscreenDocument();
+  connect();
+});
+chrome.runtime.onStartup.addListener(() => {
+  ensureOffscreenDocument();
+  connect();
+});
+chrome.runtime.onInstalled.addListener(() => {
+  ensureOffscreenDocument();
+  connect();
+});
+// Initialize immediately
+ensureOffscreenDocument();
 connect();
