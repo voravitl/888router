@@ -1,3 +1,13 @@
+# v0.15.75 (2026-09-03)
+
+## Feat: AiPASS extension download endpoint + dashboard install guidance
+
+- `src/app/api/aipass-extension/route.js`: `GET /api/aipass-extension` streams `public/aipass-extension` as `aipass-bridge-extension.zip`, built in-memory with `node:zlib` (deflate/store per entry + crc32) — no new dependency. 404 when the assets dir is missing, 500 when `manifest.json` is absent. Stays under `/api` deny-by-default: requires dashboard auth.
+- `src/app/api/providers/route.js`: the synthesized `aipass-virtual` card's disconnect error now names the download path and the chrome://extensions Load-unpacked steps (written to `lastError`, the field ConnectionRow renders).
+- `open-sse/providers/registry/aipass.js`: `authHint` mentions the same download path.
+- `tests/unit/aipass-extension-download.test.js`: parses the produced zip structurally (local headers, central directory, EOCD) and round-trips payloads through zlib inflate; covers the missing-dir and missing-manifest cases.
+- `tests/translator/__snapshots__/golden-url-header.test.js.snap`: refreshed for the 0.15.74 version bump (version strings only).
+
 # v0.15.74 (2026-09-03)
 
 ## Fix: AiPASS hub reliability — offscreen keepalive, fail-fast executor, virtual /v1/models injection
