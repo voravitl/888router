@@ -97,14 +97,15 @@ function findValue(node, key) {
   return null;
 }
 
-function extractModels(decoded) {
+export function extractModels(decoded) {
   const out = [];
   const walk = (v) => {
     if (Array.isArray(v)) return v.forEach(walk);
     if (!v || typeof v !== "object") return;
     const id = v.id ?? v.modelId;
     if (typeof id === "string" && id && !out.some((m) => m.id === id)) {
-      const kind = kindOf(id);
+      const rawKind = kindOf(id);
+      const kind = rawKind === "chat" || rawKind === "research" ? "llm" : rawKind;
       out.push({
         id,
         name: v.displayName ?? v.name ?? id,
@@ -117,7 +118,7 @@ function extractModels(decoded) {
         selectable: v.selectable !== false,
         isDefault: v.isDefault === true,
         thinking: Array.isArray(v.thinkingConfig?.supportedLevels) ? v.thinkingConfig.supportedLevels : null,
-        media: kind !== "chat" && kind !== "research",
+        media: rawKind !== "chat" && rawKind !== "research",
       });
     }
     Object.values(v).forEach(walk);

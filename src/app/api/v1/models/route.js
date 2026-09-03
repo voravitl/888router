@@ -100,6 +100,16 @@ const LIVE_MODEL_RESOLVERS = {
       return null;
     }
   },
+  aipass: async () => {
+    try {
+      const { listAipassModels } = await import("open-sse/services/aipassBridge.js");
+      const list = await listAipassModels();
+      const models = (list || []).map((m) => ({ id: m.id, name: m.name || m.id, kind: m.kind, type: m.kind }));
+      return models.length ? { models } : null;
+    } catch {
+      return null;
+    }
+  },
 
   // Generic OpenAI-compatible resolver for every provider whose registry entry
   // sets `modelsFetcher.type === "openai"`: bai, venice, gmi, vercel-ai-gateway,
