@@ -23,7 +23,7 @@ const aipassConfig = {
   },
   category: "freeTier",
   authType: "none",
-  authHint: "Zero credentials stored. Connects via AiPASS Chrome Extension to your logged-in de.aipass.net tab.",
+  authHint: "Zero credentials stored. Install the bridge extension from /api/aipass-extension (Dashboard → Providers → AiPASS), then open your logged-in de.aipass.net tab.",
   transport: {
     // Extension SSE hub inside 888router (/ext/events) — not an HTTP base URL.
     // A 127.0.0.1:8787 default here collided with the headroom container port.
