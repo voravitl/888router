@@ -1,3 +1,23 @@
+# v0.15.80 (2026-09-04)
+
+## Fix: OpenCode free cascade quarantine, Muse Spark responses API, Claude defer_loading cache anchor, and 3-Layer SSRF hardening
+
+- `open-sse/config/errorConfig.js`: Added exact `modelError: true` matches for `"endpoint is unavailable"` and `"model is unavailable"`. Prevents dead/unavailable free models (e.g. `mimo-v2.5-free`, `big-pickle`) from quarantining healthy proxy pools and failing downstream combos. Removed broad `"upstream request failed"` to prevent masking relay proxy network errors.
+- `open-sse/executors/opencode.js` & `open-sse/config/providerModels.js`: Routed `muse-spark-1.2-contributor-free` and `muse-spark-1.3-contributor-free` to OpenCode Zen `/zen/v1/responses` endpoint with normalized `reasoning` (`effort`, `summary: "auto"`) and `max_output_tokens`. Sanitized message contents before responses check.
+- `open-sse/handlers/chatCore/requestDetail.js`: Added `cached_tokens` extractors for OpenAI Responses API format usage data.
+- `open-sse/translator/formats/claude.js`: Added `lastCacheableToolIndex` to anchor 1h prompt cache breakpoint on the last cache-eligible tool, skipping MCP `defer_loading: true` tools. Prevents Anthropic 400 rejection (`Tools defer_loading cannot use prompt caching`).
+- `open-sse/translator/concerns/promptCache.js`: `injectClaudePromptCache` now strips existing `cache_control` from `defer_loading: true` tools and uses `lastCacheableToolIndex` to ensure no deferred tools receive cache breakpoints.
+- `open-sse/handlers/chatCore.js`: Enforced `anchorClaudeCache(translatedBody)` whenever `finalFormat === "claude"`, safeguarding all Claude destinations (`anthropic`, `cc`, `kr`, `kilo`, `iflow`).
+- `open-sse/providers/capabilities.js`: Aligned `*muse-spark*` pattern capabilities to explicit text-only attributes (`vision: false`, `pdf: false`, `audioInput: false`, `videoInput: false`).
+- `src/shared/components/NoAuthProxyCard.js`, `src/sse/services/auth.js`, `src/lib/network/connectionProxy.js`: Added `DIRECT_PROXY_VALUE = "__direct__"` support so selecting Direct Connection returns a clean local connection without proxy instead of `null`.
+- `src/shared/utils/ssrfGuard.js`: Hardened 3-layer SSRF protections:
+  - Layer 1: Protocol enforcement (`http:`, `https:` only) and 6to4 private IPv4 range (`2002::/16`) blocking.
+  - Layer 2: `assertPublicUrlResolved` validates protocol and literal host before DNS lookup, blocking `nip.io`/`sslip.io` and private DNS resolutions.
+  - Layer 3: `fetchPublic` manually re-validates every redirect hop against `assertPublicUrlResolved` with bounded redirect count.
+- `open-sse/handlers/search/callers.js` & `open-sse/handlers/search/index.js`: `resolveBaseUrl` is now async and calls `assertPublicUrlResolved` on client overrides. `index.js` uses `fetchPublic` for overrides and public APIs with 400 Bad Request error mapping for blocked SSRF targets.
+- `src/app/api/v1/models/[...model]/route.js`: Support OpenAI-compatible individual model lookups with provider slashes (ported from upstream #3588).
+- `tests/unit/`: Added/updated regression suites covering SSRF guard hardening, search SSRF integration, defer_loading cache control pipeline, proxy pool quarantine, OpenCode Muse Spark responses format, and model lookup.
+
 # v0.15.79 (2026-09-03)
 
 ## Feat: Combo model picker UI/UX Pro Max upgrade (Provider & Context Filters, 40x faster rendering)
