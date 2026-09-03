@@ -1,3 +1,14 @@
+# v0.15.76 (2026-09-03)
+
+## Fix: AiPASS live model sync via extension bridge in providers models route
+
+- `src/app/api/providers/[id]/models/route.js`: add dedicated handler for `aipass` (and aliases `ap`, `aipass-th`, `aipass-bridge`) to fetch live models from `de.aipass.net` through the connected Chrome extension bridge (`listAipassModels({ force: true })`) and merge with missing static seeds; resolve virtual connection ID `aipass-virtual` without 404; prevent `thinking: null` from poisoning dynamic capabilities as `reasoning: false`; do not stamp `syncedModels` on disconnected static fallback.
+- `open-sse/services/aipassBridge.js`: `extractModels` remaps `chat` and `research` model kinds to standard `llm` kind; validates candidates (`displayName`, `name`, `modelId`, `provider`, `thinkingConfig`, `isFreeCredit`) before extracting to prevent arbitrary objects with `id` from entering the model catalogue.
+- `src/app/(dashboard)/dashboard/providers/[id]/page.js`: model kind filter accepts `llm`, `chat`, and `research`; `findSynced` checks `public:${providerId}:${modelId}` and `aipass-virtual:${modelId}` so sync timestamps display properly.
+- `src/app/api/v1/models/route.js`: add `aipass` live model resolver to `LIVE_MODEL_RESOLVERS` merging live and static models; add `video` and `music` to `MODEL_TYPE_TO_KIND` to preserve media types.
+- `tests/unit/aipass-models-route.test.js` & `tests/unit/aipass-v1-models.test.js`: add full unit test suites covering live bridge sync, `aipass-virtual` route resolution, disconnected fallback without stamping, capability reasoning safety, and `/v1/models` live catalogue integration.
+- `tests/translator/__snapshots__/golden-url-header.test.js.snap`: refreshed for the 0.15.76 version bump.
+
 # v0.15.75 (2026-09-03)
 
 ## Feat: AiPASS extension download endpoint + dashboard install guidance
