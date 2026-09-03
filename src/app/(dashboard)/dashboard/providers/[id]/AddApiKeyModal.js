@@ -36,6 +36,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
+    ollamaResetDay: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -53,24 +54,28 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
   const buildProviderSpecificData = () => {
+    const psd = {};
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
-      return { baseUrl: formData.ollamaHostUrl.trim() };
+      psd.baseUrl = formData.ollamaHostUrl.trim();
+    } else if (provider === "ollama") {
+      const parsedDay = parseInt(formData.ollamaResetDay, 10);
+      if (Number.isInteger(parsedDay) && parsedDay >= 1 && parsedDay <= 31) {
+        psd.resetDay = parsedDay;
+      }
     }
     if (isAzure) {
-      return {
-        azureEndpoint: azureData.azureEndpoint,
-        apiVersion: azureData.apiVersion,
-        deployment: azureData.deployment,
-        organization: azureData.organization,
-      };
+      psd.azureEndpoint = azureData.azureEndpoint;
+      psd.apiVersion = azureData.apiVersion;
+      psd.deployment = azureData.deployment;
+      psd.organization = azureData.organization;
     }
     if (isCloudflareAi) {
-      return { accountId: cloudflareData.accountId };
+      psd.accountId = cloudflareData.accountId;
     }
     if (providerRegions && region) {
-      return { region };
+      psd.region = region;
     }
-    return undefined;
+    return Object.keys(psd).length > 0 ? psd : undefined;
   };
 
   const handleValidate = async () => {
@@ -254,6 +259,18 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               </>
             )}
           </p>
+        )}
+        {provider === "ollama" && !formData.ollamaHostUrl.trim() && (
+          <Input
+            label="Billing Cycle Reset Day (1-31)"
+            type="number"
+            min="1"
+            max="31"
+            value={formData.ollamaResetDay}
+            onChange={(e) => setFormData({ ...formData, ollamaResetDay: e.target.value })}
+            placeholder="17"
+            hint="Optional: Day of month when monthly credits refresh (e.g. 17 if website displays 'Resets in 2 weeks')"
+          />
         )}
         {providerRegions && (
           <Select

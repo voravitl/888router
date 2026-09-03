@@ -29,6 +29,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [cloudflareData, setCloudflareData] = useState({
     accountId: connection?.providerSpecificData?.accountId || "",
   });
+  const [ollamaData, setOllamaData] = useState({
+    resetDay: connection?.providerSpecificData?.resetDay || connection?.providerSpecificData?.billingResetDay || "",
+  });
   const [region, setRegion] = useState(() => {
     const providerCfg = AI_PROVIDERS?.[connection?.provider];
     return connection?.providerSpecificData?.region || providerCfg?.defaultRegion || providerCfg?.regions?.[0]?.id || "";
@@ -59,6 +62,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     if (connection?.provider === "cloudflare-ai" && connection?.providerSpecificData) {
       setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
     }
+    if (connection?.provider === "ollama") {
+      setOllamaData({
+        resetDay: connection?.providerSpecificData?.resetDay || connection?.providerSpecificData?.billingResetDay || "",
+      });
+    }
     const providerCfg = AI_PROVIDERS?.[connection?.provider];
     if (providerCfg?.regions) {
       const savedRegion = connection?.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg?.regions[0]?.id || "";
@@ -73,6 +81,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isOllama = connection?.provider === "ollama";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -167,21 +176,38 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         }
       }
       
-      // Add Azure-specific data if this is an Azure connection
+      let psd = { ...((connection?.providerSpecificData) || {}) };
+      let hasCustomPsd = false;
+
       if (isAzure) {
-        updates.providerSpecificData = {
-          azureEndpoint: azureData.azureEndpoint,
-          apiVersion: azureData.apiVersion,
-          deployment: azureData.deployment,
-          organization: azureData.organization,
-        };
+        psd.azureEndpoint = azureData.azureEndpoint;
+        psd.apiVersion = azureData.apiVersion;
+        psd.deployment = azureData.deployment;
+        psd.organization = azureData.organization;
+        hasCustomPsd = true;
       }
       if (isCloudflareAi) {
-        updates.providerSpecificData = { accountId: cloudflareData.accountId };
+        psd.accountId = cloudflareData.accountId;
+        hasCustomPsd = true;
+      }
+      if (isOllama && !connection?.providerSpecificData?.baseUrl) {
+        const parsedResetDay = parseInt(ollamaData.resetDay, 10);
+        if (Number.isInteger(parsedResetDay) && parsedResetDay >= 1 && parsedResetDay <= 31) {
+          psd.resetDay = parsedResetDay;
+        } else {
+          delete psd.resetDay;
+        }
+        delete psd.billingResetDay;
+        hasCustomPsd = true;
       }
       // Persist updated region for region-aware providers
       if (providerRegions && region) {
-        updates.providerSpecificData = buildRegionSpecificData();
+        psd.region = region;
+        hasCustomPsd = true;
+      }
+
+      if (hasCustomPsd) {
+        updates.providerSpecificData = psd;
       }
       
       await onSave(updates);
@@ -282,6 +308,19 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
+          />
+        )}
+
+        {isOllama && !connection?.providerSpecificData?.baseUrl && (
+          <Input
+            label="Billing Cycle Reset Day (1-31)"
+            type="number"
+            min="1"
+            max="31"
+            value={ollamaData.resetDay}
+            onChange={(e) => setOllamaData({ ...ollamaData, resetDay: e.target.value })}
+            placeholder="17"
+            hint="Day of month when monthly credits refresh (e.g. 17 if website displays 'Resets in 2 weeks')"
           />
         )}
 

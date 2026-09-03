@@ -45,6 +45,46 @@ export async function getIflowUsage(accessToken) {
 }
 
 /**
+ * Calculate the next monthly reset timestamp based on the billing cycle reset day (1-31).
+ * If today's day-of-month (UTC) is before resetDay, it resets in the current month.
+ * If today's day-of-month (UTC) is on or after resetDay, it resets in the next month.
+ * Clamps days to month bounds (e.g. day 31 in a 30-day month resets on the 30th).
+ * Note: Assumes credit refresh instant is 00:00:00 UTC on the billing day.
+ *
+ * @param {number|string} resetDay - Day of month (1-31), defaults to 1.
+ * @param {Date} [fromDate] - Reference date, defaults to current time.
+ * @returns {Date}
+ */
+export function calculateNextMonthlyReset(resetDay = 1, fromDate = new Date()) {
+  const parsedDay = parseInt(resetDay, 10);
+  const day = Number.isInteger(parsedDay) ? Math.max(1, Math.min(31, parsedDay)) : 1;
+
+  const year = fromDate.getUTCFullYear();
+  const month = fromDate.getUTCMonth();
+  const currentDay = fromDate.getUTCDate();
+
+  // Effective reset day in the current month (clamped to max days of current month)
+  const currentMonthDays = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const effectiveDayThisMonth = Math.min(day, currentMonthDays);
+
+  let targetYear = year;
+  let targetMonth = month;
+
+  if (currentDay >= effectiveDayThisMonth) {
+    targetMonth += 1;
+    if (targetMonth > 11) {
+      targetMonth = 0;
+      targetYear += 1;
+    }
+  }
+
+  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const targetDay = Math.min(day, daysInTargetMonth);
+
+  return new Date(Date.UTC(targetYear, targetMonth, targetDay, 0, 0, 0));
+}
+
+/**
  * Ollama Cloud Usage
  * Calls https://ollama.com/api/usage and https://ollama.com/api/me.
  *
@@ -61,10 +101,12 @@ export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) 
   const token = apiKey || accessToken;
   if (!token) return { message: "Ollama API key not available." };
 
-  // Calculate month-end reset (1st of next month UTC)
-  const now = new Date();
-  const nextMonthReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0));
-  const resetAt = nextMonthReset.toISOString();
+  // Calculate next monthly billing reset
+  // Ollama monthly usage credits refresh monthly on the subscription start day.
+  // Respect user-configured resetDay or billingResetDay from providerSpecificData.
+  const resetDay = providerSpecificData?.resetDay || providerSpecificData?.billingResetDay || 1;
+  const nextReset = calculateNextMonthlyReset(resetDay);
+  const resetAt = nextReset.toISOString();
 
   try {
     // Fetch usage + user plan in parallel
