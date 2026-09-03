@@ -1,3 +1,11 @@
+# v0.15.78 (2026-09-03)
+
+## Fix: Antigravity tool schema array items normalization & 9-free combo MiniMax M3
+
+- `open-sse/translator/formats/gemini.js`: add schema-aware `walkSchemaNodes` and `ensureArrayItems` to clean and normalize JSON Schema array definitions for Google Antigravity compatibility. Resolves Google 400 `GenerateContentRequest.tools[0].function_declarations[1].parameters.properties[query].properties[where].items.items: missing field` by ensuring all array schemas carry a valid non-empty `items` schema all the way down. Prevents property map collision when a parameter is named `items` by only traversing schema nodes rather than dictionary maps. Normalizes tuple schemas (`items: [...]` or draft 2020-12 `prefixItems: [...]`) into single schema objects, and strips unsupported array validation keywords (`prefixItems`, `uniqueItems`, `additionalItems`, `unevaluatedItems`, `contains`, `minContains`, `maxContains`).
+- `tests/unit/antigravity-schema-array-items.test.js`: add unit test suite covering 2D/3D nested array schemas, empty `items`, tuple array normalization, `prefixItems` harvesting, `properties.items` map protection, and unsupported keyword stripping.
+- `combos`: updated live `9-free` combo member models to place verified working MiniMax M3 free endpoints (`openrouter/minimax/minimax-m3:free`, `kgw/minimax/minimax-m3:free`, `gmi/MiniMaxAI/MiniMax-M3`, `openrouter/openrouter/free`) ahead of depleted balance endpoints.
+
 # v0.15.77 (2026-09-03)
 
 ## Fix: Antigravity generic dynamic upstream model mapping (non-hardcoded)
