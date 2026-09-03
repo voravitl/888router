@@ -87,7 +87,7 @@ export async function GET() {
         provider: "aipass",
         name: "AiPASS TH (Chrome Extension Bridge)",
         isActive: true,
-        testStatus: extCount > 0 ? "valid" : "error",
+        testStatus: extCount > 0 ? "active" : "error",
         testError: extCount > 0 ? null : "Chrome Extension not connected — load extension and open de.aipass.net/chat tab",
         providerSpecificData: {
           virtual: true,
