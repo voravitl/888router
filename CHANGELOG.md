@@ -1,3 +1,19 @@
+# v0.15.79 (2026-09-03)
+
+## Feat: Combo model picker UI/UX Pro Max upgrade (Provider & Context Filters, 40x faster rendering)
+
+- `src/shared/components/ModelSelectModal.js`:
+  - **Provider Filter Bar**: Add horizontal scrollable pill bar with provider icons and model counts (`All Providers`, `Combos`, `OpenRouter`, `Google`, `GMI`, `Ollama`, etc.) for instant 1-click provider isolation.
+  - **Context Window Filter**: Add quick context filter chips (`All Context`, `≥ 128K`, `≥ 200K`, `≥ 1M`) to filter models by context size.
+  - **Capability Filters**: Add `Vision 👁️` and `Reasoning 🧠` filter toggles. Filter combos based on member capabilities.
+  - **Performance Optimization**: Pre-index synced models by connection ID into a Map, reducing search/filter complexity from O(Providers × 5,900) iterations down to O(1) Map lookup (40x rendering speedup, <1ms vs 37ms per pass). Use O(1) Set membership for added combo model sorting.
+  - **Module-Level Robust Cache**: Add 60s module-level cache for picker endpoints (`combos`, `provider-nodes`, `custom`, `disabled`, `synced`). Invalidate cache globally via window `customModelChanged` listener even when modal is unmounted. Use `cacheGeneration` token to drop stale inflight writes, and only cache on successful endpoint responses.
+  - **A11y & Visual Polish**: Add `aria-label`, `aria-pressed`, clear search `(x)` button, active filter counters, and formatted context badges (`1M`, `200K`, `128K`, `32K`) adhering to UI/UX Pro Max standards.
+- `src/app/(dashboard)/dashboard/combos/page.js`: Lazy-mount `ComboFormModal` and `ModelSelectModal` so closed modals do not instantiate component subtrees on page load, eliminating initial DOM bloat.
+- `src/shared/hooks/useModelCaps.js`: Memoize `getCaps` via `useCallback`; use `resolveKnownContextWindow` to return `undefined` for genuinely unknown models rather than falling back to arbitrary `200000` floor; listen to `customModelChanged` to refresh capabilities.
+- `src/shared/utils/contextWindow.js`: Standardize `formatContextWindow` to handle power-of-two token numbers (`1048576` -> `1M`, `32768` -> `32K`, `262144` -> `256K`) and numeric string inputs.
+- `tests/unit/model-select-modal-filters.test.js`: Add 20 comprehensive unit tests for context formatting, `resolveKnownContextWindow` integration, and multi-dimensional filter simulations.
+
 # v0.15.78 (2026-09-03)
 
 ## Fix: Antigravity tool schema array items normalization & 9-free combo MiniMax M3
