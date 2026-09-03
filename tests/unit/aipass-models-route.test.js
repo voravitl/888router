@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   hasConnectedClients: vi.fn(),
   stampSyncedModels: vi.fn(),
   getSyncedModelsMap: vi.fn(),
+  saveModelDynamicCapabilities: vi.fn(),
 }));
 
 vi.mock("@/models", () => ({
@@ -26,7 +27,7 @@ vi.mock("open-sse/services/aipassBridge.js", async (importOriginal) => {
 vi.mock("@/lib/db", () => ({
   stampSyncedModels: mocks.stampSyncedModels,
   getSyncedModelsMap: mocks.getSyncedModelsMap,
-  saveModelDynamicCapabilities: vi.fn().mockResolvedValue(undefined),
+  saveModelDynamicCapabilities: mocks.saveModelDynamicCapabilities,
 }));
 
 vi.mock("next/server", () => ({
@@ -114,6 +115,59 @@ describe("AiPASS models route & sync", () => {
     expect(mocks.stampSyncedModels).toHaveBeenCalled();
   });
 
+  it("returns live models and stamps status for aipass-virtual (dashboard connection id)", async () => {
+    mocks.hasConnectedClients.mockReturnValue(true);
+    mocks.listAipassModels.mockResolvedValue([
+      { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash (AiPASS)", kind: "llm" },
+      { id: "claude-sonnet-5@default", name: "Claude Sonnet 5 (AiPASS)", kind: "llm", thinking: ["low", "medium", "high"] },
+      { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro", kind: "llm", thinking: null },
+    ]);
+
+    const { res, body } = await callRoute("aipass-virtual");
+
+    expect(res.status).toBe(200);
+    expect(body.provider).toBe("aipass");
+    expect(body.connectionId).toBe("aipass-virtual");
+    expect(body.warning).toBeUndefined();
+
+    const ids = body.models.map((m) => m.id);
+    expect(ids).toContain("gemini-3.7-flash");
+    expect(ids).toContain("claude-sonnet-5@default");
+    expect(ids).toContain("sonar-reasoning-pro");
+
+    expect(mocks.stampSyncedModels).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          connectionId: "aipass-virtual",
+          modelId: "gemini-3.7-flash",
+        }),
+      ])
+    );
+  });
+
+  it("extractModels excludes arbitrary non-model objects that happen to have an id", () => {
+    const rawData = [
+      { id: "conversation-1234", text: "hello world" },
+      { id: "user-5678", email: "foo@bar.com" },
+      { id: "valid-model", displayName: "Valid Model", ready: true, selectable: true },
+    ];
+    const models = extractModels(rawData);
+    expect(models.map((m) => m.id)).toEqual(["valid-model"]);
+  });
+
+  it("does NOT stamp synced models when extension is disconnected", async () => {
+    mocks.hasConnectedClients.mockReturnValue(false);
+    mocks.listAipassModels.mockResolvedValue([]);
+
+    const { res, body } = await callRoute("aipass-virtual");
+
+    expect(res.status).toBe(200);
+    expect(body.provider).toBe("aipass");
+    expect(body.models.length).toBeGreaterThan(0);
+    expect(body.warning).toMatch(/Chrome extension not connected/);
+    expect(mocks.stampSyncedModels).not.toHaveBeenCalled();
+  });
+
   it("returns static models with warning when extension is not connected", async () => {
     mocks.hasConnectedClients.mockReturnValue(false);
     mocks.listAipassModels.mockResolvedValue([]);
@@ -124,6 +178,7 @@ describe("AiPASS models route & sync", () => {
     expect(body.provider).toBe("aipass");
     expect(body.models.length).toBeGreaterThan(0);
     expect(body.warning).toMatch(/Chrome extension not connected/);
+    expect(mocks.stampSyncedModels).not.toHaveBeenCalled();
   });
 
   it("gracefully falls back to static models when bridge throws an error", async () => {
@@ -136,5 +191,25 @@ describe("AiPASS models route & sync", () => {
     expect(body.provider).toBe("aipass");
     expect(body.models.length).toBeGreaterThan(0);
     expect(body.warning).toMatch(/Bridge SSE connection closed/);
+    expect(mocks.stampSyncedModels).not.toHaveBeenCalled();
+  });
+
+  it("does not poison dynamic capabilities with reasoning: false when thinking is null", async () => {
+    mocks.hasConnectedClients.mockReturnValue(true);
+    mocks.listAipassModels.mockResolvedValue([
+      { id: "sonar-reasoning-pro", name: "Sonar Reasoning Pro", kind: "llm", thinking: null },
+      { id: "claude-sonnet-5@default", name: "Claude Sonnet 5", kind: "llm", thinking: ["low", "medium"] },
+    ]);
+
+    await callRoute("aipass-virtual");
+
+    const calls = mocks.saveModelDynamicCapabilities.mock.calls;
+    const sonarCall = calls.find((c) => c[1] === "sonar-reasoning-pro");
+    if (sonarCall) {
+      expect(sonarCall[2].reasoning).not.toBe(false);
+    }
+    const claudeCall = calls.find((c) => c[1] === "claude-sonnet-5@default");
+    expect(claudeCall).toBeDefined();
+    expect(claudeCall[2].reasoning).toBe(true);
   });
 });

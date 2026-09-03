@@ -104,7 +104,18 @@ const LIVE_MODEL_RESOLVERS = {
     try {
       const { listAipassModels } = await import("open-sse/services/aipassBridge.js");
       const list = await listAipassModels();
-      const models = (list || []).map((m) => ({ id: m.id, name: m.name || m.id, kind: m.kind, type: m.kind }));
+      if (!Array.isArray(list) || list.length === 0) return null;
+      const seen = new Set(list.map((m) => m.id));
+      const merged = [...list];
+      const staticModels = PROVIDERS["aipass"]?.models || [];
+      for (const sm of staticModels) {
+        const id = typeof sm === "string" ? sm : sm.id;
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          merged.push(typeof sm === "string" ? { id: sm, name: sm } : sm);
+        }
+      }
+      const models = merged.map((m) => ({ id: m.id, name: m.name || m.id, kind: m.kind, type: m.kind }));
       return models.length ? { models } : null;
     } catch {
       return null;
@@ -257,6 +268,8 @@ const LLM_KIND = "llm";
 // Models without `type` are treated as LLM.
 const MODEL_TYPE_TO_KIND = {
   image: "image",
+  video: "video",
+  music: "music",
   tts: "tts",
   embedding: "embedding",
   stt: "stt",

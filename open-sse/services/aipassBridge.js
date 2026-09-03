@@ -103,7 +103,8 @@ export function extractModels(decoded) {
     if (Array.isArray(v)) return v.forEach(walk);
     if (!v || typeof v !== "object") return;
     const id = v.id ?? v.modelId;
-    if (typeof id === "string" && id && !out.some((m) => m.id === id)) {
+    const isModelCandidate = Boolean(v.displayName || v.name || v.modelId || v.provider || v.providerName || v.thinkingConfig || v.isFreeCredit !== undefined);
+    if (typeof id === "string" && id && isModelCandidate && !out.some((m) => m.id === id)) {
       const rawKind = kindOf(id);
       const kind = rawKind === "chat" || rawKind === "research" ? "llm" : rawKind;
       out.push({
