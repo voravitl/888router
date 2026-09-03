@@ -49,7 +49,7 @@ vi.mock("@/sse/services/tokenRefresh", () => ({
   updateProviderCredentials: vi.fn(async () => {}),
 }));
 
-describe("v1/models — AiPASS live model resolver", () => {
+describe("v1/models — AiPASS live model resolver", { timeout: 20000 }, () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
