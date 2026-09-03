@@ -475,14 +475,15 @@ export async function buildModelsList(kindFilter) {
   // Zero-config noAuth providers (aipass, opencode, mimo-free) have no DB
   // connection row, so the provider loop above never sees them and their
   // models vanish from /v1/models. Inject a virtual active connection per
-  // registry provider flagged noAuth+hasFree — same pattern as the Dashboard's
-  // /api/providers injection (which injects only aipass). Keyed public
-  // gateways (openrouter, nousresearch, felo-web, …) must NOT appear here:
-  // isPublicModelsProvider is the Sync-button gate and includes apikey
-  // providers whose models would 401 without a stored key. The static branch
-  // below (connections.length === 0) reads PROVIDER_MODELS directly and is
-  // untouched by this.
-  for (const [providerId, providerDef] of Object.entries(PROVIDERS)) {
+  // provider flagged noAuth+hasFree — same pattern as the Dashboard's
+  // /api/providers injection (which injects only aipass). Iterate AI_PROVIDERS,
+  // NOT the transport barrel: buildTransport copies hasFree but drops noAuth,
+  // so PROVIDERS.aipass.noAuth is undefined and the injection would silently
+  // miss aipass/opencode. Keyed public gateways (openrouter, nousresearch,
+  // felo-web, …) must NOT appear here — their models 401 without a stored
+  // key. The static branch below (connections.length === 0) reads
+  // PROVIDER_MODELS directly and is untouched by this.
+  for (const [providerId, providerDef] of Object.entries(AI_PROVIDERS)) {
     if (providerDef?.noAuth && providerDef?.hasFree && !activeConnectionByProvider.has(providerId)) {
       activeConnectionByProvider.set(providerId, {
         id: `${providerId}-virtual`,
