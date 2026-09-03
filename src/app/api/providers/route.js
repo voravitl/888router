@@ -82,13 +82,15 @@ export async function GET() {
     const hasAipass = safeConnections.some(c => c.provider === "aipass");
     if (!hasAipass) {
       const extCount = getClientCount();
+      const installError = "Chrome Extension not connected — download the extension from /api/aipass-extension, load it via chrome://extensions (Developer mode → Load unpacked), and open de.aipass.net/chat";
       safeConnections.push({
         id: "aipass-virtual",
         provider: "aipass",
         name: "AiPASS TH (Chrome Extension Bridge)",
         isActive: true,
         testStatus: extCount > 0 ? "active" : "error",
-        testError: extCount > 0 ? null : "Chrome Extension not connected — load extension and open de.aipass.net/chat tab",
+        // ConnectionRow renders lastError (testError is unused there)
+        lastError: extCount > 0 ? null : installError,
         providerSpecificData: {
           virtual: true,
           extensions: extCount,
