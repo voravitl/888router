@@ -21,6 +21,7 @@ import { OllamaService } from "@/lib/oauth/services/ollama";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials, refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
+import { PROVIDERS } from "open-sse/config/providers.js";
 import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
 import { toClaudeCodeModelId } from "@/shared/utils/claudeCodeModelId";
 
@@ -134,16 +135,37 @@ const LIVE_MODEL_RESOLVERS = {
     const projectId = conn.projectId || conn.providerSpecificData?.projectId;
     const body = projectId ? { project: projectId } : {};
     const doFetch = async (tk) => {
-      const res = await fetch(GEMINI_CLI_MODELS_URL, {
+      const urls = [
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+        GEMINI_CLI_MODELS_URL,
+      ];
+      for (const url of urls) {
+        try {
+          const res = await fetch(url, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${tk}`,
+              "User-Agent": "antigravity/1.107.0 darwin/arm64",
+              "X-Client-Name": "antigravity",
+              "X-Client-Version": "2.1.1",
+            },
+            body: JSON.stringify(body),
+          });
+          if (res.ok || res.status === 401) return res;
+        } catch {}
+      }
+      return fetch(urls[0], {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${tk}`,
           "User-Agent": "antigravity/1.107.0 darwin/arm64",
+          "X-Client-Name": "antigravity",
+          "X-Client-Version": "2.1.1",
         },
         body: JSON.stringify(body),
       });
-      return res;
     };
     let res = await doFetch(token).catch(() => null);
     if (res && res.status === 401 && conn.refreshToken) {
@@ -161,22 +183,51 @@ const LIVE_MODEL_RESOLVERS = {
     if (!res?.ok) return null;
     const data = await res.json().catch(() => null);
     let parsed = [];
+    const expandTiered = (id, displayName) => {
+      const match = typeof id === "string" ? id.match(/^(gemini-[\d.]+-flash)-tiered$/) : null;
+      if (match) {
+        const prefix = match[1];
+        const ver = prefix.replace("gemini-", "").replace("-flash", "");
+        return [
+          { id, name: displayName || id },
+          { id: `${prefix}-high`, name: `Gemini ${ver} Flash (High)` },
+          { id: `${prefix}-medium`, name: `Gemini ${ver} Flash (Medium)` },
+          { id: `${prefix}-low`, name: `Gemini ${ver} Flash (Low)` },
+        ];
+      }
+      return [{ id, name: displayName || id }];
+    };
+
     if (Array.isArray(data?.models)) {
       parsed = data.models
-        .map((item) => {
+        .flatMap((item) => {
           const id = item?.id || item?.model || item?.name;
-          if (!id) return null;
-          return { id, name: item?.displayName || item?.name || id };
+          if (!id) return [];
+          return expandTiered(id, item?.displayName || item?.name || id);
         })
         .filter(Boolean);
     } else if (data?.models && typeof data.models === "object") {
       parsed = Object.entries(data.models)
         .filter(([, info]) => !info?.isInternal)
-        .map(([id, info]) => ({
-          id,
-          name: info?.displayName || info?.name || id,
-        }));
+        .flatMap(([id, info]) => {
+          return expandTiered(id, info?.displayName || info?.name || id);
+        });
     }
+
+    if (PROVIDERS.antigravity?.models) {
+      const seen = new Set(parsed.map((m) => m.id));
+      for (const staticModel of PROVIDERS.antigravity.models) {
+        if (/gemini-3/i.test(staticModel.id) && !seen.has(staticModel.id)) {
+          seen.add(staticModel.id);
+          parsed.push({
+            ...staticModel,
+            id: staticModel.id,
+            name: staticModel.name || staticModel.id,
+          });
+        }
+      }
+    }
+
     return parsed.length ? { models: parsed } : null;
   }
 };

@@ -191,6 +191,10 @@ export function isPublicModelsProvider(providerId) {
     "zenmux-free",
     "duckduckgo-web",
     "felo-web",
+    "aipass",
+    "aipass-th",
+    "aipass-bridge",
+    "ap",
   ]);
   if (publicGateways.has(pId)) return true;
   const provider = AI_PROVIDERS[pId];

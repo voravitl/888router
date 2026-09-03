@@ -18,6 +18,12 @@
 export const ROUTE_MANIFEST = [
   // --- local-only: spawn-capable / host-secret routes ----------------------
   {
+    path: "/ext",
+    authType: "local-only",
+    methods: ["*"],
+    description: "AiPASS browser extension bridge; loopback only.",
+  },
+  {
     path: "/api/cli-tools/cowork-settings",
     authType: "local-only",
     methods: ["*"],

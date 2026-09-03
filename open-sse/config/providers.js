@@ -17,3 +17,19 @@ export function resolveXiaomiTokenplanBaseUrl(credentials) {
   const region = credentials?.providerSpecificData?.region;
   return XIAOMI_TOKENPLAN_REGIONS[region] || XIAOMI_TOKENPLAN_REGIONS[XIAOMI_TOKENPLAN_DEFAULT_REGION];
 }
+
+export const AIPASS_DEFAULT_HOST = "http://127.0.0.1:8787";
+
+export function resolveAipassHost(credentials) {
+  const raw = credentials?.providerSpecificData?.baseUrl?.trim();
+  if (raw) {
+    try {
+      const u = new URL(raw);
+      if (u.protocol === "http:" || u.protocol === "https:") {
+        return u.origin + u.pathname.replace(/\/+$/, "");
+      }
+    } catch (_) {}
+  }
+  return AIPASS_DEFAULT_HOST;
+}
+

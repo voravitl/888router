@@ -313,3 +313,66 @@ describe("dashboard guard helpers", () => {
     expect(__test__.extractApiKey(apiRequest)).toBe("header-key");
   });
 });
+
+describe("dashboard guard /ext extension bridge access", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+  });
+
+  it("allows loopback request with chrome-extension origin on /ext/events", async () => {
+    const response = await proxy(localRequest("/ext/events", {
+      host: "localhost:20128",
+      origin: "chrome-extension://abcdefghijklmnop",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("allows loopback request with loopback origin on /ext/status", async () => {
+    const response = await proxy(localRequest("/ext/status", {
+      host: "127.0.0.1:20128",
+      origin: "http://127.0.0.1:20128",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("allows loopback request without origin header (service worker / direct loopback)", async () => {
+    const response = await proxy(localRequest("/ext/chunk", {
+      host: "localhost:20128",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("blocks /ext request with external origin (CSRF protection)", async () => {
+    const response = await proxy(localRequest("/ext/events", {
+      host: "localhost:20128",
+      origin: "https://evil.example.com",
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("blocks /ext request when forwarded through reverse proxy (x-9r-via-proxy)", async () => {
+    const response = await proxy(localRequest("/ext/events", {
+      host: "localhost:20128",
+      origin: "chrome-extension://abcdefghijklmnop",
+      "x-9r-via-proxy": "1",
+    }));
+
+    expect(response.status).toBe(403);
+  });
+
+  it("blocks /ext request from remote non-loopback peer", async () => {
+    const response = await proxy(request("/ext/events", {
+      host: "router.example.com",
+      "x-9r-real-ip": "203.0.113.5",
+      origin: "chrome-extension://abcdefghijklmnop",
+    }));
+
+    expect(response.status).toBe(403);
+  });
+});

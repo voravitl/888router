@@ -48,7 +48,7 @@ Fallback ladder (top preferred; descend until one returns real findings):
 
 | Rank | Reviewer | How |
 |------|----------|-----|
-| 1 | Grok 4.5 (`grok` CLI) | `cat /tmp/pr.diff \| grok -p "<review prompt>"` |
+| 1 | Grok 4.6 (`grok` CLI) | `cat /tmp/pr.diff \| grok -p "<review prompt>"` |
 | 2 | `9-opus` via 888router | `python3 ~/.hermes/scripts/888router-review.py --model 9-opus --file /tmp/pr.diff` |
 | 3 | `cc/claude-opus-4-8` via 888router | same script, `--model cc/claude-opus-4-8` |
 | 4 | Claude Opus Thinking (`agy` CLI) | `cat /tmp/pr.diff \| agy -p "<review prompt>"` |

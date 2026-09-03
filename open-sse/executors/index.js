@@ -26,6 +26,7 @@ import WindsurfExecutor from "./windsurf.js";
 import { DevinCliExecutor } from "./devin-cli.js";
 import { DefaultExecutor } from "./default.js";
 import DuckduckgoWebExecutor from "./duckduckgo-web.js";
+import { AipassExecutor } from "./aipass.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -63,6 +64,10 @@ const executors = {
   "duckduckgo-web": new DuckduckgoWebExecutor(),
   windsurf: new WindsurfExecutor(),
   "devin-cli": new DevinCliExecutor(),
+  aipass: new AipassExecutor(),
+  "aipass-th": new AipassExecutor(),
+  "aipass-bridge": new AipassExecutor(),
+  ap: new AipassExecutor(),
 };
 
 const defaultCache = new Map();
@@ -106,3 +111,4 @@ export { default as ZedExecutor } from "./zed.js";
 export { default as WindsurfExecutor } from "./windsurf.js";
 export { DevinCliExecutor } from "./devin-cli.js";
 export { default as DuckduckgoWebExecutor } from "./duckduckgo-web.js";
+export { AipassExecutor } from "./aipass.js";

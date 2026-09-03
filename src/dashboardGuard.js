@@ -106,6 +106,22 @@ async function canAccessPublicLlmApi(request) {
 
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
+  const pathname = request.nextUrl.pathname;
+  if (pathname.startsWith("/ext")) {
+    if (request.headers.get("x-9r-via-proxy")) return false;
+    if (!isLoopbackPeer(request)) return false;
+    const origin = request.headers.get("origin");
+    if (origin) {
+      if (origin.startsWith("chrome-extension://")) return true;
+      try {
+        if (isLoopbackHostname(new URL(origin).hostname)) return true;
+      } catch {
+        return false;
+      }
+      return false;
+    }
+    return true;
+  }
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
   if (isLocalRequest(request) && await isAuthenticated(request)) return true;
   return false;

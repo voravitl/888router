@@ -13,7 +13,7 @@
 
 3. **Step 3: Multi-Model Code Review (BEFORE MERGE GATE)**
    - **ห้าม Merge ลง master เด็ดขาดก่อนผ่าน Step 3!**
-   - ส่ง Code Diff ให้ AI ทบทวนผ่าน `/ollama-delegate` (`ollama-cc -p "Review diff: $(git diff HEAD~1..HEAD)"`) หรือ `/grok-delegate` (`grok prompt`)
+   - ส่ง Code Diff ให้ AI ทบทวนผ่าน Grok 4.6 (`grok -p` หรือ `python3 ~/.hermes/scripts/888router-review.py --model xai/grok-4.6`), `/ollama-delegate`, หรือ 888router-review
    - แก้ไขข้อผิดพลาด (Critical / High Findings) ให้เรียบร้อยและรัน Re-test จนผ่าน 100%
 
 ---

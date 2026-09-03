@@ -18,13 +18,28 @@ const parseOpenAIStyleModels = (data) => {
   return data?.data || data?.models || data?.results || [];
 };
 
+const expandGeminiTieredModel = (id, displayName) => {
+  const match = typeof id === "string" ? id.match(/^(gemini-[\d.]+-flash)-tiered$/) : null;
+  if (match) {
+    const prefix = match[1];
+    const ver = prefix.replace("gemini-", "").replace("-flash", "");
+    return [
+      { id, name: displayName || id },
+      { id: `${prefix}-high`, name: `Gemini ${ver} Flash (High)` },
+      { id: `${prefix}-medium`, name: `Gemini ${ver} Flash (Medium)` },
+      { id: `${prefix}-low`, name: `Gemini ${ver} Flash (Low)` },
+    ];
+  }
+  return [{ id, name: displayName || id }];
+};
+
 const parseGeminiCliModels = (data) => {
   if (Array.isArray(data?.models)) {
     return data.models
-      .map((item) => {
+      .flatMap((item) => {
         const id = item?.id || item?.model || item?.name;
-        if (!id) return null;
-        return { id, name: item?.displayName || item?.name || id };
+        if (!id) return [];
+        return expandGeminiTieredModel(id, item?.displayName || item?.name || id);
       })
       .filter(Boolean);
   }
@@ -32,10 +47,9 @@ const parseGeminiCliModels = (data) => {
   if (data?.models && typeof data.models === "object") {
     return Object.entries(data.models)
       .filter(([, info]) => !info?.isInternal)
-      .map(([id, info]) => ({
-        id,
-        name: info?.displayName || info?.name || id,
-      }));
+      .flatMap(([id, info]) => {
+        return expandGeminiTieredModel(id, info?.displayName || info?.name || id);
+      });
   }
 
   return [];
@@ -337,6 +351,16 @@ export async function GET(request, { params }) {
   try {
     const { id } = await params;
     let connection = await getProviderConnectionById(id);
+
+    if (!connection) {
+      try {
+        const { getProviderConnections } = await import("@/models");
+        const matching = await getProviderConnections({ provider: id, isActive: true });
+        if (matching?.length > 0) {
+          connection = matching[0];
+        }
+      } catch {}
+    }
 
     if (!connection) {
       if (isPublicModelsProvider(id)) {
@@ -679,16 +703,35 @@ export async function GET(request, { params }) {
         : GEMINI_CONFIG.clientSecret;
 
       const fetchModels = async (token) => {
-        const response = await fetch(GEMINI_CLI_MODELS_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-            "User-Agent": userAgent,
-          },
-          body: JSON.stringify(body)
-        });
-        return response;
+        const headers = {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "User-Agent": userAgent,
+          ...(connection.provider === "antigravity" && {
+            "X-Client-Name": "antigravity",
+            "X-Client-Version": "2.1.1",
+          }),
+        };
+        const urls = connection.provider === "antigravity"
+          ? [
+              "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+              GEMINI_CLI_MODELS_URL,
+            ]
+          : [GEMINI_CLI_MODELS_URL];
+
+        for (const url of urls) {
+          try {
+            const res = await fetch(url, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(body),
+            });
+            if (res.ok || res.status === 401) return res;
+          } catch {
+            // try next url
+          }
+        }
+        return fetch(urls[0], { method: "POST", headers, body: JSON.stringify(body) });
       };
 
       let warning;
@@ -711,7 +754,24 @@ export async function GET(request, { params }) {
 
         if (response.ok) {
           const data = await response.json();
-          const models = parseGeminiCliModels(data);
+          let models = parseGeminiCliModels(data);
+
+          // For antigravity, ensure newly released static registry models (such as Gemini 3.8/3.7 Flash variants)
+          // are merged into the synced list so users can select and sync newly released models
+          if (connection.provider === "antigravity" && PROVIDERS.antigravity?.models) {
+            const seen = new Set(models.map((m) => m.id));
+            for (const staticModel of PROVIDERS.antigravity.models) {
+              if (/gemini-3/i.test(staticModel.id) && !seen.has(staticModel.id)) {
+                seen.add(staticModel.id);
+                models.push({
+                  ...staticModel,
+                  id: staticModel.id,
+                  name: staticModel.name || staticModel.id,
+                });
+              }
+            }
+          }
+
           if (models.length > 0) {
             return buildModelsResponse({
               provider: connection.provider,
@@ -809,7 +869,7 @@ export async function GET(request, { params }) {
 
     // Get auth token
     const token = connection.providerSpecificData?.copilotToken || connection.accessToken || connection.apiKey;
-    if (!token && !isPublicModelsProvider(connection.provider) && pDef?.authType !== "none") {
+    if (!token && !isPublicModelsProvider(connection.provider)) {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }
 
@@ -904,7 +964,7 @@ export async function GET(request, { params }) {
       const errorText = await response.text();
       console.log(`Error fetching models from ${connection.provider}:`, safeLogDetail(response.status, errorText));
       const staticModels = pDef?.models || [];
-      const isPublic = connection.id?.startsWith("public:") || isPublicModelsProvider(connection.provider) || pDef?.authType === "none";
+      const isPublic = connection.id?.startsWith("public:") || isPublicModelsProvider(connection.provider);
       if (staticModels.length > 0 && isPublic) {
         return buildModelsResponse({
           provider: connection.provider,
