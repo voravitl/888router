@@ -1,3 +1,16 @@
+# v0.15.73 (2026-09-03)
+
+## Feat: AiPASS TH Extension Bridge, Antigravity Gemini 3.8 Flash & Provider Logos
+
+- `open-sse/providers/registry/aipass.js` & `open-sse/executors/aipass.js`: add AiPASS TH provider (`aipass`) supporting both direct SSE browser extension bridge and standalone bridge fallback (`http://127.0.0.1:8787`).
+- `open-sse/services/aipassBridge.js`: implements SSE bridge hub with connection pooling, turbo-stream loader decoding, delta parsing, and abort lifecycle propagation.
+- `public/aipass-extension/`: add unpacked Chrome Extension (`manifest.json`, `background.js`, `content.js`, `page.js`, `popup.html`, `popup.js`) for seamless browser session reuse without credential extraction.
+- `src/app/ext/*`: add `/ext` endpoints (`chunk`, `done`, `error`, `events`, `loader`, `status`, `quota`, `config`) guarded by loopback peer verification, origin whitelist, and reverse proxy defense.
+- `open-sse/providers/registry/antigravity.js` & `open-sse/executors/antigravity.js`: support `gemini-3.8-flash-high/medium/low` directly passed to Google upstream.
+- `src/app/api/v1/models/route.js` & `src/app/api/providers/[id]/models/route.js`: union newly released Antigravity Gemini 3.x models into synced model listings with full metadata retention.
+- `public/providers/*.png`: generate and install 40 missing provider logos for dashboard UI.
+- `tests/unit/aipass-provider.test.js` & `tests/unit/antigravity-quota-gemini-3.8.test.js`: add comprehensive unit test suites covering bridge dispatch, abort handling, stream cancel, and quota calculation.
+
 # v0.15.72 (2026-09-02)
 
 ## Feat: Ollama Cloud Per-Token Pricing & Monthly Credits Quota Tracker
