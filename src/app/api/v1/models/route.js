@@ -4,7 +4,6 @@ import {
   ALIAS_TO_ID,
   getProviderAlias,
   isAnthropicCompatibleProvider,
-  isPublicModelsProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
@@ -473,14 +472,18 @@ export async function buildModelsList(kindFilter) {
     }
   }
 
-  // noAuth zero-config providers (aipass, …) have no DB connection row, so the
-  // provider loop above never sees them and their models vanish from
-  // /v1/models. Inject a virtual active connection per public/noAuth provider —
-  // same pattern as the Dashboard's /api/providers injection. The static
-  // branch below (connections.length === 0) reads PROVIDER_MODELS directly and
-  // is untouched by this.
-  for (const providerId of Object.keys(AI_PROVIDERS)) {
-    if (isPublicModelsProvider(providerId) && !activeConnectionByProvider.has(providerId)) {
+  // Zero-config noAuth providers (aipass, opencode, mimo-free) have no DB
+  // connection row, so the provider loop above never sees them and their
+  // models vanish from /v1/models. Inject a virtual active connection per
+  // registry provider flagged noAuth+hasFree — same pattern as the Dashboard's
+  // /api/providers injection (which injects only aipass). Keyed public
+  // gateways (openrouter, nousresearch, felo-web, …) must NOT appear here:
+  // isPublicModelsProvider is the Sync-button gate and includes apikey
+  // providers whose models would 401 without a stored key. The static branch
+  // below (connections.length === 0) reads PROVIDER_MODELS directly and is
+  // untouched by this.
+  for (const [providerId, providerDef] of Object.entries(PROVIDERS)) {
+    if (providerDef?.noAuth && providerDef?.hasFree && !activeConnectionByProvider.has(providerId)) {
       activeConnectionByProvider.set(providerId, {
         id: `${providerId}-virtual`,
         provider: providerId,

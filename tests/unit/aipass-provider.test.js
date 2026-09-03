@@ -159,17 +159,62 @@ describe("AiPASS TH Provider & Bridge Test Suite", () => {
   });
 
   it("executor fails fast with a clear error when no extension is connected (no standalone fallback)", async () => {
-    const executor = new AipassExecutor();
+    // The reconnect wait polls on setTimeout; fake timers keep this test off
+    // Vitest's 5s default timeout despite the 4s reconnect window.
+    vi.useFakeTimers();
+    try {
+      const executor = new AipassExecutor();
+      const pending = executor.execute({
+        model: "claude-sonnet-5@default",
+        body: { messages: [{ role: "user", content: "hello" }] },
+        stream: false,
+        signal: null,
+      });
+      const assertion = expect(pending).rejects.toThrow(/AiPASS Chrome extension not connected/);
+      await vi.advanceTimersByTimeAsync(5000);
+      await assertion;
 
-    await expect(executor.execute({
-      model: "claude-sonnet-5@default",
-      body: { messages: [{ role: "user", content: "hello" }] },
-      stream: false,
-      signal: null,
-    })).rejects.toThrow(/AiPASS Chrome extension not connected/);
+      // The dead 8787 fallback must not fire at all.
+      expect(mockProxyAwareFetch).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
-    // The dead 8787 fallback must not fire at all.
-    expect(mockProxyAwareFetch).not.toHaveBeenCalled();
+  it("executor skips the reconnect wait when a client is already attached", async () => {
+    const client = {
+      id: "client-fastpath",
+      send: (event, data) => {
+        if (event !== "job") return;
+        const { jobId, kind } = data;
+        if (kind === "loader") {
+          setTimeout(() => handleExtLoader({ jobId, raw: "[]" }), 5);
+        } else if (kind === "create") {
+          setTimeout(() => handleExtLoader({
+            jobId,
+            raw: JSON.stringify([{ conversationId: "conv-1234567890123456" }]),
+          }), 5);
+        } else if (kind === "chat") {
+          setTimeout(() => {
+            handleExtChunk({ jobId, part: { kind: "text", text: "fast path" } });
+            handleExtDone({ jobId, finishReason: "stop" });
+          }, 5);
+        }
+      },
+    };
+    const unregister = registerExtClient(client);
+    try {
+      const executor = new AipassExecutor();
+      const result = await executor.execute({
+        model: "claude-sonnet-5@default",
+        body: { messages: [{ role: "user", content: "hello" }] },
+        stream: false,
+        signal: null,
+      });
+      expect(result.url).toBe("bridge://aipass-hub");
+    } finally {
+      unregister();
+    }
   });
 
   it("executor uses the hub as its only transport when an extension is connected", async () => {
