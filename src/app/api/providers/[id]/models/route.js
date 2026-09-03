@@ -363,9 +363,6 @@ export async function GET(request, { params }) {
     if (!connection) {
       if (id === "aipass-virtual") {
         connection = { id: "aipass-virtual", provider: "aipass", isActive: true };
-      } else if (typeof id === "string" && id.endsWith("-virtual")) {
-        const baseProvider = id.slice(0, -"-virtual".length);
-        connection = { id, provider: baseProvider, isActive: true };
       }
     }
 
