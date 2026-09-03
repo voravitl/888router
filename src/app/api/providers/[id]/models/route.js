@@ -107,13 +107,21 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
           const id = m.id;
           const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.contextLength || m.details?.context_length;
           const vision = m.vision ?? m.supportsImages ?? m.supportsVision ?? m.details?.families?.includes("vision");
-          const reasoning = m.reasoning ?? m.thinking;
+          
+          let resolvedReasoning = undefined;
+          if (typeof m.reasoning === "boolean") {
+            resolvedReasoning = m.reasoning;
+          } else if (Array.isArray(m.thinking) && m.thinking.length > 0) {
+            resolvedReasoning = true;
+          } else if (typeof m.thinking === "boolean") {
+            resolvedReasoning = m.thinking;
+          }
 
-          if (ctx || vision !== undefined || reasoning !== undefined) {
+          if (ctx || vision !== undefined || resolvedReasoning !== undefined) {
             const caps = {};
             if (ctx) caps.contextWindow = Number(ctx);
             if (vision !== undefined) caps.vision = Boolean(vision);
-            if (reasoning !== undefined) caps.reasoning = Boolean(reasoning);
+            if (resolvedReasoning !== undefined) caps.reasoning = resolvedReasoning;
 
             if (typeof saveModelDynamicCapabilities === "function") {
               await saveModelDynamicCapabilities(provider, id, caps);
@@ -351,6 +359,12 @@ export async function GET(request, { params }) {
   try {
     const { id } = await params;
     let connection = await getProviderConnectionById(id);
+
+    if (!connection) {
+      if (id === "aipass-virtual") {
+        connection = { id: "aipass-virtual", provider: "aipass", isActive: true };
+      }
+    }
 
     if (!connection) {
       try {
@@ -598,6 +612,49 @@ export async function GET(request, { params }) {
         provider: connection.provider,
         connectionId: connection.id,
         models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
+      });
+    }
+
+    // AiPASS TH: Fetch live models from de.aipass.net via connected Chrome extension bridge
+    if (["aipass", "aipass-th", "aipass-bridge", "ap"].includes(connection.provider)) {
+      let warning;
+      try {
+        const { listAipassModels, hasConnectedClients } = await import("open-sse/services/aipassBridge.js");
+        const isConnected = hasConnectedClients();
+        if (isConnected) {
+          const liveModels = await listAipassModels({ force: true });
+          if (Array.isArray(liveModels) && liveModels.length > 0) {
+            const seen = new Set(liveModels.map((m) => m.id));
+            const merged = [...liveModels];
+            const staticModels = PROVIDERS["aipass"]?.models || [];
+            for (const sm of staticModels) {
+              const id = typeof sm === "string" ? sm : sm.id;
+              if (id && !seen.has(id)) {
+                seen.add(id);
+                merged.push(typeof sm === "string" ? { id: sm, name: sm } : sm);
+              }
+            }
+            return buildModelsResponse({
+              provider: connection.provider,
+              connectionId: connection.id,
+              models: merged,
+            });
+          }
+        } else {
+          warning = "AiPASS Chrome extension not connected. Open de.aipass.net/chat in Chrome with the extension active to sync live models.";
+        }
+      } catch (error) {
+        warning = `Failed to fetch AiPASS models: ${error?.message || error}`;
+        console.log("Failed to fetch AiPASS models dynamically:", error?.message || error);
+      }
+
+      const staticModels = PROVIDERS["aipass"]?.models || [];
+      // Do NOT stamp synced models on static fallback (so lastSyncedAt doesn't lie)
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
+        warning,
       });
     }
 
