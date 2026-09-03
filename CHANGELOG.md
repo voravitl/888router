@@ -1,3 +1,14 @@
+# v0.15.77 (2026-09-03)
+
+## Fix: Antigravity generic dynamic upstream model mapping (non-hardcoded)
+
+- `open-sse/providers/models/helpers.js`: add `resolveAntigravityFlashModel`, `isAntigravityVersionNewer`, and integer tuple compare (`[major, minor]`) to dynamically map any Gemini Flash model (e.g. `gemini-3.8-flash-high`, `gemini-3.9-flash-low`, `gemini-4.0-flash`) newer than the currently deployed Google Antigravity backend tier (`3.6`) down to `gemini-3.6-flash-<tier>`. Version bounds guard (`major <= 4`, `minor <= 20`) preserves wild numbers/typos as unmapped without poisoning validation.
+- `open-sse/config/providerModels.js`: `findModel` and `getModelUpstreamId` dynamically resolve upcoming Gemini Flash models for `ag` without hardcoding; explicit `upstreamModelId` from registry is respected first; other providers (`gemini-cli`/`gc`, `google`) remain strictly isolated.
+- `open-sse/executors/antigravity.js`: replace hardcoded version mapping `if/else` with dynamic `resolveAntigravityFlashModel` fallback.
+- `open-sse/providers/registry/antigravity.js`: clean up hardcoded `upstreamModelId` entries for `gemini-3.8-flash-*` and `gemini-3.7-flash-*`.
+- `tests/unit/antigravity-quota-gemini-3.8.test.js`: expand test suite to verify dynamic resolution across future versions (`3.9`, `3.10`, `4.0`), case insensitivity, typo guard rejection, provider isolation (`gc`, `gemini-cli`, `google`), and executor transformation.
+- `tests/translator/__snapshots__/golden-url-header.test.js.snap`: refreshed for the 0.15.77 version bump.
+
 # v0.15.76 (2026-09-03)
 
 ## Fix: AiPASS live model sync via extension bridge in providers models route
