@@ -7,7 +7,7 @@ import { OPENAI_BLOCK } from "../schema/index.js";
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   // Basic constraints (not supported by Gemini API)
   "minLength", "maxLength", "exclusiveMinimum", "exclusiveMaximum",
-  "minItems", "maxItems", "format",
+  "minItems", "maxItems", "uniqueItems", "prefixItems", "additionalItems", "unevaluatedItems", "contains", "minContains", "maxContains", "format",
   // Claude rejects these in VALIDATED mode
   "default", "examples",
   // JSON Schema meta keywords
@@ -295,11 +295,72 @@ function flattenTypeArrays(obj) {
   }
 }
 
+// Walk schema nodes without treating properties maps as schema nodes
+function walkSchemaNodes(schema, fn) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return;
+  fn(schema);
+
+  if (schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)) {
+    for (const child of Object.values(schema.properties)) {
+      walkSchemaNodes(child, fn);
+    }
+  }
+
+  if (schema.items) {
+    if (Array.isArray(schema.items)) {
+      for (const child of schema.items) {
+        walkSchemaNodes(child, fn);
+      }
+    } else if (typeof schema.items === "object") {
+      walkSchemaNodes(schema.items, fn);
+    }
+  }
+}
+
 // Infer missing type=object when properties exist (Gemini requires explicit type)
-function ensureObjectType(obj) {
-  if (!obj || typeof obj !== "object") return;
-  if (obj.properties && !obj.type) obj.type = "object";
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
+function ensureObjectType(schema) {
+  walkSchemaNodes(schema, (node) => {
+    if (node.properties && !node.type) node.type = "object";
+  });
+}
+
+// Ensure array schemas have valid items (Gemini requires non-empty items schema for any type=array)
+function ensureArrayItems(schema) {
+  walkSchemaNodes(schema, (node) => {
+    // If items exists on a schema node without explicit type, infer type="array"
+    if (node.items && !node.type) {
+      node.type = "array";
+    }
+
+    const isArray = typeof node.type === "string" && node.type.toLowerCase() === "array";
+    if (!isArray) return;
+
+    // Tuple schema: items: [s1, s2, ...] or prefixItems: [s1, s2, ...] -> select first valid object schema
+    const tupleList = Array.isArray(node.items)
+      ? node.items
+      : (Array.isArray(node.prefixItems) ? node.prefixItems : null);
+
+    if (tupleList) {
+      const firstValid = tupleList.find(item => item && typeof item === "object" && !Array.isArray(item));
+      node.items = firstValid ? firstValid : { type: "string" };
+    } else if (!node.items || typeof node.items !== "object") {
+      // Missing, null, boolean, or primitive items
+      node.items = { type: "string" };
+    }
+
+    // If items is an empty object {}
+    if (Object.keys(node.items).length === 0) {
+      node.items.type = "string";
+    } else if (!node.items.type) {
+      if (node.items.properties) {
+        node.items.type = "object";
+      } else if (node.items.items) {
+        node.items.type = "array";
+      } else {
+        node.items.type = "string";
+      }
+    }
+  });
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
@@ -320,6 +381,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
 
   // Phase 2.5: Infer missing type=object when properties exist (Gemini requirement)
   ensureObjectType(cleaned);
+
+  // Phase 2.6: Ensure array schemas have valid items (Gemini requirement)
+  ensureArrayItems(cleaned);
 
   // Phase 3: Remove all unsupported keywords at ALL levels (including inside arrays)
   removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);
