@@ -44,9 +44,9 @@ export async function resolveConnectionProxyConfig(
       providerSpecificData?.proxyPoolId
     );
 
-    // "__none__" means explicitly disabled
+    // "__none__" or "__direct__" means explicitly disabled / direct connection
     const proxyPoolId =
-      proxyPoolIdRaw === "__none__" ? "" : proxyPoolIdRaw;
+      (proxyPoolIdRaw === "__none__" || proxyPoolIdRaw === "__direct__") ? "" : proxyPoolIdRaw;
 
     const legacy = normalizeLegacyProxy(providerSpecificData);
 

@@ -138,6 +138,17 @@ describe("noAuth proxy pool auto-rotate", () => {
     }));
   });
 
+  it("explicit __direct__ proxy pool config returns direct connection without proxy", async () => {
+    proxyPools.push(POOL_A, POOL_B);
+    settings.providerStrategies = { opencode: { proxyPoolId: "__direct__" } };
+    const creds = await getProviderCredentials("opencode", null, "big-pickle");
+    expect(creds).not.toBeNull();
+    expect(creds.id).toBe("noauth");
+    expect(creds.connectionName).toBe("Direct Connection");
+    expect(creds.providerSpecificData.connectionProxyUrl).toBe("");
+    expect(creds.providerSpecificData.vercelRelayUrl).toBe("");
+  });
+
   it("no active pools → falls back to direct connection 'noauth'", async () => {
     const creds = await getProviderCredentials("opencode", null, "deepseek-v4-flash-free");
     expect(creds.id).toBe("noauth");

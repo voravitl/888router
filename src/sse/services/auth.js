@@ -60,6 +60,23 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const override = (settings.providerStrategies || {})[providerId] || {};
       const specificPoolId = override.proxyPoolId || "";
 
+      if (specificPoolId === "__direct__") {
+        return {
+          id: "noauth",
+          connectionId: "noauth",
+          connectionName: "Direct Connection",
+          isActive: true,
+          accessToken: "public",
+          providerSpecificData: {
+            connectionProxyEnabled: false,
+            connectionProxyUrl: "",
+            connectionNoProxy: "",
+            connectionProxyPoolId: null,
+            vercelRelayUrl: "",
+          },
+        };
+      }
+
       if (specificPoolId) {
         const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: specificPoolId });
         if (!resolvedProxy.connectionProxyUrl && !resolvedProxy.vercelRelayUrl) {

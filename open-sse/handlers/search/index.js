@@ -7,9 +7,10 @@
  *   provider.searchViaChat   → wrap chat-completions (chatSearch.js)
  */
 
-import { buildSearchRequest } from "./callers.js";
+import { buildSearchRequest, getProviderSetting } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
+import { fetchPublic } from "../../../src/shared/utils/ssrfGuard.js";
 
 const GLOBAL_TIMEOUT_MS = 15000;
 const NON_RETRIABLE = new Set([400, 401, 403, 404]);
@@ -86,7 +87,7 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
 
   let url, init;
   try {
-    ({ url, init } = buildSearchRequest({ id: provider.id, ...providerConfig }, params));
+    ({ url, init } = await buildSearchRequest({ id: provider.id, ...providerConfig }, params));
   } catch (err) {
     return { success: false, status: 400, error: err?.message || `Invalid request for ${provider.id}` };
   }
@@ -100,7 +101,23 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   log?.info?.("SEARCH", `${provider.id} | "${params.query.slice(0, 80)}" | type=${params.searchType}`);
 
   try {
-    const resp = await fetch(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    const hasOverride = Boolean(getProviderSetting(params, "baseUrl"));
+    let resp;
+    if (hasOverride) {
+      // Client override is untrusted: enforce fetchPublic (Layer 2 DNS + Layer 3 redirect guard)
+      resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    } else {
+      // Admin-configured baseUrl: use fetchPublic for public APIs; for self-hosted internal hosts (e.g. SearXNG), disallow redirects
+      try {
+        resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+      } catch (e) {
+        if (e.message?.startsWith("Blocked URL:")) {
+          resp = await fetch(url, { ...init, headers: sanitizeHeaders(init.headers), redirect: "manual", signal: controller.signal });
+        } else {
+          throw e;
+        }
+      }
+    }
     clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
@@ -126,6 +143,10 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
     };
   } catch (err) {
     clearTimeout(timer);
+    if (err.message?.startsWith("Blocked URL:")) {
+      log?.error?.("SEARCH", `${provider.id} blocked URL: ${err.message}`);
+      return { success: false, status: 400, error: err.message };
+    }
     const isTimeout = err.name === "AbortError";
     const status = isTimeout ? 504 : 502;
     log?.error?.("SEARCH", `${provider.id} ${isTimeout ? "timeout" : "error"}: ${err.message}`);

@@ -21,11 +21,13 @@ describe("OpenCode Model Sync Support", () => {
     const modelIds = opencodeRegistry.models.map((m) => m.id);
     expect(modelIds).toContain("mimo-v2.5-free");
     expect(modelIds).toContain("hy3-free");
+    expect(modelIds).toContain("ling-3.0-flash-fin-free");
     expect(modelIds).toContain("nemotron-3-ultra-free");
     expect(modelIds).toContain("nemotron-3.5-lightning-free");
     expect(modelIds).toContain("x-preview-f-free");
     expect(modelIds).toContain("laguna-s-2.1-free");
     expect(modelIds).toContain("muse-spark-1.2-contributor-free");
+    expect(modelIds).toContain("muse-spark-1.3-contributor-free");
     expect(modelIds).toContain("big-pickle");
     expect(modelIds).toContain("deepseek-v4-flash-free");
   });
@@ -69,10 +71,10 @@ describe("OpenCode Model Sync Support", () => {
     const museZenCaps = getCapabilitiesForModel("opencode-zen", "muse-spark-1.2-contributor-free");
     expect(museZenCaps.vision).toBe(false);
 
-    // Family pattern stays multimodal for non-OpenCode providers.
+    // Family pattern sets text/reasoning capabilities for muse-spark.
     const museFamilyCaps = getCapabilitiesForModel("openai", "muse-spark-1.2");
-    expect(museFamilyCaps.vision).toBe(true);
-    expect(museFamilyCaps.pdf).toBe(true);
+    expect(museFamilyCaps.vision).toBe(false);
+    expect(museFamilyCaps.pdf).toBe(false);
 
     const nemotronUltraCaps = getCapabilitiesForModel("opencode", "nemotron-3-ultra-free");
     expect(nemotronUltraCaps.reasoning).toBe(true);

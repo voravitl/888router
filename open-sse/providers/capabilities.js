@@ -367,16 +367,21 @@ export const PROVIDER_CAPABILITIES = {
   "opencode": {
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
-    // Observed Zen HTTP 400 on image_url; do not invent SKU token cuts.
+    "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "oc": {
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
+    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "opencode-go": {
     "ox-alpha-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
+    "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "ocg": {
     "ox-alpha-free": OX_ALPHA_CAPABILITIES,
@@ -384,7 +389,9 @@ export const PROVIDER_CAPABILITIES = {
   "opencode-zen": {
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
+    "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "openrouter": {
     "stealth/ox-alpha": OX_ALPHA_CAPABILITIES,
@@ -560,7 +567,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*hermes-4*",      caps: { reasoning: true, vision: false, thinkingFormat: "openai", contextWindow: 131072 } },
   { pattern: "*deephermes-4*",  caps: { reasoning: true, vision: false, thinkingFormat: "openai", contextWindow: 131072 } },
   { pattern: "*laguna-s*",      caps: { reasoning: true, vision: false, contextWindow: 1048576, maxOutput: 32768 } },
-  { pattern: "*muse-spark*",    caps: { reasoning: true, vision: true, pdf: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*muse-spark*",    caps: { reasoning: true, thinkingFormat: "openai", vision: false, pdf: false, audioInput: false, videoInput: false, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*big-pickle*",    caps: { contextWindow: 128000 } },
 ];
 

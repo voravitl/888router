@@ -30,7 +30,7 @@
  * @property {Record<string,unknown>} [providerSpecificData]
  */
 
-import { assertPublicUrl } from "../../../src/shared/utils/ssrfGuard.js";
+import { assertPublicUrl, assertPublicUrlResolved } from "../../../src/shared/utils/ssrfGuard.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
@@ -69,14 +69,14 @@ export function getProviderSetting(params, key) {
  *
  * The override is client-controlled and therefore SSRF-hardened: only public
  * http(s) URLs are accepted (internal/private/loopback/metadata addresses are
- * rejected via assertPublicUrl). The provider's own configured baseUrl is
+ * rejected via assertPublicUrlResolved). The provider's own configured baseUrl is
  * trusted as-is (admin-controlled).
  *
  * @param {SearchProviderConfig} config
  * @param {SearchRequestParams} params
- * @returns {string}
+ * @returns {Promise<string>}
  */
-export function resolveBaseUrl(config, params) {
+export async function resolveBaseUrl(config, params) {
   const override = getProviderSetting(params, "baseUrl");
   if (override) {
     // SSRF guard: client-supplied base URLs must be public http(s) only.
@@ -89,7 +89,7 @@ export function resolveBaseUrl(config, params) {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error(`Invalid baseUrl protocol: ${parsed.protocol}`);
     }
-    assertPublicUrl(override);
+    await assertPublicUrlResolved(override);
   }
   return (override || config.baseUrl).replace(/\/+$/, "");
 }
@@ -107,13 +107,13 @@ export function toPageNumber(offset, maxResults) {
 
 // ── Provider Request Builders ───────────────────────────────────────────
 
-function buildSerperRequest(config, params) {
+async function buildSerperRequest(config, params) {
   const endpoint = params.searchType === "news" ? "/news" : "/search";
   const body = { q: params.query, num: params.maxResults };
   if (params.country) body.gl = params.country.toLowerCase();
   if (params.language) body.hl = params.language;
   return {
-    url: `${resolveBaseUrl(config, params)}${endpoint}`,
+    url: `${await resolveBaseUrl(config, params)}${endpoint}`,
     init: {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": params.token },
@@ -122,13 +122,13 @@ function buildSerperRequest(config, params) {
   };
 }
 
-function buildBraveRequest(config, params) {
+async function buildBraveRequest(config, params) {
   const endpoint = params.searchType === "news" ? "/news/search" : "/web/search";
   const qp = new URLSearchParams({ q: params.query, count: String(params.maxResults) });
   if (params.country) qp.set("country", params.country);
   if (params.language) qp.set("search_lang", params.language);
   return {
-    url: `${resolveBaseUrl(config, params)}${endpoint}?${qp}`,
+    url: `${await resolveBaseUrl(config, params)}${endpoint}?${qp}`,
     init: {
       method: "GET",
       headers: { Accept: "application/json", "X-Subscription-Token": params.token },
@@ -136,13 +136,13 @@ function buildBraveRequest(config, params) {
   };
 }
 
-function buildPerplexityRequest(config, params) {
+async function buildPerplexityRequest(config, params) {
   const body = { query: params.query, max_results: params.maxResults };
   if (params.country) body.country = params.country;
   if (params.language) body.search_language_filter = [params.language];
   if (params.domainFilter?.length) body.search_domain_filter = params.domainFilter;
   return {
-    url: resolveBaseUrl(config, params),
+    url: await resolveBaseUrl(config, params),
     init: {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.token}` },
@@ -151,7 +151,7 @@ function buildPerplexityRequest(config, params) {
   };
 }
 
-function buildExaRequest(config, params) {
+async function buildExaRequest(config, params) {
   const { includes, excludes } = parseDomainFilter(params.domainFilter);
   const body = {
     query: params.query,
@@ -164,7 +164,7 @@ function buildExaRequest(config, params) {
   if (excludes.length) body.excludeDomains = excludes;
   if (params.searchType === "news") body.category = "news";
   return {
-    url: resolveBaseUrl(config, params),
+    url: await resolveBaseUrl(config, params),
     init: {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": params.token },
@@ -173,7 +173,7 @@ function buildExaRequest(config, params) {
   };
 }
 
-function buildTavilyRequest(config, params) {
+async function buildTavilyRequest(config, params) {
   const { includes, excludes } = parseDomainFilter(params.domainFilter);
   const body = {
     query: params.query,
@@ -184,7 +184,7 @@ function buildTavilyRequest(config, params) {
   if (excludes.length) body.exclude_domains = excludes;
   if (params.country) body.country = params.country;
   return {
-    url: resolveBaseUrl(config, params),
+    url: await resolveBaseUrl(config, params),
     init: {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${params.token}` },
@@ -193,7 +193,7 @@ function buildTavilyRequest(config, params) {
   };
 }
 
-function buildGooglePseRequest(config, params) {
+async function buildGooglePseRequest(config, params) {
   const apiKey = params.token;
   const cx = getProviderSetting(params, "cx");
   if (!apiKey || !cx) {
@@ -216,7 +216,7 @@ function buildGooglePseRequest(config, params) {
     qp.set("start", String(Math.min(params.offset + 1, 91)));
   }
   return {
-    url: `${resolveBaseUrl(config, params)}?${qp}`,
+    url: `${await resolveBaseUrl(config, params)}?${qp}`,
     init: {
       method: "GET",
       headers: { Accept: "application/json" },
@@ -224,7 +224,7 @@ function buildGooglePseRequest(config, params) {
   };
 }
 
-function buildLinkupRequest(config, params) {
+async function buildLinkupRequest(config, params) {
   const apiKey = params.token;
   if (!apiKey) throw new Error("Linkup Search requires an API key");
 
@@ -256,7 +256,7 @@ function buildLinkupRequest(config, params) {
   }
 
   return {
-    url: resolveBaseUrl(config, params),
+    url: await resolveBaseUrl(config, params),
     init: {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -265,7 +265,7 @@ function buildLinkupRequest(config, params) {
   };
 }
 
-function buildSearchApiRequest(config, params) {
+async function buildSearchApiRequest(config, params) {
   const apiKey = params.token;
   if (!apiKey) throw new Error("SearchAPI requires an API key");
 
@@ -281,7 +281,7 @@ function buildSearchApiRequest(config, params) {
   if (page) qp.set("page", String(page));
 
   return {
-    url: `${resolveBaseUrl(config, params)}?${qp}`,
+    url: `${await resolveBaseUrl(config, params)}?${qp}`,
     init: {
       method: "GET",
       headers: { Accept: "application/json" },
@@ -289,7 +289,7 @@ function buildSearchApiRequest(config, params) {
   };
 }
 
-function buildYouComRequest(config, params) {
+async function buildYouComRequest(config, params) {
   const apiKey = params.token;
   if (!apiKey) throw new Error("You.com Search requires an API key");
 
@@ -317,7 +317,7 @@ function buildYouComRequest(config, params) {
   }
 
   return {
-    url: `${resolveBaseUrl(config, params)}?${qp}`,
+    url: `${await resolveBaseUrl(config, params)}?${qp}`,
     init: {
       method: "GET",
       headers: { Accept: "application/json", "X-API-Key": apiKey },
@@ -325,8 +325,8 @@ function buildYouComRequest(config, params) {
   };
 }
 
-function buildSearxngRequest(config, params) {
-  const baseUrl = resolveBaseUrl(config, params);
+async function buildSearxngRequest(config, params) {
+  const baseUrl = await resolveBaseUrl(config, params);
   const url = baseUrl.endsWith("/search") ? baseUrl : `${baseUrl}/search`;
   const qp = new URLSearchParams({
     q: params.query,
@@ -368,14 +368,14 @@ const BUILDERS = {
  * Falls back to generic POST + bearer auth for unknown providers.
  * @param {SearchProviderConfig} provider
  * @param {SearchRequestParams} params
- * @returns {{url: string, init: RequestInit}}
+ * @returns {Promise<{url: string, init: RequestInit}>}
  */
-export function buildSearchRequest(provider, params) {
+export async function buildSearchRequest(provider, params) {
   const builder = BUILDERS[provider.id];
-  if (builder) return builder(provider, params);
+  if (builder) return await builder(provider, params);
 
   return {
-    url: resolveBaseUrl(provider, params),
+    url: await resolveBaseUrl(provider, params),
     init: {
       method: provider.method || "POST",
       headers: {

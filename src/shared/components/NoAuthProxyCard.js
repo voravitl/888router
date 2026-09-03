@@ -8,6 +8,7 @@ import Badge from "./Badge";
 import Button from "./Button";
 
 const NONE_PROXY_POOL_VALUE = "__none__";
+const DIRECT_PROXY_VALUE = "__direct__";
 
 export default function NoAuthProxyCard({ providerId }) {
   const [proxyPools, setProxyPools] = useState([]);
@@ -109,7 +110,8 @@ export default function NoAuthProxyCard({ providerId }) {
   };
 
   const activePoolsCount = proxyPools.length;
-  const isSpecificPoolSelected = proxyPoolId !== NONE_PROXY_POOL_VALUE;
+  const isDirectSelected = proxyPoolId === DIRECT_PROXY_VALUE;
+  const isSpecificPoolSelected = proxyPoolId !== NONE_PROXY_POOL_VALUE && !isDirectSelected;
   const selectedPool = proxyPools.find((p) => p.id === proxyPoolId);
 
   return (
@@ -146,6 +148,9 @@ export default function NoAuthProxyCard({ providerId }) {
                   ? `🔄 Auto-Rotate All Active Pools (${activePoolsCount} pools)`
                   : "⚡ Direct Connection (No Proxy)",
               },
+              ...(activePoolsCount > 0
+                ? [{ value: DIRECT_PROXY_VALUE, label: "⚡ Direct Connection (Local IP, No Proxy)" }]
+                : []),
               ...proxyPools.map((pool) => ({
                 value: pool.id,
                 label: `📌 Specific Pool: ${pool.name}`,
@@ -155,7 +160,7 @@ export default function NoAuthProxyCard({ providerId }) {
         </div>
 
         {/* Rotation Strategy Selector (Only visible when auto-rotating) */}
-        {!isSpecificPoolSelected && activePoolsCount > 0 && (
+        {!isSpecificPoolSelected && !isDirectSelected && activePoolsCount > 0 && (
           <div className="pl-3 border-l-2 border-primary/30">
             <Select
               label="Rotation Algorithm"
@@ -179,7 +184,9 @@ export default function NoAuthProxyCard({ providerId }) {
           </div>
 
           <div className="mt-1.5 pl-6 text-text-muted">
-            {activePoolsCount > 0 ? (
+            {isDirectSelected ? (
+              <span>All requests are routed <strong className="text-text-main">directly using local server IP</strong> (bypassing all proxy pools).</span>
+            ) : activePoolsCount > 0 ? (
               isSpecificPoolSelected ? (
                 <span>
                   All requests are routed exclusively through pool &quot;<strong className="text-text-main">{selectedPool?.name || proxyPoolId}</strong>&quot;.

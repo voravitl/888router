@@ -12,6 +12,18 @@ import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 const CACHE_CONTROL_5M = { type: "ephemeral" };
 const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
 
+// Anthropic rejects a tool carrying BOTH defer_loading:true and cache_control
+// ("Tools defer_loading cannot use prompt caching", #3567). MCP clients put
+// deferred tools at the tail, which is exactly where the cache anchor lands.
+// Anchor on the last tool that CAN be cached instead of dropping caching.
+export function lastCacheableToolIndex(tools) {
+  if (!Array.isArray(tools)) return -1;
+  for (let i = tools.length - 1; i >= 0; i--) {
+    if (tools[i]?.defer_loading !== true) return i;
+  }
+  return -1;
+}
+
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
   if (typeof msg.content === "string" && msg.content.trim()) return true;
@@ -223,7 +235,7 @@ export function anchorClaudeCache(body) {
   }
 
   if (Array.isArray(body.tools)) {
-    const last = body.tools.length - 1;
+    const last = lastCacheableToolIndex(body.tools);
     body.tools.forEach((tool, i) => {
       if (i === last) tool.cache_control = { ...CACHE_CONTROL_1H };
       else delete tool.cache_control;
@@ -494,30 +506,36 @@ function normalizeClaudeContentBlock(block) {
 
   // 3. Tools: normalize tools & tool_choice to Anthropic-native shape for all providers
   if (body.tools && Array.isArray(body.tools)) {
-    body.tools = body.tools
-      .filter(tool => tool && typeof tool === "object" && (!tool.type || tool.type === "function" || tool.name || tool.function?.name))
-      .map((tool, i) => {
-        let name = tool.name;
-        let description = tool.description;
-        let input_schema = tool.input_schema || tool.parameters;
+    const validTools = body.tools.filter(
+      (tool) => tool && typeof tool === "object" && (!tool.type || tool.type === "function" || tool.name || tool.function?.name)
+    );
+    const lastCacheable = lastCacheableToolIndex(validTools);
+    body.tools = validTools.map((tool, i) => {
+      let name = tool.name;
+      let description = tool.description;
+      let input_schema = tool.input_schema || tool.parameters;
 
-        if (tool.function) {
-          name = name || tool.function.name;
-          description = description || tool.function.description;
-          input_schema = input_schema || tool.function.parameters || tool.function.input_schema;
-        }
+      if (tool.function) {
+        name = name || tool.function.name;
+        description = description || tool.function.description;
+        input_schema = input_schema || tool.function.parameters || tool.function.input_schema;
+      }
 
-        const normalizedTool = {
-          name: String(name || "unknown_tool"),
-          ...(description ? { description: String(description) } : {}),
-          input_schema: (input_schema && typeof input_schema === "object") ? input_schema : { type: "object", properties: {} }
-        };
+      const { cache_control: _droppedCc, function: _fn, ...extraProps } = tool;
+      if (extraProps.type === "function") delete extraProps.type;
 
-        if (i === body.tools.length - 1) {
-          normalizedTool.cache_control = { type: "ephemeral", ttl: "1h" };
-        }
-        return normalizedTool;
-      });
+      const normalizedTool = {
+        ...extraProps,
+        name: String(name || "unknown_tool"),
+        ...(description ? { description: String(description) } : {}),
+        input_schema: (input_schema && typeof input_schema === "object") ? input_schema : { type: "object", properties: {} }
+      };
+
+      if (i === lastCacheable) {
+        normalizedTool.cache_control = { type: "ephemeral", ttl: "1h" };
+      }
+      return normalizedTool;
+    });
 
     // Remove tools array and tool_choice if empty after filtering
     if (body.tools.length === 0) {

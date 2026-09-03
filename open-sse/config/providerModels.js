@@ -4,7 +4,8 @@ import REGISTRY from "../providers/registry/index.js";
 import { PROVIDER_MODELS } from "../providers/index.js";
 import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
 import { deriveModelName } from "../providers/models/namePatterns.js";
-import { CODEX_REVIEW_SUFFIX, resolveAntigravityFlashModel } from "../providers/models/helpers.js";
+import { CODEX_REVIEW_SUFFIX, resolveAntigravityFlashModel, isMuseSparkModel } from "../providers/models/helpers.js";
+import { FORMATS } from "../translator/formats.js";
 
 export { PROVIDER_MODELS };
 
@@ -69,6 +70,9 @@ export function findModelName(aliasOrId, modelId) {
 }
 
 export function getModelTargetFormat(aliasOrId, modelId) {
+  if ((!aliasOrId || aliasOrId === "oc" || aliasOrId === "opencode") && isMuseSparkModel(modelId)) {
+    return FORMATS.OPENAI_RESPONSES;
+  }
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
   return modelTargetFormat(findModel(models, modelId, aliasOrId));

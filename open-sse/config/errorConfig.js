@@ -88,6 +88,7 @@ export const ERROR_RULES = [
   { text: "invalid model",    modelError: true },
   { text: "not available in", modelError: true },
   { text: "endpoint is unavailable", modelError: true },
+  { text: "model is unavailable", modelError: true },
   // Model-level transient overload (e.g. Kiro 500 "reason": "MODEL_TEMPORARILY_UNAVAILABLE").
   // Retrying with another account of the same provider is pointless — the model
   // is overloaded for everyone. Model-level: combo skips to next model, and a

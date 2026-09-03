@@ -4,6 +4,8 @@
  * and normalizes prompt prefixes for OpenAI/Gemini/Codex to maximize upstream KV cache hits.
  */
 
+import { lastCacheableToolIndex } from "../formats/claude.js";
+
 const MAX_ANTHROPIC_CACHE_BREAKPOINTS = 4;
 const ALLOWED_CACHE_TYPES = new Set(["text", "image", "tool_use", "tool_result"]);
 
@@ -28,30 +30,27 @@ export function injectPromptCaching(body, targetFormat) {
 }
 
 /**
- * Count existing cache_control breakpoints in a Claude request body
+ * Count existing cache_control breakpoints in a Claude-format body
+ * @param {object} body
+ * @returns {number}
  */
 function countExistingBreakpoints(body) {
   let count = 0;
 
   if (Array.isArray(body.system)) {
-    for (const sys of body.system) {
-      if (sys && typeof sys === "object" && sys.cache_control) count++;
-    }
+    count += body.system.filter(b => b && typeof b === "object" && b.cache_control).length;
+  } else if (body.system && typeof body.system === "object" && body.system.cache_control) {
+    count++;
   }
 
   if (Array.isArray(body.tools)) {
-    for (const t of body.tools) {
-      if (t && typeof t === "object" && t.cache_control) count++;
-    }
+    count += body.tools.filter(t => t && typeof t === "object" && t.cache_control).length;
   }
 
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) {
-      if (!msg) continue;
-      if (Array.isArray(msg.content)) {
-        for (const block of msg.content) {
-          if (block && typeof block === "object" && block.cache_control) count++;
-        }
+      if (Array.isArray(msg?.content)) {
+        count += msg.content.filter(b => b && typeof b === "object" && b.cache_control).length;
       }
     }
   }
@@ -60,9 +59,19 @@ function countExistingBreakpoints(body) {
 }
 
 /**
- * Inject Anthropic cache_control: { type: "ephemeral", ttl: "1h" } into system, tools, and message history
+ * Inject cache_control breakpoints into Claude request body up to 4 breakpoints.
+ * Priority: 1. system prompt, 2. tools definition, 3. conversation history.
  */
 function injectClaudePromptCache(body) {
+  // Always strip cache_control from defer_loading tools first (#3567)
+  if (Array.isArray(body.tools)) {
+    for (const tool of body.tools) {
+      if (tool?.defer_loading === true && tool.cache_control) {
+        delete tool.cache_control;
+      }
+    }
+  }
+
   let currentBreakpoints = countExistingBreakpoints(body);
   if (currentBreakpoints >= MAX_ANTHROPIC_CACHE_BREAKPOINTS) return false;
 
@@ -100,13 +109,16 @@ function injectClaudePromptCache(body) {
     }
   }
 
-  // 2. Inject in tools definition (on the last tool)
+  // 2. Inject in tools definition (on the last cache-eligible tool, skipping defer_loading tools)
   if (Array.isArray(body.tools) && body.tools.length > 0 && currentBreakpoints < MAX_ANTHROPIC_CACHE_BREAKPOINTS) {
-    const lastTool = body.tools[body.tools.length - 1];
-    if (lastTool && typeof lastTool === "object" && !lastTool.cache_control) {
-      lastTool.cache_control = cacheControlPayload;
-      currentBreakpoints++;
-      injected = true;
+    const lastIdx = lastCacheableToolIndex(body.tools);
+    if (lastIdx >= 0) {
+      const lastTool = body.tools[lastIdx];
+      if (lastTool && typeof lastTool === "object" && !lastTool.cache_control) {
+        lastTool.cache_control = cacheControlPayload;
+        currentBreakpoints++;
+        injected = true;
+      }
     }
   }
 

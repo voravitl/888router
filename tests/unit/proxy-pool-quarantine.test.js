@@ -355,3 +355,21 @@ describe("all-stale-no-URL", () => {
     expect(creds).toBeNull();
   });
 });
+
+describe("modelError vs pool failure classification", () => {
+  it("classifies 'model is unavailable' and 'endpoint is unavailable' as modelError (does not fallback pool)", () => {
+    const r1 = checkFallbackError(400, "Error: Model is unavailable.");
+    expect(r1.modelError).toBe(true);
+    expect(r1.shouldFallback).toBe(false);
+
+    const r2 = checkFallbackError(503, "Error: Endpoint is unavailable.");
+    expect(r2.modelError).toBe(true);
+    expect(r2.shouldFallback).toBe(false);
+  });
+
+  it("negative test: generic 'upstream request failed' is NOT a modelError and triggers pool fallback", () => {
+    const res = checkFallbackError(502, "Upstream request failed: connection timeout");
+    expect(res.modelError).toBeFalsy();
+    expect(res.shouldFallback).toBe(true);
+  });
+});
