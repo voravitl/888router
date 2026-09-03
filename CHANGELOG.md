@@ -1,3 +1,15 @@
+# v0.15.74 (2026-09-03)
+
+## Fix: AiPASS hub reliability — offscreen keepalive, fail-fast executor, virtual /v1/models injection
+
+- `public/aipass-extension/`: port MV3 offscreen-document keepalive (holds a `runtime.connect` port Chrome never discards) — kills the ~4min/30s service-worker eviction cycle that dropped `extensions` to 0 and flapped the SSE hub. Manifest adds the `offscreen` permission.
+- `open-sse/executors/aipass.js`: hub is now the only transport. The standalone-bridge fallback at `127.0.0.1:8787` is removed (the port belongs to the headroom container and ECONNREFUSED'd 502s on every reconnect window). The executor waits up to 4s for the extension to reconnect, then fails with a clear "extension not connected" error.
+- `src/app/api/v1/models/route.js`: inject virtual active connections for `noAuth+hasFree` providers (aipass, opencode, mimo-free) so `ap/*` models appear in `/v1/models` without a DB row — keyed gateways (openrouter, nousresearch, felo-web) are deliberately not injected.
+- `src/app/api/providers/[id]/test/testUtils.js`: the Test button on the synthesized `aipass-virtual` connection short-circuits before the DB lookup and reports hub state.
+- `open-sse/providers/registry/aipass.js`: `transport.baseUrl` is `bridge://aipass-hub`; notice text updated.
+- `open-sse/services/usage/aipass.js`: usage reads the hub quota only; honest disconnect error.
+- Tests: `tests/unit/v1-models-noauth-virtual-injection.test.js` locks injection behavior; aipass suite covers fail-fast (fake timers), attached-client fast path, and hub-only transport.
+
 # v0.15.73 (2026-09-03)
 
 ## Feat: AiPASS TH Extension Bridge, Antigravity Gemini 3.8 Flash & Provider Logos
