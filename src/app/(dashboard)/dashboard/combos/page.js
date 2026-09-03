@@ -275,31 +275,35 @@ export default function CombosPage() {
         </div>
       )}
 
-      {/* Create Modal - Use key to force remount and reset state */}
-      <ComboFormModal
-        key={snapshotTemplate?.name || "create"}
-        isOpen={showCreateModal}
-        onClose={() => {
-          setShowCreateModal(false);
-          setSnapshotTemplate(null);
-        }}
-        onSave={(data) => {
-          setSnapshotTemplate(null);
-          return handleCreate(data);
-        }}
-        activeProviders={activeProviders}
-        initialName={snapshotTemplate?.name}
-      />
+      {/* Create Modal - Lazy mounted */}
+      {showCreateModal && (
+        <ComboFormModal
+          key={snapshotTemplate?.name || "create"}
+          isOpen={showCreateModal}
+          onClose={() => {
+            setShowCreateModal(false);
+            setSnapshotTemplate(null);
+          }}
+          onSave={(data) => {
+            setSnapshotTemplate(null);
+            return handleCreate(data);
+          }}
+          activeProviders={activeProviders}
+          initialName={snapshotTemplate?.name}
+        />
+      )}
 
-      {/* Edit Modal - Use key to force remount and reset state */}
-      <ComboFormModal
-        key={editingCombo?.id || "new"}
-        isOpen={!!editingCombo}
-        combo={editingCombo}
-        onClose={() => setEditingCombo(null)}
-        onSave={(data) => handleUpdate(editingCombo.id, data)}
-        activeProviders={activeProviders}
-      />
+      {/* Edit Modal - Lazy mounted */}
+      {!!editingCombo && (
+        <ComboFormModal
+          key={editingCombo?.id || "new"}
+          isOpen={!!editingCombo}
+          combo={editingCombo}
+          onClose={() => setEditingCombo(null)}
+          onSave={(data) => handleUpdate(editingCombo.id, data)}
+          activeProviders={activeProviders}
+        />
+      )}
 
       {/* Confirm Delete Modal */}
       <ConfirmModal
@@ -486,17 +490,19 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
         </div>
       </div>
 
-      {/* Judge model picker (single-select; combo members make natural judges too) */}
-      <ModelSelectModal
-        isOpen={showJudgeSelect}
-        onClose={() => setShowJudgeSelect(false)}
-        onSelect={(m) => { onSetStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        title="Select Judge Model"
-        addedModelValues={judge ? [judge] : []}
-        closeOnSelect={true}
-      />
+      {/* Judge model picker (single-select; lazy mounted) */}
+      {showJudgeSelect && (
+        <ModelSelectModal
+          isOpen={showJudgeSelect}
+          onClose={() => setShowJudgeSelect(false)}
+          onSelect={(m) => { onSetStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          title="Select Judge Model"
+          addedModelValues={judge ? [judge] : []}
+          closeOnSelect={true}
+        />
+      )}
     </Card>
   );
 }
@@ -784,19 +790,21 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
         </div>
       </Modal>
 
-      {/* Model Select Modal */}
-      <ModelSelectModal
-        isOpen={showModelSelect}
-        onClose={() => setShowModelSelect(false)}
-        onSelect={handleAddModel}
-        onDeselect={handleDeselectModel}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        title="Add Model to Combo"
-        kindFilter={kindFilter}
-        addedModelValues={models}
-        closeOnSelect={false}
-      />
+      {/* Model Select Modal - Lazy mounted */}
+      {showModelSelect && (
+        <ModelSelectModal
+          isOpen={showModelSelect}
+          onClose={() => setShowModelSelect(false)}
+          onSelect={handleAddModel}
+          onDeselect={handleDeselectModel}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          title="Add Model to Combo"
+          kindFilter={kindFilter}
+          addedModelValues={models}
+          closeOnSelect={false}
+        />
+      )}
     </>
   );
 }
