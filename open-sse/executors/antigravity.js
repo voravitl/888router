@@ -7,6 +7,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { resolveAntigravityFlashModel } from "../providers/models/helpers.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -254,13 +255,8 @@ export class AntigravityExecutor extends BaseExecutor {
 
     this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
 
-    // Google Antigravity backend model name fallback (defensive if model has not been mapped earlier)
-    let upstreamModel = model;
-    if (upstreamModel === "gemini-3.8-flash") upstreamModel = "gemini-3.8-flash-medium";
-    else if (upstreamModel.startsWith("gemini-3.7-flash-high")) upstreamModel = "gemini-3.6-flash-high";
-    else if (upstreamModel.startsWith("gemini-3.7-flash-medium")) upstreamModel = "gemini-3.6-flash-medium";
-    else if (upstreamModel.startsWith("gemini-3.7-flash-low")) upstreamModel = "gemini-3.6-flash-low";
-    else if (upstreamModel === "gemini-3.7-flash") upstreamModel = "gemini-3.6-flash-medium";
+    // Google Antigravity backend model name dynamic resolution (future-proof without hardcoding)
+    const upstreamModel = resolveAntigravityFlashModel(model);
 
     return {
       ...body,

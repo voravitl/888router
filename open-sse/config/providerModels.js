@@ -3,7 +3,8 @@ import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
 import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
-import { CODEX_REVIEW_SUFFIX } from "../providers/models/helpers.js";
+import { deriveModelName } from "../providers/models/namePatterns.js";
+import { CODEX_REVIEW_SUFFIX, resolveAntigravityFlashModel } from "../providers/models/helpers.js";
 
 export { PROVIDER_MODELS };
 
@@ -29,10 +30,28 @@ function findModel(models, modelId, aliasOrId) {
   if (!models) return undefined;
   const found = models.find(m => m.id === modelId);
   if (found) return found;
-  if (!DOT_VERSION_PROVIDERS.has(aliasOrId)) return undefined;
-  const normalized = normalizeModelId(modelId);
-  if (normalized === modelId) return undefined;
-  return models.find(m => m.id === normalized);
+  if (DOT_VERSION_PROVIDERS.has(aliasOrId)) {
+    const normalized = normalizeModelId(modelId);
+    if (normalized !== modelId) {
+      const match = models.find(m => m.id === normalized);
+      if (match) return match;
+    }
+  }
+  if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof modelId === "string") {
+    const resolved = resolveAntigravityFlashModel(modelId);
+    if (resolved !== modelId) {
+      const match = models.find(m => m.id === resolved);
+      if (match) {
+        return {
+          ...match,
+          id: modelId,
+          name: deriveModelName(modelId),
+          upstreamModelId: match.upstreamModelId || match.id
+        };
+      }
+    }
+  }
+  return undefined;
 }
 
 export function isValidModel(aliasOrId, modelId, passthroughProviders = new Set()) {
@@ -79,6 +98,10 @@ export function getModelUpstreamId(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   const found = findModel(models, baseId, aliasOrId);
   if (found?.upstreamModelId) return found.upstreamModelId + suffix;
+  if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof baseId === "string") {
+    const resolved = resolveAntigravityFlashModel(baseId);
+    if (resolved !== baseId) return resolved + suffix;
+  }
   if (found?.id) return found.id + suffix;
   if (aliasOrId === "cx" && typeof baseId === "string" && baseId.endsWith(CODEX_REVIEW_SUFFIX)) {
     return baseId.slice(0, -CODEX_REVIEW_SUFFIX.length) + suffix;
