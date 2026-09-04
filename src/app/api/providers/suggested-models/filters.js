@@ -39,7 +39,7 @@ export const FILTERS = {
         if (!m || typeof m !== "object") return null;
         const id = m.id;
         if (!id) return null;
-        const ctxRaw = m.context_length || m.contextWindow || m.maxInputTokens;
+        const ctxRaw = m.max_context_window || m.context_length || m.contextWindow || m.context_window || m.maxInputTokens;
         // Guard against non-numeric upstream values producing NaN (9-opus review).
         let ctx = Number.isFinite(Number(ctxRaw)) ? Number(ctxRaw) : null;
         // Fall back to capabilities.js when upstream omits context — required

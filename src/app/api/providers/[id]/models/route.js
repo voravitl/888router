@@ -59,7 +59,17 @@ const appendCodexReviewModels = (models) => models.flatMap((model) => {
   const id = model?.id || model?.slug || model?.model || model?.name;
   if (!id) return [];
   const name = model?.display_name || model?.displayName || model?.name || id;
-  const normalized = { ...model, id, name };
+  const contextLength = Number(model?.max_context_window || model?.context_window || model?.context_length || model?.contextWindow) || undefined;
+  const vision = Array.isArray(model?.input_modalities)
+    ? model.input_modalities.includes("image")
+    : (model?.vision ?? model?.supportsImages ?? model?.supportsVision);
+  const normalized = {
+    ...model,
+    id,
+    name,
+    ...(contextLength ? { context_length: contextLength, contextWindow: contextLength } : {}),
+    ...(vision !== undefined ? { vision: Boolean(vision) } : {}),
+  };
   const isChatModel = (model?.type || "llm") !== "image" && !id.toLowerCase().includes("embed");
   if (!isChatModel || id.endsWith("-review")) return [normalized];
   return [
@@ -105,8 +115,9 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
 
         for (const m of safeModels) {
           const id = m.id;
-          const ctx = m.context_length || m.contextWindow || m.maxInputTokens || m.contextLength || m.details?.context_length;
-          const vision = m.vision ?? m.supportsImages ?? m.supportsVision ?? m.details?.families?.includes("vision");
+          const ctx = m.max_context_window || m.context_length || m.contextWindow || m.context_window || m.maxInputTokens || m.contextLength || m.details?.context_length;
+          const vision = m.vision ?? m.supportsImages ?? m.supportsVision ?? m.details?.families?.includes("vision")
+            ?? (Array.isArray(m.input_modalities) ? m.input_modalities.includes("image") : undefined);
           
           let resolvedReasoning = undefined;
           if (typeof m.reasoning === "boolean") {
@@ -117,9 +128,12 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
             resolvedReasoning = m.thinking;
           }
 
-          if (ctx || vision !== undefined || resolvedReasoning !== undefined) {
+          const ctxNum = Number(ctx);
+          const hasValidCtx = Number.isFinite(ctxNum) && ctxNum > 0;
+
+          if (hasValidCtx || vision !== undefined || resolvedReasoning !== undefined) {
             const caps = {};
-            if (ctx) caps.contextWindow = Number(ctx);
+            if (hasValidCtx) caps.contextWindow = ctxNum;
             if (vision !== undefined) caps.vision = Boolean(vision);
             if (resolvedReasoning !== undefined) caps.reasoning = resolvedReasoning;
 

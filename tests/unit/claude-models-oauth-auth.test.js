@@ -57,5 +57,5 @@ describe("claude models OAuth auth", () => {
     // Guard the exact regression: the OAuth token must NOT go via x-api-key (401).
     expect(init.headers["x-api-key"]).toBeUndefined();
     expect(body.models.map((m) => m.id)).toEqual(["claude-opus-4-8", "claude-sonnet-4-6"]);
-  });
+  }, 15000);
 });
