@@ -1,3 +1,27 @@
+# v0.15.82 (2026-09-04)
+
+## Perf: Comprehensive Resource Optimization (Disk bloat, Backup quotas, Memory cache, and Idle CPU)
+
+- `src/lib/db/migrate.js`:
+  - Added `optimizeDbBeforeBackup(adapter)`: prunes `requestDetails` (respecting time retention and count cap), flushes WAL with `PRAGMA wal_checkpoint(TRUNCATE)`, checks freelist, and runs `VACUUM` only when freelist > 2,500 pages (~10MB) and disk headroom >= 1.5x DB size (avoiding `SQLITE_FULL` disk-full errors).
+  - Enforced `pruneOldBackups()` execution **before** taking new backups and before VACUUM, freeing multi-GB old backup sets first to guarantee disk space.
+- `src/lib/db/backup.js`:
+  - Added `parseNonNeg` helper so `0` values (e.g. `KEEP_BACKUPS=0` or `KEEP_BACKUPS_TOTAL_BYTES=0`) are respected cleanly instead of falling back to non-zero defaults.
+  - Reduced default `KEEP_BACKUPS_TOTAL_BYTES` cap from 15 GB to 3 GB to eliminate runaway volume exhaustion in Docker.
+  - Made `KEEP_BACKUPS` configurable via `process.env.KEEP_BACKUPS` (default 2).
+- `src/lib/db/repos/settingsRepo.js` & `src/lib/db/repos/requestDetailsRepo.js`:
+  - Lowered `observabilityMaxRecords` default from 50,000 to 10,000 records, bounding table growth while preserving full 30-day savings reporting.
+  - Aligned default retention to 30 days across settings, repos, and standalone prune functions.
+  - Exported standalone `pruneRequestDetailsSync(adapter, config)` for deterministic pre-migration invocation.
+  - Optimized `truncateField(obj, maxSize)`: fast-estimates payload length across OpenAI (`messages`), Anthropic (`content[]`), and Gemini (`contents[].parts[]`) structures before `JSON.stringify()`, preventing multi-MB string allocations, GC pauses, and V8 heap spikes.
+- `src/lib/db/schema.js`:
+  - Lowered `PRAGMA cache_size` from `-64000` (64 MB) to `-16000` (16 MB), reclaiming ~48 MB RAM per instance while maintaining microsecond indexed query performance.
+- `src/lib/db/adapters/betterSqliteAdapter.js`:
+  - Balanced WAL checkpoints: uses non-blocking `PASSIVE` on periodic 60s ticks and runs `TRUNCATE` every 10 minutes (and on process shutdown), eliminating periodic exclusive locking spikes while keeping `-wal` file size bounded.
+- `src/lib/tunnel/shared/watchdogConfig.js` & `src/shared/services/initializeApp.js`:
+  - Reduced network check interval from 5s to 15s (`NETWORK_CHECK_INTERVAL_MS = 15000`), reducing idle CPU polling and TCP handshakes by 66%.
+  - Decoupled sleep detection threshold into a separate `SLEEP_DETECT_MS = 30000;` constant.
+
 # v0.15.81 (2026-09-04)
 
 ## Fix: OpenAI Codex & GPT-5.4+ dynamic context window, 1.05M expansion, and official pricing
