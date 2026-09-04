@@ -217,19 +217,41 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     store: false
   };
 
-  // Extract system messages as instructions
-  const systemInstructions = [];
+  // Extract system messages as instructions (first becomes instructions; subsequent become developer turns)
+  let hasSystemInstructions = false;
   const messages = body.messages || [];
+  const generatedCallIds = new Map();
+  let generatedCallSeq = 0;
+  const resolveCallId = (rawId, fallbackKey) => {
+    const clamped = clampCallId(rawId);
+    if (clamped && clamped.trim()) return clamped.trim();
+    const key = rawId || fallbackKey;
+    if (!generatedCallIds.has(key)) {
+      generatedCallIds.set(key, `call_${Date.now().toString(36)}_${(generatedCallSeq++).toString(36)}`);
+    }
+    return generatedCallIds.get(key);
+  };
 
-  for (const msg of messages) {
+  for (let mIdx = 0; mIdx < messages.length; mIdx++) {
+    const msg = messages[mIdx];
     if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
       const text = typeof msg.content === "string"
         ? msg.content
         : Array.isArray(msg.content)
           ? msg.content.map(c => (typeof c === "string" ? c : c?.text || "")).filter(Boolean).join("\n")
           : "";
-      if (text) systemInstructions.push(text);
-      continue; // Skip instruction messages in input
+      if (!hasSystemInstructions) {
+        result.instructions = text;
+        hasSystemInstructions = true;
+      } else if (text) {
+        // Keep temporal scope of mid-conversation system/developer turns as developer input items
+        result.input.push({
+          type: RESPONSES_ITEM.MESSAGE,
+          role: "developer",
+          content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text }]
+        });
+      }
+      continue; // Handled
     }
 
     // Convert user/assistant messages to input items
@@ -268,14 +290,22 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
     // Convert tool calls
     if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
-      for (const tc of msg.tool_calls) {
+      for (let tcIdx = 0; tcIdx < msg.tool_calls.length; tcIdx++) {
+        const tc = msg.tool_calls[tcIdx];
         const rawArgs = tc.function?.arguments;
-        const argumentsStr = typeof rawArgs === "object" && rawArgs !== null
-          ? JSON.stringify(rawArgs)
-          : (typeof rawArgs === "string" ? rawArgs : "{}");
+        let argumentsStr = "{}";
+        if (typeof rawArgs === "object" && rawArgs !== null) {
+          try {
+            argumentsStr = JSON.stringify(rawArgs);
+          } catch {
+            argumentsStr = "{}";
+          }
+        } else if (typeof rawArgs === "string") {
+          argumentsStr = rawArgs;
+        }
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,
-          call_id: clampCallId(tc.id) || `call_${Date.now()}`,
+          call_id: resolveCallId(tc.id, `tc_${mIdx}_${tcIdx}`),
           name: tc.function?.name || "_unknown",
           arguments: argumentsStr
         });
@@ -291,14 +321,16 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           : JSON.stringify(msg.content);
       result.input.push({
         type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
-        call_id: clampCallId(msg.tool_call_id),
+        call_id: resolveCallId(msg.tool_call_id, `tool_${mIdx}`),
         output
       });
     }
   }
 
-  // If system messages existed, set instructions; otherwise empty string
-  result.instructions = systemInstructions.length > 0 ? systemInstructions.join("\n\n") : "";
+  // If no system message found, default instructions to empty string
+  if (!hasSystemInstructions) {
+    result.instructions = "";
+  }
 
   // Convert tools format
   if (body.tools && Array.isArray(body.tools)) {
@@ -316,18 +348,20 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     });
   }
 
-  // Pass through tool_choice
+  // Pass through validated tool_choice
   if (body.tool_choice !== undefined) {
     if (typeof body.tool_choice === "string") {
-      result.tool_choice = body.tool_choice;
-    } else if (body.tool_choice && typeof body.tool_choice === "object") {
+      const allowed = new Set(["none", "auto", "required"]);
+      if (allowed.has(body.tool_choice)) {
+        result.tool_choice = body.tool_choice;
+      }
+    } else if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
       if (body.tool_choice.type === "function") {
-        const name = body.tool_choice.function?.name || body.tool_choice.name;
+        const rawName = body.tool_choice.function?.name || body.tool_choice.name;
+        const name = typeof rawName === "string" ? rawName.trim().slice(0, 128) : "";
         if (name) {
           result.tool_choice = { type: "function", name };
         }
-      } else {
-        result.tool_choice = body.tool_choice;
       }
     }
   }

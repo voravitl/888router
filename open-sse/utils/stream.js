@@ -350,15 +350,18 @@ export function createSSEStream(options = {}) {
         if (parsed.type === "response.output_item.added" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
           if (accumulatedToolCalls === null) accumulatedToolCalls = [];
           if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
-            const id = parsed.item.call_id || parsed.item.id || `tc_${accumulatedToolCalls.length}`;
-            if (!accumulatedToolCalls.some((c) => c.id === id)) {
+            const id = parsed.item.call_id || parsed.item.id || parsed.item_id || `tc_${accumulatedToolCalls.length}`;
+            const existing = accumulatedToolCalls.find((c) => c.id === id);
+            if (existing) {
+              if (!existing.name && parsed.item.name) existing.name = parsed.item.name;
+            } else {
               accumulatedToolCalls.push({ id, name: parsed.item.name || null });
             }
           }
         }
         if (parsed.type === "response.output_item.done" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
           if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-          const id = parsed.item.call_id || parsed.item.id || `tc_${accumulatedToolCalls.length}`;
+          const id = parsed.item.call_id || parsed.item.id || parsed.item_id || `tc_${accumulatedToolCalls.length}`;
           const existing = accumulatedToolCalls.find((c) => c.id === id);
           if (existing) {
             if (!existing.name && parsed.item.name) existing.name = parsed.item.name;
@@ -366,8 +369,14 @@ export function createSSEStream(options = {}) {
             accumulatedToolCalls.push({ id, name: parsed.item.name || null });
           }
         }
-        if ((parsed.type === "response.function_call_arguments.delta" || parsed.type === "response.custom_tool_call_input.delta") && accumulatedToolCalls === null) {
-          accumulatedToolCalls = [{ id: parsed.call_id || "tc_0", name: null }];
+        if (parsed.type === "response.function_call_arguments.delta" || parsed.type === "response.custom_tool_call_input.delta") {
+          const id = parsed.call_id || parsed.item_id || parsed.id;
+          if (id) {
+            if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+            if (!accumulatedToolCalls.some((c) => c.id === id) && accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+              accumulatedToolCalls.push({ id, name: null });
+            }
+          }
         }
 
         // Extract usage

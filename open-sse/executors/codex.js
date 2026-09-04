@@ -15,6 +15,11 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
 const CODEX_SSE_PEEK_BYTES = 512;
+// Check if SSE text contains a valid output delta or completion frame proving active token generation
+function hasActiveGenerationFrame(text) {
+  return /(?:^|\n)event:\s*response\.(?:output_text\.delta|output_item\.added|output_item\.done|function_call_arguments\.delta|reasoning_summary_text\.delta|completed|done)(?:\r?\n|$)/.test(text) ||
+    /(?:^|\n)data:\s*\{.*"type":\s*"response\.(?:output_text\.delta|output_item|function_call)/.test(text);
+}
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -251,16 +256,9 @@ export class CodexExecutor extends BaseExecutor {
         const hit = CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p));
         if (hit) { matched = hit; break; }
 
-        // Once a valid response lifecycle event is detected, upstream is healthy and in-progress.
-        // Release immediately so TTFT is sub-second and not stalled waiting for full buffer.
-        if (
-          text.includes("response.created") ||
-          text.includes("response.in_progress") ||
-          text.includes("response.output_item.added") ||
-          text.includes("response.output_text.delta") ||
-          text.includes("response.function_call_arguments.delta") ||
-          text.includes("response.reasoning_summary_text.delta")
-        ) {
+        // Once active content/tool generation frame is detected, upstream is actively producing tokens.
+        // Release immediately so TTFT is sub-second without waiting for full buffer.
+        if (hasActiveGenerationFrame(text)) {
           break;
         }
       }
