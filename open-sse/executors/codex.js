@@ -327,9 +327,10 @@ export class CodexExecutor extends BaseExecutor {
       return false;
     };
 
+    let bytesScanned = 0;
     const CODEX_SSE_MAX_BOUND_BYTES = CODEX_SSE_PEEK_BYTES + 1024;
     try {
-      while (bytesRead < CODEX_SSE_PEEK_BYTES || (frameBuffer.length > 0 && bytesRead < CODEX_SSE_MAX_BOUND_BYTES)) {
+      while (bytesScanned < CODEX_SSE_PEEK_BYTES || (frameBuffer.length > 0 && bytesScanned < CODEX_SSE_MAX_BOUND_BYTES)) {
         const { done, value } = await reader.read();
         if (done) {
           frameBuffer += decoder.decode();
@@ -337,21 +338,27 @@ export class CodexExecutor extends BaseExecutor {
             const { event, data, dataStr } = parseSseFrame(frameBuffer);
             const hit = isOverloadedErrorFrame(event, data, dataStr);
             if (hit) matched = hit;
+            if (isActiveGenerationFrame(event, data)) activeGenerationDetected = true;
           }
           break;
         }
         chunks.push(value);
-        bytesRead += value.byteLength;
-        const scanSlice = value.byteLength > CODEX_SSE_MAX_BOUND_BYTES
-          ? value.subarray(0, CODEX_SSE_MAX_BOUND_BYTES)
-          : value;
-        const decoded = decoder.decode(scanSlice, { stream: true });
-        frameBuffer += decoded;
-        if (frameBuffer.length > CODEX_SSE_MAX_BOUND_BYTES * 2) {
-          frameBuffer = frameBuffer.slice(0, CODEX_SSE_MAX_BOUND_BYTES * 2);
+
+        // Process chunk incrementally in slices to bound scan memory and complete in-flight frames accurately
+        let chunkOffset = 0;
+        while (
+          chunkOffset < value.byteLength &&
+          (bytesScanned < CODEX_SSE_PEEK_BYTES || (frameBuffer.length > 0 && bytesScanned < CODEX_SSE_MAX_BOUND_BYTES))
+        ) {
+          const sliceEnd = Math.min(value.byteLength, chunkOffset + 1024);
+          const slice = value.subarray(chunkOffset, sliceEnd);
+          bytesScanned += slice.byteLength;
+          chunkOffset = sliceEnd;
+          frameBuffer += decoder.decode(slice, { stream: true });
+          if (processFrames()) break;
         }
 
-        if (processFrames()) {
+        if (activeGenerationDetected || matched) {
           break;
         }
       }

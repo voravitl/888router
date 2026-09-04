@@ -235,6 +235,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     return generatedCallIds.get(key);
   };
 
+  const seenCallIds = new Set();
   for (let mIdx = 0; mIdx < messages.length; mIdx++) {
     const msg = messages[mIdx];
     if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
@@ -297,7 +298,6 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
     // Convert tool calls
     if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
-      const seenBatchCallIds = new Set();
       for (let tcIdx = 0; tcIdx < msg.tool_calls.length; tcIdx++) {
         const tc = msg.tool_calls[tcIdx];
         const rawArgs = tc.function?.arguments;
@@ -318,10 +318,10 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           throw new Error(`Invalid arguments type "${typeof rawArgs}" for tool "${tc.function?.name || tcIdx}"`);
         }
         const callId = resolveCallId(tc.id, `tc_${mIdx}_${tcIdx}`);
-        if (seenBatchCallIds.has(callId)) {
+        if (seenCallIds.has(callId)) {
           throw new Error(`Duplicate tool call id "${callId}" in assistant tool_calls`);
         }
-        seenBatchCallIds.add(callId);
+        seenCallIds.add(callId);
         pendingAssistantCallIds.push(callId);
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,
@@ -368,7 +368,10 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       let callId = rawToolId ? resolveCallId(rawToolId, `tool_${mIdx}`) : null;
       if (callId) {
         const pendingIdx = pendingAssistantCallIds.indexOf(callId);
-        if (pendingIdx !== -1) pendingAssistantCallIds.splice(pendingIdx, 1);
+        if (pendingIdx === -1) {
+          throw new Error(`Tool output at message index ${mIdx} references unknown or non-pending call id "${callId}"`);
+        }
+        pendingAssistantCallIds.splice(pendingIdx, 1);
       } else {
         const nextId = pendingAssistantCallIds.shift();
         if (!nextId) {

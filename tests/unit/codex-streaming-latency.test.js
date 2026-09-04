@@ -251,6 +251,30 @@ describe("Codex streaming latency and tool call optimizations", () => {
 
       expect(peek.matched).toBe("server_is_overloaded");
     });
+
+    it("detects overload frame spanning across slice boundary in a single oversized chunk", async () => {
+      const executor = new CodexExecutor();
+      // Pad 4000 bytes so frame starts at ~4000 (< 4096 bytes)
+      const padding = `: pad ${"a".repeat(90)}\n\n`.repeat(40); // 40 * 100 = 4000 bytes
+      // Frame begins in 4th slice (< 4096), completes in 5th slice (> 4096)
+      const errPrefix = 'event: error\ndata: {"error":{"code":"server_is_overloaded","extra":"';
+      const errMiddle = "x".repeat(400); // pushes frame boundary to ~4470 bytes
+      const errSuffix = '"}}\n\n';
+      const tail = "y".repeat(30000); // 35KB total chunk
+
+      const chunk = new TextEncoder().encode(padding + errPrefix + errMiddle + errSuffix + tail);
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(chunk);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      expect(peek.matched).toBe("server_is_overloaded");
+    });
   });
 
   describe("CodexExecutor strict property preservation", () => {
@@ -539,6 +563,42 @@ describe("Codex streaming latency and tool call optimizations", () => {
         openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
       }).toThrow(/exceeds maximum length of 128 characters/);
     });
+
+    it("rejects explicit tool output referencing unknown or non-pending call ID", () => {
+      const body = {
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [{ id: "call_known", function: { name: "ToolA", arguments: "{}" } }],
+          },
+          { role: "tool", tool_call_id: "call_unknown", content: "bad output" },
+        ],
+      };
+
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      }).toThrow(/references unknown or non-pending call id "call_unknown"/);
+    });
+
+    it("rejects duplicate tool call IDs across multiple assistant messages", () => {
+      const body = {
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [{ id: "call_reuse", function: { name: "Tool1", arguments: "{}" } }],
+          },
+          { role: "tool", tool_call_id: "call_reuse", content: "ok" },
+          {
+            role: "assistant",
+            tool_calls: [{ id: "call_reuse", function: { name: "Tool2", arguments: "{}" } }],
+          },
+        ],
+      };
+
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      }).toThrow(/Duplicate tool call id "call_reuse"/);
+    });
   });
 
   describe("convertResponsesApiFormat tool call and output reconciliation", () => {
@@ -574,6 +634,35 @@ describe("Codex streaming latency and tool call optimizations", () => {
       expect(() => {
         convertResponsesApiFormat(body);
       }).toThrow(/Orphan or ambiguous tool output cannot be paired/);
+    });
+
+    it("rejects explicit tool output referencing unknown call ID", () => {
+      const body = {
+        input: [
+          { type: "function_call", name: "toolA", call_id: "call_a", arguments: "{}" },
+          { type: "function_call_output", call_id: "call_nonexistent", output: "fail" },
+        ],
+      };
+
+      expect(() => {
+        convertResponsesApiFormat(body);
+      }).toThrow(/references unknown or non-pending call id "call_nonexistent"/);
+    });
+
+    it("advances callIndex for both explicit and ID-less tool calls deterministically", () => {
+      const body = {
+        input: [
+          { type: "function_call", name: "tool_explicit", call_id: "call_explicit", arguments: "{}" },
+          { type: "function_call", name: "tool_generated", arguments: "{}" },
+        ],
+      };
+
+      const result = convertResponsesApiFormat(body);
+      const calls = result.messages[0].tool_calls;
+      expect(calls).toHaveLength(2);
+      expect(calls[0].id).toBe("call_explicit");
+      // Second call must encode index 1 (not 0) because first call consumed index 0
+      expect(calls[1].id).toContain("_tc1_");
     });
   });
 

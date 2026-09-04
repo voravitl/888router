@@ -97,8 +97,9 @@ export function convertResponsesApiFormat(body) {
       }
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      const callIndex = funcCallIndex++;
       const explicitId = normalizeCallId(item.call_id) || normalizeCallId(item.id);
-      const tcId = explicitId || generateToolCallId(result.messages.length, funcCallIndex++, item.name);
+      const tcId = explicitId || generateToolCallId(result.messages.length, callIndex, item.name);
       pendingGeneratedCallIds.push(tcId);
       currentAssistantMsg.tool_calls.push({
         id: tcId,
@@ -122,7 +123,10 @@ export function convertResponsesApiFormat(body) {
       let tcId = explicitId;
       if (tcId) {
         const pendingIdx = pendingGeneratedCallIds.indexOf(tcId);
-        if (pendingIdx !== -1) pendingGeneratedCallIds.splice(pendingIdx, 1);
+        if (pendingIdx === -1) {
+          throw new Error(`Tool output references unknown or non-pending call id "${tcId}"`);
+        }
+        pendingGeneratedCallIds.splice(pendingIdx, 1);
       } else {
         const nextId = pendingGeneratedCallIds.shift();
         if (!nextId) {
