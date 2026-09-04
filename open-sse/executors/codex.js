@@ -14,11 +14,53 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
-const CODEX_SSE_PEEK_BYTES = 2048;
-// Check if SSE text contains non-empty irreversible content/reasoning/argument deltas proving active token generation
-function hasActiveGenerationFrame(text) {
-  return /(?:^|\n)event:\s*response\.(?:output_text\.delta|reasoning_summary_text\.delta|function_call_arguments\.delta|custom_tool_call_input\.delta)(?:\r?\n|$)/.test(text) ||
-    /(?:^|\n)data:\s*\{.*"type":\s*"response\.(?:output_text\.delta|reasoning_summary_text\.delta|function_call_arguments\.delta|custom_tool_call_input\.delta)".*"delta":\s*"[^"]+"/.test(text);
+const CODEX_SSE_PEEK_BYTES = 4096;
+
+function parseSseFrame(frameText) {
+  let event = null;
+  let dataStr = "";
+  const lines = frameText.split(/\r?\n/);
+  for (const line of lines) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      const d = line.slice(5).trim();
+      dataStr = dataStr ? `${dataStr}\n${d}` : d;
+    }
+  }
+  let data = null;
+  if (dataStr && dataStr !== "[DONE]") {
+    try {
+      data = JSON.parse(dataStr);
+    } catch {
+      data = null;
+    }
+  }
+  return { event, data };
+}
+
+function isActiveGenerationFrame(event, data) {
+  if (!data || typeof data !== "object") return false;
+  const type = data.type || event;
+  const deltaTypes = new Set([
+    "response.output_text.delta",
+    "response.reasoning_summary_text.delta",
+    "response.function_call_arguments.delta",
+    "response.custom_tool_call_input.delta",
+  ]);
+  if (deltaTypes.has(type)) {
+    return typeof data.delta === "string" && data.delta.length > 0;
+  }
+  return false;
+}
+
+function isOverloadedErrorFrame(event, data) {
+  if (!data || typeof data !== "object") return null;
+  const isError = event === "error" || data.type === "error" || data.error !== undefined;
+  if (!isError) return null;
+  const err = data.error || data;
+  const text = `${err?.message || ""} ${err?.code || ""} ${typeof err === "string" ? err : ""}`.toLowerCase();
+  return CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p)) || null;
 }
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
@@ -247,18 +289,38 @@ export class CodexExecutor extends BaseExecutor {
     const chunks = [];
     let text = "";
     let matched = null;
+    let frameBuffer = "";
     try {
       while (text.length < CODEX_SSE_PEEK_BYTES) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value);
-        text += decoder.decode(value, { stream: true });
-        const hit = CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p));
-        if (hit) { matched = hit; break; }
+        const decoded = decoder.decode(value, { stream: true });
+        text += decoded;
+        frameBuffer += decoded;
 
-        // Once active content/tool generation frame is detected, upstream is actively producing tokens.
-        // Release immediately so TTFT is sub-second without waiting for full buffer.
-        if (hasActiveGenerationFrame(text)) {
+        let boundaryIdx;
+        let activeGenerationDetected = false;
+        while ((boundaryIdx = frameBuffer.search(/\r?\n\r?\n/)) !== -1) {
+          const frameMatch = frameBuffer.match(/\r?\n\r?\n/);
+          const frameLength = boundaryIdx + frameMatch[0].length;
+          const frameText = frameBuffer.slice(0, boundaryIdx);
+          frameBuffer = frameBuffer.slice(frameLength);
+
+          const { event, data } = parseSseFrame(frameText);
+          const hit = isOverloadedErrorFrame(event, data);
+          if (hit) {
+            matched = hit;
+            break;
+          }
+
+          if (isActiveGenerationFrame(event, data)) {
+            activeGenerationDetected = true;
+            break;
+          }
+        }
+
+        if (matched || activeGenerationDetected) {
           break;
         }
       }

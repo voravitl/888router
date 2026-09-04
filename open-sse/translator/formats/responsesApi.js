@@ -1,4 +1,5 @@
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { generateToolCallId } from "../concerns/toolCall.js";
 
 /**
  * Normalize Responses API input to array format.
@@ -41,8 +42,8 @@ export function convertResponsesApiFormat(body) {
 
   // Group items by conversation turn
   let currentAssistantMsg = null;
-  let pendingToolCalls = [];
   let pendingToolResults = [];
+  let funcCallIndex = 0;
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -57,6 +58,7 @@ export function convertResponsesApiFormat(body) {
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
         currentAssistantMsg = null;
+        funcCallIndex = 0;
       }
       // Flush pending tool results
       if (pendingToolResults.length > 0) {
@@ -91,8 +93,9 @@ export function convertResponsesApiFormat(body) {
       }
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      const tcId = item.call_id || item.id || generateToolCallId(result.messages.length, funcCallIndex++, item.name);
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id || item.id || `call_${Date.now().toString(36)}`,
+        id: tcId,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
@@ -105,11 +108,13 @@ export function convertResponsesApiFormat(body) {
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
         currentAssistantMsg = null;
+        funcCallIndex = 0;
       }
       // Add tool result
+      const tcId = item.call_id || item.id || generateToolCallId(result.messages.length, funcCallIndex > 0 ? funcCallIndex - 1 : 0);
       pendingToolResults.push({
         role: ROLE.TOOL,
-        tool_call_id: item.call_id || item.id || `call_${Date.now().toString(36)}`,
+        tool_call_id: tcId,
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }

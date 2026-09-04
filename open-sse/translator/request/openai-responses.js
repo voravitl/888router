@@ -227,7 +227,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     if (clamped && clamped.trim()) return clamped.trim();
     const key = rawId || fallbackKey;
     if (!generatedCallIds.has(key)) {
-      generatedCallIds.set(key, `call_${Date.now().toString(36)}_${(generatedCallSeq++).toString(36)}`);
+      generatedCallIds.set(key, `call_${fallbackKey}_${generatedCallSeq++}`);
     }
     return generatedCallIds.get(key);
   };
@@ -238,7 +238,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       const text = typeof msg.content === "string"
         ? msg.content
         : Array.isArray(msg.content)
-          ? msg.content.map(c => (typeof c === "string" ? c : c?.text || "")).filter(Boolean).join("\n")
+          ? msg.content.map(c => (typeof c === "string" ? c : (typeof c?.text === "string" ? c.text : ""))).filter(Boolean).join("\n")
           : "";
       if (!hasSystemInstructions) {
         result.instructions = text;
@@ -296,12 +296,18 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         let argumentsStr = "{}";
         if (typeof rawArgs === "object" && rawArgs !== null) {
           try {
-            argumentsStr = JSON.stringify(rawArgs);
-          } catch {
-            argumentsStr = "{}";
+            const serialized = JSON.stringify(rawArgs);
+            if (serialized === undefined) {
+              throw new Error("Unserializable arguments (produced undefined)");
+            }
+            argumentsStr = serialized;
+          } catch (err) {
+            throw new Error(`Failed to serialize arguments for tool "${tc.function?.name || tcIdx}": ${err.message}`);
           }
         } else if (typeof rawArgs === "string") {
           argumentsStr = rawArgs;
+        } else if (rawArgs !== undefined && rawArgs !== null) {
+          throw new Error(`Invalid arguments type "${typeof rawArgs}" for tool "${tc.function?.name || tcIdx}"`);
         }
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,

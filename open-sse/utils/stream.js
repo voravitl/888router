@@ -72,8 +72,46 @@ export function createSSEStream(options = {}) {
   // record only needs enough entries for the dashboard summary, not the
   // full call list.
   const MAX_TRACKED_TOOL_CALLS = 64;
+  const MAX_TOOL_MAP_ENTRIES = 128;
   let accumulatedToolCalls = null;
-  const responsesToolMap = new Map(); // itemId -> { callId, name }
+  // Map identifier (itemId or callId) -> canonical record { id, name }
+  const toolAliasMap = new Map();
+
+  function trackResponsesToolCall(itemId, callId, name) {
+    if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+
+    const recByCall = callId ? toolAliasMap.get(callId) : null;
+    const recByItem = itemId ? toolAliasMap.get(itemId) : null;
+
+    if (recByCall && recByItem && recByCall !== recByItem) {
+      // Late alias reconciliation: both aliases were tracked under separate records
+      if (!recByCall.name && (recByItem.name || name)) recByCall.name = recByItem.name || name;
+      const removeIdx = accumulatedToolCalls.indexOf(recByItem);
+      if (removeIdx !== -1) accumulatedToolCalls.splice(removeIdx, 1);
+      if (itemId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(itemId, recByCall);
+      return;
+    }
+
+    const canonical = recByCall || recByItem;
+    if (canonical) {
+      if (callId && canonical.id !== callId) canonical.id = callId;
+      if (!canonical.name && name) canonical.name = name;
+      if (itemId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(itemId, canonical);
+      if (callId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(callId, canonical);
+      return;
+    }
+
+    const preferredId = callId || itemId;
+    if (!preferredId) return;
+
+    if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+      const newRec = { id: preferredId, name: name || null };
+      accumulatedToolCalls.push(newRec);
+      if (itemId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(itemId, newRec);
+      if (callId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(callId, newRec);
+    }
+  }
+
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -349,61 +387,21 @@ export function createSSEStream(options = {}) {
         }
         // OpenAI Responses format - tool_calls
         if (parsed.type === "response.output_item.added" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
-          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-          const itemId = parsed.item.id || parsed.item_id;
-          const callId = parsed.item.call_id || itemId || `tc_${accumulatedToolCalls.length}`;
+          const itemId = parsed.item.id || parsed.item_id || null;
+          const callId = parsed.item.call_id || null;
           const name = parsed.item.name || null;
-          if (itemId) {
-            responsesToolMap.set(itemId, { callId, name });
-          }
-          let existing = accumulatedToolCalls.find((c) => c.id === callId);
-          if (!existing && itemId) {
-            existing = accumulatedToolCalls.find((c) => c.id === itemId);
-          }
-          if (existing) {
-            existing.id = callId;
-            if (!existing.name && name) existing.name = name;
-          } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
-            accumulatedToolCalls.push({ id: callId, name });
-          }
+          trackResponsesToolCall(itemId, callId, name);
         }
         if (parsed.type === "response.output_item.done" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
-          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-          const itemId = parsed.item.id || parsed.item_id;
-          const callId = parsed.item.call_id || itemId || `tc_${accumulatedToolCalls.length}`;
+          const itemId = parsed.item.id || parsed.item_id || null;
+          const callId = parsed.item.call_id || null;
           const name = parsed.item.name || null;
-          if (itemId) {
-            const prev = responsesToolMap.get(itemId);
-            responsesToolMap.set(itemId, { callId: callId || prev?.callId, name: name || prev?.name });
-          }
-          let existing = accumulatedToolCalls.find((c) => c.id === callId);
-          if (!existing && itemId) {
-            existing = accumulatedToolCalls.find((c) => c.id === itemId);
-          }
-          if (existing) {
-            existing.id = callId;
-            if (!existing.name && name) existing.name = name;
-          } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
-            accumulatedToolCalls.push({ id: callId, name });
-          }
+          trackResponsesToolCall(itemId, callId, name);
         }
         if (parsed.type === "response.function_call_arguments.delta" || parsed.type === "response.custom_tool_call_input.delta") {
-          const itemId = parsed.item_id || parsed.id;
-          const mapped = itemId ? responsesToolMap.get(itemId) : null;
-          const targetId = parsed.call_id || mapped?.callId || itemId;
-          if (targetId) {
-            if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-            let existing = accumulatedToolCalls.find((c) => c.id === targetId);
-            if (!existing && itemId) {
-              existing = accumulatedToolCalls.find((c) => c.id === itemId);
-            }
-            if (existing) {
-              if (mapped?.callId && existing.id !== mapped.callId) existing.id = mapped.callId;
-              if (mapped?.name && !existing.name) existing.name = mapped.name;
-            } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
-              accumulatedToolCalls.push({ id: targetId, name: mapped?.name || null });
-            }
-          }
+          const itemId = parsed.item_id || parsed.id || null;
+          const callId = parsed.call_id || null;
+          trackResponsesToolCall(itemId, callId, null);
         }
 
         // Extract usage
@@ -588,6 +586,7 @@ export function createSSEStream(options = {}) {
             toolCalls: accumulatedToolCalls
           }, state?.usage, ttftAt);
         }
+        toolAliasMap.clear();
       } catch (error) {
         console.log("Error in flush:", error);
       }

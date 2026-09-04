@@ -85,6 +85,50 @@ describe("Codex streaming latency and tool call optimizations", () => {
 
       expect(peek.matched).toBe("server_is_overloaded");
     });
+
+    it("does not treat normal output containing server_is_overloaded as an upstream error", async () => {
+      const executor = new CodexExecutor();
+      const chunks = [
+        new TextEncoder().encode('event: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"The error identifier is server_is_overloaded"}\n\n'),
+      ];
+
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(chunks[0]);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      // Must release immediately without treating generated text as an error
+      expect(peek.matched).toBeNull();
+      expect(peek.replacementBody).toBeDefined();
+    });
+
+    it("detects overload frame appearing after 2048 bytes of metadata", async () => {
+      const executor = new CodexExecutor();
+      // Pad with 2500 bytes of comments/metadata before the overload error
+      const padding = `: keepalive padding ${"x".repeat(100)}\n\n`.repeat(25);
+      const chunks = [
+        new TextEncoder().encode(padding),
+        new TextEncoder().encode('event: error\ndata: {"error":{"message":"service_unavailable_error"}}\n\n'),
+      ];
+
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(chunks[0]);
+          controller.enqueue(chunks[1]);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      expect(peek.matched).toBe("service_unavailable_error");
+    });
   });
 
   describe("CodexExecutor strict property preservation", () => {
@@ -210,6 +254,32 @@ describe("Codex streaming latency and tool call optimizations", () => {
       }, true, null);
       expect(resultUndeclared.tool_choice).toBeUndefined();
     });
+
+    it("throws a validation error when tool arguments cannot be serialized", () => {
+      const circular = {};
+      circular.self = circular;
+
+      const body = {
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [
+              {
+                id: "call_bad",
+                function: {
+                  name: "BadTool",
+                  arguments: circular,
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      }).toThrow(/Failed to serialize arguments for tool/);
+    });
   });
 
   describe("stream.js Responses API event tracking", () => {
@@ -321,6 +391,111 @@ describe("Codex streaming latency and tool call optimizations", () => {
       expect(completedResult.toolCalls).toHaveLength(1);
       expect(completedResult.toolCalls[0].id).toBe("call_999");
       expect(completedResult.toolCalls[0].name).toBe("ReadFile");
+    });
+
+    it("handles late alias reconciliation when item_id appears in delta and merges on done", async () => {
+      let completedResult = null;
+      const onStreamComplete = vi.fn((res) => {
+        completedResult = res;
+      });
+
+      const stream = createSSETransformStreamWithLogger(
+        FORMATS.OPENAI_RESPONSES,
+        FORMATS.CLAUDE,
+        "codex",
+        null,
+        null,
+        "gpt-5.6-sol",
+        "test-conn",
+        {},
+        onStreamComplete
+      );
+
+      const reader = stream.readable.getReader();
+      const readPromise = (async () => {
+        const received = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received.push(value);
+        }
+        return received;
+      })();
+
+      const writer = stream.writable.getWriter();
+      // Sequence:
+      // 1. added: call_id="call_1", no item ID
+      // 2. delta: item_id="fc_1"
+      // 3. done: both id="fc_1" and call_id="call_1"
+      const ssePayload = [
+        'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_3"}}\n\n',
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"call_id":"call_1","type":"function_call","name":"LateTool"}}\n\n',
+        'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"fc_1","delta":"{\\"a\\":1}"}\n\n',
+        'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"id":"fc_1","call_id":"call_1","type":"function_call","name":"LateTool"}}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      for (const chunk of ssePayload) {
+        await writer.write(new TextEncoder().encode(chunk));
+      }
+      await writer.close();
+      await readPromise;
+
+      expect(onStreamComplete).toHaveBeenCalled();
+      expect(completedResult).toBeDefined();
+      // Must merge both entries into exactly 1 tool call
+      expect(completedResult.toolCalls).toHaveLength(1);
+      expect(completedResult.toolCalls[0].id).toBe("call_1");
+      expect(completedResult.toolCalls[0].name).toBe("LateTool");
+    });
+
+    it("bounds tool call tracking when receiving many tool items", async () => {
+      let completedResult = null;
+      const onStreamComplete = vi.fn((res) => {
+        completedResult = res;
+      });
+
+      const stream = createSSETransformStreamWithLogger(
+        FORMATS.OPENAI_RESPONSES,
+        FORMATS.CLAUDE,
+        "codex",
+        null,
+        null,
+        "gpt-5.6-sol",
+        "test-conn",
+        {},
+        onStreamComplete
+      );
+
+      const reader = stream.readable.getReader();
+      const readPromise = (async () => {
+        const received = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received.push(value);
+        }
+        return received;
+      })();
+
+      const writer = stream.writable.getWriter();
+      await writer.write(new TextEncoder().encode('event: response.created\ndata: {"type":"response.created","response":{"id":"resp_bound"}}\n\n'));
+
+      // Emit 200 distinct tool call items
+      for (let i = 0; i < 200; i++) {
+        await writer.write(new TextEncoder().encode(`event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"item_${i}","call_id":"call_${i}","type":"function_call","name":"tool_${i}"}}\n\n`));
+      }
+
+      await writer.write(new TextEncoder().encode('event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n'));
+      await writer.write(new TextEncoder().encode('data: [DONE]\n\n'));
+      await writer.close();
+      await readPromise;
+
+      expect(onStreamComplete).toHaveBeenCalled();
+      expect(completedResult).toBeDefined();
+      // Must be capped at MAX_TRACKED_TOOL_CALLS (64)
+      expect(completedResult.toolCalls.length).toBeLessThanOrEqual(64);
     });
   });
 });
