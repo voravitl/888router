@@ -20,9 +20,17 @@ export function createBetterSqliteAdapter(filePath) {
     return stmt;
   }
 
-  // Checkpoint WAL periodically using PASSIVE to avoid exclusive locking on active readers/writers
+  // Checkpoint WAL periodically (PASSIVE for low latency, TRUNCATE every 10m to bound WAL file size)
+  let checkpointTicks = 0;
   const checkpointTimer = setInterval(() => {
-    try { db.pragma("wal_checkpoint(PASSIVE)"); } catch {}
+    checkpointTicks = (checkpointTicks + 1) % 10;
+    try {
+      if (checkpointTicks === 0) {
+        db.pragma("wal_checkpoint(TRUNCATE)");
+      } else {
+        db.pragma("wal_checkpoint(PASSIVE)");
+      }
+    } catch {}
   }, CHECKPOINT_INTERVAL_MS);
   if (typeof checkpointTimer.unref === "function") checkpointTimer.unref();
 

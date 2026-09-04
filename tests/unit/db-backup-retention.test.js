@@ -130,7 +130,7 @@ describe("pruneOldBackups", () => {
     expect(remaining()).toContain("b-new");
   });
 
-  it("optimizeDbBeforeBackup prunes requestDetails and runs vacuum when free pages exist", async () => {
+  it("optimizeDbBeforeBackup prunes requestDetails and runs vacuum when free pages exceed threshold", async () => {
     const { optimizeDbBeforeBackup } = await import("../../src/lib/db/migrate.js");
     const runCalls = [];
     const execCalls = [];
@@ -138,7 +138,7 @@ describe("pruneOldBackups", () => {
       get: (sql) => {
         if (sql.includes("settings")) return { data: JSON.stringify({ observabilityMaxRecords: 2000, observabilityRetentionDays: 7 }) };
         if (sql.includes("COUNT(*)")) return { c: 2500 };
-        if (sql.includes("freelist_count")) return { freelist_count: 500 };
+        if (sql.includes("freelist_count")) return { freelist_count: 3000 };
         return null;
       },
       run: (sql, params) => { runCalls.push({ sql, params }); },
@@ -150,6 +150,24 @@ describe("pruneOldBackups", () => {
     expect(runCalls.some((c) => c.sql.includes("DELETE FROM requestDetails WHERE timestamp < ?"))).toBe(true);
     expect(runCalls.some((c) => c.sql.includes("ORDER BY timestamp ASC LIMIT ?"))).toBe(true);
     expect(execCalls).toContain("PRAGMA wal_checkpoint(TRUNCATE)");
-    expect(execCalls).toContain("VACUUM");
+  });
+
+  it("optimizeDbBeforeBackup skips vacuum when freelist is below threshold", async () => {
+    const { optimizeDbBeforeBackup } = await import("../../src/lib/db/migrate.js");
+    const execCalls = [];
+    const mockAdapter = {
+      get: (sql) => {
+        if (sql.includes("settings")) return { data: "{}" };
+        if (sql.includes("COUNT(*)")) return { c: 100 };
+        if (sql.includes("freelist_count")) return { freelist_count: 100 };
+        return null;
+      },
+      run: () => {},
+      exec: (sql) => { execCalls.push(sql); },
+    };
+
+    optimizeDbBeforeBackup(mockAdapter);
+    expect(execCalls).toContain("PRAGMA wal_checkpoint(TRUNCATE)");
+    expect(execCalls).not.toContain("VACUUM");
   });
 });

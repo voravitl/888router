@@ -1,7 +1,7 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
-const DEFAULT_MAX_RECORDS = 200;
+const DEFAULT_MAX_RECORDS = 10000;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
@@ -26,8 +26,8 @@ export function resetPruneThrottle() {
 }
 
 export function pruneRequestDetailsSync(adapter, config = {}) {
-  const retentionDays = Number(config.retentionDays) || 7;
-  const maxRecords = Number(config.maxRecords) || 2000;
+  const retentionDays = parseNum(config.retentionDays, DEFAULT_RETENTION_DAYS);
+  const maxRecords = parseNum(config.maxRecords, DEFAULT_MAX_RECORDS);
 
   if (retentionDays > 0) {
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
@@ -103,6 +103,29 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
+function estimatePayloadSize(obj) {
+  if (typeof obj?.prompt === "string") return obj.prompt.length;
+  let total = 0;
+  const list = Array.isArray(obj?.messages) ? obj.messages : (Array.isArray(obj?.contents) ? obj.contents : null);
+  if (list) {
+    for (const item of list) {
+      if (typeof item?.content === "string") {
+        total += item.content.length;
+      } else if (Array.isArray(item?.content)) {
+        for (const block of item.content) {
+          if (typeof block?.text === "string") total += block.text.length;
+        }
+      } else if (Array.isArray(item?.parts)) {
+        for (const part of item.parts) {
+          if (typeof part?.text === "string") total += part.text.length;
+        }
+      }
+      if (total > 64 * 1024) break;
+    }
+  }
+  return total;
+}
+
 function truncateField(obj, maxSize) {
   if (!obj) return {};
   if (typeof obj === "string") {
@@ -111,16 +134,12 @@ function truncateField(obj, maxSize) {
     }
     return obj;
   }
-  // Quick pre-check for large message arrays to avoid allocating multi-MB strings
-  if (Array.isArray(obj.messages)) {
-    let est = 0;
-    for (const m of obj.messages) {
-      if (typeof m?.content === "string") est += m.content.length;
-      if (est > maxSize) {
-        const preview = typeof obj.messages[0]?.content === "string" ? obj.messages[0].content.substring(0, 200) : "[large messages payload]";
-        return { _truncated: true, _originalSize: est, _preview: preview };
-      }
-    }
+  const est = estimatePayloadSize(obj);
+  if (est > maxSize) {
+    let preview = "[large payload]";
+    if (typeof obj.prompt === "string") preview = obj.prompt.substring(0, 200);
+    else if (Array.isArray(obj.messages) && typeof obj.messages[0]?.content === "string") preview = obj.messages[0].content.substring(0, 200);
+    return { _truncated: true, _originalSize: est, _preview: preview };
   }
   const str = JSON.stringify(obj);
   if (str.length > maxSize) {
