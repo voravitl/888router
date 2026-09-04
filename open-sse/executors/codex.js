@@ -16,10 +16,17 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
 const CODEX_SSE_PEEK_BYTES = 4096;
 
+const CODEX_ACTIVE_GENERATION_TYPES = new Set([
+  "response.output_text.delta",
+  "response.reasoning_summary_text.delta",
+  "response.function_call_arguments.delta",
+  "response.custom_tool_call_input.delta",
+]);
+
 function parseSseFrame(frameText) {
   let event = null;
   let dataStr = "";
-  const lines = frameText.split(/\r?\n/);
+  const lines = frameText.split(/\r\n|\r|\n/);
   for (const line of lines) {
     if (line.startsWith("event:")) {
       event = line.slice(6).trim();
@@ -36,30 +43,23 @@ function parseSseFrame(frameText) {
       data = null;
     }
   }
-  return { event, data };
+  return { event, data, dataStr };
 }
 
 function isActiveGenerationFrame(event, data) {
   if (!data || typeof data !== "object") return false;
-  const type = data.type || event;
-  const deltaTypes = new Set([
-    "response.output_text.delta",
-    "response.reasoning_summary_text.delta",
-    "response.function_call_arguments.delta",
-    "response.custom_tool_call_input.delta",
-  ]);
-  if (deltaTypes.has(type)) {
+  const isGenType = (event && CODEX_ACTIVE_GENERATION_TYPES.has(event)) || (data.type && CODEX_ACTIVE_GENERATION_TYPES.has(data.type));
+  if (isGenType) {
     return typeof data.delta === "string" && data.delta.length > 0;
   }
   return false;
 }
 
-function isOverloadedErrorFrame(event, data) {
-  if (!data || typeof data !== "object") return null;
-  const isError = event === "error" || data.type === "error" || data.error !== undefined;
-  if (!isError) return null;
-  const err = data.error || data;
-  const text = `${err?.message || ""} ${err?.code || ""} ${typeof err === "string" ? err : ""}`.toLowerCase();
+function isOverloadedErrorFrame(event, data, dataStr) {
+  const isExplicitError = event === "error" || data?.type === "error" || data?.error !== undefined;
+  if (!isExplicitError) return null;
+  const err = data?.error || data;
+  const text = `${err?.message || ""} ${err?.code || ""} ${typeof err === "string" ? err : ""} ${dataStr || ""}`.toLowerCase();
   return CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p)) || null;
 }
 
@@ -287,40 +287,51 @@ export class CodexExecutor extends BaseExecutor {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const chunks = [];
-    let text = "";
+    let bytesRead = 0;
     let matched = null;
     let frameBuffer = "";
-    try {
-      while (text.length < CODEX_SSE_PEEK_BYTES) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        const decoded = decoder.decode(value, { stream: true });
-        text += decoded;
-        frameBuffer += decoded;
+    let activeGenerationDetected = false;
 
-        let boundaryIdx;
-        let activeGenerationDetected = false;
-        while ((boundaryIdx = frameBuffer.search(/\r?\n\r?\n/)) !== -1) {
-          const frameMatch = frameBuffer.match(/\r?\n\r?\n/);
-          const frameLength = boundaryIdx + frameMatch[0].length;
-          const frameText = frameBuffer.slice(0, boundaryIdx);
-          frameBuffer = frameBuffer.slice(frameLength);
+    const processFrames = () => {
+      let boundaryMatch;
+      while ((boundaryMatch = frameBuffer.match(/(?:\r\n\r\n|\r\r|\n\n)/)) !== null) {
+        const boundaryIdx = boundaryMatch.index;
+        const frameLength = boundaryIdx + boundaryMatch[0].length;
+        const frameText = frameBuffer.slice(0, boundaryIdx);
+        frameBuffer = frameBuffer.slice(frameLength);
 
-          const { event, data } = parseSseFrame(frameText);
-          const hit = isOverloadedErrorFrame(event, data);
-          if (hit) {
-            matched = hit;
-            break;
-          }
-
-          if (isActiveGenerationFrame(event, data)) {
-            activeGenerationDetected = true;
-            break;
-          }
+        const { event, data, dataStr } = parseSseFrame(frameText);
+        const hit = isOverloadedErrorFrame(event, data, dataStr);
+        if (hit) {
+          matched = hit;
+          return true;
         }
 
-        if (matched || activeGenerationDetected) {
+        if (isActiveGenerationFrame(event, data)) {
+          activeGenerationDetected = true;
+          return true;
+        }
+      }
+      return false;
+    };
+
+    try {
+      while (bytesRead < CODEX_SSE_PEEK_BYTES) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (frameBuffer.trim()) {
+            const { event, data, dataStr } = parseSseFrame(frameBuffer);
+            const hit = isOverloadedErrorFrame(event, data, dataStr);
+            if (hit) matched = hit;
+          }
+          break;
+        }
+        chunks.push(value);
+        bytesRead += value.byteLength;
+        const decoded = decoder.decode(value, { stream: true });
+        frameBuffer += decoded;
+
+        if (processFrames()) {
           break;
         }
       }

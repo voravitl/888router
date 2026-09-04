@@ -44,6 +44,7 @@ export function convertResponsesApiFormat(body) {
   let currentAssistantMsg = null;
   let pendingToolResults = [];
   let funcCallIndex = 0;
+  const pendingGeneratedCallIds = [];
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -94,6 +95,7 @@ export function convertResponsesApiFormat(body) {
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
       const tcId = item.call_id || item.id || generateToolCallId(result.messages.length, funcCallIndex++, item.name);
+      pendingGeneratedCallIds.push(tcId);
       currentAssistantMsg.tool_calls.push({
         id: tcId,
         type: OPENAI_BLOCK.FUNCTION,
@@ -111,7 +113,7 @@ export function convertResponsesApiFormat(body) {
         funcCallIndex = 0;
       }
       // Add tool result
-      const tcId = item.call_id || item.id || generateToolCallId(result.messages.length, funcCallIndex > 0 ? funcCallIndex - 1 : 0);
+      const tcId = item.call_id || item.id || pendingGeneratedCallIds.shift() || generateToolCallId(result.messages.length, 0);
       pendingToolResults.push({
         role: ROLE.TOOL,
         tool_call_id: tcId,

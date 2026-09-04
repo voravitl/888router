@@ -217,15 +217,18 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     store: false
   };
 
-  // Extract system messages as instructions (first becomes instructions; subsequent become developer turns)
-  let hasSystemInstructions = false;
+  // Extract initial contiguous system/developer prefix into instructions; preserve mid-conversation turns
+  let initialPrefixActive = true;
+  const initialInstructions = [];
   const messages = body.messages || [];
   const generatedCallIds = new Map();
   let generatedCallSeq = 0;
+  const pendingAssistantCallIds = [];
   const resolveCallId = (rawId, fallbackKey) => {
     const clamped = clampCallId(rawId);
     if (clamped && clamped.trim()) return clamped.trim();
     const key = rawId || fallbackKey;
+    if (!key) return null;
     if (!generatedCallIds.has(key)) {
       generatedCallIds.set(key, `call_${fallbackKey}_${generatedCallSeq++}`);
     }
@@ -240,9 +243,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         : Array.isArray(msg.content)
           ? msg.content.map(c => (typeof c === "string" ? c : (typeof c?.text === "string" ? c.text : ""))).filter(Boolean).join("\n")
           : "";
-      if (!hasSystemInstructions) {
-        result.instructions = text;
-        hasSystemInstructions = true;
+      if (initialPrefixActive) {
+        if (text) initialInstructions.push(text);
       } else if (text) {
         // Keep temporal scope of mid-conversation system/developer turns as developer input items
         result.input.push({
@@ -253,6 +255,9 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       }
       continue; // Handled
     }
+
+    // Any non-system/developer turn ends the initial instructions prefix
+    initialPrefixActive = false;
 
     // Convert user/assistant messages to input items
     if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) {
@@ -309,9 +314,11 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         } else if (rawArgs !== undefined && rawArgs !== null) {
           throw new Error(`Invalid arguments type "${typeof rawArgs}" for tool "${tc.function?.name || tcIdx}"`);
         }
+        const callId = resolveCallId(tc.id, `tc_${mIdx}_${tcIdx}`);
+        pendingAssistantCallIds.push(callId);
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,
-          call_id: resolveCallId(tc.id, `tc_${mIdx}_${tcIdx}`),
+          call_id: callId,
           name: tc.function?.name || "_unknown",
           arguments: argumentsStr
         });
@@ -320,23 +327,41 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
     // Convert tool results - output must be a string for Responses API
     if (msg.role === ROLE.TOOL) {
-      const output = typeof msg.content === "string"
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map(c => c.text || JSON.stringify(c)).join("")
-          : JSON.stringify(msg.content);
+      let output = "";
+      if (typeof msg.content === "string") {
+        output = msg.content;
+      } else if (Array.isArray(msg.content)) {
+        output = msg.content.map(c => (typeof c === "string" ? c : (c?.text || JSON.stringify(c)))).join("");
+      } else if (msg.content !== undefined && msg.content !== null) {
+        try {
+          const serialized = JSON.stringify(msg.content);
+          if (serialized === undefined) {
+            throw new Error("Unserializable tool output (produced undefined)");
+          }
+          output = serialized;
+        } catch (err) {
+          throw new Error(`Failed to serialize tool output: ${err.message}`);
+        }
+      } else {
+        output = "";
+      }
+
+      // Pair ID-less tool output with matching call ID from pending assistant calls
+      const rawToolId = msg.tool_call_id;
+      let callId = rawToolId ? resolveCallId(rawToolId, `tool_${mIdx}`) : null;
+      if (!callId) {
+        callId = pendingAssistantCallIds.shift() || `tool_${mIdx}`;
+      }
       result.input.push({
         type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
-        call_id: resolveCallId(msg.tool_call_id, `tool_${mIdx}`),
+        call_id: callId,
         output
       });
     }
   }
 
-  // If no system message found, default instructions to empty string
-  if (!hasSystemInstructions) {
-    result.instructions = "";
-  }
+  // Combine initial contiguous instructions
+  result.instructions = initialInstructions.join("\n\n");
 
   // Convert tools format
   if (body.tools && Array.isArray(body.tools)) {
@@ -354,22 +379,29 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     });
   }
 
-  // Pass through validated tool_choice
+  // Pass through validated tool_choice (fail closed on invalid values)
   if (body.tool_choice !== undefined) {
     if (typeof body.tool_choice === "string") {
       const allowed = new Set(["none", "auto", "required"]);
       if (allowed.has(body.tool_choice)) {
         result.tool_choice = body.tool_choice;
+      } else {
+        throw new Error(`Invalid tool_choice string value: "${body.tool_choice}"`);
       }
     } else if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
       if (body.tool_choice.type === "function") {
         const rawName = body.tool_choice.function?.name || body.tool_choice.name;
         const name = typeof rawName === "string" ? rawName.trim().slice(0, 128) : "";
         const toolDeclared = Array.isArray(result.tools) && result.tools.some(t => t.name === name || t.function?.name === name);
-        if (name && toolDeclared) {
-          result.tool_choice = { type: "function", name };
+        if (!name || !toolDeclared) {
+          throw new Error(`Invalid tool_choice: function "${name || 'unknown'}" is not declared in tools`);
         }
+        result.tool_choice = { type: "function", name };
+      } else {
+        throw new Error(`Invalid tool_choice object type: "${body.tool_choice.type}"`);
       }
+    } else {
+      throw new Error(`Invalid tool_choice type: ${typeof body.tool_choice}`);
     }
   }
 

@@ -88,7 +88,12 @@ export function createSSEStream(options = {}) {
       if (!recByCall.name && (recByItem.name || name)) recByCall.name = recByItem.name || name;
       const removeIdx = accumulatedToolCalls.indexOf(recByItem);
       if (removeIdx !== -1) accumulatedToolCalls.splice(removeIdx, 1);
-      if (itemId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(itemId, recByCall);
+      // Redirect all map aliases pointing to recByItem over to recByCall
+      for (const [key, val] of toolAliasMap.entries()) {
+        if (val === recByItem) {
+          toolAliasMap.set(key, recByCall);
+        }
+      }
       return;
     }
 
@@ -586,9 +591,10 @@ export function createSSEStream(options = {}) {
             toolCalls: accumulatedToolCalls
           }, state?.usage, ttftAt);
         }
-        toolAliasMap.clear();
       } catch (error) {
         console.log("Error in flush:", error);
+      } finally {
+        toolAliasMap.clear();
       }
     }
   });

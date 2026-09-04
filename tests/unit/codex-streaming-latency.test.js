@@ -129,6 +129,45 @@ describe("Codex streaming latency and tool call optimizations", () => {
 
       expect(peek.matched).toBe("service_unavailable_error");
     });
+
+    it("detects plain-text server_is_overloaded error in event: error", async () => {
+      const executor = new CodexExecutor();
+      const chunks = [
+        new TextEncoder().encode("event: error\ndata: server_is_overloaded\n\n"),
+      ];
+
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(chunks[0]);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      expect(peek.matched).toBe("server_is_overloaded");
+    });
+
+    it("detects active generation frame with CR-only delimiters", async () => {
+      const executor = new CodexExecutor();
+      const chunks = [
+        new TextEncoder().encode('event: response.output_text.delta\rdata: {"type":"response.output_text.delta","delta":"Fast token"}\r\r'),
+      ];
+
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(chunks[0]);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      expect(peek.matched).toBeNull();
+      expect(peek.replacementBody).toBeDefined();
+    });
   });
 
   describe("CodexExecutor strict property preservation", () => {
@@ -244,15 +283,55 @@ describe("Codex streaming latency and tool call optimizations", () => {
       const resultRequired = openaiToOpenAIResponsesRequest("gpt-5.6-sol", { tool_choice: "required" }, true, null);
       expect(resultRequired.tool_choice).toBe("required");
 
-      const resultInvalid = openaiToOpenAIResponsesRequest("gpt-5.6-sol", { tool_choice: "invalid_choice" }, true, null);
-      expect(resultInvalid.tool_choice).toBeUndefined();
+      // Invalid string choice must fail closed
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", { tool_choice: "invalid_choice" }, true, null);
+      }).toThrow(/Invalid tool_choice string value/);
 
-      // Undeclared function tool_choice should be dropped
-      const resultUndeclared = openaiToOpenAIResponsesRequest("gpt-5.6-sol", {
-        tool_choice: { type: "function", name: "NonExistent" },
-        tools: [{ type: "function", function: { name: "Bash" } }]
-      }, true, null);
-      expect(resultUndeclared.tool_choice).toBeUndefined();
+      // Undeclared function tool_choice must fail closed
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", {
+          tool_choice: { type: "function", name: "NonExistent" },
+          tools: [{ type: "function", function: { name: "Bash" } }]
+        }, true, null);
+      }).toThrow(/is not declared in tools/);
+    });
+
+    it("pairs ID-less tool calls and ID-less tool outputs accurately", () => {
+      const body = {
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [
+              {
+                function: { name: "ToolA", arguments: '{"x":1}' }
+              },
+              {
+                function: { name: "ToolB", arguments: '{"y":2}' }
+              }
+            ]
+          },
+          {
+            role: "tool",
+            content: "output A"
+          },
+          {
+            role: "tool",
+            content: "output B"
+          }
+        ]
+      };
+
+      const result = openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      const callA = result.input.find(i => i.type === "function_call" && i.name === "ToolA");
+      const callB = result.input.find(i => i.type === "function_call" && i.name === "ToolB");
+      const outputs = result.input.filter(i => i.type === "function_call_output");
+
+      expect(callA).toBeDefined();
+      expect(callB).toBeDefined();
+      expect(outputs).toHaveLength(2);
+      expect(outputs[0].call_id).toBe(callA.call_id);
+      expect(outputs[1].call_id).toBe(callB.call_id);
     });
 
     it("throws a validation error when tool arguments cannot be serialized", () => {
@@ -496,6 +575,57 @@ describe("Codex streaming latency and tool call optimizations", () => {
       expect(completedResult).toBeDefined();
       // Must be capped at MAX_TRACKED_TOOL_CALLS (64)
       expect(completedResult.toolCalls.length).toBeLessThanOrEqual(64);
+    });
+
+    it("redirects all aliases pointing to the merged record", async () => {
+      let completedResult = null;
+      const onStreamComplete = vi.fn((res) => {
+        completedResult = res;
+      });
+
+      const stream = createSSETransformStreamWithLogger(
+        FORMATS.OPENAI_RESPONSES,
+        FORMATS.CLAUDE,
+        "codex",
+        null,
+        null,
+        "gpt-5.6-sol",
+        "test-conn",
+        {},
+        onStreamComplete
+      );
+
+      const reader = stream.readable.getReader();
+      const readPromise = (async () => {
+        const received = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received.push(value);
+        }
+        return received;
+      })();
+
+      const writer = stream.writable.getWriter();
+      const ssePayload = [
+        'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_m"}}\n\n',
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"call_id":"call_root","type":"function_call","name":"RootTool"}}\n\n',
+        'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"alias_1","delta":"{\\"x\\":1}"}\n\n',
+        'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"id":"alias_1","call_id":"call_root","type":"function_call","name":"RootTool"}}\n\n',
+        'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"alias_1","delta":"{\\"x\\":2}"}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed"}}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      for (const chunk of ssePayload) {
+        await writer.write(new TextEncoder().encode(chunk));
+      }
+      await writer.close();
+      await readPromise;
+
+      expect(onStreamComplete).toHaveBeenCalled();
+      expect(completedResult.toolCalls).toHaveLength(1);
+      expect(completedResult.toolCalls[0].id).toBe("call_root");
     });
   });
 });
