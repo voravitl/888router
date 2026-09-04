@@ -5,6 +5,7 @@ import { TABLES, buildCreateTableSql } from "./schema.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, pruneOldBackups } from "./backup.js";
+import { pruneRequestDetailsSync } from "./repos/requestDetailsRepo.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
 
@@ -212,6 +213,66 @@ function importLegacyDetails(adapter, data) {
   }
 }
 
+function parseNonNeg(val, fallback) {
+  if (val === undefined || val === null || val === "") return fallback;
+  const n = Number(val);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+export function optimizeDbBeforeBackup(adapter) {
+  try {
+    // 1. Prune requestDetails using retention policy
+    let retentionDays = 30;
+    let maxRecords = 10000;
+    try {
+      const settingsRow = adapter.get(`SELECT data FROM settings WHERE id = 1`);
+      if (settingsRow?.data) {
+        const parsed = JSON.parse(settingsRow.data);
+        if (parsed.observabilityRetentionDays !== undefined) retentionDays = parseNonNeg(parsed.observabilityRetentionDays, 30);
+        if (parsed.observabilityMaxRecords !== undefined) maxRecords = parseNonNeg(parsed.observabilityMaxRecords, 10000);
+      }
+    } catch {}
+
+    if (process.env.OBSERVABILITY_RETENTION_DAYS !== undefined) {
+      retentionDays = parseNonNeg(process.env.OBSERVABILITY_RETENTION_DAYS, retentionDays);
+    }
+    if (process.env.OBSERVABILITY_MAX_RECORDS !== undefined) {
+      maxRecords = parseNonNeg(process.env.OBSERVABILITY_MAX_RECORDS, maxRecords);
+    }
+
+    pruneRequestDetailsSync(adapter, { retentionDays, maxRecords });
+
+    // 2. Checkpoint WAL into main database file
+    try { adapter.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
+
+    // 3. VACUUM if free pages exist (> 2500 pages / 10 MB) to reclaim physical disk space before copy,
+    // guarded by available disk space check to avoid SQLITE_FULL errors during vacuum.
+    try {
+      const freelist = adapter.get("PRAGMA freelist_count");
+      const freePages = freelist ? (freelist.freelist_count ?? freelist[Object.keys(freelist)[0]] ?? 0) : 0;
+      if (freePages > 2500 && fs.existsSync(DATA_FILE)) {
+        const dbSize = fs.statSync(DATA_FILE).size;
+        let hasDiskHeadroom = true;
+        try {
+          if (typeof fs.statfsSync === "function") {
+            const stats = fs.statfsSync(DB_DIR);
+            const freeDiskBytes = stats.bavail * stats.bsize;
+            if (freeDiskBytes < dbSize * 1.5) {
+              console.warn(`[DB][optimize] skipping VACUUM: free disk (${Math.round(freeDiskBytes / 1024 / 1024)}MB) < 1.5x DB size (${Math.round(dbSize / 1024 / 1024)}MB)`);
+              hasDiskHeadroom = false;
+            }
+          }
+        } catch {}
+        if (hasDiskHeadroom) {
+          adapter.exec("VACUUM");
+        }
+      }
+    } catch {}
+  } catch (err) {
+    console.warn("[DB][migrate] pre-backup optimization failed:", err.message);
+  }
+}
+
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
@@ -272,12 +333,16 @@ export async function runMigrationOnce(adapter) {
   const oldVer = getMetaSync(adapter, "appVersion", null);
   const newVer = getAppVersion();
   if (oldVer && oldVer !== newVer) {
+    pruneOldBackups();
+    optimizeDbBeforeBackup(adapter);
     const backupDir = makeBackupDir(`upgrade-${oldVer}-to-${newVer}`);
     try { backupFile(DATA_FILE, backupDir); } catch {}
     setMetaSync(adapter, "appVersion", newVer);
     pruneOldBackups();
     console.log(`[DB][migrate] App ${oldVer} → ${newVer} | schema ${migInfo.from} → ${migInfo.to} | backup: ${backupDir}`);
   } else if (migInfo.applied > 0) {
+    pruneOldBackups();
+    optimizeDbBeforeBackup(adapter);
     // Schema upgrade without app version bump — still backup
     const backupDir = makeBackupDir(`schema-${migInfo.from}-to-${migInfo.to}`);
     try { backupFile(DATA_FILE, backupDir); } catch {}

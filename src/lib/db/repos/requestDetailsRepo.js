@@ -1,7 +1,7 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
-const DEFAULT_MAX_RECORDS = 200;
+const DEFAULT_MAX_RECORDS = 10000;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
@@ -23,6 +23,28 @@ function parseNum(val, fallback) {
 
 export function resetPruneThrottle() {
   lastPruneTs = 0;
+}
+
+export function pruneRequestDetailsSync(adapter, config = {}) {
+  const retentionDays = parseNum(config.retentionDays, DEFAULT_RETENTION_DAYS);
+  const maxRecords = parseNum(config.maxRecords, DEFAULT_MAX_RECORDS);
+
+  if (retentionDays > 0) {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    try { adapter.run(`DELETE FROM requestDetails WHERE timestamp < ?`, [cutoff]); } catch {}
+  }
+
+  if (maxRecords > 0) {
+    try {
+      const cnt = adapter.get(`SELECT COUNT(*) as c FROM requestDetails`);
+      if (cnt && cnt.c > maxRecords) {
+        adapter.run(
+          `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+          [cnt.c - maxRecords]
+        );
+      }
+    } catch {}
+  }
 }
 
 async function getObservabilityConfig() {
@@ -81,12 +103,49 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
+function estimatePayloadSize(obj) {
+  if (typeof obj?.prompt === "string") return obj.prompt.length;
+  let total = 0;
+  const list = Array.isArray(obj?.messages) ? obj.messages : (Array.isArray(obj?.contents) ? obj.contents : null);
+  if (list) {
+    for (const item of list) {
+      if (typeof item?.content === "string") {
+        total += item.content.length;
+      } else if (Array.isArray(item?.content)) {
+        for (const block of item.content) {
+          if (typeof block?.text === "string") total += block.text.length;
+        }
+      } else if (Array.isArray(item?.parts)) {
+        for (const part of item.parts) {
+          if (typeof part?.text === "string") total += part.text.length;
+        }
+      }
+      if (total > 64 * 1024) break;
+    }
+  }
+  return total;
+}
+
 function truncateField(obj, maxSize) {
-  const str = JSON.stringify(obj || {});
+  if (!obj) return {};
+  if (typeof obj === "string") {
+    if (obj.length > maxSize) {
+      return { _truncated: true, _originalSize: obj.length, _preview: obj.substring(0, 200) };
+    }
+    return obj;
+  }
+  const est = estimatePayloadSize(obj);
+  if (est > maxSize) {
+    let preview = "[large payload]";
+    if (typeof obj.prompt === "string") preview = obj.prompt.substring(0, 200);
+    else if (Array.isArray(obj.messages) && typeof obj.messages[0]?.content === "string") preview = obj.messages[0].content.substring(0, 200);
+    return { _truncated: true, _originalSize: est, _preview: preview };
+  }
+  const str = JSON.stringify(obj);
   if (str.length > maxSize) {
     return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
   }
-  return obj || {};
+  return obj;
 }
 
 let flushPromise = null;

@@ -129,4 +129,79 @@ describe("pruneOldBackups", () => {
     expect(() => pruneOldBackups()).not.toThrow();
     expect(remaining()).toContain("b-new");
   });
+
+  it("optimizeDbBeforeBackup prunes requestDetails and runs vacuum when free pages exceed threshold", async () => {
+    const { optimizeDbBeforeBackup } = await import("../../src/lib/db/migrate.js");
+    const { DATA_FILE, DB_DIR } = await import("../../src/lib/db/paths.js");
+    fs.mkdirSync(DB_DIR, { recursive: true });
+    fs.writeFileSync(DATA_FILE, Buffer.alloc(1024, 0));
+
+    const runCalls = [];
+    const execCalls = [];
+    const mockAdapter = {
+      get: (sql) => {
+        if (sql.includes("settings")) return { data: JSON.stringify({ observabilityMaxRecords: 2000, observabilityRetentionDays: 7 }) };
+        if (sql.includes("COUNT(*)")) return { c: 2500 };
+        if (sql.includes("freelist_count")) return { freelist_count: 3000 };
+        return null;
+      },
+      run: (sql, params) => { runCalls.push({ sql, params }); },
+      exec: (sql) => { execCalls.push(sql); },
+    };
+
+    optimizeDbBeforeBackup(mockAdapter);
+
+    expect(runCalls.some((c) => c.sql.includes("DELETE FROM requestDetails WHERE timestamp < ?"))).toBe(true);
+    expect(runCalls.some((c) => c.sql.includes("ORDER BY timestamp ASC LIMIT ?"))).toBe(true);
+    expect(execCalls).toContain("PRAGMA wal_checkpoint(TRUNCATE)");
+    expect(execCalls).toContain("VACUUM");
+  });
+
+  it("optimizeDbBeforeBackup skips vacuum when disk space is insufficient", async () => {
+    const { optimizeDbBeforeBackup } = await import("../../src/lib/db/migrate.js");
+    const { DATA_FILE, DB_DIR } = await import("../../src/lib/db/paths.js");
+    fs.mkdirSync(DB_DIR, { recursive: true });
+    fs.writeFileSync(DATA_FILE, Buffer.alloc(10 * 1024 * 1024, 0)); // 10 MB DB
+
+    const execCalls = [];
+    const mockAdapter = {
+      get: (sql) => {
+        if (sql.includes("settings")) return { data: "{}" };
+        if (sql.includes("COUNT(*)")) return { c: 100 };
+        if (sql.includes("freelist_count")) return { freelist_count: 3000 };
+        return null;
+      },
+      run: () => {},
+      exec: (sql) => { execCalls.push(sql); },
+    };
+
+    const origStatfs = fs.statfsSync;
+    fs.statfsSync = () => ({ bavail: 1024, bsize: 1024 }); // only 1MB free disk (< 1.5 * 10MB)
+    try {
+      optimizeDbBeforeBackup(mockAdapter);
+      expect(execCalls).toContain("PRAGMA wal_checkpoint(TRUNCATE)");
+      expect(execCalls).not.toContain("VACUUM");
+    } finally {
+      fs.statfsSync = origStatfs;
+    }
+  });
+
+  it("optimizeDbBeforeBackup skips vacuum when freelist is below threshold", async () => {
+    const { optimizeDbBeforeBackup } = await import("../../src/lib/db/migrate.js");
+    const execCalls = [];
+    const mockAdapter = {
+      get: (sql) => {
+        if (sql.includes("settings")) return { data: "{}" };
+        if (sql.includes("COUNT(*)")) return { c: 100 };
+        if (sql.includes("freelist_count")) return { freelist_count: 100 };
+        return null;
+      },
+      run: () => {},
+      exec: (sql) => { execCalls.push(sql); },
+    };
+
+    optimizeDbBeforeBackup(mockAdapter);
+    expect(execCalls).toContain("PRAGMA wal_checkpoint(TRUNCATE)");
+    expect(execCalls).not.toContain("VACUUM");
+  });
 });

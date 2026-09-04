@@ -32,7 +32,7 @@ const DEFAULT_SETTINGS = {
   samlLoginLabel: "Sign in with SAML SSO",
   samlAttributeEmail: "email",
   samlAttributeName: "name",
-  observabilityMaxRecords: 50000,
+  observabilityMaxRecords: 10000,
   observabilityRetentionDays: 30,
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,
