@@ -49,6 +49,8 @@ export function convertResponsesApiFormat(body) {
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
 
+  const normalizeCallId = (val) => (typeof val === "string" && val.trim() ? val.trim() : null);
+
   for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
@@ -68,6 +70,7 @@ export function convertResponsesApiFormat(body) {
         }
         pendingToolResults = [];
       }
+      pendingGeneratedCallIds.length = 0;
 
       // Convert content: input_text → text, output_text → text, input_image → image_url
       const content = Array.isArray(item.content)
@@ -94,7 +97,8 @@ export function convertResponsesApiFormat(body) {
       }
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
-      const tcId = item.call_id || item.id || generateToolCallId(result.messages.length, funcCallIndex++, item.name);
+      const explicitId = normalizeCallId(item.call_id) || normalizeCallId(item.id);
+      const tcId = explicitId || generateToolCallId(result.messages.length, funcCallIndex++, item.name);
       pendingGeneratedCallIds.push(tcId);
       currentAssistantMsg.tool_calls.push({
         id: tcId,
@@ -113,16 +117,18 @@ export function convertResponsesApiFormat(body) {
         funcCallIndex = 0;
       }
       // Add tool result
-      const explicitId = typeof item.call_id === "string" && item.call_id.trim()
-        ? item.call_id.trim()
-        : (typeof item.id === "string" && item.id.trim() ? item.id.trim() : null);
+      const explicitId = normalizeCallId(item.call_id) || normalizeCallId(item.id);
 
       let tcId = explicitId;
       if (tcId) {
         const pendingIdx = pendingGeneratedCallIds.indexOf(tcId);
         if (pendingIdx !== -1) pendingGeneratedCallIds.splice(pendingIdx, 1);
       } else {
-        tcId = pendingGeneratedCallIds.shift() || generateToolCallId(result.messages.length, 0);
+        const nextId = pendingGeneratedCallIds.shift();
+        if (!nextId) {
+          throw new Error("Orphan or ambiguous tool output cannot be paired with any pending tool call");
+        }
+        tcId = nextId;
       }
       pendingToolResults.push({
         role: ROLE.TOOL,

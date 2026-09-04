@@ -238,6 +238,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   for (let mIdx = 0; mIdx < messages.length; mIdx++) {
     const msg = messages[mIdx];
     if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
+      pendingAssistantCallIds.length = 0;
       const text = typeof msg.content === "string"
         ? msg.content
         : Array.isArray(msg.content)
@@ -261,6 +262,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
     // Convert user/assistant messages to input items
     if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) {
+      pendingAssistantCallIds.length = 0;
       const contentType = msg.role === ROLE.USER ? RESPONSES_ITEM.INPUT_TEXT : RESPONSES_ITEM.OUTPUT_TEXT;
       const content = typeof msg.content === "string"
         ? [{ type: contentType, text: msg.content }]
@@ -295,6 +297,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
     // Convert tool calls
     if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
+      const seenBatchCallIds = new Set();
       for (let tcIdx = 0; tcIdx < msg.tool_calls.length; tcIdx++) {
         const tc = msg.tool_calls[tcIdx];
         const rawArgs = tc.function?.arguments;
@@ -315,6 +318,10 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           throw new Error(`Invalid arguments type "${typeof rawArgs}" for tool "${tc.function?.name || tcIdx}"`);
         }
         const callId = resolveCallId(tc.id, `tc_${mIdx}_${tcIdx}`);
+        if (seenBatchCallIds.has(callId)) {
+          throw new Error(`Duplicate tool call id "${callId}" in assistant tool_calls`);
+        }
+        seenBatchCallIds.add(callId);
         pendingAssistantCallIds.push(callId);
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,
@@ -363,7 +370,11 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         const pendingIdx = pendingAssistantCallIds.indexOf(callId);
         if (pendingIdx !== -1) pendingAssistantCallIds.splice(pendingIdx, 1);
       } else {
-        callId = pendingAssistantCallIds.shift() || resolveCallId(null, `tool_${mIdx}`);
+        const nextId = pendingAssistantCallIds.shift();
+        if (!nextId) {
+          throw new Error(`Orphan or ambiguous tool output at message index ${mIdx} cannot be paired with any pending tool call`);
+        }
+        callId = nextId;
       }
       result.input.push({
         type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
@@ -404,10 +415,16 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     } else if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
       if (body.tool_choice.type === "function") {
         const rawName = body.tool_choice.function?.name || body.tool_choice.name;
-        const name = typeof rawName === "string" ? rawName.trim().slice(0, 128) : "";
+        if (typeof rawName !== "string" || !rawName.trim()) {
+          throw new Error("Invalid tool_choice: function name must be a non-empty string");
+        }
+        const name = rawName.trim();
+        if (name.length > 128) {
+          throw new Error(`Invalid tool_choice: function name exceeds maximum length of 128 characters: "${name.slice(0, 32)}..."`);
+        }
         const toolDeclared = Array.isArray(result.tools) && result.tools.some(t => t.name === name || t.function?.name === name);
-        if (!name || !toolDeclared) {
-          throw new Error(`Invalid tool_choice: function "${name || 'unknown'}" is not declared in tools`);
+        if (!toolDeclared) {
+          throw new Error(`Invalid tool_choice: function "${name}" is not declared in tools`);
         }
         result.tool_choice = { type: "function", name };
       } else {

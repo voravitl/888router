@@ -432,7 +432,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   // Function call started (standard function_call or custom_tool_call)
   if (eventType === "response.output_item.added" && (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL || data.item?.type === "custom_tool_call")) {
     const item = data.item;
-    state.currentToolCallId = item.call_id || item.id || fallbackToolCallId();
+    state.currentToolCallId = item.call_id || fallbackToolCallId();
 
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },

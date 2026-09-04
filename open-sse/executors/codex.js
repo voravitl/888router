@@ -27,11 +27,14 @@ function parseSseFrame(frameText) {
   let event = null;
   let dataStr = "";
   const lines = frameText.split(/\r\n|\r|\n/);
-  for (const line of lines) {
+  for (let line of lines) {
+    if (line.charCodeAt(0) === 0xfeff) line = line.slice(1);
+    if (line.startsWith(":")) continue;
     if (line.startsWith("event:")) {
       event = line.slice(6).trim();
     } else if (line.startsWith("data:")) {
-      const d = line.slice(5).trim();
+      let d = line.slice(5);
+      if (d.startsWith(" ")) d = d.slice(1);
       dataStr = dataStr ? `${dataStr}\n${d}` : d;
     }
   }
@@ -339,8 +342,14 @@ export class CodexExecutor extends BaseExecutor {
         }
         chunks.push(value);
         bytesRead += value.byteLength;
-        const decoded = decoder.decode(value, { stream: true });
+        const scanSlice = value.byteLength > CODEX_SSE_MAX_BOUND_BYTES
+          ? value.subarray(0, CODEX_SSE_MAX_BOUND_BYTES)
+          : value;
+        const decoded = decoder.decode(scanSlice, { stream: true });
         frameBuffer += decoded;
+        if (frameBuffer.length > CODEX_SSE_MAX_BOUND_BYTES * 2) {
+          frameBuffer = frameBuffer.slice(0, CODEX_SSE_MAX_BOUND_BYTES * 2);
+        }
 
         if (processFrames()) {
           break;

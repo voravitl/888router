@@ -212,6 +212,45 @@ describe("Codex streaming latency and tool call optimizations", () => {
 
       expect(peek.matched).toBe("server_is_overloaded");
     });
+
+    it("handles UTF-8 BOM and SSE comment lines correctly", async () => {
+      const executor = new CodexExecutor();
+      // Leading UTF-8 BOM (\uFEFF) and comment line (: comment)
+      const bomAndCommentChunk = new TextEncoder().encode('\uFEFF: keepalive ping\nevent: response.output_text.delta\ndata: {"type":"response.output_text.delta","delta":"Fast token"}\n\n');
+
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(bomAndCommentChunk);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      expect(peek.matched).toBeNull();
+      expect(peek.replacementBody).toBeDefined();
+    });
+
+    it("scans oversized single chunk without exceeding memory safety bounds", async () => {
+      const executor = new CodexExecutor();
+      // 50KB chunk containing an early overload error
+      const bigChunk = new TextEncoder().encode(
+        'event: error\ndata: {"error":{"code":"server_is_overloaded"}}\n\n' + "x".repeat(50000)
+      );
+
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(bigChunk);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      expect(peek.matched).toBe("server_is_overloaded");
+    });
   });
 
   describe("CodexExecutor strict property preservation", () => {
@@ -452,6 +491,54 @@ describe("Codex streaming latency and tool call optimizations", () => {
         openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
       }).toThrow(/Failed to serialize tool output/);
     });
+
+    it("fails closed when an ID-less tool output follows an intervening user turn", () => {
+      const body = {
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [{ id: "call_old", function: { name: "OldTool", arguments: "{}" } }],
+          },
+          { role: "user", content: "new turn after tool call was interrupted" },
+          // Uncorrelated tool result without tool_call_id
+          { role: "tool", content: "orphan result" },
+        ],
+      };
+
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      }).toThrow(/Orphan or ambiguous tool output/);
+    });
+
+    it("rejects duplicate tool call IDs in the same assistant batch", () => {
+      const body = {
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [
+              { id: "call_dup", function: { name: "Tool1", arguments: "{}" } },
+              { id: "call_dup", function: { name: "Tool2", arguments: "{}" } },
+            ],
+          },
+        ],
+      };
+
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      }).toThrow(/Duplicate tool call id "call_dup"/);
+    });
+
+    it("rejects tool_choice with function name exceeding 128 characters", () => {
+      const longName = "A".repeat(129);
+      const body = {
+        tools: [{ type: "function", function: { name: "ValidTool" } }],
+        tool_choice: { type: "function", function: { name: longName } },
+      };
+
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      }).toThrow(/exceeds maximum length of 128 characters/);
+    });
   });
 
   describe("convertResponsesApiFormat tool call and output reconciliation", () => {
@@ -474,6 +561,19 @@ describe("Codex streaming latency and tool call optimizations", () => {
       expect(toolMessages[0].content).toBe("beta result");
       expect(toolMessages[1].tool_call_id).toBe("call_alpha");
       expect(toolMessages[1].content).toBe("alpha result");
+    });
+
+    it("fails closed when an orphan tool output arrives without pending calls", () => {
+      const body = {
+        input: [
+          { type: "message", role: "user", content: "hello" },
+          { type: "function_call_output", output: "orphan result" },
+        ],
+      };
+
+      expect(() => {
+        convertResponsesApiFormat(body);
+      }).toThrow(/Orphan or ambiguous tool output cannot be paired/);
     });
   });
 

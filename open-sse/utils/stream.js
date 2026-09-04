@@ -99,7 +99,9 @@ export function createSSEStream(options = {}) {
 
     const canonical = recByCall || recByItem;
     if (canonical) {
-      if (callId && canonical.id !== callId) canonical.id = callId;
+      if (callId && canonical.id !== callId && canonical.id === itemId) {
+        canonical.id = callId;
+      }
       if (!canonical.name && name) canonical.name = name;
       if (itemId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(itemId, canonical);
       if (callId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(callId, canonical);
