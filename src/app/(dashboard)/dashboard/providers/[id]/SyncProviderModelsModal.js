@@ -13,7 +13,7 @@ function normalizeModel(item) {
     id,
     name: item.name || item.modelName || item.displayName || id,
     description: item.description || "",
-    maxInputTokens: item.maxInputTokens || item.contextLength || item.contextWindow || item.context_length || item.top_provider?.context_length || 0,
+    maxInputTokens: item.max_context_window || item.context_window || item.maxInputTokens || item.contextLength || item.contextWindow || item.context_length || item.top_provider?.context_length || 0,
   };
 }
 

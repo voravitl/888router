@@ -773,8 +773,12 @@ export async function buildModelsList(kindFilter) {
         // pre-scoped rows. Validity (a positive finite context window) is
         // enforced by the repo reader.
         const bareId = modelId.split("/").pop();
+        const baseWithoutReview = bareId.endsWith("-review") ? bareId.slice(0, -7) : null;
         const syncedCaps = syncedCapabilitiesById.get(`${providerId}:${bareId}`)
+          || (baseWithoutReview ? syncedCapabilitiesById.get(`${providerId}:${baseWithoutReview}`) : null)
+          || syncedCapabilitiesById.get(`${providerId}:${modelId}`)
           || syncedCapabilitiesById.get(bareId)
+          || (baseWithoutReview ? syncedCapabilitiesById.get(baseWithoutReview) : null)
           || syncedCapabilitiesById.get(modelId);
         const caps = {
           ...staticCaps,

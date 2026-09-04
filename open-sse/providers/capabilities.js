@@ -451,10 +451,22 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gemma*",         caps: { vision: true, contextWindow: 128000 } },
   { pattern: "*nanobanana*",    caps: { vision: true, imageOutput: true } },
 
-  // ── OpenAI GPT-5.x (vision + thinking + web search) ──────────────
-  { pattern: "*gpt-5*image*",   caps: { imageOutput: true } },
-  { pattern: "*gpt-5*codex*",   caps: { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
-  { pattern: "*gpt-5*",         caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
+  // ── OpenAI GPT-5.x / Codex (1,050,000 for 5.4+; 872k for reserve; 128k for spark) ─
+  { pattern: "*gpt-reserve*",         caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 872000, maxOutput: 128000 } },
+  { pattern: "*codex-auto-review*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 872000, maxOutput: 128000 } },
+  { pattern: "*gpt-5*spark*",         caps: { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 128000 } },
+  { pattern: "*gpt-5*image*",         caps: { imageOutput: true } },
+  { pattern: "*gpt-5.4-mini*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
+  { pattern: "*gpt-5.4-nano*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
+  { pattern: "*gpt-5.4*",             caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
+  { pattern: "*gpt-5.5*",             caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
+  { pattern: "*gpt-5.6*",             caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
+  { pattern: "*gpt-5.7*",             caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
+  { pattern: "*gpt-5.8*",             caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
+  { pattern: "*gpt-5.9*",             caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
+  { pattern: "*gpt-6*",               caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 } },
+  { pattern: "*gpt-5*codex*",         caps: { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
+  { pattern: "*gpt-5*",               caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
   { pattern: "*gpt-4o*",        caps: { vision: true, search: true, contextWindow: 128000, maxOutput: 16384 } },
   { pattern: "*gpt-4.1*",       caps: { vision: true, contextWindow: 1000000, maxOutput: 32768 } },
   { pattern: "*gpt-4-turbo*",   caps: { vision: true, contextWindow: 128000 } },
@@ -596,13 +608,174 @@ export function registerDynamicCapabilities(modelId, caps) {
 }
 
 /**
- * Resolve capabilities for a model using the 5-step fallback chain,
- * merged over DEFAULT_CAPABILITIES so the result is always complete.
+ * Dynamically resolves capabilities for OpenAI GPT / Codex family models.
+ * Future-proof: calculates context window, output limits, and capabilities
+ * based on architectural generation and variant rules, avoiding hardcoded model lists.
  *
- * @param {string} provider
- * @param {string} model
- * @returns {object} full capabilities object
+ * Rules:
+ * - GPT-5.4+ (5.4, 5.5, 5.6, 5.7, ..., GPT-6, etc.): 1,050,000 context, 128,000 max output
+ *   - Mini / Nano variants in 5.4/5.5: 400,000 context (5.6+ Luna: 1,050,000 context)
+ *   - Spark variants (-spark): 128,000 context, 128,000 max output, vision: false
+ *   - Codex code models: vision: false
+ *   - Image variants (-image): imageOutput: true, tools: false
+ * - GPT-Reserve / Codex Auto Review: 872,000 context, 128,000 max output
+ * - GPT-5.0 - 5.3: 400,000 context (Spark: 128,000 context)
+ * - GPT-4.1: 1,000,000 context, 32,768 max output
+ * - GPT-4o: 128,000 context, vision: true, search: true, maxOutput: 16384
+ * - GPT-4-turbo: 128,000 context, vision: true
+ * - GPT-4 (classic): 128,000 context, vision: false
+ *
+ * Strips provider prefixes and -review variants automatically.
+ *
+ * @param {string} modelId
+ * @returns {object|null} capabilities delta or null if not a GPT model
  */
+export function resolveGptFamilyCapabilities(modelId) {
+  if (!modelId || typeof modelId !== "string") return null;
+
+  // 1. Normalize ID: remove thinking suffix, slash prefix
+  let id = stripThinkingSuffix(modelId).toLowerCase();
+  if (id.includes("/")) id = id.split("/").pop();
+
+  // 2. Handle Codex-specific special models without version numbers
+  if (id.startsWith("gpt-reserve") || id.startsWith("codex-auto-review") || id.startsWith("codex-auto")) {
+    return {
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "openai",
+      contextWindow: 872000,
+      maxOutput: 128000,
+    };
+  }
+
+  if (id.endsWith("-review")) id = id.slice(0, -7);
+
+  // 3. Match GPT pattern: gpt-<major>[.<minor>][<separator><subvariant>]
+  // Handles: gpt-5.4, gpt-5.6-sol, gpt-5-codex, gpt-4o, gpt-6, gpt-5.3-codex-spark, etc.
+  const match = id.match(/^gpt-(\d+)(?:\.(\d+))?(?:[-_.]?([a-zA-Z0-9].*))?$/i);
+  if (!match) return null;
+
+  const maj = parseInt(match[1], 10);
+  const min = match[2] !== undefined ? parseInt(match[2], 10) : 0;
+  const sub = (match[3] || "").toLowerCase();
+
+  // Image models
+  if (sub.includes("image")) {
+    return { imageOutput: true, tools: false };
+  }
+
+  const isSpark = /(?:^|[-_.])spark(?:$|[-_.])/i.test(sub);
+  const isCodex = /(?:^|[-_.])codex(?:$|[-_.])/i.test(sub);
+  const isMiniOrNano = /(?:^|[-_.])(?:mini|nano)(?:$|[-_.])/i.test(sub);
+
+  // GPT-5.4+ and future generations (GPT-5.5, 5.6, 5.7, GPT-6, GPT-7, ...)
+  if (maj > 5 || (maj === 5 && min >= 4)) {
+    if (isSpark) {
+      return {
+        vision: false,
+        reasoning: true,
+        search: true,
+        thinkingFormat: "openai",
+        contextWindow: 128000,
+        maxOutput: 128000,
+      };
+    }
+    if (isMiniOrNano) {
+      return {
+        vision: !isCodex,
+        reasoning: true,
+        search: true,
+        thinkingFormat: "openai",
+        contextWindow: 400000,
+        maxOutput: 128000,
+      };
+    }
+    return {
+      vision: !isCodex,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "openai",
+      contextWindow: 1050000,
+      maxOutput: 128000,
+    };
+  }
+
+  // GPT-5.0 to GPT-5.3
+  if (maj === 5) {
+    if (isSpark) {
+      return {
+        vision: false,
+        reasoning: true,
+        search: true,
+        thinkingFormat: "openai",
+        contextWindow: 128000,
+        maxOutput: 128000,
+      };
+    }
+    if (isMiniOrNano) {
+      return {
+        vision: !isCodex,
+        reasoning: true,
+        search: true,
+        thinkingFormat: "openai",
+        contextWindow: 400000,
+        maxOutput: 128000,
+      };
+    }
+    return {
+      vision: !isCodex,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "openai",
+      contextWindow: 400000,
+      maxOutput: 128000,
+    };
+  }
+
+  // GPT-4.1
+  if (maj === 4 && min === 1) {
+    return {
+      vision: true,
+      contextWindow: 1000000,
+      maxOutput: 32768,
+    };
+  }
+
+  // GPT-4 / 4o / 4-turbo
+  if (maj === 4) {
+    const is4o = /^o(-|$)/i.test(sub);
+    const isTurbo = /^turbo(-|$)/i.test(sub);
+    if (is4o) {
+      return {
+        vision: true,
+        search: true,
+        contextWindow: 128000,
+        maxOutput: 16384,
+      };
+    }
+    if (isTurbo) {
+      return {
+        vision: true,
+        contextWindow: 128000,
+      };
+    }
+    return {
+      contextWindow: 128000,
+    };
+  }
+
+  // GPT-3 / 3.5
+  if (maj === 3) {
+    return {
+      contextWindow: 16385,
+      maxOutput: 4096,
+    };
+  }
+
+  return null;
+}
+
 /**
  * Catalogue-wide static entry for a model, ignoring provider-specific overrides.
  * Those are applied separately, LAST, because they must also outrank dynamic caps.
@@ -612,14 +785,21 @@ function catalogueCapabilitiesFor(model, baseModel) {
   if (MODEL_CAPABILITIES[baseModel]) return MODEL_CAPABILITIES[baseModel];
   if (MODEL_CAPABILITIES[model]) return MODEL_CAPABILITIES[model];
 
-  // 2. Pattern match (first match wins)
+  const baseWithoutReview = baseModel.endsWith("-review") ? baseModel.slice(0, -7) : null;
+  if (baseWithoutReview && MODEL_CAPABILITIES[baseWithoutReview]) return MODEL_CAPABILITIES[baseWithoutReview];
+
+  // 2. Dynamic GPT / Codex family resolution (structural & future-proof)
+  const gptCaps = resolveGptFamilyCapabilities(baseModel) || resolveGptFamilyCapabilities(model);
+  if (gptCaps) return gptCaps;
+
+  // 3. Pattern match (first match wins)
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
       return caps;
     }
   }
 
-  // 3. Nothing known
+  // 4. Nothing known
   return null;
 }
 
@@ -629,49 +809,25 @@ export function getCapabilitiesForModel(provider, model) {
   const normalizedModel = stripThinkingSuffix(model);
   const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
   const catalogueCaps = catalogueCapabilitiesFor(normalizedModel, baseModel);
+  const baseWithoutReview = baseModel.endsWith("-review") ? baseModel.slice(0, -7) : null;
 
   // Provider-specific overrides are applied LAST — above dynamic caps, not below.
-  // They are hand-written statements about one provider's upstream ("this
-  // provider's deepseek-v4-pro is text-only"), so a live sync must not be able to
-  // contradict them. Layering them under dynamic — which an earlier revision of
-  // this change did — let a synced `vision: true` overturn `codebuddy-cn`'s
-  // deliberate `vision: false`, which is exactly the defect class of #198: the
-  // wrong flag stops the translator stripping image_url and the upstream 400s.
   const providerCaps = (provider && (
     PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
     || PROVIDER_CAPABILITIES[provider]?.[baseModel]
+    || (baseWithoutReview ? PROVIDER_CAPABILITIES[provider]?.[baseWithoutReview] : null)
   )) || null;
 
   // Dynamic caps (upstream sync / DB) LAYER OVER the catalogue entry: they win on
-  // the fields they carry, and leave every catalogue field the sync omitted
-  // intact. (The earlier wording here said "fill gaps, never replace", which
-  // understated it — an overlapping field IS replaced, deliberately, since that
-  // is how a live catalogue reports something newer than the static table.)
-  //
-  // They used to be merged over DEFAULT_CAPABILITIES alone, skipping the static
-  // table entirely, so any field the sync did not carry silently fell back to
-  // the floor. The provider sync only records { contextWindow, vision,
-  // reasoning } (src/app/api/providers/[id]/models/route.js), so every synced
-  // model lost its real maxOutput: kr/claude-opus-5 advertised max_tokens 64000
-  // (the DEFAULT floor) while its own MODEL_CAPABILITIES entry says 128000, and
-  // its -thinking/-agentic variants — never synced, so never overwritten —
-  // correctly reported 128000. Same reason thinkingFormat/search/pdf could be
-  // dropped from a synced model.
-  //
-  // The floor is `Number.isFinite`, so the /v1/models fill-gap path could not
-  // rescue it either: 64000 is a valid number, just the wrong one.
-  // Scoped dynamic cache (`providerId:baseModel`, with `providerId:modelId`
-  // fallback when the writer stored a slash-qualified id verbatim — review
-  // round-2 #C1). Scoped wins over the legacy bare-key cache so a synced
-  // `vision: true` on provider A cannot bleed into the same bare id on
-  // provider B. Layer scoped over bare so a partial scoped record (e.g.
-  // vision only) inherits the bare record's full fields.
+  // the fields they carry, and leave every catalogue field the sync omitted intact.
   const hasProvider = typeof provider === "string" && provider.length > 0;
   const scopedCaps = hasProvider
     ? (DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
+        || (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseWithoutReview}`) : null)
         || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`))
     : null;
   const bareCaps = DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
+    ?? (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE.get(baseWithoutReview) : null)
     ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
   const dynamicCaps = (scopedCaps || bareCaps)
     ? { ...(bareCaps || {}), ...(scopedCaps || {}) }
@@ -697,39 +853,46 @@ export function getCapabilitiesForModel(provider, model) {
 export function resolveKnownContextWindow(provider, model) {
   if (!model) return undefined;
   const normalizedModel = stripThinkingSuffix(model);
+  const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
+  const baseWithoutReview = baseModel.endsWith("-review") ? baseModel.slice(0, -7) : null;
+
   const providerEntry = provider && (
     PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
-    || PROVIDER_CAPABILITIES[provider]?.[normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel]
+    || PROVIDER_CAPABILITIES[provider]?.[baseModel]
+    || (baseWithoutReview ? PROVIDER_CAPABILITIES[provider]?.[baseWithoutReview] : null)
   );
   if (providerEntry) {
     return providerEntry.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
   }
-  const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
+
   // Scoped dynamic runtime/DB caps take precedence over bare-key legacy so
-  // cross-provider bleed is impossible (review finding #5: PR #292 lesson).
-  // A synced model (e.g. kiro live catalog) may carry a contextWindow the
-  // static table doesn't know yet. Without this, combo MIN context ignores
-  // live caps.
+  // cross-provider bleed is impossible.
   const hasProvider = typeof provider === "string" && provider.length > 0;
-  const scopedDyn = hasProvider && DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`);
-  // Layer scoped over bare so a partial scoped record with a valid bare
-  // sibling still wins on the bare-only fields (review finding #6).
+  const scopedDyn = hasProvider && (
+    DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
+    || (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseWithoutReview}`) : null)
+  );
   const bareDyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
+    ?? (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE.get(baseWithoutReview) : null)
     ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
   const dyn = (scopedDyn || bareDyn)
     ? { ...(bareDyn || {}), ...(scopedDyn || {}) }
     : null;
   if (dyn && dyn.contextWindow != null) {
-    // Validate at read time too — review round-2 #M2. Legacy bare writers
-    // never applied the bounds, so a corrupt value in the unvalidated
-    // legacy cache could otherwise override the static table.
     const cw = coerceContextWindow(dyn.contextWindow);
     if (Number.isFinite(cw) && cw > 0 && cw <= MAX_CONTEXT_WINDOW) {
       return cw;
     }
   }
-  const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[normalizedModel];
+
+  const exact = MODEL_CAPABILITIES[baseModel]
+    || MODEL_CAPABILITIES[normalizedModel]
+    || (baseWithoutReview ? MODEL_CAPABILITIES[baseWithoutReview] : null);
   if (exact) return exact.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
+
+  const gptCaps = resolveGptFamilyCapabilities(baseModel) || resolveGptFamilyCapabilities(normalizedModel);
+  if (gptCaps?.contextWindow) return gptCaps.contextWindow;
+
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, normalizedModel)) {
       return caps.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
