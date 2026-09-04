@@ -1,3 +1,31 @@
+# v0.15.85 (2026-09-05)
+
+## Feat & Fix: GPT-6 Family Support, OpenAI Model Sync Merge & Codex Subagent Concurrency
+
+- `open-sse/providers/capabilities.js`:
+  - Dynamically resolved GPT-6 family (`gpt-6`, `gpt-6-mini`, `gpt-6-nano`, `gpt-6-codex`, `gpt-6-preview`, `gpt-6-pro`) with 1,050,000 context window (400,000 for mini/nano, 128,000 for spark) and 128k max output.
+- `open-sse/providers/pricing.js`:
+  - Added canonical and pattern pricing for all GPT-6 family models across standard rates and provider-specific rates.
+  - Hardened pattern boundaries to prevent false-positive matching on non-canonical IDs (e.g. `gpt-60`).
+  - Disambiguated single-argument `getPricingForModel` overload safely.
+- `open-sse/providers/registry/openai.js` & `open-sse/providers/registry/codex.js`:
+  - Added GPT-6 models to OpenAI and Codex provider registries with full capabilities metadata.
+- `src/app/api/providers/[id]/models/route.js`:
+  - Merged static GPT-6 models from provider registry into live synced models list for OpenAI and Codex, enabling instant discovery and syncing in the Web UI even when upstream `/v1/models` omits them.
+  - Cloned arrays during merge to prevent mutation of in-memory registry constants.
+- `open-sse/executors/codex.js`:
+  - Scoped session IDs and `_isCompact` per-request onto cloned credentials prototypes to eliminate concurrency race conditions and singleton state bleeding across parallel subagents.
+  - Implemented fast-path image detection inside `prefetchImages` to eliminate prefetch latency on text-only subagent requests.
+- `open-sse/utils/sessionManager.js`:
+  - Fixed prompt cache thrashing for Claude Code / Codex subagents by prioritizing stable conversation/body session IDs over per-request client UUID headers.
+  - Hardened Claude Code session UUID extraction to strip subagent task suffixes cleanly while preserving fallback compatibility.
+- `open-sse/utils/proxyFetch.js`:
+  - Added in-flight promise deduplication in `getDispatcher()` to prevent concurrent socket creation races.
+  - Increased connection pool limits to 100 with graceful agent close/destroy on cache eviction.
+- `open-sse/executors/github.js` & `open-sse/translator/concerns/paramSupport.js`:
+  - Enforced strict word boundaries in `requiresMaxCompletionTokens` and supported `o1`/`o3`/`o4`.
+  - Upgraded GitHub Copilot temperature strip rules to evaluate GPT-5.4+ versions mathematically.
+
 # v0.15.84 (2026-09-05)
 
 ## Fix: Codex Responses API Streaming Latency & Tool Correlation Hardening

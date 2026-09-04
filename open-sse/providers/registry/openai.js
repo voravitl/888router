@@ -28,6 +28,12 @@ const openaiConfig = {
     forceStream: true,
   },
   models: [
+    { id: "gpt-6", name: "GPT-6", contextWindow: 1050000, vision: true, reasoning: true },
+    { id: "gpt-6-mini", name: "GPT-6 Mini", contextWindow: 400000, vision: true, reasoning: true },
+    { id: "gpt-6-nano", name: "GPT-6 Nano", contextWindow: 400000, vision: true, reasoning: true },
+    { id: "gpt-6-codex", name: "GPT-6 Codex", contextWindow: 1050000, vision: false, reasoning: true },
+    { id: "gpt-6-preview", name: "GPT-6 Preview", contextWindow: 1050000, vision: true, reasoning: true },
+    { id: "gpt-6-pro", name: "GPT-6 Pro", contextWindow: 1050000, vision: true, reasoning: true },
     { id: "gpt-5.4", name: "GPT-5.4" },
     { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
     { id: "gpt-5.4-nano", name: "GPT-5.4 Nano" },

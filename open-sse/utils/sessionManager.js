@@ -93,7 +93,6 @@ const MAX_CONTINUATION_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
 const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id"];
-const CLAUDE_CODE_SESSION_RE = /_session_([a-f0-9-]+)$/;
 
 function sha16(text) {
     return crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -108,10 +107,13 @@ function normalizeSessionId(value) {
 }
 
 // Extract Claude Code session id from metadata.user_id (_session_{uuid} | JSON {session_id})
+// Captures canonical 36-char UUID (stopping before subagent tag or suffix), with bounded fallback
 function extractClaudeCodeSession(userId) {
     if (typeof userId !== "string" || !userId) return null;
-    const m = userId.match(CLAUDE_CODE_SESSION_RE);
-    if (m) return m[1];
+    const uuidMatch = userId.match(/_session_([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+    if (uuidMatch) return uuidMatch[1];
+    const fallbackMatch = userId.match(/_session_([a-zA-Z0-9_-]{8,64})(?=$|[._:/\s])/);
+    if (fallbackMatch) return fallbackMatch[1];
     if (userId[0] === "{") {
         try { return normalizeSessionId(JSON.parse(userId)?.session_id); } catch { /* noop */ }
     }
@@ -143,14 +145,19 @@ function extractClientSessionId(headers, body, scope = "") {
         const v = headerValue(headers, key);
         if (v) return v;
     }
-    const requestId = scope === "kiro" ? null : headerValue(headers, "x-client-request-id");
-    if (requestId) return requestId;
     const fromBody =
         normalizeSessionId(body?.prompt_cache_key) ||
         normalizeSessionId(body?.session_id) ||
         normalizeSessionId(body?.conversation_id) ||
         (scope === "kiro" ? null : normalizeSessionId(body?.metadata?.user_id));
-    return fromBody || null;
+    if (fromBody) return fromBody;
+
+    // Fallback: only if scope is not kiro or claude, preserve x-client-request-id as last-resort session signal
+    if (scope !== "kiro" && scope !== "claude") {
+        const clientReqId = headerValue(headers, "x-client-request-id");
+        if (clientReqId) return clientReqId;
+    }
+    return null;
 }
 
 function requestMessages(body) {

@@ -46,6 +46,11 @@ const codexConfig = {
   },
   models: [
     ...withCodexReviewModels([
+      { id: "gpt-6", name: "GPT 6" },
+      { id: "gpt-6-codex", name: "GPT 6 Codex" },
+      { id: "gpt-6-mini", name: "GPT 6 Mini" },
+      { id: "gpt-6-nano", name: "GPT 6 Nano" },
+      { id: "gpt-6-preview", name: "GPT 6 Preview" },
       { id: "gpt-5.6-sol", name: "GPT 5.6 Sol" },
       { id: "gpt-5.6-terra", name: "GPT 5.6 Terra" },
       { id: "gpt-5.6-luna", name: "GPT 5.6 Luna" },

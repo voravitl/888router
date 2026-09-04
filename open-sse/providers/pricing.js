@@ -36,6 +36,13 @@ export const MODEL_PRICING = {
   "gpt-4o":                       { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  },
   "gpt-4o-mini":                  { input: 0.15,  output: 0.60,  cached: 0.075, reasoning: 0.90,   cache_creation: 0.15  },
   "gpt-4.1":                      { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  },
+  "gpt-6":                        { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  },
+  "gpt-6-preview":                { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  },
+  "gpt-6-codex":                  { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  },
+  "gpt-6-codex-max":              { input: 10.00, output: 50.00, cached: 1.00,  reasoning: 50.00,  cache_creation: 10.00 },
+  "gpt-6-pro":                    { input: 10.00, output: 50.00, cached: 1.00,  reasoning: 50.00,  cache_creation: 10.00 },
+  "gpt-6-mini":                   { input: 1.00,  output: 5.00,  cached: 0.10,  reasoning: 5.00,   cache_creation: 1.00  },
+  "gpt-6-nano":                   { input: 0.25,  output: 1.50,  cached: 0.025, reasoning: 1.50,   cache_creation: 0.25  },
   "gpt-5":                        { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
   "gpt-5-mini":                   { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  },
   "gpt-5-codex":                  { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
@@ -206,6 +213,10 @@ export const PROVIDER_PRICING = {
     "openai/gpt-5.4-image-2": { input: 8, output: 30.0, cached: 2.0, reasoning: 30.0 },
     "openai/gpt-5.4-mini": { input: 0.75, output: 4.5, cached: 0.075, reasoning: 4.5 },
     "openai/gpt-5.4-nano": { input: 0.2, output: 1.25, cached: 0.02, reasoning: 1.25 },
+    "openai/gpt-6": { input: 2.5, output: 15.0, cached: 0.25, reasoning: 15.0 },
+    "openai/gpt-6-codex": { input: 2.5, output: 15.0, cached: 0.25, reasoning: 15.0 },
+    "openai/gpt-6-mini": { input: 0.75, output: 4.5, cached: 0.075, reasoning: 4.5 },
+    "openai/gpt-6-nano": { input: 0.2, output: 1.25, cached: 0.02, reasoning: 1.25 },
     "openai/o3-mini": { input: 1.1, output: 4.4, cached: 0.55, reasoning: 4.4 },
     "openai/o4-mini": { input: 1.1, output: 4.4, cached: 0.55, reasoning: 4.4 },
     "qwen/qwen3-coder-next": { input: 0.3, output: 0.6, cached: 0.06, reasoning: 0.6 },
@@ -247,7 +258,16 @@ export const PATTERN_PRICING = [
   { pattern: "gemini-2.5-*",    pricing: { input: 0.30,  output: 2.50,  cached: 0.03,  reasoning: 3.75,   cache_creation: 0.30  } },
   { pattern: "gemini-*",        pricing: { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  } },
 
-  // --- GPT (specific first, generic last) ---
+  // --- GPT-6 (specific first, generic last) ---
+  { pattern: "gpt-6-nano*",     pricing: { input: 0.25,  output: 1.50,  cached: 0.025, reasoning: 1.50,   cache_creation: 0.25  } },
+  { pattern: "gpt-6-mini*",     pricing: { input: 1.00,  output: 5.00,  cached: 0.10,  reasoning: 5.00,   cache_creation: 1.00  } },
+  { pattern: "gpt-6-codex*",    pricing: { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  } },
+  { pattern: "gpt-6-pro*",      pricing: { input: 10.00, output: 50.00, cached: 1.00,  reasoning: 50.00,  cache_creation: 10.00 } },
+  { pattern: "gpt-6-*",         pricing: { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  } },
+  { pattern: "gpt-6.*",         pricing: { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  } },
+  { pattern: "gpt-6",           pricing: { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  } },
+
+  // --- GPT-5 (specific first, generic last) ---
   { pattern: "gpt-5.6-luna*",   pricing: { input: 0.20,  output: 1.20,  cached: 0.02,  reasoning: 1.20,   cache_creation: 0.20  } },
   { pattern: "gpt-5.6-terra*",  pricing: { input: 2.00,  output: 12.00, cached: 0.20,  reasoning: 12.00,  cache_creation: 2.00  } },
   { pattern: "gpt-5.6-sol*",    pricing: { input: 4.00,  output: 20.00, cached: 0.40,  reasoning: 20.00,  cache_creation: 4.00  } },
@@ -323,7 +343,15 @@ export function matchPattern(pattern, model) {
  * @returns {object|null}
  */
 export function getPricingForModel(provider, model) {
-  if (!model) return null;
+  // Overload: getPricingForModel(model) when provider is omitted
+  if (arguments.length === 1 && typeof provider === "string") {
+    model = provider;
+    provider = null;
+  } else if (!model && typeof provider === "string" && !PROVIDER_PRICING[provider]) {
+    model = provider;
+    provider = null;
+  }
+  if (!model || typeof model !== "string") return null;
 
   // 1. Provider-specific override
   if (provider && PROVIDER_PRICING[provider]?.[model]) {

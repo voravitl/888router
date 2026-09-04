@@ -57,7 +57,7 @@ export const MITM_TOOLS = {
     description: "GitHub Copilot IDE with MITM",
     configType: "mitm",
     mitmDomain: "api.individual.githubcopilot.com",
-    modelAliases: ["gpt-5-mini", "gpt-5.4-nano", "claude-haiku-4.5", "gpt-4o", "gpt-4.1"],
+    modelAliases: ["gpt-6", "gpt-6-mini", "gpt-5-mini", "gpt-5.4-nano", "claude-haiku-4.5", "gpt-4o", "gpt-4.1"],
     defaultModels: [
       // Verified via live MITM passthrough capture of the GitHub Copilot CLI: its model
       // picker offers "GPT-5 mini" (default → wire id "gpt-5-mini"), "Claude Haiku 4.5"
@@ -68,6 +68,8 @@ export const MITM_TOOLS = {
       // call is passed through to GitHub Copilot instead of the configured provider —
       // and gpt-5-mini is the CLI default, so the primary turn leaks (same class as the
       // Kiro "auto" misrouting). gpt-4o / gpt-4.1 are kept for the VS Code Copilot Chat picker.
+      { id: "gpt-6", name: "GPT-6", alias: "gpt-6" },
+      { id: "gpt-6-mini", name: "GPT-6 mini", alias: "gpt-6-mini" },
       { id: "gpt-5-mini", name: "GPT-5 mini", alias: "gpt-5-mini" },
       { id: "gpt-5.4-nano", name: "GPT-5.4 nano", alias: "gpt-5.4-nano" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
@@ -389,6 +391,7 @@ amp --model "{{model}}"
     defaultModels: [
       { id: "claude-opus-4-7", name: "Claude Opus 4.7", alias: "opus", defaultValue: "cc/claude-opus-4-7" },
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "sonnet", defaultValue: "cc/claude-sonnet-4-6" },
+      { id: "gpt-6", name: "GPT 6", alias: "gpt6", defaultValue: "cx/gpt-6" },
       { id: "gpt-5.5", name: "GPT 5.5", alias: "gpt5", defaultValue: "cx/gpt-5.5" },
       { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
     ],
