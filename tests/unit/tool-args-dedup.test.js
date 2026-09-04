@@ -14,11 +14,17 @@ describe("repairDuplicatedJsonArguments", () => {
     expect(repairDuplicatedJsonArguments(duplicated)).toBe(valid);
   });
 
-  it("repairs concatenated JSON objects with different fields", () => {
+  it("does NOT discard distinct concatenated JSON objects (preserves raw)", () => {
     const first = JSON.stringify({ query: "SELECT 1" });
     const second = JSON.stringify({ extra: true });
     const concatenated = first + second;
-    expect(repairDuplicatedJsonArguments(concatenated)).toBe(first);
+    expect(repairDuplicatedJsonArguments(concatenated)).toBe(concatenated);
+  });
+
+  it("repairs multiple identical concatenated JSON objects even with whitespace", () => {
+    const first = JSON.stringify({ query: "SELECT 1" });
+    const triple = first + "  " + first + " " + first;
+    expect(repairDuplicatedJsonArguments(triple)).toBe(first);
   });
 
   it("handles strings containing escaped quotes properly", () => {

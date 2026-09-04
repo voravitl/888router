@@ -19,7 +19,7 @@ import crypto from "node:crypto";
 // Default configuration
 const DEFAULTS = {
   url: process.env.BASE_URL || "http://localhost:20128",
-  key: process.env.API_KEY || "sk-700faba30d3ab229-7n4wqy-5f11443c",
+  key: process.env.API_KEY || "",
   concurrency: 5,
   duration: 15, // seconds (0 = use requests limit)
   requests: 0, // 0 = unlimited, bounded by duration
@@ -137,12 +137,17 @@ export function calculatePercentile(arr, p) {
 
 // Stats Collector
 export class MonkeyStats {
-  constructor() {
+  constructor(maxLatencySamples = 5000) {
     this.startTime = performance.now();
     this.total = 0;
     this.statusCounts = {};
     this.actionCounts = {};
     this.latencies = [];
+    this.maxLatencySamples = maxLatencySamples;
+    this.minLatency = Infinity;
+    this.maxLatency = 0;
+    this.latencySum = 0;
+    this.latencyCount = 0;
     this.clientAborts = 0;
     this.networkErrors = 0;
     this.unexpected5xx = 0;
@@ -167,7 +172,20 @@ export class MonkeyStats {
     }
 
     if (res.latencyMs !== undefined) {
-      this.latencies.push(res.latencyMs);
+      const lat = res.latencyMs;
+      this.latencyCount++;
+      this.latencySum += lat;
+      if (lat < this.minLatency) this.minLatency = lat;
+      if (lat > this.maxLatency) this.maxLatency = lat;
+
+      if (this.latencies.length < this.maxLatencySamples) {
+        this.latencies.push(lat);
+      } else {
+        const r = Math.floor(Math.random() * this.latencyCount);
+        if (r < this.maxLatencySamples) {
+          this.latencies[r] = lat;
+        }
+      }
     }
   }
 
@@ -199,11 +217,9 @@ export class MonkeyStats {
       p50: calculatePercentile(this.latencies, 50).toFixed(0),
       p90: calculatePercentile(this.latencies, 90).toFixed(0),
       p99: calculatePercentile(this.latencies, 99).toFixed(0),
-      min: this.latencies.length ? Math.min(...this.latencies).toFixed(0) : 0,
-      max: this.latencies.length ? Math.max(...this.latencies).toFixed(0) : 0,
-      avg: this.latencies.length
-        ? (this.latencies.reduce((a, b) => a + b, 0) / this.latencies.length).toFixed(0)
-        : 0,
+      min: this.latencyCount > 0 ? this.minLatency.toFixed(0) : "0",
+      max: this.latencyCount > 0 ? this.maxLatency.toFixed(0) : "0",
+      avg: this.latencyCount > 0 ? (this.latencySum / this.latencyCount).toFixed(0) : "0",
       statusCounts: { ...this.statusCounts },
       actionCounts: { ...this.actionCounts },
     };
@@ -419,15 +435,18 @@ export async function executeMonkeyRequest(req, baseUrl, timeoutMs = 12000) {
 
   let timer = null;
   let abortTimer = null;
+  let abortReason = null;
 
   // Timeout guard
   timer = setTimeout(() => {
+    abortReason = "timeout";
     controller.abort(new Error("Timeout"));
   }, timeoutMs);
 
   // Early client abort trigger (simulates sudden client disconnect mid-stream)
   if (req.abortAfterMs) {
     abortTimer = setTimeout(() => {
+      abortReason = "client_abort";
       controller.abort(new Error("ClientAbortedMidStream"));
     }, req.abortAfterMs);
   }
@@ -460,6 +479,16 @@ export async function executeMonkeyRequest(req, baseUrl, timeoutMs = 12000) {
   } catch (err) {
     const latencyMs = performance.now() - t0;
     if (signal.aborted) {
+      if (abortReason === "timeout") {
+        return {
+          action: req.action,
+          status: 0,
+          latencyMs,
+          aborted: false,
+          networkError: true,
+          errorMsg: "RequestTimeout",
+        };
+      }
       return {
         action: req.action,
         status: 0,
@@ -591,14 +620,25 @@ ${C.bold}${C.magenta}======================================================${C.r
     }, 150);
   }
 
-  // Worker loop
+  // Worker loop with atomic request reservation
+  let reservedRequests = 0;
+  function reserveRequestSlot() {
+    if (options.requests > 0) {
+      if (reservedRequests >= options.requests) return false;
+      reservedRequests++;
+      return true;
+    }
+    return true;
+  }
+
   async function worker(workerId) {
     while (!stopRequested) {
-      // Check limits
+      // Check duration limit
       if (options.duration > 0 && (performance.now() - startTime) / 1000 >= options.duration) {
         break;
       }
-      if (options.requests > 0 && stats.total >= options.requests) {
+      // Check request limit
+      if (!reserveRequestSlot()) {
         break;
       }
 
@@ -669,14 +709,14 @@ ${C.bold}${C.cyan}======================================================${C.rese
   }
 
   console.log(`\n${C.bold}------------------------------------------------------${C.reset}`);
-  if (postLiveness && final.server5xx === 0) {
+  if (postLiveness && final.server5xx === 0 && final.networkErrors === 0) {
     console.log(`${C.bold}${C.green}🏆 VERDICT: PASS — 888router is Rock Solid under Chaos!${C.reset}\n`);
     process.exit(0);
-  } else if (postLiveness && final.server5xx > 0) {
-    console.log(`${C.bold}${C.yellow}⚠️  VERDICT: WARNING — Server survived, but logged ${final.server5xx} 5xx errors.${C.reset}\n`);
-    process.exit(0);
-  } else {
+  } else if (!postLiveness) {
     console.log(`${C.bold}${C.red}💥 VERDICT: FAIL — Server became unresponsive!${C.reset}\n`);
+    process.exit(1);
+  } else {
+    console.log(`${C.bold}${C.red}💥 VERDICT: FAIL — Detected ${final.server5xx} 5xx errors and ${final.networkErrors} network errors!${C.reset}\n`);
     process.exit(1);
   }
 }

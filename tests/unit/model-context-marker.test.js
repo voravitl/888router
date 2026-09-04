@@ -43,4 +43,15 @@ describe("model context marker", () => {
   it("tolerates a non-string model", () => {
     expect(stripModelContextMarker(undefined)).toEqual({ model: undefined, contextMarker: null });
   });
+
+  it("trims surrounding whitespace consistently with or without marker", () => {
+    expect(stripModelContextMarker("  claude-opus-5[1m]  ")).toEqual({
+      model: "claude-opus-5",
+      contextMarker: "1m",
+    });
+    expect(stripModelContextMarker("  claude-opus-5  ")).toEqual({
+      model: "claude-opus-5",
+      contextMarker: null,
+    });
+  });
 });

@@ -25,9 +25,14 @@ export function repairDuplicatedJsonArguments(raw) {
 
   const trimmed = raw.trim();
   if (trimmed.startsWith("{")) {
+    const objects = [];
+    const chunks = [];
     let depth = 0;
     let inString = false;
     let escape = false;
+    let start = 0;
+    let lastEnd = 0;
+
     for (let i = 0; i < trimmed.length; i++) {
       const ch = trimmed[i];
       if (escape) {
@@ -43,16 +48,33 @@ export function repairDuplicatedJsonArguments(raw) {
         continue;
       }
       if (inString) continue;
-      if (ch === "{") depth++;
-      else if (ch === "}") {
-        depth--;
-        if (depth === 0 && i < trimmed.length - 1) {
-          const first = trimmed.slice(0, i + 1);
-          try {
-            JSON.parse(first);
-            return first;
-          } catch {}
+
+      if (ch === "{") {
+        if (depth === 0) {
+          if (trimmed.slice(lastEnd, i).trim().length > 0) return raw;
+          start = i;
         }
+        depth++;
+      } else if (ch === "}") {
+        depth--;
+        if (depth === 0) {
+          const chunk = trimmed.slice(start, i + 1);
+          lastEnd = i + 1;
+          try {
+            objects.push(JSON.parse(chunk));
+            chunks.push(chunk);
+          } catch {
+            return raw;
+          }
+        }
+      }
+    }
+
+    if (depth === 0 && trimmed.slice(lastEnd).trim().length === 0 && chunks.length > 1) {
+      const firstStr = JSON.stringify(objects[0]);
+      const allIdentical = objects.every((obj) => JSON.stringify(obj) === firstStr);
+      if (allIdentical) {
+        return chunks[0];
       }
     }
   }
