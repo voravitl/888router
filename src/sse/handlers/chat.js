@@ -22,6 +22,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
 /**
  * Handle chat completion request
@@ -55,8 +56,9 @@ export async function handleChat(request, clientRawRequest = null) {
   // 1M-context registry entry (it does NOT read context_window from /v1/models).
   // z.ai and other upstreams reject the suffix ("Unknown Model"), so strip it
   // here — the suffix is a Claude-Code-side signal, not a real model id part.
-  if (typeof body.model === "string" && /\[1m\]$/i.test(body.model)) {
-    body.model = body.model.replace(/\[1m\]$/i, "");
+  const { model: strippedModel, contextMarker } = stripModelContextMarker(body.model);
+  if (contextMarker) {
+    body.model = strippedModel;
   }
   const modelStr = body.model;
 

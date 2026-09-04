@@ -1,3 +1,29 @@
+# v0.15.83 (2026-09-05)
+
+## Feat: Upstream v0.5.65 Parity & Gateway Resilience
+
+- `open-sse/utils/modelMarkers.js` & `src/sse/handlers/chat.js`:
+  - Added `stripModelContextMarker(modelStr)` to safely strip Claude Code's `[1m]` context window marker before model resolution (#3690), while preserving client-side 1M beta request routing.
+- `open-sse/translator/schema/blocks.js` & `open-sse/translator/formats/claude.js`:
+  - Sanitized Claude payloads by dropping non-`srvtoolu_` `server_tool_use` blocks, associated orphan tool results, and empty text blocks (`text: ""`) (ed1bd0c5).
+- `open-sse/providers/shared.js`, `open-sse/utils/claudeCloaking.js`, & `open-sse/providers/capabilities.js`:
+  - Updated Claude CLI spoofing headers to `2.1.258` (#3718).
+  - Registered Claude Fable 5.1 (`claude-fable-5-1` and `claude-fable-5.1`) as permanent adaptive-thinking models (`thinkingCanDisable: false`, 1M context).
+  - Preserved `claude-opus-4-8-thinking` and dotted aliases.
+- `open-sse/translator/concerns/thinkingUnified.js`:
+  - Support permanent adaptive thinking for Fable 5.1 in `claude-adaptive` format.
+  - Added `NATIVE_ONLY_FORMATS` routing so Gemini models on OpenAI-compatible wire use `reasoning_effort` instead of raw `generationConfig.thinkingConfig` (ac9120fd).
+- `open-sse/translator/concerns/toolArgs.js`, `open-sse/translator/response/openai-to-claude.js`, & `kiro-to-claude.js`:
+  - Added `repairDuplicatedJsonArguments(raw)` to deduplicate cumulative and repeating stream chunks for tool arguments without discarding distinct trailing JSON arguments (PR #3779).
+- `src/mitm/handlers/kiro.js`, `open-sse/translator/request/claude-to-kiro.js`, & `openai-to-kiro.js`:
+  - Preserved inline base64 images in Kiro MITM proxy converted to OpenAI-compatible `image_url` parts (1f190bd0).
+  - Maintained top-level `payload.systemPrompt` delivery for Kiro CLI/CodeWhisperer backward compatibility.
+- `open-sse/providers/capabilities.js`, `open-sse/providers/registry/codebuddy-cn.js`, & `open-sse/providers/thinkingLevels.js`:
+  - Refreshed CodeBuddy CN catalog (e014cb53): added `hy3`, `hy3-x`, `hy4-preview`, `hy4-preview-x`, `glm-5.3`, `glm-5.3-flash`, `kimi-k3-1`; removed deprecated `glm-5.0` and `glm-4.7`.
+  - Added model-specific thinking level options for CodeBuddy CN in `PATTERN_THINKING`.
+- `scripts/monkey-test.mjs`:
+  - Added high-speed stress, fuzz, resilience, and chaos testing tool for 888router with bounded memory stats, timeout separation, and automated health checks.
+
 # v0.15.82 (2026-09-04)
 
 ## Perf: Comprehensive Resource Optimization (Disk bloat, Backup quotas, Memory cache, and Idle CPU)

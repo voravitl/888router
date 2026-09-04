@@ -16,6 +16,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { accumulateToolName } from "../concerns/toolCall.js";
+import { repairDuplicatedJsonArguments } from "../concerns/toolArgs.js";
 
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -207,7 +208,7 @@ export function kiroToClaudeResponse(chunk, state) {
           results.push({
             type: "content_block_delta",
             index: toolBlockIndex,
-            delta: { type: "input_json_delta", partial_json: buffered },
+            delta: { type: "input_json_delta", partial_json: repairDuplicatedJsonArguments(buffered) },
           });
         }
         results.push({ type: "content_block_stop", index: toolBlockIndex });

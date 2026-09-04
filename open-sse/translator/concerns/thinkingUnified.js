@@ -104,11 +104,16 @@ export function extractThinking(body) {
 export const captureThinking = extractThinking;
 
 // Resolve thinking format: provider override > capability > derive(targetFormat).
+const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
+
 function resolveFormat(targetFormat, model, provider) {
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
-  if (caps.thinkingFormat) return caps.thinkingFormat;
+  const isOpenAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
+  if (caps.thinkingFormat && !(isOpenAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
+    return caps.thinkingFormat;
+  }
   return FORMAT_TO_NATIVE[targetFormat] || "openai";
 }
 
@@ -219,14 +224,12 @@ function applyFormat(fmt, body, cfg, caps) {
     }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      body.thinking = { type: "adaptive" };
-      // Claude native output_config.effort accepts low/medium/high only. Map
-      // every level onto that enum — minimal→low, beyond-high→high — and omit
-      // output_config for auto so adaptive thinking decides on its own.
+      // Models that can disable thinking need the explicit adaptive switch.
+      // Permanently adaptive models such as Fable 5.1 accept effort directly.
+      if (canDisable) body.thinking = { type: "adaptive" };
+      else delete body.thinking;
       const level = toLevel(eff);
       if (level && level !== "auto") {
-        // toLevel() already collapses ultra→xhigh; keep max/ultra keys anyway
-        // as a cheap guard against future toLevel() changes widening the enum.
         const effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "high", max: "high", ultra: "high" }[level];
         if (effort) body.output_config = { effort };
       }
