@@ -1,3 +1,27 @@
+# v0.15.84 (2026-09-05)
+
+## Fix: Codex Responses API Streaming Latency & Tool Correlation Hardening
+
+- `open-sse/executors/codex.js`:
+  - Eliminated streaming buffer latency in Claude Code by breaking peek loop immediately upon detecting active generation events (`response.output_text.delta`, `response.function_call_arguments.delta`, etc.) without waiting for full buffer or delayed chunks.
+  - Implemented incremental slice scanning for oversized chunks to complete in-flight SSE frames without false negatives or memory ballooning.
+  - Hardened SSE frame parser to handle UTF-8 BOM, comment lines, and exact single-space data prefix stripping.
+  - Extended overload error detection to `response.failed`, `response.error`, and `data.response.error`.
+- `open-sse/translator/request/openai-responses.js`:
+  - Scoped pending assistant tool calls strictly per turn; reset on user, system, or developer messages to prevent cross-turn tool output misattribution.
+  - Enforced request-wide tool call ID uniqueness and fail-closed validation for unknown, non-pending, or orphan tool outputs.
+  - Hardened `tool_choice` validation against names exceeding 128 characters and un-declared tools.
+  - Safely handled and serialized array-based tool outputs with circular/unserializable protection.
+- `open-sse/translator/formats/responsesApi.js`:
+  - Normalized call and output IDs consistently with trimmed string validation.
+  - Deterministically advanced tool call index across both explicit and generated tool calls.
+  - Enforced fail-closed behavior on orphan and unknown explicit tool output IDs.
+- `open-sse/translator/response/openai-responses.js`:
+  - Kept distinct item and call IDs; prevented promoting raw `item.id` to public `tool_call_id`.
+- `open-sse/utils/stream.js`:
+  - Tracked and reconciled Responses API tool call events in streaming passthrough, preventing empty response logs and dashboard misclassification.
+  - Guarded canonical tool ID mutations and bounded tool call tracking memory.
+
 # v0.15.83 (2026-09-05)
 
 ## Feat: Upstream v0.5.65 Parity & Gateway Resilience

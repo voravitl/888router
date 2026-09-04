@@ -1,4 +1,5 @@
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { generateToolCallId } from "../concerns/toolCall.js";
 
 /**
  * Normalize Responses API input to array format.
@@ -41,11 +42,14 @@ export function convertResponsesApiFormat(body) {
 
   // Group items by conversation turn
   let currentAssistantMsg = null;
-  let pendingToolCalls = [];
   let pendingToolResults = [];
+  let funcCallIndex = 0;
+  const pendingGeneratedCallIds = [];
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
+
+  const normalizeCallId = (val) => (typeof val === "string" && val.trim() ? val.trim() : null);
 
   for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
@@ -57,6 +61,7 @@ export function convertResponsesApiFormat(body) {
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
         currentAssistantMsg = null;
+        funcCallIndex = 0;
       }
       // Flush pending tool results
       if (pendingToolResults.length > 0) {
@@ -65,6 +70,7 @@ export function convertResponsesApiFormat(body) {
         }
         pendingToolResults = [];
       }
+      pendingGeneratedCallIds.length = 0;
 
       // Convert content: input_text → text, output_text → text, input_image → image_url
       const content = Array.isArray(item.content)
@@ -91,8 +97,12 @@ export function convertResponsesApiFormat(body) {
       }
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      const callIndex = funcCallIndex++;
+      const explicitId = normalizeCallId(item.call_id) || normalizeCallId(item.id);
+      const tcId = explicitId || generateToolCallId(result.messages.length, callIndex, item.name);
+      pendingGeneratedCallIds.push(tcId);
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id,
+        id: tcId,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
@@ -105,11 +115,28 @@ export function convertResponsesApiFormat(body) {
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
         currentAssistantMsg = null;
+        funcCallIndex = 0;
       }
       // Add tool result
+      const explicitId = normalizeCallId(item.call_id) || normalizeCallId(item.id);
+
+      let tcId = explicitId;
+      if (tcId) {
+        const pendingIdx = pendingGeneratedCallIds.indexOf(tcId);
+        if (pendingIdx === -1) {
+          throw new Error(`Tool output references unknown or non-pending call id "${tcId}"`);
+        }
+        pendingGeneratedCallIds.splice(pendingIdx, 1);
+      } else {
+        const nextId = pendingGeneratedCallIds.shift();
+        if (!nextId) {
+          throw new Error("Orphan or ambiguous tool output cannot be paired with any pending tool call");
+        }
+        tcId = nextId;
+      }
       pendingToolResults.push({
         role: ROLE.TOOL,
-        tool_call_id: item.call_id,
+        tool_call_id: tcId,
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }

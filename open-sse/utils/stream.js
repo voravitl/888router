@@ -72,7 +72,53 @@ export function createSSEStream(options = {}) {
   // record only needs enough entries for the dashboard summary, not the
   // full call list.
   const MAX_TRACKED_TOOL_CALLS = 64;
+  const MAX_TOOL_MAP_ENTRIES = 128;
   let accumulatedToolCalls = null;
+  // Map identifier (itemId or callId) -> canonical record { id, name }
+  const toolAliasMap = new Map();
+
+  function trackResponsesToolCall(itemId, callId, name) {
+    if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+
+    const recByCall = callId ? toolAliasMap.get(callId) : null;
+    const recByItem = itemId ? toolAliasMap.get(itemId) : null;
+
+    if (recByCall && recByItem && recByCall !== recByItem) {
+      // Late alias reconciliation: both aliases were tracked under separate records
+      if (!recByCall.name && (recByItem.name || name)) recByCall.name = recByItem.name || name;
+      const removeIdx = accumulatedToolCalls.indexOf(recByItem);
+      if (removeIdx !== -1) accumulatedToolCalls.splice(removeIdx, 1);
+      // Redirect all map aliases pointing to recByItem over to recByCall
+      for (const [key, val] of toolAliasMap.entries()) {
+        if (val === recByItem) {
+          toolAliasMap.set(key, recByCall);
+        }
+      }
+      return;
+    }
+
+    const canonical = recByCall || recByItem;
+    if (canonical) {
+      if (callId && canonical.id !== callId && canonical.id === itemId) {
+        canonical.id = callId;
+      }
+      if (!canonical.name && name) canonical.name = name;
+      if (itemId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(itemId, canonical);
+      if (callId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(callId, canonical);
+      return;
+    }
+
+    const preferredId = callId || itemId;
+    if (!preferredId) return;
+
+    if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+      const newRec = { id: preferredId, name: name || null };
+      accumulatedToolCalls.push(newRec);
+      if (itemId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(itemId, newRec);
+      if (callId && toolAliasMap.size < MAX_TOOL_MAP_ENTRIES) toolAliasMap.set(callId, newRec);
+    }
+  }
+
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -336,6 +382,35 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        // OpenAI Responses format - content
+        if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+          totalContentLength += parsed.delta.length;
+          accumulatedContent += parsed.delta;
+        }
+        // OpenAI Responses format - reasoning
+        if (parsed.type === "response.reasoning_summary_text.delta" && typeof parsed.delta === "string") {
+          totalContentLength += parsed.delta.length;
+          accumulatedThinking += parsed.delta;
+        }
+        // OpenAI Responses format - tool_calls
+        if (parsed.type === "response.output_item.added" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
+          const itemId = parsed.item.id || parsed.item_id || null;
+          const callId = parsed.item.call_id || null;
+          const name = parsed.item.name || null;
+          trackResponsesToolCall(itemId, callId, name);
+        }
+        if (parsed.type === "response.output_item.done" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
+          const itemId = parsed.item.id || parsed.item_id || null;
+          const callId = parsed.item.call_id || null;
+          const name = parsed.item.name || null;
+          trackResponsesToolCall(itemId, callId, name);
+        }
+        if (parsed.type === "response.function_call_arguments.delta" || parsed.type === "response.custom_tool_call_input.delta") {
+          const itemId = parsed.item_id || parsed.id || null;
+          const callId = parsed.call_id || null;
+          trackResponsesToolCall(itemId, callId, null);
+        }
+
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
@@ -520,6 +595,8 @@ export function createSSEStream(options = {}) {
         }
       } catch (error) {
         console.log("Error in flush:", error);
+      } finally {
+        toolAliasMap.clear();
       }
     }
   });

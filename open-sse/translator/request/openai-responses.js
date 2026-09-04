@@ -217,23 +217,53 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     store: false
   };
 
-  // Extract system message as instructions
-  let hasSystemMessage = false;
+  // Extract initial contiguous system/developer prefix into instructions; preserve mid-conversation turns
+  let initialPrefixActive = true;
+  const initialInstructions = [];
   const messages = body.messages || [];
-
-  for (const msg of messages) {
-    if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
-      // Use the first instruction-bearing message as instructions.
-      // OpenAI recommends role="developer" for GPT-5/Codex as the system-level prompt.
-      if (!hasSystemMessage) {
-        result.instructions = typeof msg.content === "string" ? msg.content : "";
-        hasSystemMessage = true;
-      }
-      continue; // Skip instruction messages in input
+  const generatedCallIds = new Map();
+  let generatedCallSeq = 0;
+  const pendingAssistantCallIds = [];
+  const resolveCallId = (rawId, fallbackKey) => {
+    const clamped = clampCallId(rawId);
+    if (clamped && clamped.trim()) return clamped.trim();
+    const key = rawId || fallbackKey;
+    if (!key) return null;
+    if (!generatedCallIds.has(key)) {
+      generatedCallIds.set(key, `call_${fallbackKey}_${generatedCallSeq++}`);
     }
+    return generatedCallIds.get(key);
+  };
+
+  const seenCallIds = new Set();
+  for (let mIdx = 0; mIdx < messages.length; mIdx++) {
+    const msg = messages[mIdx];
+    if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
+      pendingAssistantCallIds.length = 0;
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map(c => (typeof c === "string" ? c : (typeof c?.text === "string" ? c.text : ""))).filter(Boolean).join("\n")
+          : "";
+      if (initialPrefixActive) {
+        if (text) initialInstructions.push(text);
+      } else if (text) {
+        // Keep temporal scope of mid-conversation system/developer turns as developer input items
+        result.input.push({
+          type: RESPONSES_ITEM.MESSAGE,
+          role: "developer",
+          content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text }]
+        });
+      }
+      continue; // Handled
+    }
+
+    // Any non-system/developer turn ends the initial instructions prefix
+    initialPrefixActive = false;
 
     // Convert user/assistant messages to input items
     if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) {
+      pendingAssistantCallIds.length = 0;
       const contentType = msg.role === ROLE.USER ? RESPONSES_ITEM.INPUT_TEXT : RESPONSES_ITEM.OUTPUT_TEXT;
       const content = typeof msg.content === "string"
         ? [{ type: contentType, text: msg.content }]
@@ -268,35 +298,97 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
     // Convert tool calls
     if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
-      for (const tc of msg.tool_calls) {
+      for (let tcIdx = 0; tcIdx < msg.tool_calls.length; tcIdx++) {
+        const tc = msg.tool_calls[tcIdx];
+        const rawArgs = tc.function?.arguments;
+        let argumentsStr = "{}";
+        if (typeof rawArgs === "object" && rawArgs !== null) {
+          try {
+            const serialized = JSON.stringify(rawArgs);
+            if (serialized === undefined) {
+              throw new Error("Unserializable arguments (produced undefined)");
+            }
+            argumentsStr = serialized;
+          } catch (err) {
+            throw new Error(`Failed to serialize arguments for tool "${tc.function?.name || tcIdx}": ${err.message}`);
+          }
+        } else if (typeof rawArgs === "string") {
+          argumentsStr = rawArgs;
+        } else if (rawArgs !== undefined && rawArgs !== null) {
+          throw new Error(`Invalid arguments type "${typeof rawArgs}" for tool "${tc.function?.name || tcIdx}"`);
+        }
+        const callId = resolveCallId(tc.id, `tc_${mIdx}_${tcIdx}`);
+        if (seenCallIds.has(callId)) {
+          throw new Error(`Duplicate tool call id "${callId}" in assistant tool_calls`);
+        }
+        seenCallIds.add(callId);
+        pendingAssistantCallIds.push(callId);
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,
-          call_id: clampCallId(tc.id),
+          call_id: callId,
           name: tc.function?.name || "_unknown",
-          arguments: tc.function?.arguments || "{}"
+          arguments: argumentsStr
         });
       }
     }
 
     // Convert tool results - output must be a string for Responses API
     if (msg.role === ROLE.TOOL) {
-      const output = typeof msg.content === "string"
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map(c => c.text || JSON.stringify(c)).join("")
-          : JSON.stringify(msg.content);
+      let output = "";
+      if (typeof msg.content === "string") {
+        output = msg.content;
+      } else if (Array.isArray(msg.content)) {
+        try {
+          output = msg.content.map(c => {
+            if (typeof c === "string") return c;
+            if (typeof c?.text === "string") return c.text;
+            const s = JSON.stringify(c);
+            if (s === undefined) throw new Error("Unserializable array element");
+            return s;
+          }).join("");
+        } catch (err) {
+          throw new Error(`Failed to serialize tool output: ${err.message}`);
+        }
+      } else if (msg.content !== undefined && msg.content !== null) {
+        try {
+          const serialized = JSON.stringify(msg.content);
+          if (serialized === undefined) {
+            throw new Error("Unserializable tool output (produced undefined)");
+          }
+          output = serialized;
+        } catch (err) {
+          throw new Error(`Failed to serialize tool output: ${err.message}`);
+        }
+      } else {
+        output = "";
+      }
+
+      // Pair ID-less tool output with matching call ID from pending assistant calls
+      const rawToolId = typeof msg.tool_call_id === "string" && msg.tool_call_id.trim() ? msg.tool_call_id.trim() : null;
+      let callId = rawToolId ? resolveCallId(rawToolId, `tool_${mIdx}`) : null;
+      if (callId) {
+        const pendingIdx = pendingAssistantCallIds.indexOf(callId);
+        if (pendingIdx === -1) {
+          throw new Error(`Tool output at message index ${mIdx} references unknown or non-pending call id "${callId}"`);
+        }
+        pendingAssistantCallIds.splice(pendingIdx, 1);
+      } else {
+        const nextId = pendingAssistantCallIds.shift();
+        if (!nextId) {
+          throw new Error(`Orphan or ambiguous tool output at message index ${mIdx} cannot be paired with any pending tool call`);
+        }
+        callId = nextId;
+      }
       result.input.push({
         type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
-        call_id: clampCallId(msg.tool_call_id),
+        call_id: callId,
         output
       });
     }
   }
 
-  // If no system message, leave instructions empty (will be filled by executor)
-  if (!hasSystemMessage) {
-    result.instructions = "";
-  }
+  // Combine initial contiguous instructions
+  result.instructions = initialInstructions.join("\n\n");
 
   // Convert tools format
   if (body.tools && Array.isArray(body.tools)) {
@@ -312,6 +404,38 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       }
       return tool;
     });
+  }
+
+  // Pass through validated tool_choice (fail closed on invalid values)
+  if (body.tool_choice !== undefined) {
+    if (typeof body.tool_choice === "string") {
+      const allowed = new Set(["none", "auto", "required"]);
+      if (allowed.has(body.tool_choice)) {
+        result.tool_choice = body.tool_choice;
+      } else {
+        throw new Error(`Invalid tool_choice string value: "${body.tool_choice}"`);
+      }
+    } else if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
+      if (body.tool_choice.type === "function") {
+        const rawName = body.tool_choice.function?.name || body.tool_choice.name;
+        if (typeof rawName !== "string" || !rawName.trim()) {
+          throw new Error("Invalid tool_choice: function name must be a non-empty string");
+        }
+        const name = rawName.trim();
+        if (name.length > 128) {
+          throw new Error(`Invalid tool_choice: function name exceeds maximum length of 128 characters: "${name.slice(0, 32)}..."`);
+        }
+        const toolDeclared = Array.isArray(result.tools) && result.tools.some(t => t.name === name || t.function?.name === name);
+        if (!toolDeclared) {
+          throw new Error(`Invalid tool_choice: function "${name}" is not declared in tools`);
+        }
+        result.tool_choice = { type: "function", name };
+      } else {
+        throw new Error(`Invalid tool_choice object type: "${body.tool_choice.type}"`);
+      }
+    } else {
+      throw new Error(`Invalid tool_choice type: ${typeof body.tool_choice}`);
+    }
   }
 
   // Pass through other relevant fields
