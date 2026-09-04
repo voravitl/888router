@@ -1051,7 +1051,20 @@ export async function GET(request, { params }) {
 
     const data = await response.json();
     const parsed = config.parseResponse(data);
-    const models = (Array.isArray(parsed) && parsed.length > 0) ? parsed : (pDef?.models || []);
+    let models = (Array.isArray(parsed) && parsed.length > 0) ? [...parsed] : (pDef?.models ? [...pDef.models] : []);
+
+    // For openai and codex, ensure newly released static registry models (such as GPT-6 variants)
+    // are merged into the synced list so users can select and sync newly released models
+    if ((connection.provider === "openai" || connection.provider === "codex") && pDef?.models) {
+      const seen = new Set(models.map((m) => (typeof m === "string" ? m : m.id)));
+      for (const sm of pDef.models) {
+        const id = typeof sm === "string" ? sm : sm.id;
+        if (/gpt-6/i.test(id) && !seen.has(id)) {
+          seen.add(id);
+          models.push(typeof sm === "string" ? { id: sm, name: sm } : { ...sm, id: sm.id, name: sm.name || sm.id });
+        }
+      }
+    }
 
     return buildModelsResponse({
       provider: connection.provider,

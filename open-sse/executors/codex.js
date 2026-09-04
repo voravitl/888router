@@ -184,16 +184,16 @@ function resolveCacheSessionId(body, credentials) {
 export class CodexExecutor extends BaseExecutor {
   constructor() {
     super("codex", PROVIDERS.codex);
-    this._currentSessionId = null;
   }
 
   /**
    * Override headers to add codex-specific identity headers.
-   * transformRequest runs BEFORE buildHeaders, sets this._currentSessionId.
+   * credentials._currentSessionId is set per-request in execute() / transformRequest().
    */
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
-    headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
+    const sessionId = credentials?._currentSessionId || credentials?.connectionId || "default";
+    headers["session_id"] = sessionId;
     // Identify client type to Codex backend (matches official codex CLI)
     if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
     // Workspace binding header — improves account scope + cache affinity
@@ -206,7 +206,8 @@ export class CodexExecutor extends BaseExecutor {
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const base = super.buildUrl(model, stream, urlIndex, credentials);
-    return this._isCompact ? `${base}/compact` : base;
+    const isCompact = credentials?._isCompact ?? false;
+    return isCompact ? `${base}/compact` : base;
   }
 
   async refreshCredentials(credentials, log) {
@@ -225,6 +226,21 @@ export class CodexExecutor extends BaseExecutor {
    */
   async prefetchImages(body) {
     if (!Array.isArray(body?.input)) return;
+    // Fast-path: check if any image_url is present across all input items
+    let hasImages = false;
+    for (const item of body.input) {
+      if (Array.isArray(item?.content)) {
+        for (const c of item.content) {
+          if (c?.type === "image_url") {
+            hasImages = true;
+            break;
+          }
+        }
+      }
+      if (hasImages) break;
+    }
+    if (!hasImages) return;
+
     for (const item of body.input) {
       if (!Array.isArray(item.content)) continue;
       const pending = item.content.map(async (c) => {
@@ -241,16 +257,16 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   async execute(args) {
-    const imgCount = Array.isArray(args.body?.input) ? args.body.input.reduce((n, it) => n + (Array.isArray(it.content) ? it.content.filter(c => c.type === "image_url").length : 0), 0) : 0;
+    const isCompact = !!args.body?._compact;
+    const sessionId = resolveCacheSessionId(args.body, args.credentials);
+    const scopedCredentials = args.credentials
+      ? Object.assign(Object.create(args.credentials), { _isCompact: isCompact, _currentSessionId: sessionId })
+      : { _isCompact: isCompact, _currentSessionId: sessionId };
+    const scopedArgs = { ...args, credentials: scopedCredentials };
+
     const inputLen = Array.isArray(args.body?.input) ? args.body.input.length : 0;
-    dbg("CODEX", `execute start | inputItems=${inputLen} | images=${imgCount} | sessionId=${this._currentSessionId || "pending"}`);
-    if (imgCount > 0) {
-      const t0 = Date.now();
-      await this.prefetchImages(args.body);
-      dbg("CODEX", `prefetchImages done | ${Date.now() - t0}ms`);
-    } else {
-      await this.prefetchImages(args.body);
-    }
+    dbg("CODEX", `execute start | inputItems=${inputLen} | sessionId=${sessionId}`);
+    await this.prefetchImages(args.body);
 
     // Retry loop for SSE-level overloaded errors (200 OK body contains event: error)
     // Reuses 503 retry config — same semantic: upstream temporarily unavailable
@@ -258,7 +274,7 @@ export class CodexExecutor extends BaseExecutor {
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
     while (true) {
-      const result = await super.execute(args);
+      const result = await super.execute(scopedArgs);
       const peek = await this._peekSseOverloaded(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
@@ -419,10 +435,13 @@ export class CodexExecutor extends BaseExecutor {
    * Image fetching is handled separately in prefetchImages() so this stays sync.
    */
   transformRequest(model, body, stream, credentials) {
-    this._isCompact = !!body._compact;
+    const isCompact = !!body._compact;
     delete body._compact;
-    // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
-    this._currentSessionId = resolveCacheSessionId(body, credentials);
+    if (credentials) {
+      if (credentials._isCompact === undefined) credentials._isCompact = isCompact;
+      if (!credentials._currentSessionId) credentials._currentSessionId = resolveCacheSessionId(body, credentials);
+    }
+
     // Convert string input to array format (Codex API requires input as array)
     const normalized = normalizeResponsesInput(body.input);
     if (normalized) body.input = normalized;

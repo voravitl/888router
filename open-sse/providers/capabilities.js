@@ -678,9 +678,11 @@ export function resolveGptFamilyCapabilities(modelId) {
 
   const isSpark = /(?:^|[-_.])spark(?:$|[-_.])/i.test(sub);
   const isCodex = /(?:^|[-_.])codex(?:$|[-_.])/i.test(sub);
-  const isMiniOrNano = /(?:^|[-_.])(?:mini|nano)(?:$|[-_.])/i.test(sub);
+  const isMini = /(?:^|[-_.])mini(?:$|[-_.])/i.test(sub);
+  const isNano = /(?:^|[-_.])nano(?:$|[-_.])/i.test(sub);
+  const isMiniOrNano = isMini || isNano;
 
-  // GPT-5.4+ and future generations (GPT-5.5, 5.6, 5.7, GPT-6, GPT-7, ...)
+  // GPT-5.4+ and future generations (GPT-5.4+, GPT-6, GPT-7, ...)
   if (maj > 5 || (maj === 5 && min >= 4)) {
     if (isSpark) {
       return {

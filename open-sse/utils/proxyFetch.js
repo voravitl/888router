@@ -4,6 +4,14 @@ import { dbg } from "./debugLog.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
+const proxyDispatcherPromises = new Map();
+let _undiciPromise = null;
+async function getUndici() {
+  if (!_undiciPromise) {
+    _undiciPromise = import("undici");
+  }
+  return _undiciPromise;
+}
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
 // Disabled: not in use. Kept commented for future re-enable.
@@ -215,26 +223,62 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 
 /**
  * Create proxy dispatcher lazily (undici-compatible)
+ * Serialized via proxyDispatcherPromises to avoid concurrent socket allocation race
  */
 async function getDispatcher(proxyUrl) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) return null;
 
-  if (!proxyDispatchers.has(normalized)) {
-    // Evict oldest entry if max size reached and destroy sockets
-    if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
-      const oldestKey = proxyDispatchers.keys().next().value;
-      const oldestAgent = proxyDispatchers.get(oldestKey);
-      if (oldestAgent && typeof oldestAgent.destroy === "function") {
-        try { oldestAgent.destroy(); } catch {}
-      }
-      proxyDispatchers.delete(oldestKey);
-    }
-    const { ProxyAgent } = await import("undici");
-    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
+  if (proxyDispatchers.has(normalized)) {
+    return proxyDispatchers.get(normalized);
   }
 
-  return proxyDispatchers.get(normalized);
+  if (proxyDispatcherPromises.has(normalized)) {
+    return proxyDispatcherPromises.get(normalized);
+  }
+
+  const creationPromise = (async () => {
+    try {
+      const { ProxyAgent } = await getUndici();
+
+      if (proxyDispatchers.has(normalized)) {
+        return proxyDispatchers.get(normalized);
+      }
+
+      // Evict oldest entry if max size reached and safely close/destroy sockets
+      if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
+        const oldestKey = proxyDispatchers.keys().next().value;
+        const oldestAgent = proxyDispatchers.get(oldestKey);
+        proxyDispatchers.delete(oldestKey);
+        if (oldestAgent) {
+          try {
+            if (typeof oldestAgent.close === "function") {
+              await oldestAgent.close().catch(() => oldestAgent.destroy?.());
+            } else if (typeof oldestAgent.destroy === "function") {
+              oldestAgent.destroy();
+            }
+          } catch {
+            try { oldestAgent.destroy?.(); } catch {}
+          }
+        }
+      }
+
+      const agent = new ProxyAgent({
+        uri: normalized,
+        keepAliveTimeout: 30000,
+        keepAliveMaxTimeout: 60000,
+        connections: 100,
+      });
+
+      proxyDispatchers.set(normalized, agent);
+      return agent;
+    } finally {
+      proxyDispatcherPromises.delete(normalized);
+    }
+  })();
+
+  proxyDispatcherPromises.set(normalized, creationPromise);
+  return creationPromise;
 }
 
 /**
