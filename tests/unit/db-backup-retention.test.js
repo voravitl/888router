@@ -129,4 +129,27 @@ describe("pruneOldBackups", () => {
     expect(() => pruneOldBackups()).not.toThrow();
     expect(remaining()).toContain("b-new");
   });
+
+  it("optimizeDbBeforeBackup prunes requestDetails and runs vacuum when free pages exist", async () => {
+    const { optimizeDbBeforeBackup } = await import("../../src/lib/db/migrate.js");
+    const runCalls = [];
+    const execCalls = [];
+    const mockAdapter = {
+      get: (sql) => {
+        if (sql.includes("settings")) return { data: JSON.stringify({ observabilityMaxRecords: 2000, observabilityRetentionDays: 7 }) };
+        if (sql.includes("COUNT(*)")) return { c: 2500 };
+        if (sql.includes("freelist_count")) return { freelist_count: 500 };
+        return null;
+      },
+      run: (sql, params) => { runCalls.push({ sql, params }); },
+      exec: (sql) => { execCalls.push(sql); },
+    };
+
+    optimizeDbBeforeBackup(mockAdapter);
+
+    expect(runCalls.some((c) => c.sql.includes("DELETE FROM requestDetails WHERE timestamp < ?"))).toBe(true);
+    expect(runCalls.some((c) => c.sql.includes("ORDER BY timestamp ASC LIMIT ?"))).toBe(true);
+    expect(execCalls).toContain("PRAGMA wal_checkpoint(TRUNCATE)");
+    expect(execCalls).toContain("VACUUM");
+  });
 });

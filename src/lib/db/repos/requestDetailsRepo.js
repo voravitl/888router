@@ -25,6 +25,28 @@ export function resetPruneThrottle() {
   lastPruneTs = 0;
 }
 
+export function pruneRequestDetailsSync(adapter, config = {}) {
+  const retentionDays = Number(config.retentionDays) || 7;
+  const maxRecords = Number(config.maxRecords) || 2000;
+
+  if (retentionDays > 0) {
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+    try { adapter.run(`DELETE FROM requestDetails WHERE timestamp < ?`, [cutoff]); } catch {}
+  }
+
+  if (maxRecords > 0) {
+    try {
+      const cnt = adapter.get(`SELECT COUNT(*) as c FROM requestDetails`);
+      if (cnt && cnt.c > maxRecords) {
+        adapter.run(
+          `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+          [cnt.c - maxRecords]
+        );
+      }
+    } catch {}
+  }
+}
+
 async function getObservabilityConfig() {
   if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
   try {
@@ -82,11 +104,29 @@ function generateDetailId(model) {
 }
 
 function truncateField(obj, maxSize) {
-  const str = JSON.stringify(obj || {});
+  if (!obj) return {};
+  if (typeof obj === "string") {
+    if (obj.length > maxSize) {
+      return { _truncated: true, _originalSize: obj.length, _preview: obj.substring(0, 200) };
+    }
+    return obj;
+  }
+  // Quick pre-check for large message arrays to avoid allocating multi-MB strings
+  if (Array.isArray(obj.messages)) {
+    let est = 0;
+    for (const m of obj.messages) {
+      if (typeof m?.content === "string") est += m.content.length;
+      if (est > maxSize) {
+        const preview = typeof obj.messages[0]?.content === "string" ? obj.messages[0].content.substring(0, 200) : "[large messages payload]";
+        return { _truncated: true, _originalSize: est, _preview: preview };
+      }
+    }
+  }
+  const str = JSON.stringify(obj);
   if (str.length > maxSize) {
     return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
   }
-  return obj || {};
+  return obj;
 }
 
 let flushPromise = null;

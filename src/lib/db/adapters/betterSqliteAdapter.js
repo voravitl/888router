@@ -20,9 +20,9 @@ export function createBetterSqliteAdapter(filePath) {
     return stmt;
   }
 
-  // Truncate WAL periodically so file stays small for backup/copy
+  // Checkpoint WAL periodically using PASSIVE to avoid exclusive locking on active readers/writers
   const checkpointTimer = setInterval(() => {
-    try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {}
+    try { db.pragma("wal_checkpoint(PASSIVE)"); } catch {}
   }, CHECKPOINT_INTERVAL_MS);
   if (typeof checkpointTimer.unref === "function") checkpointTimer.unref();
 

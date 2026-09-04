@@ -212,6 +212,60 @@ function importLegacyDetails(adapter, data) {
   }
 }
 
+export function optimizeDbBeforeBackup(adapter) {
+  try {
+    // 1. Prune requestDetails using retention policy
+    let retentionDays = 7;
+    let maxRecords = 2000;
+    try {
+      const settingsRow = adapter.get(`SELECT data FROM settings WHERE id = 1`);
+      if (settingsRow?.data) {
+        const parsed = JSON.parse(settingsRow.data);
+        if (parsed.observabilityRetentionDays) retentionDays = Number(parsed.observabilityRetentionDays) || 7;
+        if (parsed.observabilityMaxRecords) maxRecords = Number(parsed.observabilityMaxRecords) || 2000;
+      }
+    } catch {}
+
+    if (process.env.OBSERVABILITY_RETENTION_DAYS) {
+      retentionDays = Number(process.env.OBSERVABILITY_RETENTION_DAYS) || retentionDays;
+    }
+    if (process.env.OBSERVABILITY_MAX_RECORDS) {
+      maxRecords = Number(process.env.OBSERVABILITY_MAX_RECORDS) || maxRecords;
+    }
+
+    if (retentionDays > 0) {
+      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+      try { adapter.run(`DELETE FROM requestDetails WHERE timestamp < ?`, [cutoff]); } catch {}
+    }
+
+    if (maxRecords > 0) {
+      try {
+        const cnt = adapter.get(`SELECT COUNT(*) as c FROM requestDetails`);
+        if (cnt && cnt.c > maxRecords) {
+          adapter.run(
+            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+            [cnt.c - maxRecords]
+          );
+        }
+      } catch {}
+    }
+
+    // 2. Checkpoint WAL into main database file
+    try { adapter.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {}
+
+    // 3. VACUUM if free pages exist (> 250 pages / 1 MB) to reclaim physical disk space before copy
+    try {
+      const freelist = adapter.get("PRAGMA freelist_count");
+      const freePages = freelist ? (freelist.freelist_count ?? freelist[Object.keys(freelist)[0]] ?? 0) : 0;
+      if (freePages > 250) {
+        adapter.exec("VACUUM");
+      }
+    } catch {}
+  } catch (err) {
+    console.warn("[DB][migrate] pre-backup optimization failed:", err.message);
+  }
+}
+
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
@@ -272,12 +326,14 @@ export async function runMigrationOnce(adapter) {
   const oldVer = getMetaSync(adapter, "appVersion", null);
   const newVer = getAppVersion();
   if (oldVer && oldVer !== newVer) {
+    optimizeDbBeforeBackup(adapter);
     const backupDir = makeBackupDir(`upgrade-${oldVer}-to-${newVer}`);
     try { backupFile(DATA_FILE, backupDir); } catch {}
     setMetaSync(adapter, "appVersion", newVer);
     pruneOldBackups();
     console.log(`[DB][migrate] App ${oldVer} → ${newVer} | schema ${migInfo.from} → ${migInfo.to} | backup: ${backupDir}`);
   } else if (migInfo.applied > 0) {
+    optimizeDbBeforeBackup(adapter);
     // Schema upgrade without app version bump — still backup
     const backupDir = makeBackupDir(`schema-${migInfo.from}-to-${migInfo.to}`);
     try { backupFile(DATA_FILE, backupDir); } catch {}

@@ -6,8 +6,8 @@ import { timestampSlug, getAppVersion } from "./version.js";
 // Retention: keep at most KEEP_BACKUPS backup dirs, AND keep the total
 // size under KEEP_BACKUPS_TOTAL_BYTES. The DB backup is a full copy of
 // data.sqlite, so a multi-GB DB multiplies fast (5 × 6.3GB = 32GB observed).
-const KEEP_BACKUPS = 2;
-const KEEP_BACKUPS_TOTAL_BYTES = Number(process.env.KEEP_BACKUPS_TOTAL_BYTES) || 15 * 1024 * 1024 * 1024;
+const KEEP_BACKUPS = Number(process.env.KEEP_BACKUPS) || 2;
+const KEEP_BACKUPS_TOTAL_BYTES = Number(process.env.KEEP_BACKUPS_TOTAL_BYTES) || 3 * 1024 * 1024 * 1024;
 
 export function makeBackupDir(label) {
   ensureDirs();
