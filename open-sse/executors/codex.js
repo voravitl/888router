@@ -14,7 +14,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
-const CODEX_SSE_PEEK_BYTES = 4096;
+const CODEX_SSE_PEEK_BYTES = 512;
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -88,11 +88,13 @@ function normalizeCodexTools(body) {
     const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
       ? tool.parameters
       : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
+    const strict = typeof tool.strict === "boolean" ? tool.strict : (typeof fn?.strict === "boolean" ? fn.strict : undefined);
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
     tool.parameters = parameters;
+    if (strict !== undefined) tool.strict = strict;
     validNames.add(name);
     return true;
   });
@@ -248,6 +250,19 @@ export class CodexExecutor extends BaseExecutor {
         text += decoder.decode(value, { stream: true });
         const hit = CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p));
         if (hit) { matched = hit; break; }
+
+        // Once a valid response lifecycle event is detected, upstream is healthy and in-progress.
+        // Release immediately so TTFT is sub-second and not stalled waiting for full buffer.
+        if (
+          text.includes("response.created") ||
+          text.includes("response.in_progress") ||
+          text.includes("response.output_item.added") ||
+          text.includes("response.output_text.delta") ||
+          text.includes("response.function_call_arguments.delta") ||
+          text.includes("response.reasoning_summary_text.delta")
+        ) {
+          break;
+        }
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);

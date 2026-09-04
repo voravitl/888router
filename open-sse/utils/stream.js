@@ -336,6 +336,40 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        // OpenAI Responses format - content
+        if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+          totalContentLength += parsed.delta.length;
+          accumulatedContent += parsed.delta;
+        }
+        // OpenAI Responses format - reasoning
+        if (parsed.type === "response.reasoning_summary_text.delta" && typeof parsed.delta === "string") {
+          totalContentLength += parsed.delta.length;
+          accumulatedThinking += parsed.delta;
+        }
+        // OpenAI Responses format - tool_calls
+        if (parsed.type === "response.output_item.added" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
+          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+          if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+            const id = parsed.item.call_id || parsed.item.id || `tc_${accumulatedToolCalls.length}`;
+            if (!accumulatedToolCalls.some((c) => c.id === id)) {
+              accumulatedToolCalls.push({ id, name: parsed.item.name || null });
+            }
+          }
+        }
+        if (parsed.type === "response.output_item.done" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
+          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+          const id = parsed.item.call_id || parsed.item.id || `tc_${accumulatedToolCalls.length}`;
+          const existing = accumulatedToolCalls.find((c) => c.id === id);
+          if (existing) {
+            if (!existing.name && parsed.item.name) existing.name = parsed.item.name;
+          } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+            accumulatedToolCalls.push({ id, name: parsed.item.name || null });
+          }
+        }
+        if ((parsed.type === "response.function_call_arguments.delta" || parsed.type === "response.custom_tool_call_input.delta") && accumulatedToolCalls === null) {
+          accumulatedToolCalls = [{ id: parsed.call_id || "tc_0", name: null }];
+        }
+
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging

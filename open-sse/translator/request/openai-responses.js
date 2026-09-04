@@ -217,18 +217,18 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     store: false
   };
 
-  // Extract system message as instructions
-  let hasSystemMessage = false;
+  // Extract system messages as instructions
+  const systemInstructions = [];
   const messages = body.messages || [];
 
   for (const msg of messages) {
     if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
-      // Use the first instruction-bearing message as instructions.
-      // OpenAI recommends role="developer" for GPT-5/Codex as the system-level prompt.
-      if (!hasSystemMessage) {
-        result.instructions = typeof msg.content === "string" ? msg.content : "";
-        hasSystemMessage = true;
-      }
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map(c => (typeof c === "string" ? c : c?.text || "")).filter(Boolean).join("\n")
+          : "";
+      if (text) systemInstructions.push(text);
       continue; // Skip instruction messages in input
     }
 
@@ -269,11 +269,15 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     // Convert tool calls
     if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
+        const rawArgs = tc.function?.arguments;
+        const argumentsStr = typeof rawArgs === "object" && rawArgs !== null
+          ? JSON.stringify(rawArgs)
+          : (typeof rawArgs === "string" ? rawArgs : "{}");
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,
-          call_id: clampCallId(tc.id),
+          call_id: clampCallId(tc.id) || `call_${Date.now()}`,
           name: tc.function?.name || "_unknown",
-          arguments: tc.function?.arguments || "{}"
+          arguments: argumentsStr
         });
       }
     }
@@ -293,10 +297,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     }
   }
 
-  // If no system message, leave instructions empty (will be filled by executor)
-  if (!hasSystemMessage) {
-    result.instructions = "";
-  }
+  // If system messages existed, set instructions; otherwise empty string
+  result.instructions = systemInstructions.length > 0 ? systemInstructions.join("\n\n") : "";
 
   // Convert tools format
   if (body.tools && Array.isArray(body.tools)) {
@@ -312,6 +314,22 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       }
       return tool;
     });
+  }
+
+  // Pass through tool_choice
+  if (body.tool_choice !== undefined) {
+    if (typeof body.tool_choice === "string") {
+      result.tool_choice = body.tool_choice;
+    } else if (body.tool_choice && typeof body.tool_choice === "object") {
+      if (body.tool_choice.type === "function") {
+        const name = body.tool_choice.function?.name || body.tool_choice.name;
+        if (name) {
+          result.tool_choice = { type: "function", name };
+        }
+      } else {
+        result.tool_choice = body.tool_choice;
+      }
+    }
   }
 
   // Pass through other relevant fields

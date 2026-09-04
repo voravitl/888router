@@ -92,7 +92,7 @@ export function convertResponsesApiFormat(body) {
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id,
+        id: item.call_id || item.id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
@@ -109,7 +109,7 @@ export function convertResponsesApiFormat(body) {
       // Add tool result
       pendingToolResults.push({
         role: ROLE.TOOL,
-        tool_call_id: item.call_id,
+        tool_call_id: item.call_id || item.id,
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
