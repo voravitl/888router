@@ -1,3 +1,31 @@
+# v0.15.81 (2026-09-04)
+
+## Fix: OpenAI Codex & GPT-5.4+ dynamic context window, 1.05M expansion, and official pricing
+
+- `open-sse/providers/capabilities.js`:
+  - Added dynamic `resolveGptFamilyCapabilities(modelId)` function for OpenAI GPT/Codex model series. Automatically resolves context window and modalities based on generation math without hardcoding model lists:
+    - GPT-5.4+ flagship models (`gpt-5.4`, `gpt-5.5`, `gpt-5.6-sol`, `terra`, `luna`, and future `gpt-5.7+`, `gpt-6+`) dynamically receive `1,050,000` context window (`maxOutput: 128,000`).
+    - GPT-5 mini/nano variants dynamically receive `400,000` context window (`maxOutput: 64,000`).
+    - Codex Auto Review & GPT-Reserve receive `872,000` context window.
+    - Codex code models (`gpt-5.3-codex`, `spark`, etc.) receive explicit code-model attributes (`vision: false`).
+    - Multimodal support (`vision: true`) dynamically allocated for standard GPT-5.4+ / Sol / Terra / Luna and GPT-4o / GPT-4.5.
+    - Added automatic `-review` model variant inheritance to inherit base model capabilities and dynamic cache.
+- `src/app/api/providers/[id]/models/route.js`:
+  - Synchronized `max_context_window` / `context_window` and `input_modalities` from upstream provider payloads into dynamic capability cache.
+  - Ensured `-review` models inherit dynamic context window and modality capabilities.
+  - Added finite positive number guard (`Number.isFinite(ctxNum) && ctxNum > 0`) preventing invalid or `NaN` values from corrupting dynamic capabilities.
+- `src/app/api/v1/models/route.js`:
+  - Added `-review` model fallback lookup to inherit capabilities from base model in `/v1/models`.
+  - Preserved legacy bare-key fallback for pre-scoped DB entries while supporting scoped provider keys.
+- `src/app/api/providers/suggested-models/filters.js` & `src/app/(dashboard)/dashboard/providers/[id]/SyncProviderModelsModal.js`:
+  - Added `max_context_window` and `context_window` field extraction for provider sync modals and suggested model filters.
+- `open-sse/providers/registry/codex.js`:
+  - Added `withCodexReviewModels` helper to streamline Codex review pair models (`gpt-5.6-sol`, `terra`, `luna`, `gpt-reserve`, `codex-auto-review`, `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `spark`).
+- `open-sse/providers/pricing.js`:
+  - Aligned Codex & GPT-5.4+ models to official OpenAI pricing: `gpt-5.6-sol` ($4/$20), `terra` ($2/$12), `luna` ($0.20/$1.20), `gpt-5.4` ($2.50/$15), `gpt-5.4-mini` ($0.75/$4.50), `gpt-5.4-nano` ($0.20/$1.25), `gpt-5.5` ($7/$28), `gpt-reserve` / `codex-auto-review` ($6/$24).
+- `tests/unit/capabilities-codex-dynamic-context.test.js`:
+  - Added comprehensive 20-test suite verifying generation math, future model resolution, `-review` inheritance, live sync overlay, boundary checks, and pricing.
+
 # v0.15.80 (2026-09-04)
 
 ## Fix: OpenCode free cascade quarantine, Muse Spark responses API, Claude defer_loading cache anchor, and 3-Layer SSRF hardening
