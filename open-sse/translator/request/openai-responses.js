@@ -359,7 +359,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       if (body.tool_choice.type === "function") {
         const rawName = body.tool_choice.function?.name || body.tool_choice.name;
         const name = typeof rawName === "string" ? rawName.trim().slice(0, 128) : "";
-        if (name) {
+        const toolDeclared = Array.isArray(result.tools) && result.tools.some(t => t.name === name || t.function?.name === name);
+        if (name && toolDeclared) {
           result.tool_choice = { type: "function", name };
         }
       }

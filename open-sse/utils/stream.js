@@ -73,6 +73,7 @@ export function createSSEStream(options = {}) {
   // full call list.
   const MAX_TRACKED_TOOL_CALLS = 64;
   let accumulatedToolCalls = null;
+  const responsesToolMap = new Map(); // itemId -> { callId, name }
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -349,32 +350,58 @@ export function createSSEStream(options = {}) {
         // OpenAI Responses format - tool_calls
         if (parsed.type === "response.output_item.added" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
           if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-          if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
-            const id = parsed.item.call_id || parsed.item.id || parsed.item_id || `tc_${accumulatedToolCalls.length}`;
-            const existing = accumulatedToolCalls.find((c) => c.id === id);
-            if (existing) {
-              if (!existing.name && parsed.item.name) existing.name = parsed.item.name;
-            } else {
-              accumulatedToolCalls.push({ id, name: parsed.item.name || null });
-            }
+          const itemId = parsed.item.id || parsed.item_id;
+          const callId = parsed.item.call_id || itemId || `tc_${accumulatedToolCalls.length}`;
+          const name = parsed.item.name || null;
+          if (itemId) {
+            responsesToolMap.set(itemId, { callId, name });
+          }
+          let existing = accumulatedToolCalls.find((c) => c.id === callId);
+          if (!existing && itemId) {
+            existing = accumulatedToolCalls.find((c) => c.id === itemId);
+          }
+          if (existing) {
+            existing.id = callId;
+            if (!existing.name && name) existing.name = name;
+          } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+            accumulatedToolCalls.push({ id: callId, name });
           }
         }
         if (parsed.type === "response.output_item.done" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
           if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-          const id = parsed.item.call_id || parsed.item.id || parsed.item_id || `tc_${accumulatedToolCalls.length}`;
-          const existing = accumulatedToolCalls.find((c) => c.id === id);
+          const itemId = parsed.item.id || parsed.item_id;
+          const callId = parsed.item.call_id || itemId || `tc_${accumulatedToolCalls.length}`;
+          const name = parsed.item.name || null;
+          if (itemId) {
+            const prev = responsesToolMap.get(itemId);
+            responsesToolMap.set(itemId, { callId: callId || prev?.callId, name: name || prev?.name });
+          }
+          let existing = accumulatedToolCalls.find((c) => c.id === callId);
+          if (!existing && itemId) {
+            existing = accumulatedToolCalls.find((c) => c.id === itemId);
+          }
           if (existing) {
-            if (!existing.name && parsed.item.name) existing.name = parsed.item.name;
+            existing.id = callId;
+            if (!existing.name && name) existing.name = name;
           } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
-            accumulatedToolCalls.push({ id, name: parsed.item.name || null });
+            accumulatedToolCalls.push({ id: callId, name });
           }
         }
         if (parsed.type === "response.function_call_arguments.delta" || parsed.type === "response.custom_tool_call_input.delta") {
-          const id = parsed.call_id || parsed.item_id || parsed.id;
-          if (id) {
+          const itemId = parsed.item_id || parsed.id;
+          const mapped = itemId ? responsesToolMap.get(itemId) : null;
+          const targetId = parsed.call_id || mapped?.callId || itemId;
+          if (targetId) {
             if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-            if (!accumulatedToolCalls.some((c) => c.id === id) && accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
-              accumulatedToolCalls.push({ id, name: null });
+            let existing = accumulatedToolCalls.find((c) => c.id === targetId);
+            if (!existing && itemId) {
+              existing = accumulatedToolCalls.find((c) => c.id === itemId);
+            }
+            if (existing) {
+              if (mapped?.callId && existing.id !== mapped.callId) existing.id = mapped.callId;
+              if (mapped?.name && !existing.name) existing.name = mapped.name;
+            } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+              accumulatedToolCalls.push({ id: targetId, name: mapped?.name || null });
             }
           }
         }

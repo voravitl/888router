@@ -193,7 +193,7 @@ describe("Codex streaming latency and tool call optimizations", () => {
       expect(funcOutput.call_id).toBe(funcCall.call_id);
     });
 
-    it("validates tool_choice string options", () => {
+    it("validates tool_choice string options and rejects undeclared function choices", () => {
       const resultAuto = openaiToOpenAIResponsesRequest("gpt-5.6-sol", { tool_choice: "auto" }, true, null);
       expect(resultAuto.tool_choice).toBe("auto");
 
@@ -202,6 +202,13 @@ describe("Codex streaming latency and tool call optimizations", () => {
 
       const resultInvalid = openaiToOpenAIResponsesRequest("gpt-5.6-sol", { tool_choice: "invalid_choice" }, true, null);
       expect(resultInvalid.tool_choice).toBeUndefined();
+
+      // Undeclared function tool_choice should be dropped
+      const resultUndeclared = openaiToOpenAIResponsesRequest("gpt-5.6-sol", {
+        tool_choice: { type: "function", name: "NonExistent" },
+        tools: [{ type: "function", function: { name: "Bash" } }]
+      }, true, null);
+      expect(resultUndeclared.tool_choice).toBeUndefined();
     });
   });
 
@@ -259,6 +266,61 @@ describe("Codex streaming latency and tool call optimizations", () => {
       expect(completedResult.toolCalls).toHaveLength(1);
       expect(completedResult.toolCalls[0].name).toBe("Bash");
       expect(completedResult.toolCalls[0].id).toBe("call_999");
+    });
+
+    it("reconciles discrepant item.id and item.call_id without duplicate toolCall entries", async () => {
+      let completedResult = null;
+      const onStreamComplete = vi.fn((res) => {
+        completedResult = res;
+      });
+
+      const stream = createSSETransformStreamWithLogger(
+        FORMATS.OPENAI_RESPONSES,
+        FORMATS.CLAUDE,
+        "codex",
+        null,
+        null,
+        "gpt-5.6-sol",
+        "test-conn",
+        {},
+        onStreamComplete
+      );
+
+      const reader = stream.readable.getReader();
+      const readPromise = (async () => {
+        const received = [];
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received.push(value);
+        }
+        return received;
+      })();
+
+      const writer = stream.writable.getWriter();
+      // Upstream sends item.id = "fc_item_123" and item.call_id = "call_999"
+      // Delta events reference item_id = "fc_item_123"
+      const ssePayload = [
+        'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_2"}}\n\n',
+        'event: response.output_item.added\ndata: {"type":"response.output_item.added","item":{"id":"fc_item_123","call_id":"call_999","type":"function_call","name":"ReadFile"}}\n\n',
+        'event: response.function_call_arguments.delta\ndata: {"type":"response.function_call_arguments.delta","item_id":"fc_item_123","delta":"{\\"path\\":\\"src/index.js\\"}"}\n\n',
+        'event: response.output_item.done\ndata: {"type":"response.output_item.done","item":{"id":"fc_item_123","call_id":"call_999","type":"function_call","name":"ReadFile"}}\n\n',
+        'event: response.completed\ndata: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":50,"output_tokens":30}}}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      for (const chunk of ssePayload) {
+        await writer.write(new TextEncoder().encode(chunk));
+      }
+      await writer.close();
+      await readPromise;
+
+      expect(onStreamComplete).toHaveBeenCalled();
+      expect(completedResult).toBeDefined();
+      // Must NOT produce 2 items (one for fc_item_123 and one for call_999)
+      expect(completedResult.toolCalls).toHaveLength(1);
+      expect(completedResult.toolCalls[0].id).toBe("call_999");
+      expect(completedResult.toolCalls[0].name).toBe("ReadFile");
     });
   });
 });

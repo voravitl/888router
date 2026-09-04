@@ -14,11 +14,11 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
-const CODEX_SSE_PEEK_BYTES = 512;
-// Check if SSE text contains a valid output delta or completion frame proving active token generation
+const CODEX_SSE_PEEK_BYTES = 2048;
+// Check if SSE text contains non-empty irreversible content/reasoning/argument deltas proving active token generation
 function hasActiveGenerationFrame(text) {
-  return /(?:^|\n)event:\s*response\.(?:output_text\.delta|output_item\.added|output_item\.done|function_call_arguments\.delta|reasoning_summary_text\.delta|completed|done)(?:\r?\n|$)/.test(text) ||
-    /(?:^|\n)data:\s*\{.*"type":\s*"response\.(?:output_text\.delta|output_item|function_call)/.test(text);
+  return /(?:^|\n)event:\s*response\.(?:output_text\.delta|reasoning_summary_text\.delta|function_call_arguments\.delta|custom_tool_call_input\.delta)(?:\r?\n|$)/.test(text) ||
+    /(?:^|\n)data:\s*\{.*"type":\s*"response\.(?:output_text\.delta|reasoning_summary_text\.delta|function_call_arguments\.delta|custom_tool_call_input\.delta)".*"delta":\s*"[^"]+"/.test(text);
 }
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
