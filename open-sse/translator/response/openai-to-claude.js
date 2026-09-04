@@ -5,6 +5,7 @@ import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingS
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText, processStreamThinkingTags } from "../concerns/reasoning.js";
 import { accumulateToolName } from "../concerns/toolCall.js";
+import { repairDuplicatedJsonArguments } from "../concerns/toolArgs.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -281,7 +282,7 @@ export function openaiToClaudeResponse(chunk, state) {
       // Emit buffered + sanitized args as a single delta before stop.
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+        const sanitized = sanitizeToolArgs(toolInfo.name, repairDuplicatedJsonArguments(buffered));
         results.push({
           type: "content_block_delta",
           index: toolBlockIndex,
