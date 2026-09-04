@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
 import { openaiToOpenAIResponsesRequest } from "../../open-sse/translator/request/openai-responses.js";
+import { convertResponsesApiFormat } from "../../open-sse/translator/formats/responsesApi.js";
 import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
@@ -167,6 +168,49 @@ describe("Codex streaming latency and tool call optimizations", () => {
 
       expect(peek.matched).toBeNull();
       expect(peek.replacementBody).toBeDefined();
+    });
+
+    it("detects overload pattern inside response.failed envelope", async () => {
+      const executor = new CodexExecutor();
+      const chunks = [
+        new TextEncoder().encode('event: response.failed\ndata: {"type":"response.failed","response":{"status":"failed","error":{"code":"server_is_overloaded","message":"Upstream server overloaded"}}}\n\n'),
+      ];
+
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(chunks[0]);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      expect(peek.matched).toBe("server_is_overloaded");
+    });
+
+    it("completes in-flight frame crossing the 4096-byte boundary", async () => {
+      const executor = new CodexExecutor();
+      // Pad with 4032 bytes of comments so frame starts before 4096 bytes
+      const padChunk = new TextEncoder().encode(`: padding ${"a".repeat(100)}\n\n`.repeat(36)); // 36 * 112 = 4032 bytes
+      // splitChunkPart1 brings total bytes to 4032 + 75 = 4107 (> 4096), but frame is incomplete
+      const splitChunkPart1 = new TextEncoder().encode('event: error\ndata: {"error":{"code":"upstream_error","message":');
+      // splitChunkPart2 completes the frame boundary past 4096 bytes
+      const splitChunkPart2 = new TextEncoder().encode('"server_is_overloaded"}}\n\n');
+
+      const mockStream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(padChunk);
+          controller.enqueue(splitChunkPart1);
+          controller.enqueue(splitChunkPart2);
+          controller.close();
+        },
+      });
+
+      const mockResponse = new Response(mockStream, { status: 200, statusText: "OK" });
+      const peek = await executor._peekSseOverloaded(mockResponse);
+
+      expect(peek.matched).toBe("server_is_overloaded");
     });
   });
 
@@ -358,6 +402,78 @@ describe("Codex streaming latency and tool call optimizations", () => {
       expect(() => {
         openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
       }).toThrow(/Failed to serialize arguments for tool/);
+    });
+
+    it("pairs mixed explicit and ID-less tool outputs without collision or mispairing", () => {
+      const body = {
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [
+              { id: "call_first", function: { name: "ToolA", arguments: "{}" } },
+              { id: "call_second", function: { name: "ToolB", arguments: "{}" } },
+            ],
+          },
+          // First tool output explicitly targets call_second
+          { role: "tool", tool_call_id: "call_second", content: "result second" },
+          // Second tool output omits tool_call_id, should match remaining call_first
+          { role: "tool", content: "result first" },
+        ],
+      };
+
+      const result = openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      const outputs = result.input.filter((i) => i.type === "function_call_output");
+      expect(outputs).toHaveLength(2);
+      expect(outputs[0].call_id).toBe("call_second");
+      expect(outputs[0].output).toBe("result second");
+      expect(outputs[1].call_id).toBe("call_first");
+      expect(outputs[1].output).toBe("result first");
+    });
+
+    it("throws when tool output content array contains unserializable elements", () => {
+      const circular = {};
+      circular.self = circular;
+
+      const body = {
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [{ id: "call_arr", function: { name: "ToolArr", arguments: "{}" } }],
+          },
+          {
+            role: "tool",
+            tool_call_id: "call_arr",
+            content: ["valid string", circular],
+          },
+        ],
+      };
+
+      expect(() => {
+        openaiToOpenAIResponsesRequest("gpt-5.6-sol", body, true, null);
+      }).toThrow(/Failed to serialize tool output/);
+    });
+  });
+
+  describe("convertResponsesApiFormat tool call and output reconciliation", () => {
+    it("pairs mixed explicit and ID-less tool outputs accurately", () => {
+      const body = {
+        input: [
+          { type: "function_call", name: "tool_alpha", call_id: "call_alpha", arguments: "{}" },
+          { type: "function_call", name: "tool_beta", call_id: "call_beta", arguments: "{}" },
+          // Explicit output for beta first
+          { type: "function_call_output", call_id: "call_beta", output: "beta result" },
+          // ID-less output for alpha next
+          { type: "function_call_output", output: "alpha result" },
+        ],
+      };
+
+      const result = convertResponsesApiFormat(body);
+      const toolMessages = result.messages.filter((m) => m.role === "tool");
+      expect(toolMessages).toHaveLength(2);
+      expect(toolMessages[0].tool_call_id).toBe("call_beta");
+      expect(toolMessages[0].content).toBe("beta result");
+      expect(toolMessages[1].tool_call_id).toBe("call_alpha");
+      expect(toolMessages[1].content).toBe("alpha result");
     });
   });
 

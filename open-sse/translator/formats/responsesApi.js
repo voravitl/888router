@@ -113,7 +113,17 @@ export function convertResponsesApiFormat(body) {
         funcCallIndex = 0;
       }
       // Add tool result
-      const tcId = item.call_id || item.id || pendingGeneratedCallIds.shift() || generateToolCallId(result.messages.length, 0);
+      const explicitId = typeof item.call_id === "string" && item.call_id.trim()
+        ? item.call_id.trim()
+        : (typeof item.id === "string" && item.id.trim() ? item.id.trim() : null);
+
+      let tcId = explicitId;
+      if (tcId) {
+        const pendingIdx = pendingGeneratedCallIds.indexOf(tcId);
+        if (pendingIdx !== -1) pendingGeneratedCallIds.splice(pendingIdx, 1);
+      } else {
+        tcId = pendingGeneratedCallIds.shift() || generateToolCallId(result.messages.length, 0);
+      }
       pendingToolResults.push({
         role: ROLE.TOOL,
         tool_call_id: tcId,

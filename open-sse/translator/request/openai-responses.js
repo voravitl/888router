@@ -331,7 +331,17 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       if (typeof msg.content === "string") {
         output = msg.content;
       } else if (Array.isArray(msg.content)) {
-        output = msg.content.map(c => (typeof c === "string" ? c : (c?.text || JSON.stringify(c)))).join("");
+        try {
+          output = msg.content.map(c => {
+            if (typeof c === "string") return c;
+            if (typeof c?.text === "string") return c.text;
+            const s = JSON.stringify(c);
+            if (s === undefined) throw new Error("Unserializable array element");
+            return s;
+          }).join("");
+        } catch (err) {
+          throw new Error(`Failed to serialize tool output: ${err.message}`);
+        }
       } else if (msg.content !== undefined && msg.content !== null) {
         try {
           const serialized = JSON.stringify(msg.content);
@@ -347,10 +357,13 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       }
 
       // Pair ID-less tool output with matching call ID from pending assistant calls
-      const rawToolId = msg.tool_call_id;
+      const rawToolId = typeof msg.tool_call_id === "string" && msg.tool_call_id.trim() ? msg.tool_call_id.trim() : null;
       let callId = rawToolId ? resolveCallId(rawToolId, `tool_${mIdx}`) : null;
-      if (!callId) {
-        callId = pendingAssistantCallIds.shift() || `tool_${mIdx}`;
+      if (callId) {
+        const pendingIdx = pendingAssistantCallIds.indexOf(callId);
+        if (pendingIdx !== -1) pendingAssistantCallIds.splice(pendingIdx, 1);
+      } else {
+        callId = pendingAssistantCallIds.shift() || resolveCallId(null, `tool_${mIdx}`);
       }
       result.input.push({
         type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,

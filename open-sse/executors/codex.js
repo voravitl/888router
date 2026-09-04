@@ -56,9 +56,18 @@ function isActiveGenerationFrame(event, data) {
 }
 
 function isOverloadedErrorFrame(event, data, dataStr) {
-  const isExplicitError = event === "error" || data?.type === "error" || data?.error !== undefined;
+  const isExplicitError =
+    event === "error" ||
+    event === "response.failed" ||
+    event === "response.error" ||
+    data?.type === "error" ||
+    data?.type === "response.error" ||
+    data?.type === "response.failed" ||
+    data?.error != null ||
+    data?.response?.error != null ||
+    data?.response?.status === "failed";
   if (!isExplicitError) return null;
-  const err = data?.error || data;
+  const err = data?.response?.error || data?.error || data;
   const text = `${err?.message || ""} ${err?.code || ""} ${typeof err === "string" ? err : ""} ${dataStr || ""}`.toLowerCase();
   return CODEX_SSE_OVERLOADED_PATTERNS.find(p => text.includes(p)) || null;
 }
@@ -315,10 +324,12 @@ export class CodexExecutor extends BaseExecutor {
       return false;
     };
 
+    const CODEX_SSE_MAX_BOUND_BYTES = CODEX_SSE_PEEK_BYTES + 1024;
     try {
-      while (bytesRead < CODEX_SSE_PEEK_BYTES) {
+      while (bytesRead < CODEX_SSE_PEEK_BYTES || (frameBuffer.length > 0 && bytesRead < CODEX_SSE_MAX_BOUND_BYTES)) {
         const { done, value } = await reader.read();
         if (done) {
+          frameBuffer += decoder.decode();
           if (frameBuffer.trim()) {
             const { event, data, dataStr } = parseSseFrame(frameBuffer);
             const hit = isOverloadedErrorFrame(event, data, dataStr);
