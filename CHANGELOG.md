@@ -1,3 +1,26 @@
+# v0.15.86 (2026-09-05)
+
+## Fix: Translator Context Isolation, Multimodal Bridge & Stream Hardening
+
+- `open-sse/translator/request/openai-to-claude.js`:
+  - Scoped Claude Code system prompt injection strictly to official Anthropic providers, preventing context pollution on compatible endpoints.
+  - Enforced strict boolean validation for `is_error` flag and preserved `redacted_thinking`.
+- `open-sse/translator/request/claude-to-openai.js`:
+  - Supported remote image URLs (`source.type === "url"`) without dropping image data.
+  - Mapped `thinking` blocks to `reasoning_content` and preserved `redacted_thinking`.
+  - Preserved `tool_result` image blocks as Data URIs and propagated boolean `is_error` flag.
+- `open-sse/translator/request/openai-to-gemini.js`:
+  - Preserved multiple system messages into `systemInstruction.parts` instead of overwriting with only the last message.
+- `open-sse/translator/request/openai-to-cursor.js` & `open-sse/translator/request/openai-to-commandcode.js`:
+  - Respected client `max_tokens` configurations.
+  - Supported multimodal image blocks in user turns and tool results without dropping or flattening to placeholder text.
+- `open-sse/translator/request/openai-responses.js`:
+  - Coerced function arguments to strings and handled empty function names with unique randomized fallback IDs.
+- `open-sse/translator/request/openai-to-kiro.js`:
+  - Respected client `max_tokens` while enforcing AWS CodeWhisperer specification (base64-only for images).
+- `tests/translator/`:
+  - Verified and flipped all 16 translator bug tests from `it.fails` to passing `it`.
+
 # v0.15.85 (2026-09-05)
 
 ## Feat & Fix: GPT-6 Family Support, OpenAI Model Sync Merge & Codex Subagent Concurrency
