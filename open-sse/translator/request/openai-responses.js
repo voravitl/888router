@@ -73,7 +73,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           if (c.type === RESPONSES_ITEM.INPUT_TEXT) return { type: OPENAI_BLOCK.TEXT, text: c.text };
           if (c.type === RESPONSES_ITEM.OUTPUT_TEXT) return { type: OPENAI_BLOCK.TEXT, text: c.text };
           if (c.type === RESPONSES_ITEM.INPUT_IMAGE) {
-            const url = c.image_url || c.file_id || "";
+            const url = c.image_url || (c.file_id ? (c.file_id.startsWith("file://") ? c.file_id : `file://${c.file_id}`) : "");
             return { type: OPENAI_BLOCK.IMAGE_URL, image_url: { url, detail: c.detail || "auto" } };
           }
           return c;
@@ -100,14 +100,18 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           pendingReasoning = "";
         }
       }
-      // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
-      if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      const funcName = (item.name && typeof item.name === "string" && item.name.trim() !== "")
+        ? item.name
+        : "unknown_function";
+      const funcArgs = typeof item.arguments === "string"
+        ? item.arguments
+        : JSON.stringify(item.arguments ?? {});
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id,
+        id: item.call_id || `call_${Math.random().toString(36).slice(2, 10)}`,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
-          name: item.name,
-          arguments: item.arguments
+          name: funcName,
+          arguments: funcArgs
         }
       });
     }

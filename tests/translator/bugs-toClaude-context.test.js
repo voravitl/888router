@@ -11,10 +11,9 @@ const T = (body) =>
 
 describe("OpenAI → Claude context mapping", () => {
   // openai-to-claude.js:124-134 — always injects CLAUDE_SYSTEM_PROMPT ("You are Claude Code")
-  // KNOWN BUG: pollutes requests for non-official Claude-compatible providers
-  it.fails("does not inject Claude Code system prompt for compatible providers", () => {
+  it("does not inject Claude Code system prompt for compatible providers", () => {
     const out = T({ messages: [{ role: "user", content: "hi" }] });
-    expect(JSON.stringify(out.system), "Claude Code prompt injected").not.toContain("Claude Code");
+    expect(JSON.stringify(out.system || []), "Claude Code prompt injected").not.toContain("Claude Code");
   });
 
   it("assistant reasoning_content becomes a thinking block", () => {

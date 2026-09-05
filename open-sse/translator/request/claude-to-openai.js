@@ -166,11 +166,26 @@ function convertClaudeMessage(msg) {
     const parts = [];
     const toolCalls = [];
     const toolResults = [];
+    let reasoningContent = "";
+    let redactedThinking = "";
 
     for (const block of msg.content) {
       switch (block.type) {
         case CLAUDE_BLOCK.TEXT:
           parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
+          break;
+
+        case CLAUDE_BLOCK.THINKING:
+          if (block.thinking) {
+            reasoningContent = block.thinking;
+          }
+          break;
+
+        case CLAUDE_BLOCK.REDACTED_THINKING:
+        case "redacted_thinking":
+          if (block.data) {
+            redactedThinking = block.data;
+          }
           break;
 
         case CLAUDE_BLOCK.IMAGE:
@@ -179,6 +194,20 @@ function convertClaudeMessage(msg) {
               type: OPENAI_BLOCK.IMAGE_URL,
               image_url: {
                 url: encodeDataUri(block.source.media_type, block.source.data)
+              }
+            });
+          } else if (block.source?.type === "url" && block.source.url) {
+            parts.push({
+              type: OPENAI_BLOCK.IMAGE_URL,
+              image_url: {
+                url: block.source.url
+              }
+            });
+          } else if (block.source?.url) {
+            parts.push({
+              type: OPENAI_BLOCK.IMAGE_URL,
+              image_url: {
+                url: block.source.url
               }
             });
           }
@@ -200,19 +229,47 @@ function convertClaudeMessage(msg) {
           if (typeof block.content === "string") {
             resultContent = block.content;
           } else if (Array.isArray(block.content)) {
-            resultContent = block.content
-              .filter(c => c.type === CLAUDE_BLOCK.TEXT)
-              .map(c => c.text)
-              .join("\n") || JSON.stringify(block.content);
-          } else if (block.content) {
-            resultContent = JSON.stringify(block.content);
+            const cparts = [];
+            for (const c of block.content) {
+              if (c.type === CLAUDE_BLOCK.TEXT && c.text) {
+                cparts.push(c.text);
+              } else if (c.type === CLAUDE_BLOCK.IMAGE) {
+                if (c.source?.type === "base64") {
+                  cparts.push(encodeDataUri(c.source.media_type, c.source.data));
+                } else if (c.source?.url) {
+                  cparts.push(c.source.url);
+                }
+              } else if (typeof c === "string") {
+                cparts.push(c);
+              }
+            }
+            resultContent = cparts.join("\n");
+            if (!resultContent && block.content.length > 0) {
+              resultContent = JSON.stringify(block.content);
+            }
+          } else if (block.content && typeof block.content === "object") {
+            if (block.content.type === CLAUDE_BLOCK.IMAGE) {
+              if (block.content.source?.type === "base64") {
+                resultContent = encodeDataUri(block.content.source.media_type, block.content.source.data);
+              } else if (block.content.source?.url) {
+                resultContent = block.content.source.url;
+              }
+            } else if (block.content.text) {
+              resultContent = block.content.text;
+            } else {
+              resultContent = JSON.stringify(block.content);
+            }
           }
           
-          toolResults.push({
+          const toolMsg = {
             role: ROLE.TOOL,
             tool_call_id: block.tool_use_id,
             content: resultContent
-          });
+          };
+          if (typeof block.is_error === "boolean") {
+            toolMsg.is_error = block.is_error;
+          }
+          toolResults.push(toolMsg);
           break;
       }
     }
@@ -232,15 +289,20 @@ function convertClaudeMessage(msg) {
         result.content = collapseTextParts(parts);
       }
       result.tool_calls = toolCalls;
+      if (reasoningContent) result.reasoning_content = reasoningContent;
+      if (redactedThinking) result.redacted_thinking = redactedThinking;
       return result;
     }
 
     // Return content
-    if (parts.length > 0) {
-      return {
+    if (parts.length > 0 || reasoningContent || redactedThinking) {
+      const result = {
         role,
         content: collapseTextParts(parts)
       };
+      if (reasoningContent) result.reasoning_content = reasoningContent;
+      if (redactedThinking) result.redacted_thinking = redactedThinking;
+      return result;
     }
     
     // Empty content array

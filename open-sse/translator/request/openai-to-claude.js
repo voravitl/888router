@@ -13,7 +13,7 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "";
 
 // Convert OpenAI request to Claude format
-export function openaiToClaudeRequest(model, body, stream) {
+export function openaiToClaudeRequest(model, body, stream, credentials = null, provider = null) {
   // Tool name mapping for Claude OAuth (capitalizedName → originalName)
   const toolNameMap = new Map();
   // Cap max_tokens at the model's real output ceiling (e.g. Opus 4.8 = 128000),
@@ -130,15 +130,16 @@ Respond ONLY with the JSON object, no other text.`);
   }
 
   // System with Claude Code prompt and cache_control
-  const claudeCodePrompt = { type: CLAUDE_BLOCK.TEXT, text: CLAUDE_SYSTEM_PROMPT };
+  // Only inject CLAUDE_SYSTEM_PROMPT for official Anthropic/Claude providers ("claude", "anthropic"),
+  // not for generic or third-party anthropic-compatible providers (prevents context pollution).
+  const isOfficialClaude = !provider || provider === "claude" || provider === "anthropic";
+  const claudeCodePrompt = isOfficialClaude ? { type: CLAUDE_BLOCK.TEXT, text: CLAUDE_SYSTEM_PROMPT } : null;
 
   if (systemParts.length > 0) {
     const systemText = systemParts.join("\n");
-    result.system = [
-      claudeCodePrompt,
-      { type: CLAUDE_BLOCK.TEXT, text: systemText, cache_control: { type: "ephemeral", ttl: "1h" } }
-    ];
-  } else {
+    const userSystemBlock = { type: CLAUDE_BLOCK.TEXT, text: systemText, cache_control: { type: "ephemeral", ttl: "1h" } };
+    result.system = claudeCodePrompt ? [claudeCodePrompt, userSystemBlock] : [userSystemBlock];
+  } else if (claudeCodePrompt) {
     result.system = [claudeCodePrompt];
   }
 
@@ -225,7 +226,8 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
     blocks.push({
       type: CLAUDE_BLOCK.TOOL_RESULT,
       tool_use_id: msg.tool_call_id,
-      content: normalizedContent
+      content: normalizedContent,
+      ...(typeof msg.is_error === "boolean" && { is_error: msg.is_error })
     });
   } else if (msg.role === ROLE.USER) {
     if (typeof msg.content === "string") {
@@ -286,6 +288,9 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
   } else if (msg.role === ROLE.ASSISTANT) {
     if (msg.reasoning_content && typeof msg.reasoning_content === "string" && msg.reasoning_content.trim()) {
       blocks.push({ type: CLAUDE_BLOCK.THINKING, thinking: msg.reasoning_content, signature: "reasoning" });
+    }
+    if (msg.redacted_thinking && typeof msg.redacted_thinking === "string") {
+      blocks.push({ type: CLAUDE_BLOCK.REDACTED_THINKING, data: msg.redacted_thinking });
     }
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {

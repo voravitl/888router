@@ -41,7 +41,8 @@ function toContentBlocks(content) {
         if (part.type === OPENAI_BLOCK.TEXT && typeof part.text === "string") {
           blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
         } else if (part.type === OPENAI_BLOCK.IMAGE_URL || part.type === OPENAI_BLOCK.IMAGE) {
-          blocks.push({ type: OPENAI_BLOCK.TEXT, text: "[image omitted]" });
+          const url = typeof part.image_url === "string" ? part.image_url : (part.image_url?.url || part.source?.data || "");
+          blocks.push({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url } });
         } else if (typeof part.text === "string") {
           blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
         }
@@ -55,7 +56,7 @@ function toContentBlocks(content) {
 function safeParseJson(s) {
   if (s == null) return {};
   if (typeof s !== "string") return s;
-  try { return JSON.parse(s); } catch { return {}; }
+  try { return JSON.parse(s); } catch { return { _raw: s }; }
 }
 
 function convertMessages(messages = []) {
