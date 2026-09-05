@@ -15,12 +15,21 @@ function extractContent(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .filter(part => {
-        if (!part || typeof part !== "object") return false;
-        return part.type === OPENAI_BLOCK.TEXT && typeof part.text === "string";
+      .map(part => {
+        if (!part || typeof part !== "object") return "";
+        if ((part.type === OPENAI_BLOCK.TEXT || part.type === CLAUDE_BLOCK.TEXT) && typeof part.text === "string") {
+          return part.text;
+        }
+        if (part.type === OPENAI_BLOCK.IMAGE_URL && part.image_url) {
+          return typeof part.image_url === "string" ? part.image_url : (part.image_url.url || "");
+        }
+        if (part.type === CLAUDE_BLOCK.IMAGE) {
+          return part.source?.data || part.source?.url || "";
+        }
+        return "";
       })
-      .map(part => part.text || "")
-      .join("");
+      .filter(Boolean)
+      .join("\n");
   }
   return "";
 }
@@ -106,10 +115,20 @@ function convertMessages(messages) {
         const parts = [];
         for (const block of msg.content) {
           if (!block || typeof block !== "object") continue;
-          if (block.type === CLAUDE_BLOCK.TEXT) {
+          if (block.type === CLAUDE_BLOCK.TEXT || block.type === OPENAI_BLOCK.TEXT) {
             if (typeof block.text === "string") {
               parts.push(block.text || "");
             }
+            continue;
+          }
+          if (block.type === OPENAI_BLOCK.IMAGE_URL && block.image_url) {
+            const url = typeof block.image_url === "string" ? block.image_url : (block.image_url.url || "");
+            if (url) parts.push(url);
+            continue;
+          }
+          if (block.type === CLAUDE_BLOCK.IMAGE) {
+            const imgData = block.source?.data || block.source?.url || "";
+            if (imgData) parts.push(imgData);
             continue;
           }
           if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
@@ -178,7 +197,7 @@ export function openaiToCursorRequest(model, body, stream, credentials) {
   return {
     ...rest,
     messages,
-    max_tokens: DEFAULT_MIN_TOKENS
+    max_tokens: body.max_tokens ?? DEFAULT_MIN_TOKENS
   };
 }
 

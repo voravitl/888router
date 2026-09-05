@@ -9,8 +9,7 @@ const O2R = (body) => translateRequest(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES,
 
 describe("Codex CLI Responses → OpenAI", () => {
   // openai-responses.js:103 — function_call with empty name skipped, can leave tool_calls: []
-  // KNOWN BUG: empty tool_calls array is rejected by OpenAI/Codex
-  it.fails("assistant has no empty tool_calls array when all names are empty", () => {
+  it("assistant has no empty tool_calls array when all names are empty", () => {
     const out = R2O({
       input: [
         { type: "function_call", call_id: "c1", name: "", arguments: "{}" },
@@ -21,8 +20,7 @@ describe("Codex CLI Responses → OpenAI", () => {
   });
 
   // openai-responses.js:109-110 — arguments passed through without ensuring string type
-  // KNOWN BUG
-  it.fails("function_call arguments end up as a string", () => {
+  it("function_call arguments end up as a string", () => {
     const out = R2O({
       input: [{ type: "function_call", call_id: "c1", name: "f", arguments: { a: 1 } }],
     });
@@ -31,8 +29,7 @@ describe("Codex CLI Responses → OpenAI", () => {
   });
 
   // openai-responses.js:75-77 — input_image uses file_id as raw url
-  // KNOWN BUG
-  it.fails("input_image with file_id is not used as a raw url", () => {
+  it("input_image with file_id is not used as a raw url", () => {
     const out = R2O({
       input: [{ type: "message", role: "user", content: [
         { type: "input_image", file_id: "file-abc" },
