@@ -107,14 +107,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // /chat/completions), so without this guard a claude-format request would wrongly
   // route kimi to /messages.
   const modelSupportedFormats = getModelSupportedFormats(alias, model);
+  // Scope credentials per request so session IDs and runtime transport don't mutate shared pool
+  const requestCredentials = credentials ? Object.assign(Object.create(credentials), {
+    rawHeaders: clientRawRequest?.headers || {}
+  }) : null;
+
   const runtimeTransport = resolveTransport(provider, sourceFormat);
   // Per-model guard: when a model declares supportedFormats, only use the
   // sourceFormat-matched transport if that format is declared (opencode-go models
   // differ — kimi/glm only do /chat/completions). Undeclared models keep the
   // upstream default (use the transport), preserving behavior for glm/deepseek/...
   const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
-  const targetFormat = modelTargetFormat || useTransport?.format || getTargetFormat(provider, credentials);
-  if (useTransport && credentials) credentials.runtimeTransport = useTransport;
+  const targetFormat = modelTargetFormat || useTransport?.format || getTargetFormat(provider, requestCredentials || credentials);
+  if (useTransport && requestCredentials) requestCredentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
 
@@ -169,7 +174,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const passthrough = isNativePassthrough(clientTool, provider);
 
   // Expose raw client headers to translators/executors for session-id resolution
-  if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
+  if (requestCredentials) requestCredentials.rawHeaders = clientRawRequest?.headers || {};
 
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
   if (!passthrough) {
@@ -192,7 +197,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
-    translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, requestCredentials || credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
@@ -346,8 +351,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let providerResponse, providerUrl, providerHeaders, finalBody;
   const upstreamPayload = stripPrivateToolFields(JSON.parse(JSON.stringify(translatedBody)));
   const effectiveModel = upstreamModel || model;
+  const execCredentials = requestCredentials || credentials;
   try {
-    const result = await executor.execute({ model: effectiveModel, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executor.execute({ model: effectiveModel, body: upstreamPayload, stream, credentials: execCredentials, signal: streamController.signal, log, proxyOptions });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -385,12 +391,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         log?.info?.("TOKEN", `${provider.toUpperCase()} | refreshed`);
-        Object.assign(credentials, newCredentials);
+        if (credentials) Object.assign(credentials, newCredentials);
+        if (requestCredentials) Object.assign(requestCredentials, newCredentials);
         if (onCredentialsRefreshed) {
           try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
-          const retryResult = await executor.execute({ model: effectiveModel, body: upstreamPayload, stream, credentials, signal: streamController.signal, log, proxyOptions });
+          const retryResult = await executor.execute({ model: effectiveModel, body: upstreamPayload, stream, credentials: execCredentials, signal: streamController.signal, log, proxyOptions });
           if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {

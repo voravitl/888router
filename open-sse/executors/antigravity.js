@@ -14,9 +14,9 @@ import { resolveAntigravityFlashModel } from "../providers/models/helpers.js";
 export function sanitizeAntigravityPrompt(text) {
   if (typeof text !== "string") return text;
   return text
-    .replace(/You are a Claude agent, built on Anthropic's Claude Agent SDK\./gi, "")
-    .replace(/You are Claude Code, Anthropic's official CLI for Claude\./gi, "You are a helpful programming assistant.")
-    .replace(/Claude Code is Anthropic's official CLI for Claude\./gi, "This is an AI programming environment.")
+    .replace(/You are a Claude agent, built on Anthropic's Claude Agent SDK\.\s*/gi, "")
+    .replace(/You are Claude Code, Anthropic's official CLI for Claude\.\s*/gi, "")
+    .replace(/Claude Code is Anthropic's official CLI for Claude\.\s*/gi, "")
     .replace(/Anthropic's official CLI for Claude/gi, "an AI programming CLI")
     .replace(/Anthropic's Claude Agent SDK/gi, "the Agent SDK");
 }
@@ -114,8 +114,9 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
-  buildHeaders(credentials, stream = true, sessionId = null) {
-    const sid = sessionId || credentials?._currentSessionId || this._lastSessionId;
+  buildHeaders(credentials, stream = true, urlOrSessionId = "", model = "", sessionId = null) {
+    const explicitSid = (typeof urlOrSessionId === "string" && !urlOrSessionId.startsWith("http")) ? urlOrSessionId : sessionId;
+    const sid = explicitSid || credentials?._currentSessionId || credentials?._clientSessionId || this._lastSessionId;
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
@@ -127,7 +128,7 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   async execute(args) {
-    const rawSessionId = args.body?.request?.sessionId || resolveSessionId({
+    const rawSessionId = args.body?.request?.sessionId || args.credentials?._clientSessionId || resolveSessionId({
       headers: args.credentials?.rawHeaders,
       body: args.body,
       connectionId: args.credentials?.email || args.credentials?.connectionId,
@@ -166,6 +167,7 @@ export class AntigravityExecutor extends BaseExecutor {
         connectionId: credentials?.email || credentials?.connectionId,
         scope: "antigravity",
       }));
+      if (credentials) credentials._currentSessionId = sessionId;
 
       return {
         project: projectId,
@@ -268,6 +270,7 @@ export class AntigravityExecutor extends BaseExecutor {
       connectionId: credentials?.email || credentials?.connectionId,
       scope: "antigravity"
     }));
+    if (credentials) credentials._currentSessionId = sessionId;
 
     const transformedRequest = {
       ...requestWithoutTools,
@@ -281,8 +284,6 @@ export class AntigravityExecutor extends BaseExecutor {
 
     // Strip blacklisted thinking fields from top-level body (set by thinkingUnified.js at root, not body.request)
     stripBlacklisted(body);
-
-    this._lastSessionId = sessionId;
 
     // Google Antigravity backend model name dynamic resolution (future-proof without hardcoding)
     const upstreamModel = resolveAntigravityFlashModel(model);

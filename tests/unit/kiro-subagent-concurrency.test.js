@@ -91,4 +91,39 @@ describe("Kiro Subagent Isolation & Session Replay Protection", () => {
     expect(subagentReplay.currentMessage.userInputMessage.content).not.toContain("Parent instruction");
     expect(subagentReplay.history).toEqual([]);
   });
+
+  it("end-to-end: Claude Code request translated to kiro produces isolated conversationId and continuationId", async () => {
+    const { translateRequest } = await import("../../open-sse/translator/index.js");
+    const rootSession = "11112222-3333-4444-5555-666677778888";
+    const sharedCreds = {
+      accessToken: "kiro-access-token",
+      connectionId: "kiro-conn-456",
+    };
+
+    const parentBody = {
+      model: "claude-3-7-sonnet",
+      metadata: { user_id: `user_dev_session_${rootSession}` },
+      messages: [{ role: "user", content: "Parent task" }],
+    };
+    const subagentBody = {
+      model: "claude-3-7-sonnet",
+      metadata: { user_id: `user_dev_session_${rootSession}_agent_task_deep_dive` },
+      messages: [{ role: "user", content: "Subagent deep dive" }],
+    };
+
+    const parentReqCreds = Object.assign(Object.create(sharedCreds), {});
+    const subagentReqCreds = Object.assign(Object.create(sharedCreds), {});
+
+    const translatedParent = translateRequest("claude", "kiro", "claude-3-7-sonnet", parentBody, true, parentReqCreds, "kiro");
+    const translatedSubagent = translateRequest("claude", "kiro", "claude-3-7-sonnet", subagentBody, true, subagentReqCreds, "kiro");
+
+    expect(translatedParent.conversationState.conversationId).toBe(`claude:${rootSession}`);
+    expect(translatedSubagent.conversationState.conversationId).toBe(`claude:${rootSession}_agent_task_deep_dive`);
+    expect(translatedSubagent.conversationState.conversationId).not.toBe(translatedParent.conversationState.conversationId);
+
+    // continuationId must also be distinct
+    expect(translatedSubagent.conversationState.agentContinuationId).not.toBe(
+      translatedParent.conversationState.agentContinuationId
+    );
+  });
 });

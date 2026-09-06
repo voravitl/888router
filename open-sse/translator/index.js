@@ -69,8 +69,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // format conversion strips/renames the fields. Applied after translation.
   const thinkingIntent = captureThinking(result);
 
-  // Capture session id from the original body (envelope still intact, e.g. antigravity request.sessionId)
-  const clientSessionId = captureSessionId(result, credentials, connectionId, targetFormat);
+  // Capture session id from the original body (envelope still intact, e.g. antigravity request.sessionId, claude metadata.user_id)
+  // Use provider || targetFormat so providers using standard wire formats (e.g. grok-cli using openai-responses) isolate properly
+  const sessionScope = provider || targetFormat;
+  const clientSessionId = captureSessionId(result, credentials, connectionId, sessionScope);
   // Expose to downstream translators (gemini-cli/antigravity envelopes) that run after envelope is stripped
   if (credentials) credentials._clientSessionId = clientSessionId;
 

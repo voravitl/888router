@@ -131,6 +131,8 @@ export function normalizeGrokCliEffort(value) {
 export { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 
 export function resolveGrokCliSessionId(credentials, body) {
+  // If already captured upstream from original client body (e.g. Claude Code metadata.user_id), reuse it directly
+  if (credentials?._clientSessionId) return credentials._clientSessionId;
   // ponytail: clients without stable thread metadata share one connection session;
   // split further when their wire format exposes a durable conversation id.
   const explicitSessionBody = {
@@ -559,36 +561,12 @@ export class GrokCliExecutor extends BaseExecutor {
       }
     }
 
-    const sessionId = resolveGrokCliSessionId(args.credentials, args.body);
-    const reqId = crypto.randomUUID();
-
-    const rawModel = args.body?.model || args.model || "";
-    let modelEffort = resolveEffortFromModel(rawModel);
-    let resolvedModel = rawModel;
-    if (modelEffort) {
-      resolvedModel = resolvedModel.replace(new RegExp(`-${modelEffort}$`), "");
-    }
-    resolvedModel = getModelUpstreamId("gcli", resolvedModel) || resolvedModel;
-    if (resolvedModel === rawModel) {
-      resolvedModel = getModelUpstreamId("grok-cli", resolvedModel) || resolvedModel;
-    }
-
-    const turnIdx = resolveGrokCliTurnIdx(sessionId, args.body?.input, args.body);
-
     const scopedCredentials = args.credentials
       ? Object.assign(Object.create(args.credentials), {
-          _currentSessionId: sessionId,
-          _currentReqId: reqId,
           _agentId: agentId,
-          _currentModel: resolvedModel,
-          _currentTurnIdx: turnIdx,
         })
       : {
-          _currentSessionId: sessionId,
-          _currentReqId: reqId,
           _agentId: agentId,
-          _currentModel: resolvedModel,
-          _currentTurnIdx: turnIdx,
         };
 
     const scopedArgs = { ...args, credentials: scopedCredentials };
