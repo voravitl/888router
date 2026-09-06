@@ -1,3 +1,25 @@
+# v0.15.87 (2026-09-06)
+
+## Fix: Claude Code Subagent Concurrency & Session Isolation for Antigravity, Kiro, and Grok-CLI
+
+- `open-sse/handlers/chatCore.js`:
+  - Created per-request cloned credentials prototypes (`requestCredentials`) with scoped `rawHeaders` and runtime transport to prevent concurrent subagents from mutating shared credentials in the pool.
+- `open-sse/translator/index.js`:
+  - Passed `provider || targetFormat` to `captureSessionId` so providers using standard wire formats (e.g. `grok-cli` using `openai-responses`) isolate subagents properly from intact original client metadata.
+- `open-sse/utils/sessionManager.js`:
+  - Enabled subagent isolation (`isolateSubagents: true`) for `antigravity`, `kiro`, and `grok-cli` while preserving KV Prompt Cache sharing on `codex`.
+  - Expanded Claude Code subagent session regex to support `agent`, `subagent`, `task`, and `sidecar` variants with hyphens and underscores.
+- `open-sse/executors/antigravity.js`:
+  - Scoped numeric session IDs (`_currentSessionId`) per-request onto cloned credentials prototypes.
+  - Eliminated singleton race conditions on instance state (`_lastSessionId`), aligning `buildHeaders` overload to accept BaseExecutor parameters without shadowing session IDs.
+  - Sanitized competitive Claude Code CLI prompts to avoid Google Cloud Code 429 quota exhaustion.
+- `open-sse/executors/grok-cli.js`:
+  - Resolved session IDs from pre-captured `credentials._clientSessionId` for translated Claude requests, eliminating session falling back to connection ID.
+  - Scoped credentials per-request and gave `credentials._*` priority over instance properties in `buildHeaders`, preventing race conditions across concurrent subagents.
+  - Calculated turn indices strictly post-input-normalization in `transformRequest`.
+- `open-sse/translator/request/openai-to-gemini.js`:
+  - Symmetrized Gemini envelope session ID resolution with Claude envelope.
+
 # v0.15.86 (2026-09-05)
 
 ## Fix: Translator Context Isolation, Multimodal Bridge & Stream Hardening
