@@ -1,3 +1,16 @@
+# v0.15.88 (2026-09-06)
+
+## Chore: Remove Free Tiers Dashboard Page, Components, and Route
+
+- `src/shared/components/Sidebar.js`:
+  - Removed Free Tiers navigation link (`/dashboard/free-tiers`).
+- `src/app/(dashboard)/dashboard/free-tiers/page.js`:
+  - Deleted obsolete Free Tiers page.
+- `src/app/(dashboard)/dashboard/usage/components/FreeBudgetCard.jsx`:
+  - Deleted orphaned FreeBudgetCard component.
+- `src/app/api/free-tier/summary/route.js`:
+  - Deleted unused `/api/free-tier/summary` endpoint.
+
 # v0.15.87 (2026-09-06)
 
 ## Fix: Claude Code Subagent Concurrency & Session Isolation for Antigravity, Kiro, and Grok-CLI
