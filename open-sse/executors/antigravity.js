@@ -3,11 +3,23 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
-import { resolveSessionId } from "../utils/sessionManager.js";
+import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { resolveAntigravityFlashModel } from "../providers/models/helpers.js";
+
+// Sanitize competitive system prompts (Zed, Claude Code, Anthropic Agent SDK)
+// to prevent Google Antigravity backend from flagging requests and returning 429 Quota Exhausted.
+export function sanitizeAntigravityPrompt(text) {
+  if (typeof text !== "string") return text;
+  return text
+    .replace(/You are a Claude agent, built on Anthropic's Claude Agent SDK\./gi, "")
+    .replace(/You are Claude Code, Anthropic's official CLI for Claude\./gi, "You are a helpful programming assistant.")
+    .replace(/Claude Code is Anthropic's official CLI for Claude\./gi, "This is an AI programming environment.")
+    .replace(/Anthropic's official CLI for Claude/gi, "an AI programming CLI")
+    .replace(/Anthropic's Claude Agent SDK/gi, "the Agent SDK");
+}
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -102,10 +114,8 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
-  // sessionId comes from transformRequest output; base.execute runs transformRequest before
-  // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
   buildHeaders(credentials, stream = true, sessionId = null) {
-    const sid = sessionId || this._lastSessionId;
+    const sid = sessionId || credentials?._currentSessionId || this._lastSessionId;
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
@@ -114,6 +124,21 @@ export class AntigravityExecutor extends BaseExecutor {
       ...(sid && { "X-Machine-Session-Id": sid }),
       "Accept": stream ? "text/event-stream" : "application/json"
     };
+  }
+
+  async execute(args) {
+    const rawSessionId = args.body?.request?.sessionId || resolveSessionId({
+      headers: args.credentials?.rawHeaders,
+      body: args.body,
+      connectionId: args.credentials?.email || args.credentials?.connectionId,
+      scope: "antigravity",
+    });
+    const sessionId = toNumericSessionId(rawSessionId);
+    const scopedCredentials = args.credentials
+      ? Object.assign(Object.create(args.credentials), { _currentSessionId: sessionId })
+      : { _currentSessionId: sessionId };
+    const scopedArgs = { ...args, credentials: scopedCredentials };
+    return super.execute(scopedArgs);
   }
 
   transformRequest(model, body, stream, credentials) {
@@ -135,14 +160,12 @@ export class AntigravityExecutor extends BaseExecutor {
         }
       }
 
-      const sessionId = resolveSessionId({
+      const sessionId = credentials?._currentSessionId || toNumericSessionId(resolveSessionId({
         headers: credentials?.rawHeaders,
         body,
         connectionId: credentials?.email || credentials?.connectionId,
         scope: "antigravity",
-      });
-
-      this._lastSessionId = sessionId;
+      }));
 
       return {
         project: projectId,
@@ -224,13 +247,12 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     
-    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt) to prevent Antigravity from 
+    // Rewrite competitive system prompts (e.g. Claude Code / Zed IDE) to prevent Antigravity from 
     // flagging the request and immediately blocking it with a 429 Quota Exhausted response.
     if (requestWithoutTools.systemInstruction?.parts) {
-      const oldText = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
       for (const part of requestWithoutTools.systemInstruction.parts) {
-        if (typeof part.text === "string" && part.text.includes(oldText)) {
-          part.text = part.text.split(oldText).join("");
+        if (typeof part.text === "string") {
+          part.text = sanitizeAntigravityPrompt(part.text);
         }
       }
     }
@@ -240,12 +262,19 @@ export class AntigravityExecutor extends BaseExecutor {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     }
 
+    const sessionId = credentials?._currentSessionId || toNumericSessionId(body.request?.sessionId || resolveSessionId({
+      headers: credentials?.rawHeaders,
+      body,
+      connectionId: credentials?.email || credentials?.connectionId,
+      scope: "antigravity"
+    }));
+
     const transformedRequest = {
       ...requestWithoutTools,
       generationConfig,
       ...(contents && { contents }),
       ...(tools && { tools }),
-      sessionId: body.request?.sessionId || resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.email || credentials?.connectionId, scope: "antigravity" }),
+      sessionId,
       safetySettings: undefined,
       ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
     };
@@ -253,7 +282,7 @@ export class AntigravityExecutor extends BaseExecutor {
     // Strip blacklisted thinking fields from top-level body (set by thinkingUnified.js at root, not body.request)
     stripBlacklisted(body);
 
-    this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
+    this._lastSessionId = sessionId;
 
     // Google Antigravity backend model name dynamic resolution (future-proof without hardcoding)
     const upstreamModel = resolveAntigravityFlashModel(model);
