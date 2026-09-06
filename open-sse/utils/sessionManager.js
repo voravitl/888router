@@ -107,9 +107,13 @@ function normalizeSessionId(value) {
 }
 
 // Extract Claude Code session id from metadata.user_id (_session_{uuid} | JSON {session_id})
-// Captures canonical 36-char UUID (stopping before subagent tag or suffix), with bounded fallback
-function extractClaudeCodeSession(userId) {
+// Captures canonical 36-char UUID (stopping before subagent tag unless isolateSubagents=true), with bounded fallback
+function extractClaudeCodeSession(userId, isolateSubagents = false) {
     if (typeof userId !== "string" || !userId) return null;
+    if (isolateSubagents) {
+        const subagentMatch = userId.match(/_session_([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:_(?:agent|subagent|task|sidecar)[_-][a-zA-Z0-9_-]+))/i);
+        if (subagentMatch) return subagentMatch[1];
+    }
     const uuidMatch = userId.match(/_session_([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
     if (uuidMatch) return uuidMatch[1];
     const fallbackMatch = userId.match(/_session_([a-zA-Z0-9_-]{8,64})(?=$|[._:/\s])/);
@@ -137,7 +141,8 @@ function extractAntigravitySession(body) {
 }
 
 function extractClientSessionId(headers, body, scope = "") {
-    const claude = extractClaudeCodeSession(body?.metadata?.user_id);
+    const isolateSubagents = scope === "antigravity" || scope === "kiro" || scope === "grok-cli";
+    const claude = extractClaudeCodeSession(body?.metadata?.user_id, isolateSubagents);
     if (claude) return `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
     if (antigravity) return `antigravity:${antigravity}`;

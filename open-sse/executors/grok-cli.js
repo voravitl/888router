@@ -131,6 +131,8 @@ export function normalizeGrokCliEffort(value) {
 export { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 
 export function resolveGrokCliSessionId(credentials, body) {
+  // If already captured upstream from original client body (e.g. Claude Code metadata.user_id), reuse it directly
+  if (credentials?._clientSessionId) return credentials._clientSessionId;
   // ponytail: clients without stable thread metadata share one connection session;
   // split further when their wire format exposes a durable conversation id.
   const explicitSessionBody = {
@@ -340,10 +342,7 @@ function resolveEffortFromModel(modelId) {
 export class GrokCliExecutor extends BaseExecutor {
   constructor() {
     super("grok-cli", PROVIDERS["grok-cli"]);
-    this._currentSessionId = null;
-    this._currentReqId = null;
-    this._currentTurnIdx = 1;
-    this._agentId = null;
+    this._defaultAgentId = null;
   }
 
   buildUrl() {
@@ -373,18 +372,20 @@ export class GrokCliExecutor extends BaseExecutor {
     headers["x-grok-client-version"] =
       this.config.clientVersion || headers["x-grok-client-version"] || GROK_CLI_VERSION;
 
-    const sessionId = this._currentSessionId || credentials?.connectionId || crypto.randomUUID();
-    const reqId = this._currentReqId || crypto.randomUUID();
+    const sessionId = credentials?._currentSessionId || this._currentSessionId || credentials?.connectionId || crypto.randomUUID();
+    const reqId = credentials?._currentReqId || this._currentReqId || crypto.randomUUID();
     headers["x-grok-session-id"] = sessionId;
     // CLI uses the same id for conv + session on chat turns
     headers["x-grok-conv-id"] = sessionId;
     headers["x-grok-req-id"] = reqId;
-    headers["x-grok-turn-idx"] = String(this._currentTurnIdx || 1);
+    headers["x-grok-turn-idx"] = String(credentials?._currentTurnIdx ?? this._currentTurnIdx ?? 1);
 
-    if (this._agentId) headers["x-grok-agent-id"] = this._agentId;
+    const agentId = credentials?._agentId || this._agentId;
+    if (agentId) headers["x-grok-agent-id"] = agentId;
 
     // Surface model override (CLI always sets this)
-    if (this._currentModel) headers["x-grok-model-override"] = this._currentModel;
+    const modelOverride = credentials?._currentModel || this._currentModel;
+    if (modelOverride) headers["x-grok-model-override"] = modelOverride;
 
     // Identity: mapTokens stores email top-level AND in providerSpecificData;
     // fall back either way so OAuth connections always fingerprint like the CLI.
@@ -419,12 +420,21 @@ export class GrokCliExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     // Session / request ids for headers — stable per client conversation when possible
     const requestKey = body;
-    this._currentSessionId = resolveGrokCliSessionId(credentials, body);
-    this._currentReqId = crypto.randomUUID();
-    this._agentId =
+    const sessionId = credentials?._currentSessionId || resolveGrokCliSessionId(credentials, body);
+    const reqId = credentials?._currentReqId || crypto.randomUUID();
+    const agentId =
+      credentials?._agentId ||
       credentials?.providerSpecificData?.deviceId ||
       credentials?.providerSpecificData?.agentId ||
       null;
+    this._currentSessionId = sessionId;
+    this._currentReqId = reqId;
+    this._agentId = agentId;
+    if (credentials) {
+      credentials._currentSessionId = sessionId;
+      credentials._currentReqId = reqId;
+      credentials._agentId = agentId;
+    }
 
     // Normalize Responses input
     const normalized = normalizeResponsesInput(body.input);
@@ -453,7 +463,11 @@ export class GrokCliExecutor extends BaseExecutor {
     normalizeGrokCliTools(body);
 
     // Turn index after input is finalized (user-message count, monotonic per session)
-    this._currentTurnIdx = resolveGrokCliTurnIdx(this._currentSessionId, body.input, requestKey);
+    const turnIdx = resolveGrokCliTurnIdx(sessionId, body.input, requestKey);
+    this._currentTurnIdx = turnIdx;
+    if (credentials) {
+      credentials._currentTurnIdx = turnIdx;
+    }
 
     body.stream = true;
     body.store = false;
@@ -471,6 +485,9 @@ export class GrokCliExecutor extends BaseExecutor {
     }
     body.model = resolvedModel;
     this._currentModel = resolvedModel;
+    if (credentials) {
+      credentials._currentModel = resolvedModel;
+    }
 
     // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high.
     // grok-build and Composer reject reasoningEffort but still accept summary/encrypted continuity.
@@ -526,26 +543,34 @@ export class GrokCliExecutor extends BaseExecutor {
   }
 
   async execute(args) {
-    // Lazy-resolve stable agent id once per process if connection has none
-    if (!this._agentId && !args.credentials?.providerSpecificData?.deviceId) {
+    let agentId = args.credentials?.providerSpecificData?.deviceId || this._defaultAgentId;
+    if (!agentId) {
       try {
         const mid = await getConsistentMachineId("grok-cli-agent");
         // Format as UUID-ish for header aesthetics
-        this._agentId = [
+        agentId = [
           mid.slice(0, 8),
           mid.slice(8, 12),
           "5" + mid.slice(13, 16),
           "a" + mid.slice(17, 20),
           mid.slice(0, 12).padEnd(12, "0"),
         ].join("-");
+        this._defaultAgentId = agentId;
       } catch {
-        this._agentId = crypto.randomUUID();
+        agentId = crypto.randomUUID();
       }
-    } else if (args.credentials?.providerSpecificData?.deviceId) {
-      this._agentId = args.credentials.providerSpecificData.deviceId;
     }
 
-    return super.execute(args);
+    const scopedCredentials = args.credentials
+      ? Object.assign(Object.create(args.credentials), {
+          _agentId: agentId,
+        })
+      : {
+          _agentId: agentId,
+        };
+
+    const scopedArgs = { ...args, credentials: scopedCredentials };
+    return super.execute(scopedArgs);
   }
 }
 
