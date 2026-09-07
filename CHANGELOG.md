@@ -1,3 +1,19 @@
+# v0.15.89 (2026-09-08)
+
+## Fix: GLM-5.3 & GLM-5.3-Flash 1M Context Resolution, Multimodal Flags & TokenRouter Pricing
+
+- `open-sse/providers/capabilities.js`:
+  - Resolved GLM-5.3 and GLM-5.3-Flash to 1M (1,000,000 token) context window and 128,000 maxOutput tokens across both dot and dash/date-suffixed patterns (`*glm-5.3*flash*`, `*glm-5-3*flash*`, `*glm-5.3*`, `*glm-5-3*`), preventing fallthrough to generic `*glm-5*` (200k) fallback.
+  - Enforced explicit modality flags: GLM-5.3 is text-only (`vision: false`), while GLM-5.3-Flash supports native multimodality (`vision: true`, `videoInput: true`, `pdf: true`).
+  - Standardized thinking format to `openai-low-high-max` with `thinkingCanDisable: false`, correctly exposing effort levels `["low", "high", "max"]` in UI/API and preventing invalid disable calls.
+  - Updated provider overrides for `codebuddy-cn` (GLM-5.3-Flash promoted to 1M context with multimodal flags) and `ollama` (GLM-5.3 corrected to text-only with `thinkingCanDisable: false`).
+- `open-sse/providers/registry/tokenrouter.js`:
+  - Added `z-ai/glm-5.3`, `z-ai/glm-5.3-free`, and `z-ai/glm-5.3-flash` to TokenRouter seed catalog.
+- `open-sse/providers/pricing.js`:
+  - Added verified reseller rates for TokenRouter GLM-5.3 models from live TokenRouter API formula ($1.40 input / $4.40 output / $0.26 cached for `z-ai/glm-5.3`, $0.075 input / $0.25 output / $0.015 cached for `z-ai/glm-5.3-flash`, $0.00 for `z-ai/glm-5.3-free`).
+- `tests/unit/capabilities-glm-53-context.test.js`:
+  - Added 18 comprehensive automated unit tests covering context resolution across 12 provider/variant cases, modality separation, thinking level resolution, provider overrides, and TokenRouter registry/pricing verification.
+
 # v0.15.88 (2026-09-06)
 
 ## Chore: Remove Free Tiers Dashboard Page, Components, and Route
