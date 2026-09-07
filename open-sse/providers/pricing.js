@@ -222,9 +222,9 @@ export const PROVIDER_PRICING = {
     "qwen/qwen3-coder-next": { input: 0.3, output: 0.6, cached: 0.06, reasoning: 0.6 },
     "x-ai/grok-4.5": { input: 2.0, output: 10.0, cached: 0.2, reasoning: 10.0 },
     "z-ai/glm-5.2": { input: 0.3, output: 0.6, cached: 0.06, reasoning: 0.6 },
-    "z-ai/glm-5.3": { input: 0.3, output: 0.6, cached: 0.06, reasoning: 0.6 },
+    "z-ai/glm-5.3": { input: 1.4, output: 4.4, cached: 0.26, reasoning: 4.4 },
     "z-ai/glm-5.3-free": { input: 0.0, output: 0.0, cached: 0.0, reasoning: 0.0 },
-    "z-ai/glm-5.3-flash": { input: 0.1, output: 0.2, cached: 0.02, reasoning: 0.2 },
+    "z-ai/glm-5.3-flash": { input: 0.075, output: 0.25, cached: 0.015, reasoning: 0.25 },
   },
 };
 
