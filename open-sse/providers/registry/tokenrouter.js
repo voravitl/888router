@@ -147,6 +147,9 @@ const tokenrouterConfig = {
     { id: "z-ai/glm-5-turbo", name: "Glm 5 Turbo" },
     { id: "z-ai/glm-5.1", name: "Glm 5.1" },
     { id: "z-ai/glm-5.2", name: "Glm 5.2" },
+    { id: "z-ai/glm-5.3", name: "Glm 5.3" },
+    { id: "z-ai/glm-5.3-free", name: "Glm 5.3 Free" },
+    { id: "z-ai/glm-5.3-flash", name: "Glm 5.3 Flash" },
   ],
   serviceKinds: ["llm", "embedding", "image"],
   embeddingConfig: {
