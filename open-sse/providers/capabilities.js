@@ -258,8 +258,10 @@ const OX_ALPHA_CAPABILITIES = {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
-  // GLM-5.2 has 1M context (overrides *glm-5* pattern's 200k). Claude 4.6/4.7/4.8 and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
-  "glm-5.2":           { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 48000 },
+  // GLM-5.3 and GLM-5.2 have 1M context (overrides *glm-5* pattern's 200k). Claude 4.6/4.7/4.8 and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
+  "glm-5.3":           { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
+  "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
+  "glm-5.2":           { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 48000 },
   "claude-opus-4.6":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4-6":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-4.7":   { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
@@ -337,13 +339,13 @@ export const PROVIDER_CAPABILITIES = {
     "kimi-k2.5":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 164000, maxOutput: 32000 },
     "hy3-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
     // hy3/hy3-x: 256K official (192K conservative, matches hy3-preview); hy4-preview: 1M official.
-    // glm-5.3: 1M (GLM-5.x gen); glm-5.3-flash window unverified (200K conservative).
+    // glm-5.3 / glm-5.3-flash: 1M context (GLM-5.x gen).
     "hy3":                { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
     "hy3-x":              { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
     "hy4-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 64000 },
     "hy4-preview-x":      { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 64000 },
-    "glm-5.3":            { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 48000 },
-    "glm-5.3-flash":      { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 48000 },
+    "glm-5.3":            { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 48000 },
+    "glm-5.3-flash":      { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 48000 },
     "kimi-k3-1":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 256000, maxOutput: 32000 },
     "deepseek-v4-pro":    { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v4-flash":  { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
@@ -355,8 +357,8 @@ export const PROVIDER_CAPABILITIES = {
   // cloud context — local Ollama contexts can be lower (e.g. 192k for
   // minimax-m2.7:q3) but the gateway always sends to cloud, so advertise cloud.
   "ollama": {
-    "glm-5.3-flash":   { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 131072 },
-    "glm-5.3":         { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 131072 },
+    "glm-5.3-flash":   { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
+    "glm-5.3":         { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
     "glm-5.1":         { reasoning: true,        thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 200000,  maxOutput: 128000 },
     "kimi-k3":         { reasoning: true,        thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 131072 },
     "kimi-k2.7":       { reasoning: true,        thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 256000,  maxOutput: 64000 },
@@ -524,19 +526,19 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*kimi*",          caps: { vision: true, reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
 
   // ── GLM / Z.ai (thinking.enabled; disable via enable_thinking:false) ─
-  // GLM-5.2 = 1M context. Match both "glm-5.2" (z.ai) and dash/date-suffixed
-  // variants ("glm-5-2-260617" on BytePlus/bpm) — exact MODEL_CAPABILITIES key
-  // only catches the dot form, so glob both before the generic *glm-5* 200k.
-  // NOTE: these mirror the *glm-5* family caps (zai/128k output) — only the
-  // contextWindow differs from the 200k fallback. The exact `glm-5.2` entry
-  // above (line ~75) is z.ai-specific (openai/48k) and still wins for the dot
-  // form via exact-match precedence; these patterns serve other providers.
-  { pattern: "*glm-5.2*",        caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*glm-5-2*",        caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 128000 } },
-  { pattern: "*glm-5*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
-  { pattern: "*glm-4.7*",       caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
-  { pattern: "*glm-4*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
-  { pattern: "*glm*",           caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
+  // GLM-5.3-flash = 1M context, vision: true, videoInput: true, pdf: true (natively multimodal).
+  // GLM-5.3 / GLM-5.2 = 1M context, text-only (explicit vision: false). Match both dot
+  // and dash/date-suffixed variants ("glm-5-3-...", "glm-5-2-...") before generic *glm-5* 200k.
+  { pattern: "*glm-5.3*flash*",  caps: { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5-3*flash*",  caps: { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5.3*",        caps: { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5-3*",        caps: { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5.2*",        caps: { vision: false, reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5-2*",        caps: { vision: false, reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*glm-5*",         caps: { vision: false, reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
+  { pattern: "*glm-4.7*",       caps: { vision: false, reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
+  { pattern: "*glm-4*",         caps: { vision: false, reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
+  { pattern: "*glm*",           caps: { vision: false, reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
 
   // ── DeepSeek (thinking.enabled + reasoning_effort; v4 = 1M ctx, TEXT-ONLY) ──
   // DeepSeek V4 (flash/pro) is text-only per models.dev (input=["text"]). Do NOT
