@@ -5,7 +5,7 @@ import {
   ANTHROPIC_COMPAT_BASE,
   ANTHROPIC_API_VERSION,
 } from "../../open-sse/providers/shared.js";
-import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../open-sse/config/runtimeConfig.js";
+import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS, OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS } from "../../open-sse/config/runtimeConfig.js";
 import mimoFree from "../../open-sse/providers/registry/mimo-free.js";
 import opencode from "../../open-sse/providers/registry/opencode.js";
 import antigravity from "../../open-sse/providers/registry/antigravity.js";
@@ -26,6 +26,9 @@ describe("default token limits", () => {
   it("max/min", () => {
     expect(DEFAULT_MAX_TOKENS).toBe(64000);
     expect(DEFAULT_MIN_TOKENS).toBe(32000);
+  });
+  it("OpenCode Responses max_output_tokens floor is 16", () => {
+    expect(OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS).toBe(16);
   });
 });
 

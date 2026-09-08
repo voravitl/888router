@@ -56,6 +56,10 @@ export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
+// OpenCode Zen / Console Responses API rejects max_output_tokens < 16
+// (observed: Claude Code `/model` probe sends max_tokens: 1 → upstream 400).
+export const OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS = 16;
+
 // Retry config for 429 responses (legacy - kept for backward compatibility)
 export const RETRY_CONFIG = {
   maxAttempts: 2,

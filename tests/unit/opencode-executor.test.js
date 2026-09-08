@@ -88,5 +88,12 @@ describe("OpenCodeExecutor.transformRequest - t2 max_tokens injection", () => {
     ]);
     expect(res.messages[6].content).toBeUndefined();
   });
+
+  it("does not floor Chat Completions max_tokens below 16", () => {
+    const body = { messages: [{ role: "user", content: "hello" }], max_tokens: 1 };
+    const res = executor.transformRequest("big-pickle", body);
+    expect(res.max_tokens).toBe(1);
+    expect(res.max_output_tokens).toBeUndefined();
+  });
 });
 
