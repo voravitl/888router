@@ -27,6 +27,23 @@ function isResponsesModel(model) {
   return RESPONSES_MODELS.has(base) || isMuseSparkModel(base);
 }
 
+function isResponsesPath(model, credentials) {
+  return isResponsesModel(model) || credentials?.runtimeTransport?.format === "openai-responses";
+}
+
+// Zen-free routing (`-free` / big-pickle → Bearer public on /zen/v1) must not
+// apply to opencode-go: ox-alpha-free is a Go catalog id, not a Zen public model.
+function isZenFreeModel(provider, model) {
+  if (provider === "opencode-go") return false;
+  return typeof model === "string" && (model.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(model));
+}
+
+function runtimeTransportUrl(credentials) {
+  const rt = credentials?.runtimeTransport;
+  if (!rt?.baseUrl) return null;
+  return rt.urlSuffix ? `${rt.baseUrl}${rt.urlSuffix}` : rt.baseUrl;
+}
+
 function normalizeOpencodeReasoning(model, body) {
   const current = body.reasoning;
   const currentReasoning = current && typeof current === "object" && !Array.isArray(current)
@@ -121,8 +138,11 @@ function resolveOpencodeSession(body, credentials) {
 }
 
 export class OpenCodeExecutor extends BaseExecutor {
-  constructor() {
-    super("opencode", PROVIDERS.opencode);
+  constructor(provider = "opencode") {
+    // Always bind Zen config for muse-spark URL assembly (`baseUrl` + `/zen/v1`).
+    // Provider id still distinguishes the Go instance so `-free` is not treated
+    // as Zen-public (ox-alpha-free lives on the Go catalog).
+    super(provider, PROVIDERS.opencode);
     this._currentSessionId = null;
   }
 
@@ -151,7 +171,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       };
     }
 
-    if (isResponsesModel(model)) {
+    if (isResponsesPath(model, credentials)) {
       // Responses API names the output cap max_output_tokens and takes thinking
       // as reasoning:{effort,summary} — normalize the Chat fields at this boundary.
       if (body.max_output_tokens === undefined) {
@@ -180,13 +200,15 @@ export class OpenCodeExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream = true, urlIndex = 0, credentials = null) {
+    const rtUrl = runtimeTransportUrl(credentials);
+    if (rtUrl) return rtUrl;
     if (isResponsesModel(model)) {
       const base = this.config?.baseUrl ? `${this.config.baseUrl}/zen/v1` : ZEN_FREE_BASE;
       return `${base}/responses`;
     }
     const rawKey = credentials?.apiKey || credentials?.accessToken;
     const key = typeof rawKey === "string" ? rawKey.trim() : null;
-    const isFreeModel = typeof model === "string" && (model.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(model));
+    const isFreeModel = isZenFreeModel(this.provider, model);
     const base = (key && !isFreeModel) ? ZEN_GO_BASE : (this.config?.baseUrl ? `${this.config.baseUrl}/zen/v1` : ZEN_FREE_BASE);
     return MESSAGES_MODELS.has(model)
       ? `${base}/messages`
@@ -204,7 +226,8 @@ export class OpenCodeExecutor extends BaseExecutor {
     const rawKey = credentials?.apiKey || credentials?.accessToken;
     const key = typeof rawKey === "string" ? rawKey.trim() : null;
     const effectiveModel = model || (typeof url === "string" && !url.startsWith("http") ? url : null);
-    const isFreeModel = typeof effectiveModel === "string" && (effectiveModel.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(effectiveModel));
+    const isFreeModel = isZenFreeModel(this.provider, effectiveModel);
+    const rtAuth = credentials?.runtimeTransport?.auth;
 
     const headers = {
       "Content-Type": "application/json",
@@ -216,7 +239,14 @@ export class OpenCodeExecutor extends BaseExecutor {
       "Accept": stream ? "text/event-stream" : "*/*",
     };
 
-    if (key && !isFreeModel) {
+    if (rtAuth && key) {
+      if (rtAuth.header === "x-api-key" || rtAuth.scheme === "raw") {
+        headers["x-api-key"] = key;
+      } else {
+        headers["Authorization"] = `Bearer ${key}`;
+      }
+      if (rtAuth.anthropicVersion) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
+    } else if (key && !isFreeModel) {
       // OpenCode Go with API Key
       if (effectiveModel && MESSAGES_MODELS.has(effectiveModel)) {
         headers["x-api-key"] = key;

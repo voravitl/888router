@@ -45,7 +45,7 @@ const executors = {
   qwen: new QwenExecutor(),
   opencode: new OpenCodeExecutor(),
   "opencode-zen": new OpenCodeExecutor(),
-  "opencode-go": new OpenCodeExecutor(),
+  "opencode-go": new OpenCodeExecutor("opencode-go"),
   "grok-web": new GrokWebExecutor(),
   "grok-cli": new GrokCliExecutor(),
   gcli: new GrokCliExecutor(), // Alias
