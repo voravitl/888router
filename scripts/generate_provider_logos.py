@@ -120,20 +120,7 @@ try:
 except Exception as e:
     print(f"  [ERR] felo: {e}")
 
-# 5. DuckDuckGo SVG from official duckduckgo.com
-try:
-    ddg_svg = os.path.join(TMP_DIR, "ddg_raw.svg")
-    download_file("https://duckduckgo.com/assets/logo_header.alt.v108.svg", ddg_svg)
-    # Render with sips
-    ddg_png = os.path.join(PROVIDERS_DIR, "duckduckgo-web.png")
-    render_svg_to_png(ddg_svg, ddg_png, 128)
-    Image.open(ddg_png).save(os.path.join(PROVIDERS_DIR, "duckduckgo.png"), "PNG")
-    Image.open(ddg_png).save(os.path.join(PROVIDERS_DIR, "ddg.png"), "PNG")
-    print("  [OK] duckduckgo-web.png & duckduckgo.png")
-except Exception as e:
-    print(f"  [ERR] duckduckgo: {e}")
-
-# 6. GitLab SVG
+# 5. GitLab SVG
 gitlab_svg_content = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <rect width="128" height="128" rx="28" fill="#18181B"/>
   <g transform="translate(24, 24) scale(3.333)">
@@ -384,7 +371,7 @@ missing_count = 0
 all_providers = [
     "aihubmix", "aipass", "alims-intl", "alitp-intl", "api-airforce", "baidu",
     "bazaarlink", "bluesminds", "chatgpt-web", "cheaperinference", "codebuddy-intl",
-    "duckduckgo-web", "featherless", "felo-web", "fish-audio", "freebuff",
+    "featherless", "felo-web", "fish-audio", "freebuff",
     "gitlab", "kilo-gateway", "llm7", "mmf", "morph", "selfhosted-embedding",
     "selfhosted-stt", "selfhosted-tts", "tencent", "venice", "vercel-ai-gateway",
     "zenmux-free"

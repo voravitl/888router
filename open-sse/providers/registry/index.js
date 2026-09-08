@@ -126,7 +126,6 @@ import p123 from "./youcom.js";
 import p124 from "./zed.js";
 import p125 from "./agentrouter.js";
 import p126 from "./chatgpt-web.js";
-import p127 from "./duckduckgo-web.js";
 import p128 from "./felo-web.js";
 import p129 from "./cheaperinference.js";
 import p130 from "./freebuff.js";
@@ -262,7 +261,6 @@ export default [
   p124,
   p125,
   p126,
-  p127,
   p128,
   p129,
   p130,

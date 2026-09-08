@@ -25,7 +25,6 @@ import ZedExecutor from "./zed.js";
 import WindsurfExecutor from "./windsurf.js";
 import { DevinCliExecutor } from "./devin-cli.js";
 import { DefaultExecutor } from "./default.js";
-import DuckduckgoWebExecutor from "./duckduckgo-web.js";
 import { AipassExecutor } from "./aipass.js";
 
 const executors = {
@@ -60,8 +59,6 @@ const executors = {
   "codebuddy-intl": new CodeBuddyIntlExecutor(),
   trae: new TraeExecutor(),
   zed: new ZedExecutor(),
-  "duckduckgo-web": new DuckduckgoWebExecutor(),
-  "duckduckgo-web": new DuckduckgoWebExecutor(),
   windsurf: new WindsurfExecutor(),
   "devin-cli": new DevinCliExecutor(),
   aipass: new AipassExecutor(),
@@ -110,5 +107,4 @@ export { default as TraeExecutor } from "./trae.js";
 export { default as ZedExecutor } from "./zed.js";
 export { default as WindsurfExecutor } from "./windsurf.js";
 export { DevinCliExecutor } from "./devin-cli.js";
-export { default as DuckduckgoWebExecutor } from "./duckduckgo-web.js";
 export { AipassExecutor } from "./aipass.js";
