@@ -1,3 +1,13 @@
+# v0.15.92 (2026-09-08)
+
+## Chore: Remove broken `duckduckgo-web` provider
+
+- Deleted the DuckDuckGo AI Chat (Duck.ai) provider: registry, executor, free-model catalog rows, public-gateway listing, connection-test stub, and unit tests.
+- Reason: `execute()` returned a raw `Response` instead of `{ response, url, headers, transformedBody }`, so `chatCore` crashed on every chat with `Cannot read properties of undefined (reading 'ok')`. VQD fingerprint/cache/proxy wiring was also wrong. Removing it rather than leaving a 500-ing keyless stub.
+- `tests/unit/permanent-free-providers.test.js` asserts `PROVIDERS["duckduckgo-web"]` is gone.
+- Retired-provider guard: leftover `duckduckgo-web` connections no longer fall through `DefaultExecutor` to OpenAI. `getExecutor` / credential pick / chat dispatch return 410 Gone.
+- Supersedes open issue #339.
+
 # v0.15.91 (2026-09-08)
 
 ## Fix: OpenCode Go honors `runtimeTransport` (Claude / Responses / ox-alpha-free)

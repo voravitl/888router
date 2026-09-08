@@ -5,14 +5,13 @@ import { FREE_MODEL_BUDGETS } from "open-sse/config/freeModelCatalog.data.js";
 
 describe("Permanent Free Providers & Model Sync", () => {
   const newFreeProviders = [
-    "duckduckgo-web",
     "felo-web",
     "cheaperinference",
     "freebuff",
     "zenmux-free",
   ];
 
-  it("should have all 5 new permanent free providers registered in PROVIDERS", () => {
+  it("should have remaining permanent free providers registered in PROVIDERS", () => {
     for (const pid of newFreeProviders) {
       expect(PROVIDERS[pid]).toBeDefined();
       expect(PROVIDERS[pid].models.length).toBeGreaterThan(0);
@@ -20,8 +19,11 @@ describe("Permanent Free Providers & Model Sync", () => {
     }
   });
 
+  it("does not register the removed duckduckgo-web provider", () => {
+    expect(PROVIDERS["duckduckgo-web"]).toBeUndefined();
+  });
+
   it("should identify keyless providers correctly", () => {
-    expect(PROVIDERS["duckduckgo-web"].authType).toBe("none");
     // felo-web: moved to openapi.felo.ai LLM API — apikey, not keyless
     expect(PROVIDERS["felo-web"].authType).toBe("apikey");
   });

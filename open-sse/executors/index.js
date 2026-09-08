@@ -25,8 +25,8 @@ import ZedExecutor from "./zed.js";
 import WindsurfExecutor from "./windsurf.js";
 import { DevinCliExecutor } from "./devin-cli.js";
 import { DefaultExecutor } from "./default.js";
-import DuckduckgoWebExecutor from "./duckduckgo-web.js";
 import { AipassExecutor } from "./aipass.js";
+import { isRetiredProvider, retiredProviderMessage } from "../config/retiredProviders.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -60,8 +60,6 @@ const executors = {
   "codebuddy-intl": new CodeBuddyIntlExecutor(),
   trae: new TraeExecutor(),
   zed: new ZedExecutor(),
-  "duckduckgo-web": new DuckduckgoWebExecutor(),
-  "duckduckgo-web": new DuckduckgoWebExecutor(),
   windsurf: new WindsurfExecutor(),
   "devin-cli": new DevinCliExecutor(),
   aipass: new AipassExecutor(),
@@ -73,6 +71,12 @@ const executors = {
 const defaultCache = new Map();
 
 export function getExecutor(provider) {
+  if (isRetiredProvider(provider)) {
+    const err = new Error(retiredProviderMessage(provider));
+    err.status = 410;
+    err.code = "provider_retired";
+    throw err;
+  }
   if (executors[provider]) return executors[provider];
   if (!defaultCache.has(provider)) defaultCache.set(provider, new DefaultExecutor(provider));
   return defaultCache.get(provider);
@@ -110,5 +114,4 @@ export { default as TraeExecutor } from "./trae.js";
 export { default as ZedExecutor } from "./zed.js";
 export { default as WindsurfExecutor } from "./windsurf.js";
 export { DevinCliExecutor } from "./devin-cli.js";
-export { default as DuckduckgoWebExecutor } from "./duckduckgo-web.js";
 export { AipassExecutor } from "./aipass.js";

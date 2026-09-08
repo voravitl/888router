@@ -189,7 +189,6 @@ export function isPublicModelsProvider(providerId) {
     "cheaperinference",
     "freebuff",
     "zenmux-free",
-    "duckduckgo-web",
     "felo-web",
     "aipass",
     "aipass-th",

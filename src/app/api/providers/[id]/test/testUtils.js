@@ -750,7 +750,6 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid SSO cookie" };
       }
-      case "duckduckgo-web":
       case "felo-web": {
         return { valid: true, error: null };
       }

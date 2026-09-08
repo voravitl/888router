@@ -20,7 +20,7 @@ const SPECIALIZED = new Set([
   "antigravity", "azure", "gemini-cli", "github", "iflow", "qoder", "kiro",
   "codex", "cursor", "vertex", "vertex-partner", "qwen", "opencode",
   "opencode-go", "grok-web", "perplexity-web", "chatgpt-web", "zenmux-free", "ollama-local", "commandcode",
-  "xiaomi-tokenplan", "mimo-free", "duckduckgo-web",
+  "xiaomi-tokenplan", "mimo-free",
   "aipass", "aipass-th", "aipass-bridge", "ap",
 ]);
 
