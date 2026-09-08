@@ -1,3 +1,17 @@
+# v0.15.91 (2026-09-08)
+
+## Fix: OpenCode Go honors `runtimeTransport` (Claude / Responses / ox-alpha-free)
+
+- `open-sse/executors/index.js`:
+  - Construct the shared executor as `new OpenCodeExecutor("opencode-go")` so the Go instance can tell itself apart from Zen.
+- `open-sse/executors/opencode.js`:
+  - Honor `credentials.runtimeTransport` in `buildUrl` / `buildHeaders` (same seam `chatCore` already sets, and `DefaultExecutor` already uses). Claude Code → `ocg/deepseek-v4-pro` now hits `/zen/go/v1/messages` with `x-api-key` instead of posting an Anthropic body to `/chat/completions`.
+  - Do not treat `*-free` as Zen-public when the provider is `opencode-go`. `ox-alpha-free` is a Go catalog id — keep the Go API key and `/zen/go/v1/chat/completions`.
+  - Apply the Responses `max_output_tokens` floor of 16 when `runtimeTransport.format === "openai-responses"`, not only for muse-spark.
+  - Zen muse-spark (`/zen/v1/responses`, `Bearer public`, floor 16) is unchanged when no runtimeTransport is set.
+- `tests/unit/opencode-go-runtime-transport.test.js`:
+  - Covers DeepSeek Claude + Responses transports, ox-alpha-free key retention, muse-spark Zen isolation, and the Go Responses token floor.
+
 # v0.15.90 (2026-09-08)
 
 ## Fix: CI `unit-smoke` `tests/` npm install `edgesOut` crash
