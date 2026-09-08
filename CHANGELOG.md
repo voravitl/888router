@@ -1,5 +1,11 @@
 # v0.15.90 (2026-09-08)
 
+## Fix: CI `unit-smoke` `tests/` npm install `edgesOut` crash
+
+- `.github/workflows/ci.yml` and `.github/workflows/docker-publish.yml`:
+  - Pass `--legacy-peer-deps` on the `tests/` `npm install` step.
+  - npm 10.9.8 (Node 22.23.2 on `ubuntu-latest`) crashes arborist `#loadPeerSet` (`Cannot read properties of null (reading 'edgesOut')`) when resolving vitest 4.1.x peers without a lockfile. `tests/package-lock.json` stays gitignored — do not switch this step to `npm ci` (#284).
+
 ## Fix: OpenCode Muse Spark `max_output_tokens` Floor for Claude Code `/model`
 
 - `open-sse/config/runtimeConfig.js`:
