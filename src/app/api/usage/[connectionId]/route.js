@@ -4,6 +4,7 @@ import "open-sse/index.js";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
+import { isRetiredProvider } from "open-sse/config/retiredProviders.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import { computeQuotaRemainingPct } from "open-sse/services/quotaSnapshot.js";
@@ -23,6 +24,9 @@ export function isAuthExpiredMessage(usage) {
  * @returns Promise<{ connection, refreshed: boolean }>
  */
 export async function refreshAndUpdateCredentials(connection, force = false, proxyOptions = null) {
+  if (isRetiredProvider(connection.provider)) {
+    return { connection, refreshed: false };
+  }
   const executor = getExecutor(connection.provider);
 
   // Build credentials object from connection

@@ -4,6 +4,7 @@ import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
+import { isRetiredProvider } from "open-sse/config/retiredProviders.js";
 import { partitionByQuotaHealth, QUOTA_AVOID_THRESHOLD_PCT, QUOTA_SNAPSHOT_MAX_AGE_MS } from "open-sse/services/quotaSnapshot.js";
 import { pickByScore } from "open-sse/services/accountScoring.js";
 import * as log from "../utils/logger.js";
@@ -34,6 +35,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
+
+    if (isRetiredProvider(provider) || isRetiredProvider(providerId)) {
+      log.warn("AUTH", `Retired provider refused: ${providerId || provider}`);
+      return null;
+    }
 
     // Resolve the NEXT eligible virtual noAuth connection (single pool resolve).
     // Auto-rotate: no specific proxyPoolId → pick the first active pool not yet
