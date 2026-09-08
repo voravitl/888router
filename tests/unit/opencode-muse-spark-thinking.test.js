@@ -132,4 +132,55 @@ describe("OpenCode Free Muse Spark thinking", () => {
       expect(out.max_tokens).toBeUndefined();
     }
   });
+
+  // OpenCode Console / OpenAI Responses: max_output_tokens must be >= 16.
+  // Claude Code `/model` probes send Anthropic max_tokens: 1, which 888router
+  // previously forwarded as max_output_tokens: 1 → upstream 400.
+  it("floors Claude Code /model probe max_tokens below 16 to the Responses minimum", () => {
+    const executor = new OpenCodeExecutor();
+    for (const n of [1, 8, 15]) {
+      const out = executor.transformRequest(MODEL, {
+        messages: [{ role: "user", content: "hi" }],
+        max_tokens: n,
+      }, true, { connectionId: "opencode-muse-spark-min-output" });
+      expect(out.max_output_tokens).toBe(16);
+      expect(out.max_tokens).toBeUndefined();
+    }
+  });
+
+  it("floors an already-mapped max_output_tokens below 16", () => {
+    const out = new OpenCodeExecutor().transformRequest(MODEL, {
+      input,
+      max_output_tokens: 1,
+    }, true, { connectionId: "opencode-muse-spark-min-output-direct" });
+    expect(out.max_output_tokens).toBe(16);
+  });
+
+  it("preserves Responses max_output_tokens at or above 16", () => {
+    const executor = new OpenCodeExecutor();
+    expect(executor.transformRequest(MODEL, { input, max_tokens: 16 }, true, {}).max_output_tokens).toBe(16);
+    expect(executor.transformRequest(MODEL, { input, max_tokens: 2048 }, true, {}).max_output_tokens).toBe(2048);
+  });
+
+  it("floors a Claude-format /model probe through Claude→Responses translation", () => {
+    const body = {
+      model: `oc/${MODEL}`,
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 1,
+    };
+    const translated = translateRequest(
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI_RESPONSES,
+      MODEL,
+      body,
+      true,
+      {},
+      PROVIDER,
+    );
+    const out = new OpenCodeExecutor().transformRequest(MODEL, translated, true, {
+      connectionId: "opencode-muse-spark-claude-probe",
+    });
+    expect(out.max_output_tokens).toBe(16);
+    expect(out.max_tokens).toBeUndefined();
+  });
 });

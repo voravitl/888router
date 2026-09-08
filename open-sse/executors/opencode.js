@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS } from "../config/runtimeConfig.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
@@ -103,6 +104,13 @@ function sanitizeOpencodeMessageContent(content) {
   return content.map(partText).filter((t) => t.length > 0).join("\n");
 }
 
+function clampResponsesMaxOutputTokens(body) {
+  const n = Number(body.max_output_tokens);
+  if (Number.isFinite(n) && n < OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS) {
+    body.max_output_tokens = OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS;
+  }
+}
+
 function resolveOpencodeSession(body, credentials) {
   return toOpencodeSession(resolveSessionId({
     headers: credentials?.rawHeaders,
@@ -152,6 +160,9 @@ export class OpenCodeExecutor extends BaseExecutor {
       }
       delete body.max_tokens;
       delete body.max_completion_tokens;
+      // OpenAI Responses / OpenCode Console: max_output_tokens must be >= 16.
+      // Claude Code `/model` probes send max_tokens: 1, which Anthropic accepts.
+      clampResponsesMaxOutputTokens(body);
       normalizeOpencodeReasoning(model, body);
       return injectReasoningContent({ provider: this.provider, model, body });
     }

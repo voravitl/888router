@@ -3,6 +3,9 @@ node_modules/
 # workflows MUST use `npm install` here, not `npm ci` — `npm ci` fails with
 # EUSAGE without a lockfile and took master CI red once (#284). If you want
 # `npm ci` for tests/, commit this lockfile in the same change.
+# CI also passes `--legacy-peer-deps`: npm 10.9.8 + vitest 4.1.x crashes
+# arborist `#loadPeerSet` (`edgesOut` of null) on a lockfile-less install
+# (npm/cli#8261, 888router#384).
 package-lock.json
 .vite/
 coverage/
