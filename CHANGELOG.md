@@ -1,3 +1,15 @@
+# v0.15.90 (2026-09-08)
+
+## Fix: OpenCode Muse Spark `max_output_tokens` Floor for Claude Code `/model`
+
+- `open-sse/config/runtimeConfig.js`:
+  - Added `OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS = 16`, matching OpenCode Console / OpenAI Responses validation (`max_output_tokens` must be `>= 16`).
+- `open-sse/executors/opencode.js`:
+  - After mapping Chat `max_tokens` / `max_completion_tokens` onto Responses `max_output_tokens` for muse-spark (and other OpenCode Responses models), clamp any finite value below 16 up to 16.
+  - Fixes Claude Code `/model oc/muse-spark-1.3-contributor-free[1m]` which probes with Anthropic `max_tokens: 1` and previously forwarded `max_output_tokens: 1` → upstream 400.
+- `tests/unit/opencode-muse-spark-thinking.test.js`, `tests/unit/opencode-executor.test.js`, `tests/unit/executor-const-guard.test.js`:
+  - Cover the Claude Code `/model` probe, already-mapped `max_output_tokens: 1`, values at/above 16, Claude→Responses translation, and that Chat Completions models are not floored.
+
 # v0.15.89 (2026-09-08)
 
 ## Fix: GLM-5.3 & GLM-5.3-Flash 1M Context Resolution, Multimodal Flags & TokenRouter Pricing
