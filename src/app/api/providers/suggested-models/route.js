@@ -24,9 +24,17 @@ export async function GET(request) {
     return NextResponse.json({ error: "Unknown filter type" }, { status: 400 });
   }
 
+  // Public-catalog fetchers (opencode-go) use a fixed public credential and
+  // must NEVER receive the caller's private key — the dashboard sends the
+  // active connection's apiKey by default, which would leak it upstream.
+  const isPublicCatalog = type === "opencode-go";
   try {
     const headers = { "Content-Type": "application/json" };
-    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+    if (isPublicCatalog) {
+      headers.Authorization = "Bearer public";
+    } else if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
     const res = await fetch(url, { headers });
     if (!res.ok) {
       return NextResponse.json({ data: [] });

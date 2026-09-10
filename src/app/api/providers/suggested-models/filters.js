@@ -1,5 +1,6 @@
 // Free OpenCode models that don't use the "-free" id suffix
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { parseOpenCodeGoCatalog } from "open-sse/services/opencodeGoModels.js";
 
 const KNOWN_FREE_OPENCODE_MODELS = ["big-pickle"];
 
@@ -19,6 +20,20 @@ export const FILTERS = {
     models
       .filter((m) => m.id?.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.includes(m.id))
       .map((m) => ({ id: m.id, name: m.id })),
+
+  // OpenCode Go paid catalog: every id the live endpoint returns (no suffix
+  // filter — Go catalog ids carry no -free suffix). Parsing shared with the
+  // v1/models resolver via parseOpenCodeGoCatalog (single source — a schema
+  // fix lands in both paths, never one). Static seed wins on collision
+  // downstream (its supportedFormats stays authoritative for transport).
+  "opencode-go": (models) => {
+    if (!Array.isArray(models)) return [];
+    try {
+      return parseOpenCodeGoCatalog({ data: models });
+    } catch {
+      return [];
+    }
+  },
 
   // models.dev returns a large catalog; keep only mimo models
   "mimo-free": (models) =>
