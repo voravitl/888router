@@ -47,6 +47,12 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
       });
       expect(leak).toEqual([]);
     }
+    // Explicit registry fixtures (not classifier-oracle): antigravity has no
+    // free-catalog rows so its paid gemini models must be excluded, while a
+    // known free registry model must be present.
+    const bestFree = resolveVirtualAutoCombo("auto/best-free");
+    expect(bestFree.models).not.toContain("antigravity/gemini-3.8-flash-high");
+    expect(bestFree.models).toContain("chatgpt-web/gpt-5.6-luna-free");
   });
 
   it("applies p2c (Power of Two Choices) strategy rotation", () => {
