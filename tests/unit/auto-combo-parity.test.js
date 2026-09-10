@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { parseAutoSuffix } from "../../open-sse/services/autoCombo/suffixComposition.js";
-import { resolveVirtualAutoCombo } from "../../open-sse/services/autoCombo/virtualFactory.js";
+import {
+  resolveVirtualAutoCombo,
+  isFreeCandidate,
+} from "../../open-sse/services/autoCombo/virtualFactory.js";
 import { getRotatedModels } from "../../open-sse/services/combo.js";
 
 describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
@@ -31,6 +34,19 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
     expect(codingCombo).not.toBeNull();
     expect(codingCombo.name).toBe("auto/best-coding");
     expect(codingCombo.models.length).toBeGreaterThan(0);
+  });
+
+  it("free-tier combos contain only free models (no paid leak)", () => {
+    for (const name of ["auto/best-free", "auto/best-free-1m", "auto/free-1m"]) {
+      const combo = resolveVirtualAutoCombo(name);
+      expect(combo).not.toBeNull();
+      expect(combo.models.length).toBeGreaterThan(0);
+      const leak = combo.models.filter((m) => {
+        const i = m.indexOf("/");
+        return !isFreeCandidate(m.slice(0, i), m.slice(i + 1));
+      });
+      expect(leak).toEqual([]);
+    }
   });
 
   it("applies p2c (Power of Two Choices) strategy rotation", () => {

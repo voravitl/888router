@@ -150,6 +150,12 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       // model into a free-tier request was a billing-correctness bug.
       const isFree = isFreeCandidate(providerId, modelId);
 
+      // Free-tier gate (mirrors the dynamic loop below): a free-tier request
+      // must only contain free models. Without this the static loop pushes
+      // every registry model, so paid models (e.g. paid gemini) leak into
+      // auto/best-free candidates and get picked ahead of real free models.
+      if (tier === "free" && !isFree) continue;
+
       // Filter by contextMin
       if (contextMin) {
         const knownCw = resolveKnownContextWindow(providerId, modelId);
