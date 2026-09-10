@@ -32,7 +32,8 @@ function isResponsesPath(model, credentials) {
 }
 
 // Zen-free routing (`-free` / big-pickle → Bearer public on /zen/v1) must not
-// apply to opencode-go: ox-alpha-free is a Go catalog id, not a Zen public model.
+// apply to opencode-go: Go catalog ids are paid (Bearer user key), never Zen
+// public models — regardless of any -free suffix they may carry.
 function isZenFreeModel(provider, model) {
   if (provider === "opencode-go") return false;
   return typeof model === "string" && (model.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(model));
@@ -140,8 +141,8 @@ function resolveOpencodeSession(body, credentials) {
 export class OpenCodeExecutor extends BaseExecutor {
   constructor(provider = "opencode") {
     // Always bind Zen config for muse-spark URL assembly (`baseUrl` + `/zen/v1`).
-    // Provider id still distinguishes the Go instance so `-free` is not treated
-    // as Zen-public (ox-alpha-free lives on the Go catalog).
+    // Provider id still distinguishes the Go instance so `-free`-suffixed Go
+    // ids are not treated as Zen-public.
     super(provider, PROVIDERS.opencode);
     this._currentSessionId = null;
   }

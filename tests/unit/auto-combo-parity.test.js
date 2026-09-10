@@ -157,7 +157,6 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
       ["tokenrouter/moonshotai/kimi-k3-free", false], // :free suffix
       ["tokenrouter/z-ai/glm-5.3-free", false], // :free suffix
       ["opencode/deepseek-v4-flash-free", true],
-      ["opencode-go/ox-alpha-free", false], // :free suffix
       ["chatgpt-web/gpt-5.6-luna-free", true],
       ["bazaarlink/auto:free", true],
       ["anthropic/claude-sonnet-4-20250514", false],

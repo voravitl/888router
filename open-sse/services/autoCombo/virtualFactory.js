@@ -328,7 +328,6 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
               "tokenrouter/moonshotai/kimi-k3-free",
               "tokenrouter/z-ai/glm-5.3-free",
               "opencode/deepseek-v4-flash-free",
-              "opencode-go/ox-alpha-free",
               "chatgpt-web/gpt-5.6-luna-free",
             ]
           : [

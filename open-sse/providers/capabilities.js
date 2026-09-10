@@ -390,14 +390,10 @@ export const PROVIDER_CAPABILITIES = {
     "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "opencode-go": {
-    "ox-alpha-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
     "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-  },
-  "ocg": {
-    "ox-alpha-free": OX_ALPHA_CAPABILITIES,
   },
   "opencode-zen": {
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,

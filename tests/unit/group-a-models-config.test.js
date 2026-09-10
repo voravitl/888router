@@ -123,7 +123,7 @@ describe("Group A models config", () => {
       json: async () => ({
         object: "list",
         data: [
-          { id: "ox-alpha-free" },
+          { id: "glm-5.2" },
           { id: "glm-5.3" },
         ],
       }),
@@ -138,6 +138,6 @@ describe("Group A models config", () => {
     const [url, init] = mocks.fetch.mock.calls[0];
     expect(url).toBe("https://opencode.ai/zen/go/v1/models");
     expect(init.headers?.Authorization).toBeUndefined();
-    expect(body.models.map((m) => m.id)).toEqual(["ox-alpha-free", "glm-5.3"]);
+    expect(body.models.map((m) => m.id)).toEqual(["glm-5.2", "glm-5.3"]);
   });
 });
