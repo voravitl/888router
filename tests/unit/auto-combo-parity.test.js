@@ -98,7 +98,13 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
     expect(isCodingModelId("codegemma-7b")).toBe(true);
     expect(isCodingModelId("starcoder2-15b")).toBe(true);
     expect(isCodingModelId("deepseekcoder-v2")).toBe(true);
-    expect(isCodingModelId("codestral22b")).toBe(true);
+    expect(isCodingModelId("codestral-latest")).toBe(true);
+    // Fused version+letter tails never match (would need explicit row).
+    expect(isCodingModelId("codestral22b")).toBe(false);
+    expect(isCodingModelId("vendor-code2chat")).toBe(false);
+    expect(isCodingModelId("vendor-coder7general")).toBe(false);
+    expect(isCodingModelId("claude-sonnet4embedding")).toBe(false);
+    expect(isCodingModelId("gpt-codex2audio")).toBe(false);
     expect(isCodingModelId("qwen3-coder-next")).toBe(true);
     expect(isCodingModelId("gpt-5.3-codex")).toBe(true);
     expect(isCodingModelId("kimi-k2.7-code")).toBe(true);

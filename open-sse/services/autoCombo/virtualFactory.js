@@ -33,23 +33,33 @@ const FREE_MODEL_KEYS = new Set(
 // spellings without a delimiter (codellama, starcoder2, qwen3coder) are NOT
 // matched — adding a new specialist family means adding one regex + one test
 // row below, not broadening a substring.
+// Token boundaries use lookahead (not consumption): the trailing version
+// digits belong to the token, so `code2chat`/`sonnet4embedding` must NOT
+// match — only a real delimiter or end-of-string may follow.
+// VER = optional fused version suffix (starcoder2, codestral22b, sonnet4):
+// digits/dots only — NO trailing letters, so codec-helper/code2chat/
+// coder7general/sonnet4embedding never match. A spelling like `codex-b`
+// needs an explicit regex row, not a broader pattern.
+const _TS = String.raw`(?:^|[-_/:.@])`;
+const _TE = String.raw`(?=$|[-_/:.@])`;
+const _VER = String.raw`(?:\d[\d.]*)?`;
 const CODING_ID_RES = [
-  /(?:^|[-_/:.@])coder(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])codex(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])coding(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])code(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])devstral(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])codestral\d*(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])starcoder\d*(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])codellama(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])codegemma(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])deepseekcoder(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])sonnet(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])opus(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])qwen[\d.]*-coder(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])deepseek-coder(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])kimi-.*-code(?:[-_/:.@\d]|$)/,
-  /(?:^|[-_/:.@])grok-code(?:[-_/:.@\d]|$)/,
+  new RegExp(`${_TS}coder${_VER}${_TE}`),
+  new RegExp(`${_TS}codex${_VER}${_TE}`),
+  new RegExp(`${_TS}coding${_VER}${_TE}`),
+  new RegExp(`${_TS}code${_VER}${_TE}`),
+  new RegExp(`${_TS}devstral${_TE}`),
+  new RegExp(`${_TS}codestral${_TE}`),
+  new RegExp(`${_TS}starcoder${_VER}${_TE}`),
+  new RegExp(`${_TS}codellama${_TE}`),
+  new RegExp(`${_TS}codegemma${_TE}`),
+  new RegExp(`${_TS}deepseekcoder${_TE}`),
+  new RegExp(`${_TS}sonnet${_VER}${_TE}`),
+  new RegExp(`${_TS}opus${_VER}${_TE}`),
+  new RegExp(`${_TS}qwen[\\d.]*-coder${_TE}`),
+  new RegExp(`${_TS}deepseek-coder${_TE}`),
+  new RegExp(`${_TS}kimi-.*-code${_TE}`),
+  new RegExp(`${_TS}grok-code${_TE}`),
 ];
 
 /**
