@@ -14,6 +14,44 @@ const FREE_MODEL_KEYS = new Set(
   FREE_MODEL_BUDGETS.map((m) => `${m.provider}/${m.modelId}`.toLowerCase())
 );
 
+// Code-family id matchers for the `coding` category gate. Capabilities carry
+// no `coding` signal (only vision/reasoning/tools), so the category falls back
+// to id matching. Two matcher kinds:
+// - WORD matchers (boundary-anchored): "code" as a standalone hyphen/slash
+//   token (kimi-k2.7-code, grok-code-fast-1) but NOT inside "encoder"/"codec".
+// - FAMILY matchers (narrow policy): families whose primary training purpose
+//   is code. Generalist chat families (plain qwen3, gemini-flash, gpt-*) are
+//   intentionally EXCLUDED even if code-capable — a `coding` request must mean
+//   code-specialist, not "any strong chat model".
+// NOTE: coverage is partial by design — non-matching models are excluded from
+// coding requests, not omitted by accident.
+const CODING_ID_WORDS = ["coder", "codex", "coding", "code", "devstral", "codestral", "starcoder"];
+// Single-token code-specialist families (whole-token match only).
+const CODING_ID_FAMILY_TOKENS = new Set(["sonnet", "opus"]);
+
+/**
+ * Check if a model id belongs to a code family (for `coding` category gate)
+ * @param {string} modelId
+ * @returns {boolean}
+ */
+export function isCodingModelId(modelId) {
+  if (!modelId || typeof modelId !== "string") return false;
+  const lower = modelId.toLowerCase();
+  // Tokenize on every model-id delimiter (including `:` for `:free`
+  // suffixed ids like vendor-code:free) and match whole tokens only —
+  // "encoder"/"codec"/"sonnetized-chat" must not match.
+  const tokens = new Set(lower.split(/[-_/ .@:]+/).filter(Boolean));
+  if (CODING_ID_WORDS.some((w) => tokens.has(w))) return true;
+  // Family tokens: whole-token only, so "my-opus-embedding" matches the
+  // "opus" token (accepted: opus-family ids are Claude code flagships;
+  // embedding-suffixed opus ids don't exist in the registry — verified).
+  for (const t of tokens) {
+    if (CODING_ID_FAMILY_TOKENS.has(t)) return true;
+    if (t === "qwen-coder" || t === "qwen3-coder" || t === "kimi-coder" || t === "deepseek-coder") return true;
+  }
+  return false;
+}
+
 /**
  * Check if a provider/model qualifies as free
  * @param {string} provider
@@ -129,9 +167,15 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
   const dynSnapshot = getHydratedSnapshot();
 
   const category = parsed.category || "chat";
-  const tier = parsed.tier || "pro";
+  // `requestedTier` is what the caller asked for (preserved for strategy +
+  // metadata); `freeOnly` is the filter policy. `cheap` has no price signal
+  // to filter on — the only verifiable cheap set is the free set — so cheap
+  // requests filter free-only, but the tier label and the cheap strategy
+  // (cache-optimized) are preserved, not rewritten to free/reset-aware.
+  const requestedTier = parsed.tier || "pro";
+  const freeOnly = requestedTier === "free" || requestedTier === "cheap";
   const contextMin = parsed.contextMin || (suffix.includes("1m") ? 1000000 : null);
-  const strategy = parsed.strategy || (tier === "fast" ? "p2c" : tier === "free" ? "reset-aware" : "cache-optimized");
+  const strategy = parsed.strategy || (requestedTier === "fast" ? "p2c" : requestedTier === "free" ? "reset-aware" : "cache-optimized");
 
   // Collect all known models across providers
   const candidates = [];
@@ -168,11 +212,12 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       // model into a free-tier request was a billing-correctness bug.
       const isFree = isFreeCandidate(providerId, modelId);
 
-      // Free-tier gate (mirrors the dynamic loop below): a free-tier request
-      // must only contain free models. Without this the static loop pushes
-      // every registry model, so paid models (e.g. paid gemini) leak into
-      // auto/best-free candidates and get picked ahead of real free models.
-      if (tier === "free" && !isFree) continue;
+      // Free-tier gate (mirrors the dynamic loop below): a free/cheap-tier
+      // request must only contain free models. Without this the static loop
+      // pushes every registry model, so paid models (e.g. paid gemini) leak
+      // into auto/best-free candidates and get picked ahead of real free
+      // models. `cheap` filters free-only but keeps its own tier label.
+      if (freeOnly && !isFree) continue;
 
       // Filter by contextMin
       if (contextMin) {
@@ -189,6 +234,13 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       }
       if (category === "reasoning") {
         if (!caps.reasoning) continue;
+      }
+      // Coding gate: capabilities has no `coding` field (only vision /
+      // reasoning / tools), so match on the model id instead. Pattern covers
+      // the mainstream code families; anything unmatched is treated as
+      // non-coding and excluded from coding-category requests.
+      if (category === "coding") {
+        if (!isCodingModelId(modelId)) continue;
       }
 
       const fullModelStr = `${providerId}/${modelId}`;
@@ -228,7 +280,7 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       if (seen.has(`${providerId}/${modelId}`)) continue;
 
       const isFree = isFreeCandidate(providerId, modelId);
-      if (tier === "free" && !isFree) continue;
+      if (freeOnly && !isFree) continue;
 
       if (contextMin) {
         const knownCw = resolveKnownContextWindow(providerId, modelId);
@@ -241,6 +293,9 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       if (category === "reasoning") {
         if (!dynCaps.reasoning) continue;
       }
+      if (category === "coding") {
+        if (!isCodingModelId(modelId)) continue;
+      }
 
       candidates.push({
         modelStr: `${providerId}/${modelId}`,
@@ -252,36 +307,77 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
     }
   }
 
-  // If no candidates found, fallback to standard defaults
+  // If no candidates found, fallback to standard defaults.
+  // Every fallback entry runs through the SAME gates as a normal candidate
+  // (free-tier, contextMin, category, registry chat-kind) — a fallback that
+  // fails a gate is skipped, not pushed. If nothing passes, return null
+  // (fail closed) instead of a combo that violates the request constraints.
+  // INVARIANT: each list entry MUST exist in the PROVIDERS registry as a
+  // chat-kind model (pinned by FALLBACK_SPOT_CHECKS in
+  // auto-combo-parity.test.js). Ghost entries fail at request time with
+  // "Invalid model format"; non-chat kinds fail at the provider.
   if (candidates.length === 0) {
-    if (tier === "free") {
-      if (contextMin && contextMin >= 1000000) {
-        candidates.push(
-          { modelStr: "openrouter/minimax/minimax-m3:free" },
-          { modelStr: "kgw/minimax/minimax-m3:free" },
-          { modelStr: "tokenrouter/deepseek/deepseek-v4-pro-0813-free" },
-          { modelStr: "tokenrouter/moonshotai/kimi-k3-free" },
-          { modelStr: "tokenrouter/qwen/qwen3.8-max-free" }
-        );
-      } else {
-        candidates.push(
-          { modelStr: "openrouter/nvidia/llama-nemotron-embed-vl-1b-v2:free" },
-          { modelStr: "agentrouter/claude-opus-4-8" },
-          { modelStr: "bazaarlink/auto:free" }
-        );
+    // NOTE on reachability: entries that pass every gate below would normally
+    // have been collected by the static loop already — these lists are
+    // last-resort routes for transient states (empty registry snapshot,
+    // cold dynamic cache), not a second registry scan.
+    const FALLBACKS =
+      freeOnly
+        ? contextMin && contextMin >= 1000000
+          ? [
+              "tokenrouter/moonshotai/kimi-k3-free",
+              "tokenrouter/z-ai/glm-5.3-free",
+              "opencode/deepseek-v4-flash-free",
+              "opencode-go/ox-alpha-free",
+              "chatgpt-web/gpt-5.6-luna-free",
+            ]
+          : [
+              "opencode/deepseek-v4-flash-free",
+              "chatgpt-web/gpt-5.6-luna-free",
+              "bazaarlink/auto:free",
+            ]
+        : category === "coding"
+          ? [
+              "anthropic/claude-sonnet-4-20250514",
+              "tokenrouter/qwen/qwen3-coder-next",
+              "deepseek/deepseek-chat",
+            ]
+          : ["openai/gpt-4o", "anthropic/claude-sonnet-4-20250514"];
+    for (const modelStr of FALLBACKS) {
+      const i = modelStr.indexOf("/");
+      const fProvider = modelStr.slice(0, i);
+      const fModel = modelStr.slice(i + 1);
+      // Registry validation first: reject ghosts and non-chat kinds before
+      // any other gate (stale lists must fail closed, not route to a model
+      // that errors with "Invalid model format" or fails at the provider).
+      const fEntry = PROVIDERS[fProvider]?.models?.find((m) =>
+        typeof m === "string" ? m === fModel : m?.id === fModel
+      );
+      if (!fEntry) continue;
+      if (
+        typeof fEntry === "object" &&
+        fEntry !== null &&
+        fEntry.kind &&
+        fEntry.kind !== "chat"
+      ) {
+        continue;
       }
-    } else if (category === "coding") {
-      candidates.push(
-        { modelStr: "anthropic/claude-3-7-sonnet" },
-        { modelStr: "deepseek/deepseek-chat" },
-        { modelStr: "openai/gpt-4o" }
-      );
-    } else {
-      candidates.push(
-        { modelStr: "openai/gpt-4o" },
-        { modelStr: "anthropic/claude-3-7-sonnet" }
-      );
+      if (freeOnly && !isFreeCandidate(fProvider, fModel)) continue;
+      if (contextMin) {
+        const knownCw = resolveKnownContextWindow(fProvider, fModel);
+        if (!knownCw || knownCw < contextMin) continue;
+      }
+      if (category === "vision" || category === "multimodal") {
+        if (!getCapabilitiesForModel(fProvider, fModel).vision) continue;
+      }
+      if (category === "reasoning") {
+        if (!getCapabilitiesForModel(fProvider, fModel).reasoning) continue;
+      }
+      if (category === "coding" && !isCodingModelId(fModel)) continue;
+      candidates.push({ modelStr });
     }
+    // Fail closed: no fallback satisfied every requested constraint.
+    if (candidates.length === 0) return null;
   }
 
   return {
