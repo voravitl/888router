@@ -93,6 +93,12 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
     expect(isCodingModelId("deepseek-v4-pro")).toBe(false);
     expect(isCodingModelId("vendor-code:free")).toBe(true);
     expect(isCodingModelId("vendor/coding:free")).toBe(true);
+    // Compact/fused specialist spellings (no delimiter before version).
+    expect(isCodingModelId("codellama-70b")).toBe(true);
+    expect(isCodingModelId("codegemma-7b")).toBe(true);
+    expect(isCodingModelId("starcoder2-15b")).toBe(true);
+    expect(isCodingModelId("deepseekcoder-v2")).toBe(true);
+    expect(isCodingModelId("codestral22b")).toBe(true);
     expect(isCodingModelId("qwen3-coder-next")).toBe(true);
     expect(isCodingModelId("gpt-5.3-codex")).toBe(true);
     expect(isCodingModelId("kimi-k2.7-code")).toBe(true);

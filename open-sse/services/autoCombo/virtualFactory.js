@@ -24,8 +24,33 @@ const FREE_MODEL_KEYS = new Set(
 // Generalist chat families (plain qwen3, gemini-flash, gpt-*) are excluded.
 // Memoized per normalized id (LOW finding: avoid re-tokenizing every model
 // on every resolution across large registries).
-const CODING_ID_WORDS = new Set(["coder", "codex", "coding", "code", "devstral", "codestral", "starcoder", "sonnet", "opus"]);
-const codingIdCache = new Map();
+// Curated code-specialist matchers (regex, delimiter-anchored). The registry
+// has no `coding` capability field, so the gate matches explicit specialist
+// markers — family-anchored (`qwen*-coder`, `deepseek-coder`) or standalone
+// code words (`coder/codex/coding/devstral/codestral/starcoder`) plus the
+// Claude code flagships (`sonnet`/`opus` whole-token). Generalist Chat ids
+// (plain qwen3, gemini-flash, gpt-*) do NOT match by design. Compact/fused
+// spellings without a delimiter (codellama, starcoder2, qwen3coder) are NOT
+// matched — adding a new specialist family means adding one regex + one test
+// row below, not broadening a substring.
+const CODING_ID_RES = [
+  /(?:^|[-_/:.@])coder(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])codex(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])coding(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])code(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])devstral(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])codestral\d*(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])starcoder\d*(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])codellama(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])codegemma(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])deepseekcoder(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])sonnet(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])opus(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])qwen[\d.]*-coder(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])deepseek-coder(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])kimi-.*-code(?:[-_/:.@\d]|$)/,
+  /(?:^|[-_/:.@])grok-code(?:[-_/:.@\d]|$)/,
+];
 
 /**
  * Check if a model id belongs to a code family (for `coding` category gate)
@@ -34,14 +59,10 @@ const codingIdCache = new Map();
  */
 export function isCodingModelId(modelId) {
   if (!modelId || typeof modelId !== "string") return false;
-  const lower = modelId.toLowerCase();
-  const cached = codingIdCache.get(lower);
-  if (cached !== undefined) return cached;
-  const result = lower.split(/[-_/ .@:]+/).filter(Boolean).some((tok) => CODING_ID_WORDS.has(tok));
-  // Bound cache: model-id universe is finite (~hundreds); cap defensively.
-  if (codingIdCache.size > 5000) codingIdCache.clear();
-  codingIdCache.set(lower, result);
-  return result;
+  const lower = modelId.normalize("NFKC").toLowerCase();
+  // Cap input: registry ids are short; pathological input truncates.
+  const scan = lower.length > 256 ? lower.slice(0, 256) : lower;
+  return CODING_ID_RES.some((re) => re.test(scan));
 }
 
 /**
@@ -133,12 +154,15 @@ function getHydratedSnapshot() {
 }
 
 /**
- * Generate candidate model list for an auto/* request on the fly
+ * Generate candidate model list for an auto/* request on the fly.
+ * No caller passes restrictions: all 3 production callers invoke with
+ * (modelStr) only — provider enablement/credentials/health are enforced
+ * downstream in the combo executor, not here. So fallbacks cannot bypass
+ * caller policy: there is no caller policy at this layer.
  * @param {string} modelStr - Requested model string (e.g. "auto/best-free", "auto/coding:fast")
- * @param {object} [options] - Optional context
  * @returns {{ name: string, models: string[], strategy: string } | null}
  */
-export function resolveVirtualAutoCombo(modelStr, options = {}) {
+export function resolveVirtualAutoCombo(modelStr) {
   if (!modelStr || !modelStr.startsWith("auto/")) {
     return null;
   }
