@@ -132,6 +132,7 @@ import p130 from "./freebuff.js";
 import p131 from "./zenmux-free.js";
 import p132 from "./aihubmix.js";
 import p133 from "./aipass.js";
+import p134 from "./tokenharbor.js";
 
 export default [
   p0,
@@ -267,4 +268,5 @@ export default [
   p131,
   p132,
   p133,
+  p134,
 ];
