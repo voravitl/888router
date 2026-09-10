@@ -19,7 +19,12 @@ function pickTransport(provider, sourceFormat, alias, model) {
 }
 
 describe("OpenCode Go model catalog", () => {
-  it("matches the documented model IDs", () => {
+  it("matches the static seed IDs (live catalog arrives via modelsFetcher)", () => {
+    // Static seed is the supportedFormats truth + offline fallback (FULL —
+    // trimmed-seed regressed claude/responses routing). The live catalog
+    // (GET /zen/go/v1/models, 36 ids) arrives via the dedicated opencode-go
+    // resolver in v1/models + dashboard, so new upstream models need no
+    // registry edit. This test pins the seed contract, not the live list.
     const ids = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
     expect(ids).toEqual([
       "glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6",
@@ -29,6 +34,15 @@ describe("OpenCode Go model catalog", () => {
       "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
       "ox-alpha-free",
     ]);
+  });
+
+  it("declares a live modelsFetcher so new upstream models sync without edits", async () => {
+    const REGISTRY = (await import("../../open-sse/providers/registry/index.js")).default;
+    const entry = REGISTRY.find((r) => r.id === "opencode-go");
+    expect(entry?.modelsFetcher).toMatchObject({
+      url: "https://opencode.ai/zen/go/v1/models",
+      type: "opencode-go",
+    });
   });
 });
 

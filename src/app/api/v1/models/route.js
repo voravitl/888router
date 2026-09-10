@@ -100,6 +100,20 @@ const LIVE_MODEL_RESOLVERS = {
       return null;
     }
   },
+  // OpenCode Go — public paid catalog via open-sse/services/opencodeGoModels.js
+  // (Bearer public, never the user key; 8s timeout; strict schema; 10-min
+  // cache + in-flight dedup; fail-open to null so the static seed serves).
+  // Live ids carry no supportedFormats — they route openai-only by the
+  // chatCore guard; the static seed stays the transport-capability truth.
+  "opencode-go": async () => {
+    try {
+      const { resolveOpenCodeGoModels } = await import("open-sse/services/opencodeGoModels.js");
+      const result = await resolveOpenCodeGoModels();
+      return result?.models?.length ? { models: result.models } : null;
+    } catch {
+      return null;
+    }
+  },
   aipass: async () => {
     try {
       const { listAipassModels } = await import("open-sse/services/aipassBridge.js");

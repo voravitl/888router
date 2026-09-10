@@ -18,6 +18,14 @@ const opencode_goConfig = {
     },
   },
   category: "apikey",
+  // Live catalog: GET https://opencode.ai/zen/go/v1/models (Bearer public)
+  // returns the current paid-catalog ids. /v1/models + dashboard use this via
+  // a dedicated opencode-go resolver (not the generic openai one — that one
+  // sends the user's private API key and has no public-credential concept).
+  // Static `models` below is the offline fallback AND the supportedFormats
+  // source of truth: live ids without a seed entry route openai-only.
+  modelsFetcher: { url: "https://opencode.ai/zen/go/v1/models", type: "opencode-go" },
+  passthroughModels: true,
   transport: {
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     headers: {},
@@ -30,6 +38,17 @@ const opencode_goConfig = {
     { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
     { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
   ],
+  // Static catalog: the supportedFormats source of truth AND the offline
+  // fallback. Live catalog (modelsFetcher GET /zen/go/v1/models, served via
+  // the dedicated opencode-go resolver in src/app/api/v1/models/route.js)
+  // adds newly-released upstream ids to /v1/models + dashboard WITHOUT
+  // registry edits — but live ids carry no supportedFormats, so they route
+  // openai-only by the chatCore guard. Full entries below (not one-per-family)
+  // so claude/responses-capable models keep their transports offline too.
+  // ox-alpha-free is kept even though absent from the live list: documented
+  // free tier (free-catalog row + OX_ALPHA_CAPABILITIES) and combo fallback
+  // member. passthroughModels stays true (pre-existing contract: forward
+  // client id untouched); the live catalog is discovery, not an allowlist.
   models: [
     { id: "glm-5.2", name: "GLM 5.2", supportedFormats: ["openai"] },
     { id: "glm-5.1", name: "GLM 5.1", supportedFormats: ["openai"] },
