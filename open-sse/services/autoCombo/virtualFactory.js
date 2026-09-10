@@ -135,6 +135,9 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
 
   // Collect all known models across providers
   const candidates = [];
+  // Tracks static-loop ids already pushed; declared here so the modality/dedup
+  // guard above can reference it (review: no-use-before-define).
+  const seenStatic = new Set();
 
   for (const [providerId, providerConfig] of Object.entries(PROVIDERS)) {
     if (!providerConfig || !Array.isArray(providerConfig.models)) continue;
@@ -143,12 +146,33 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       const modelId = typeof m === "string" ? m : m?.id;
       if (!modelId) continue;
 
+      // Modality gate: a chat combo must only contain chat models. Registry
+      // entries with an explicit non-chat kind (embedding/image/stt/tts/...)
+      // would otherwise leak in — e.g. an image model sent a text prompt
+      // fails at the provider, and duplicate bare ids across kinds (chat +
+      // stt sharing one id) produce duplicate combo members.
+      // String entries and objects without `kind` default to chat.
+      if (typeof m === "object" && m !== null && m.kind && m.kind !== "chat") {
+        continue;
+      }
+      // Dedup guard: the same bare id can appear twice in one provider's
+      // registry (e.g. gemini-2.5-flash as both chat and stt). Skip repeats
+      // so each provider/model appears at most once in candidates.
+      if (seenStatic.has(`${providerId}/${modelId}`)) continue;
+      seenStatic.add(`${providerId}/${modelId}`);
+
       const caps = getCapabilitiesForModel(providerId, modelId);
       // Free-tier gate uses ONLY model-level free status (isFreeCandidate).
       // Review round-2 #H2 — `providerConfig.hasFree` means "this provider
       // offers some free models", not "this model is free". Routing a paid
       // model into a free-tier request was a billing-correctness bug.
       const isFree = isFreeCandidate(providerId, modelId);
+
+      // Free-tier gate (mirrors the dynamic loop below): a free-tier request
+      // must only contain free models. Without this the static loop pushes
+      // every registry model, so paid models (e.g. paid gemini) leak into
+      // auto/best-free candidates and get picked ahead of real free models.
+      if (tier === "free" && !isFree) continue;
 
       // Filter by contextMin
       if (contextMin) {

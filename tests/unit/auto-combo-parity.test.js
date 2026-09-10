@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { parseAutoSuffix } from "../../open-sse/services/autoCombo/suffixComposition.js";
-import { resolveVirtualAutoCombo } from "../../open-sse/services/autoCombo/virtualFactory.js";
+import {
+  resolveVirtualAutoCombo,
+  isFreeCandidate,
+} from "../../open-sse/services/autoCombo/virtualFactory.js";
 import { getRotatedModels } from "../../open-sse/services/combo.js";
 
 describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
@@ -31,6 +34,37 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
     expect(codingCombo).not.toBeNull();
     expect(codingCombo.name).toBe("auto/best-coding");
     expect(codingCombo.models.length).toBeGreaterThan(0);
+  });
+
+  it("free-tier combos contain only free models (no paid leak)", () => {
+    for (const name of ["auto/best-free", "auto/best-free-1m", "auto/free-1m"]) {
+      const combo = resolveVirtualAutoCombo(name);
+      expect(combo).not.toBeNull();
+      expect(combo.models.length).toBeGreaterThan(0);
+      const leak = combo.models.filter((m) => {
+        const i = m.indexOf("/");
+        return !isFreeCandidate(m.slice(0, i), m.slice(i + 1));
+      });
+      expect(leak).toEqual([]);
+    }
+    // Explicit registry fixtures (not classifier-oracle): antigravity has no
+    // free-catalog rows so its paid gemini models must be excluded, while a
+    // known free registry model must be present.
+    const bestFree = resolveVirtualAutoCombo("auto/best-free");
+    expect(bestFree.models).not.toContain("antigravity/gemini-3.8-flash-high");
+    expect(bestFree.models).toContain("chatgpt-web/gpt-5.6-luna-free");
+    // No duplicate members: gemini-2.5-flash(-lite) exist twice in the gemini
+    // registry (chat + stt kinds) but must appear at most once.
+    for (const name of ["auto/best-free", "auto/best-free-1m"]) {
+      const models = resolveVirtualAutoCombo(name).models;
+      expect(new Set(models).size).toBe(models.length);
+    }
+    // No non-chat modality members: embedding/image/stt entries must not leak
+    // into a chat combo (they fail at the provider on text prompts).
+    expect(bestFree.models).not.toContain(
+      "openrouter/nvidia/llama-nemotron-embed-vl-1b-v2:free"
+    );
+    expect(bestFree.models).not.toContain("aipass/gpt-image-2");
   });
 
   it("applies p2c (Power of Two Choices) strategy rotation", () => {
