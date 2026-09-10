@@ -14,20 +14,18 @@ const FREE_MODEL_KEYS = new Set(
   FREE_MODEL_BUDGETS.map((m) => `${m.provider}/${m.modelId}`.toLowerCase())
 );
 
-// Code-family id matchers for the `coding` category gate. Capabilities carry
-// no `coding` signal (only vision/reasoning/tools), so the category falls back
-// to id matching. Two matcher kinds:
-// - WORD matchers (boundary-anchored): "code" as a standalone hyphen/slash
-//   token (kimi-k2.7-code, grok-code-fast-1) but NOT inside "encoder"/"codec".
-// - FAMILY matchers (narrow policy): families whose primary training purpose
-//   is code. Generalist chat families (plain qwen3, gemini-flash, gpt-*) are
-//   intentionally EXCLUDED even if code-capable — a `coding` request must mean
-//   code-specialist, not "any strong chat model".
-// NOTE: coverage is partial by design — non-matching models are excluded from
-// coding requests, not omitted by accident.
-const CODING_ID_WORDS = ["coder", "codex", "coding", "code", "devstral", "codestral", "starcoder"];
-// Single-token code-specialist families (whole-token match only).
-const CODING_ID_FAMILY_TOKENS = new Set(["sonnet", "opus"]);
+// Code-specialist token matchers for the `coding` category gate.
+// Capabilities carry no `coding` signal (only vision/reasoning/tools), so the
+// category falls back to whole-token id matching: tokenize on every model-id
+// delimiter (including `:` for `:free`-suffixed ids like vendor-code:free)
+// and match whole tokens only — "encoder"/"codec"/"sonnetized-chat" never
+// match. `sonnet`/`opus` tokens are included as Claude code flagships
+// (verified: no *-embedding opus ids exist in the registry).
+// Generalist chat families (plain qwen3, gemini-flash, gpt-*) are excluded.
+// Memoized per normalized id (LOW finding: avoid re-tokenizing every model
+// on every resolution across large registries).
+const CODING_ID_WORDS = new Set(["coder", "codex", "coding", "code", "devstral", "codestral", "starcoder", "sonnet", "opus"]);
+const codingIdCache = new Map();
 
 /**
  * Check if a model id belongs to a code family (for `coding` category gate)
@@ -37,19 +35,13 @@ const CODING_ID_FAMILY_TOKENS = new Set(["sonnet", "opus"]);
 export function isCodingModelId(modelId) {
   if (!modelId || typeof modelId !== "string") return false;
   const lower = modelId.toLowerCase();
-  // Tokenize on every model-id delimiter (including `:` for `:free`
-  // suffixed ids like vendor-code:free) and match whole tokens only —
-  // "encoder"/"codec"/"sonnetized-chat" must not match.
-  const tokens = new Set(lower.split(/[-_/ .@:]+/).filter(Boolean));
-  if (CODING_ID_WORDS.some((w) => tokens.has(w))) return true;
-  // Family tokens: whole-token only, so "my-opus-embedding" matches the
-  // "opus" token (accepted: opus-family ids are Claude code flagships;
-  // embedding-suffixed opus ids don't exist in the registry — verified).
-  for (const t of tokens) {
-    if (CODING_ID_FAMILY_TOKENS.has(t)) return true;
-    if (t === "qwen-coder" || t === "qwen3-coder" || t === "kimi-coder" || t === "deepseek-coder") return true;
-  }
-  return false;
+  const cached = codingIdCache.get(lower);
+  if (cached !== undefined) return cached;
+  const result = lower.split(/[-_/ .@:]+/).filter(Boolean).some((tok) => CODING_ID_WORDS.has(tok));
+  // Bound cache: model-id universe is finite (~hundreds); cap defensively.
+  if (codingIdCache.size > 5000) codingIdCache.clear();
+  codingIdCache.set(lower, result);
+  return result;
 }
 
 /**
@@ -167,11 +159,13 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
   const dynSnapshot = getHydratedSnapshot();
 
   const category = parsed.category || "chat";
-  // `requestedTier` is what the caller asked for (preserved for strategy +
-  // metadata); `freeOnly` is the filter policy. `cheap` has no price signal
-  // to filter on — the only verifiable cheap set is the free set — so cheap
-  // requests filter free-only, but the tier label and the cheap strategy
-  // (cache-optimized) are preserved, not rewritten to free/reset-aware.
+  // `requestedTier` is what the caller asked for (preserved for strategy).
+  // `freeOnly` is the filter policy. BREAKING-CHANGE NOTE (declared, not
+  // silent): `cheap` has no price metadata to filter on — the only verifiable
+  // cheap set is the free set — so cheap requests filter free-only. Previous
+  // behavior returned paid models under the cheap label (787 paid in
+  // auto/cheap), which was the billing-correctness bug this change fixes.
+  // The cheap strategy default (cache-optimized) is preserved.
   const requestedTier = parsed.tier || "pro";
   const freeOnly = requestedTier === "free" || requestedTier === "cheap";
   const contextMin = parsed.contextMin || (suffix.includes("1m") ? 1000000 : null);
@@ -307,20 +301,20 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
     }
   }
 
-  // If no candidates found, fallback to standard defaults.
-  // Every fallback entry runs through the SAME gates as a normal candidate
-  // (free-tier, contextMin, category, registry chat-kind) — a fallback that
-  // fails a gate is skipped, not pushed. If nothing passes, return null
-  // (fail closed) instead of a combo that violates the request constraints.
-  // INVARIANT: each list entry MUST exist in the PROVIDERS registry as a
-  // chat-kind model (pinned by FALLBACK_SPOT_CHECKS in
-  // auto-combo-parity.test.js). Ghost entries fail at request time with
-  // "Invalid model format"; non-chat kinds fail at the provider.
+  // If no candidates found, fallback to standard defaults. Each list entry
+  // is validated at BUILD time (not runtime) by FALLBACK_SPOT_CHECKS in
+  // auto-combo-parity.test.js: must exist in PROVIDERS as a chat-kind model
+  // AND pass its branch gates (free-tier, contextMin, category). The runtime
+  // re-check below is defense-in-depth for a registry that changed between
+  // test and deploy. Entries are trusted last-resort routes for transient
+  // states (empty registry snapshot, cold dynamic cache) — they are NOT
+  // subject to provider enablement/credential/health filtering, which lives
+  // downstream in the combo executor, not in this resolver.
+  // If nothing passes, return null (fail closed). `null` is a pre-existing
+  // contract (invalid suffixes already return null) and all 3 callers are
+  // null-safe: v1/models + models/info skip via `?.`/length checks,
+  // getComboModels falls through to the named-combo lookup.
   if (candidates.length === 0) {
-    // NOTE on reachability: entries that pass every gate below would normally
-    // have been collected by the static loop already — these lists are
-    // last-resort routes for transient states (empty registry snapshot,
-    // cold dynamic cache), not a second registry scan.
     const FALLBACKS =
       freeOnly
         ? contextMin && contextMin >= 1000000
@@ -340,18 +334,22 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
           ? [
               "anthropic/claude-sonnet-4-20250514",
               "tokenrouter/qwen/qwen3-coder-next",
-              "deepseek/deepseek-chat",
+              "tokenrouter/moonshotai/kimi-k2.7-code",
             ]
           : ["openai/gpt-4o", "anthropic/claude-sonnet-4-20250514"];
     for (const modelStr of FALLBACKS) {
       const i = modelStr.indexOf("/");
+      // Guard malformed entries (no slash / empty side) instead of slicing
+      // garbage provider/model values.
+      if (i <= 0 || i === modelStr.length - 1) continue;
       const fProvider = modelStr.slice(0, i);
       const fModel = modelStr.slice(i + 1);
-      // Registry validation first: reject ghosts and non-chat kinds before
-      // any other gate (stale lists must fail closed, not route to a model
-      // that errors with "Invalid model format" or fails at the provider).
+      // Case-insensitive registry lookup: FREE_MODEL_KEYS is lowercased, so
+      // `Provider/Model` must resolve the same entry as `provider/model`.
       const fEntry = PROVIDERS[fProvider]?.models?.find((m) =>
-        typeof m === "string" ? m === fModel : m?.id === fModel
+        typeof m === "string"
+          ? m.toLowerCase() === fModel.toLowerCase()
+          : m?.id?.toLowerCase() === fModel.toLowerCase()
       );
       if (!fEntry) continue;
       if (

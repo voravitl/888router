@@ -124,62 +124,113 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
   });
 
   it("fallback path applies all gates and fails closed on empty", async () => {
-    // Force the fallback branch: a 1m request no registry model can satisfy.
-    const impossible = resolveVirtualAutoCombo("auto/best-free-1m", {});
-    expect(impossible === null || impossible.models.length > 0).toBe(true);
-    if (impossible) {
-      // Every -1m model must prove its context window (fail closed on unknown).
-      const { resolveKnownContextWindow } = await import(
-        "../../open-sse/providers/capabilities.js"
-      );
-      for (const m of impossible.models) {
-        const i = m.indexOf("/");
-        const cw = resolveKnownContextWindow(m.slice(0, i), m.slice(i + 1));
-        expect(cw).toBeGreaterThanOrEqual(1000000);
-      }
-    }
-  });
-
-  it("fallback entries exist in registry as chat-kind models", async () => {
+    // Property test over every resolvable auto/ combo: each returned member
+    // must satisfy the request's own gates (tier, context, category) AND be
+    // a registered chat-kind model. Covers normal + fallback branches alike.
     const { PROVIDERS } = await import(
       "../../open-sse/config/providers.js"
     );
-    const { FREE_MODEL_BUDGETS } = await import(
-      "../../open-sse/config/freeModelCatalog.data.js"
+    const { resolveKnownContextWindow } = await import(
+      "../../open-sse/providers/capabilities.js"
     );
-    const freeKeys = new Set(
-      FREE_MODEL_BUDGETS.map((f) =>
-        `${f.provider}/${f.modelId}`.toLowerCase()
-      )
-    );
-    const FALLBACK_SPOT_CHECKS = [
-      // [modelStr, mustBeFree]
-      ["tokenrouter/moonshotai/kimi-k3-free", false], // :free suffix
-      ["tokenrouter/z-ai/glm-5.3-free", false], // :free suffix
-      ["opencode/deepseek-v4-flash-free", true],
-      ["opencode-go/ox-alpha-free", false], // :free suffix
-      ["chatgpt-web/gpt-5.6-luna-free", true],
-      ["bazaarlink/auto:free", true],
-      ["anthropic/claude-sonnet-4-20250514", false],
-      ["deepseek/deepseek-chat", false],
-      ["tokenrouter/qwen/qwen3-coder-next", false],
-      ["openai/gpt-4o", false],
+    const combos = [
+      "auto/best-free",
+      "auto/best-free-1m",
+      "auto/free-1m",
+      "auto/best-coding",
+      "auto/cheap",
+      "auto/coding:cheap",
+      "auto/coding:free",
+      "auto/vision:free",
+      "auto/reasoning:free",
     ];
-    for (const [modelStr, mustBeFree] of FALLBACK_SPOT_CHECKS) {
+    for (const name of combos) {
+      const combo = resolveVirtualAutoCombo(name);
+      expect(combo, `${name} resolves`).not.toBeNull();
+      expect(combo.models.length, `${name} non-empty`).toBeGreaterThan(0);
+      const isFreeTier = name.includes("free") || name.includes("cheap");
+      const needs1m = name.includes("1m");
+      const needsCoding = name.includes("coding");
+      for (const m of combo.models) {
+        const i = m.indexOf("/");
+        expect(i, `${m} has provider/model shape`).toBeGreaterThan(0);
+        const prov = m.slice(0, i);
+        const mid = m.slice(i + 1);
+        if (isFreeTier) {
+          expect(isFreeCandidate(prov, mid), `${m} free`).toBe(true);
+        }
+        if (needs1m) {
+          const cw = resolveKnownContextWindow(prov, mid);
+          expect(cw, `${m} cw>=1m`).toBeGreaterThanOrEqual(1000000);
+        }
+        if (needsCoding) {
+          expect(isCodingModelId(mid), `${m} coding`).toBe(true);
+        }
+        const reg = (PROVIDERS[prov]?.models || []).find((x) =>
+          typeof x === "string"
+            ? x.toLowerCase() === mid.toLowerCase()
+            : x?.id?.toLowerCase() === mid.toLowerCase()
+        );
+        expect(reg, `${m} in registry`).toBeTruthy();
+        const kind = typeof reg === "object" ? reg.kind || "chat" : "chat";
+        expect(kind, `${m} chat-kind`).toBe("chat");
+      }
+      // No duplicate members.
+      expect(new Set(combo.models).size, `${name} deduped`).toBe(
+        combo.models.length
+      );
+    }
+  });
+
+  it("fallback entries pass their own branch gates (build-time validation)", async () => {
+    // Each fallback list entry must pass the gates of the branch that
+    // contains it — using the SAME production predicates (not duplicated
+    // partial logic). Validates registry presence + chat-kind + the branch's
+    // tier/context/category gates.
+    const { PROVIDERS } = await import(
+      "../../open-sse/config/providers.js"
+    );
+    const { resolveKnownContextWindow } = await import(
+      "../../open-sse/providers/capabilities.js"
+    );
+    // [modelStr, branch]: branch gates mirror the FALLBACKS selection.
+    const FALLBACK_SPOT_CHECKS = [
+      ["tokenrouter/moonshotai/kimi-k3-free", "free-1m"],
+      ["tokenrouter/z-ai/glm-5.3-free", "free-1m"],
+      ["opencode/deepseek-v4-flash-free", "free-1m"],
+      ["opencode-go/ox-alpha-free", "free-1m"],
+      ["chatgpt-web/gpt-5.6-luna-free", "free-1m"],
+      ["opencode/deepseek-v4-flash-free", "free"],
+      ["chatgpt-web/gpt-5.6-luna-free", "free"],
+      ["bazaarlink/auto:free", "free"],
+      ["anthropic/claude-sonnet-4-20250514", "coding"],
+      ["tokenrouter/qwen/qwen3-coder-next", "coding"],
+      ["tokenrouter/moonshotai/kimi-k2.7-code", "coding"],
+      ["openai/gpt-4o", "general"],
+    ];
+    for (const [modelStr, branch] of FALLBACK_SPOT_CHECKS) {
       const i = modelStr.indexOf("/");
+      expect(i, `${modelStr} has slash`).toBeGreaterThan(0);
       const prov = modelStr.slice(0, i);
       const mid = modelStr.slice(i + 1);
       const reg = (PROVIDERS[prov]?.models || []).find((x) =>
-        typeof x === "string" ? x === mid : x?.id === mid
+        typeof x === "string"
+          ? x.toLowerCase() === mid.toLowerCase()
+          : x?.id?.toLowerCase() === mid.toLowerCase()
       );
       expect(reg, `${modelStr} in registry`).toBeTruthy();
       const kind = typeof reg === "object" ? reg.kind || "chat" : "chat";
       expect(kind, `${modelStr} chat-kind`).toBe("chat");
-      const isFree =
-        freeKeys.has(modelStr.toLowerCase()) ||
-        mid.endsWith(":free") ||
-        mid.includes("free");
-      if (mustBeFree) expect(isFree, `${modelStr} free`).toBe(true);
+      if (branch === "free-1m" || branch === "free") {
+        expect(isFreeCandidate(prov, mid), `${modelStr} free`).toBe(true);
+      }
+      if (branch === "free-1m") {
+        const cw = resolveKnownContextWindow(prov, mid);
+        expect(cw, `${modelStr} cw>=1m`).toBeGreaterThanOrEqual(1000000);
+      }
+      if (branch === "coding") {
+        expect(isCodingModelId(mid), `${modelStr} coding`).toBe(true);
+      }
     }
   });
 
