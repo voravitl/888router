@@ -85,10 +85,12 @@ describe("tokenharbor provider registration", () => {
     expect(checkFallbackError(404, "not found").modelError).toBe(true);
   });
 
-  it("free gate rejects lookalike non-free ids (no suffix spoofing)", async () => {
-    // isFreeCandidate is substring-based by design (matches the :free family
-    // convention); these assertions pin the boundary so a future gate change
-    // is deliberate, not silent.
+  it("free gate is substring-based by design (pins current boundary)", async () => {
+    // isFreeCandidate matches any id containing "free" (the :free family
+    // convention shared by all providers) — NOT a strict :free suffix. The
+    // registry seed + live catalog remain the real allowlist; the gate only
+    // decides free-tier candidacy. These assertions pin the boundary so a
+    // future gate tightening is deliberate, not silent.
     const { isFreeCandidate } = await import("../../open-sse/services/autoCombo/virtualFactory.js");
     expect(isFreeCandidate("tokenharbor", "deepseek-v4-flash:free-suffix")).toBe(true); // contains "free"
     expect(isFreeCandidate("tokenharbor", "deepseek-v4-flash")).toBe(false);
