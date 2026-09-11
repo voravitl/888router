@@ -46,13 +46,19 @@ describe("OpenCode Go honors chatCore runtimeTransport (#385)", () => {
     expect(zen.buildHeaders(GO_KEY, true, "", model).Authorization).toBe("Bearer public");
   });
 
-  it("keeps ox-alpha-free on Go with the API key (not Zen public)", () => {
-    const c = cred("openai");
-    expect(go.buildUrl("ox-alpha-free", true, 0, c)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
-    expect(go.buildHeaders(c, true, "", "ox-alpha-free").Authorization).toBe("Bearer sk-test-opencode-key");
-    // No RT: Go provider still must not drop the key because of the -free suffix.
-    expect(go.buildUrl("ox-alpha-free", true, 0, GO_KEY)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
-    expect(go.buildHeaders(GO_KEY, true, "", "ox-alpha-free").Authorization).toBe("Bearer sk-test-opencode-key");
+  it("never treats -free-suffixed opencode-go models as Zen public", () => {
+    // The -free suffix is what triggered the original defect (ox-alpha-free
+    // rerouted to /zen/v1 with Bearer public before the provider guard).
+    // Use a live -free Go id shape (laguna-s-2.1-free: caps entry exists for
+    // opencode-go) plus a synthetic future id to cover passthroughModels.
+    for (const model of ["laguna-s-2.1-free", "future-go-model-free"]) {
+      const c = cred("openai");
+      expect(go.buildUrl(model, true, 0, c)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+      expect(go.buildHeaders(c, true, "", model).Authorization).toBe("Bearer sk-test-opencode-key");
+      // No RT: Go provider still must not drop the key because of the suffix.
+      expect(go.buildUrl(model, true, 0, GO_KEY)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+      expect(go.buildHeaders(GO_KEY, true, "", model).Authorization).toBe("Bearer sk-test-opencode-key");
+    }
   });
 
   it("floors max_output_tokens on the Go Responses path", () => {

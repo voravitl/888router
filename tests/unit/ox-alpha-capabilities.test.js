@@ -1,5 +1,7 @@
 // Ox Alpha capability + effort handling.
-// Sources: models.dev (opencode/x-preview-f-free, opencode-go/ox-alpha-free)
+// Sources: models.dev (opencode/x-preview-f-free; openrouter/nous stealth/
+// ox-alpha). opencode-go/ox-alpha-free REMOVED 2026-09-10: absent from the
+// live GET /zen/go/v1/models catalog (36 ids, has omen-alpha instead).
 // reasoning_options [low, high, max]; image input; 1M / 131k.
 import { describe, expect, it } from "vitest";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
@@ -14,8 +16,6 @@ const OX_PAIRS = [
   ["opencode", FREE_ID],
   ["oc", FREE_ID],
   ["opencode-zen", FREE_ID],
-  ["opencode-go", GO_ID],
-  ["ocg", GO_ID],
   ["openrouter", "stealth/ox-alpha"],
   ["openrouter", "ox-alpha"],
   ["nousresearch", "stealth/ox-alpha"],
@@ -36,15 +36,21 @@ describe("Ox Alpha capability entries (provider-scoped)", () => {
 
   it("bare ids without a provider keep default (no vision)", () => {
     expect(getCapabilitiesForModel(null, FREE_ID).vision).toBe(false);
-    expect(getCapabilitiesForModel(null, GO_ID).vision).toBe(false);
     expect(getCapabilitiesForModel(undefined, FREE_ID).thinkingFormat === "openai-low-high-max").toBe(false);
+  });
+
+  it("removed opencode-go/ox-alpha-free falls back to default caps", () => {
+    // Guard against resurrection: the id must NOT regain Ox Alpha caps
+    // unless deliberately re-added with live-catalog evidence.
+    expect(getCapabilitiesForModel("opencode-go", GO_ID).vision).toBe(false);
+    expect(getCapabilitiesForModel("ocg", GO_ID).thinkingFormat).not.toBe("openai-low-high-max");
   });
 
   it("mismatched providers do not pick up Ox Alpha format", () => {
     expect(getCapabilitiesForModel("nvidia", FREE_ID).vision).toBe(false);
     expect(getCapabilitiesForModel("nvidia", GO_ID).vision).toBe(false);
     expect(getCapabilitiesForModel("openai", FREE_ID).thinkingFormat).not.toBe("openai-low-high-max");
-    expect(getCapabilitiesForModel("kiro", GO_ID).thinkingFormat).not.toBe("openai-low-high-max");
+    expect(getCapabilitiesForModel("kiro", FREE_ID).thinkingFormat).not.toBe("openai-low-high-max");
   });
 
   it("suffix '(max)' resolves to identical caps for all pairs", () => {
@@ -54,7 +60,7 @@ describe("Ox Alpha capability entries (provider-scoped)", () => {
   });
 
   it("numeric suffix '(8192)' resolves to identical caps", () => {
-    expect(getCapabilitiesForModel("ocg", `${GO_ID}(8192)`)).toEqual(getCapabilitiesForModel("ocg", GO_ID));
+    expect(getCapabilitiesForModel("oc", `${FREE_ID}(8192)`)).toEqual(getCapabilitiesForModel("oc", FREE_ID));
   });
 
   it("generic claude-sonnet-4.6(max) equals its base caps (existing behavior kept)", () => {
@@ -95,11 +101,11 @@ describe("Ox Alpha effort mapping (openai-low-high-max)", () => {
     ["max", "max"],
     ["ultra", "max"],
   ])("maps %s -> max", (input, expected) => {
-    expect(apply({ reasoning_effort: input }, "opencode-go", GO_ID).reasoning_effort).toBe(expected);
+    expect(apply({ reasoning_effort: input }, "opencode", FREE_ID).reasoning_effort).toBe(expected);
   });
 
   it("auto omits reasoning_effort (upstream default applies)", () => {
-    expect(apply({ reasoning_effort: "auto" }, "ocg", GO_ID).reasoning_effort).toBeUndefined();
+    expect(apply({ reasoning_effort: "auto" }, "oc", FREE_ID).reasoning_effort).toBeUndefined();
   });
 
   it("unknown level omits reasoning_effort", () => {
