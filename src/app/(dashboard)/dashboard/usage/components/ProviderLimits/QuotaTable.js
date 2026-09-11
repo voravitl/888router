@@ -95,22 +95,43 @@ export default function QuotaTable({
   // Family rollup rows (antigravity `Gemini (all models)` /
   // `Claude (all models)` — flagged via `family` by the usage handler)
   // render FIRST as the primary bars; per-model rows follow for drill-down.
-  const normalizedQuotas = useMemo(
-    () => quotas.map((quota, index) => ({
+  // Family rows are pinned above pagination (#403): with 13 antigravity rows
+  // vs PAGE_SIZE=10 the rollups must stay visible even on later pages.
+  const familyRows = useMemo(
+    () => quotas.filter((quota) => typeof quota?.family === "string").map((quota, index) => ({
       ...quota,
-      index,
+      index: `family-${index}`,
       remaining: getRemainingPercentage(quota),
-      isFamily: typeof quota?.family === "string",
-    })).sort((a, b) => Number(b.isFamily) - Number(a.isFamily)),
+      isFamily: true,
+    })),
     [quotas],
   );
 
-  const sortedQuotas = useMemo(
-    () => sortQuotas(normalizedQuotas, sortMode),
-    [normalizedQuotas, sortMode],
+  const modelRows = useMemo(
+    () =>
+      quotas
+        .filter((quota) => typeof quota?.family !== "string")
+        .map((quota, index) => ({
+          ...quota,
+          index,
+          remaining: getRemainingPercentage(quota),
+          isFamily: false,
+        })),
+    [quotas],
   );
 
-  const totalPages = Math.max(1, Math.ceil(sortedQuotas.length / PAGE_SIZE));
+  const sortedModelRows = useMemo(
+    () => sortQuotas(modelRows, sortMode),
+    [modelRows, sortMode],
+  );
+  const sortedFamilyRows = useMemo(
+    () => sortQuotas(familyRows, sortMode),
+    [familyRows, sortMode],
+  );
+
+  // Paginate per-model rows only; family rollups stay pinned on every
+  // page (#403). totalPages / Showing counts cover model rows alone.
+  const totalPages = Math.max(1, Math.ceil(sortedModelRows.length / PAGE_SIZE));
 
   useEffect(() => {
     setPage(1);
@@ -124,12 +145,14 @@ export default function QuotaTable({
     return null;
   }
 
-  const currentPageRows = sortedQuotas.slice(
+  const pagedModelRows = sortedModelRows.slice(
     (page - 1) * PAGE_SIZE,
     page * PAGE_SIZE,
   );
-  const pageStart = sortedQuotas.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const pageEnd = Math.min(page * PAGE_SIZE, sortedQuotas.length);
+  const currentPageRows = [...sortedFamilyRows, ...pagedModelRows];
+  const pageStart = sortedModelRows.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(page * PAGE_SIZE, sortedModelRows.length);
+  const totalRows = sortedFamilyRows.length + sortedModelRows.length;
 
   const cellPad = compact ? "py-1 px-1.5" : "py-2 px-3";
   const nameText = compact ? "text-[11px]" : "text-sm";
@@ -141,7 +164,7 @@ export default function QuotaTable({
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[10px] text-text-muted">
-          {sortedQuotas.length} quota{sortedQuotas.length > 1 ? "s" : ""}
+          {totalRows} quota{totalRows > 1 ? "s" : ""}
         </div>
         {showSortLabel && (
           <div className="rounded-md border border-black/10 bg-black/[0.02] px-2 py-1 text-[10px] text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
@@ -237,7 +260,7 @@ export default function QuotaTable({
         <div className="rounded-md border border-black/10 bg-black/[0.02] px-2 py-1.5 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="flex items-center justify-between gap-2 text-[10px] text-text-muted">
             <span>
-              Showing {pageStart}-{pageEnd} of {sortedQuotas.length}
+              Showing {pageStart}-{pageEnd} of {sortedModelRows.length}
             </span>
             <span>
               Page {page} / {totalPages}

@@ -347,6 +347,14 @@ export function parseQuotaData(provider, data) {
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
+              // Family rollup rows ("Gemini (all models)" / "Claude (all models)")
+              // carry family/familyKey/memberCount from the usage handler —
+              // forward them so QuotaTable's family-first sort can lift the
+              // rollup bars above per-model rows (#403).
+              ...(quota.family !== undefined ? { family: quota.family } : {}),
+              ...(quota.familyKey !== undefined ? { familyKey: quota.familyKey } : {}),
+              ...(quota.memberCount !== undefined ? { memberCount: quota.memberCount } : {}),
+              ...(quota.displayName !== undefined ? { displayName: quota.displayName } : {}),
             });
           });
         }
