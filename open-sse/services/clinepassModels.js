@@ -7,9 +7,10 @@ const FETCH_TIMEOUT_MS = 5000;
 // content-length is advisory only — the stream cap is the real enforcement
 // (compressed bodies can expand far beyond declared length).
 const MAX_CATALOG_BYTES = 2 * 1024 * 1024;
-// Cap accepted models: scan at most this many raw records, keep at most this
-// many valid ones. Malformed leading records can't starve valid tail entries.
-const MAX_RAW_RECORDS = 5000;
+// Cap accepted models: keep at most MAX_MODELS valid ones. The whole
+// byte-bounded body is scanned (no raw-record cap) so malformed leading
+// records can never starve valid tail entries — the 2MB body cap already
+// bounds worst-case parse work.
 const MAX_MODELS = 1000;
 // Strict segment grammar: lowercase alnum start, then alnum + . _ - and at
 // most one trailing :suffix (the :free / :batch variant marker — part of the
@@ -148,9 +149,7 @@ export async function resolveClinepassModels(credentials) {
     // request time.
     const seen = new Set();
     const models = [];
-    let inspected = 0;
     for (const m of rawList) {
-      if (++inspected > MAX_RAW_RECORDS) break;
       if (models.length >= MAX_MODELS) break;
       const id = typeof m?.id === "string" ? m.id.trim() : "";
       if (!id || id.length > 256 || seen.has(id)) continue;
