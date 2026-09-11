@@ -1,3 +1,9 @@
+# v0.15.95 (2026-09-11)
+
+## Antigravity Quota UI
+
+- **Family-only quota display**: QuotaTable displays exclusively the pooled `Gemini (all models)` and `Claude (all models)` family rollup bars when family rollups exist, omitting redundant per-model rows to keep the card compact without pagination clutter.
+
 # v0.15.94 (2026-09-11)
 
 ## Quota Tracker fix
