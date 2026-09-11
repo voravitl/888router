@@ -224,7 +224,10 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         // excluded — separate pool, not part of the LLM quota. The check
         // uses the registry `kind`, not the id: image ids also start with
         // "gemini" (e.g. gemini-3.1-flash-image) and a prefix test alone
-        // would wrongly pull them in.
+        // would wrongly pull them in. Non-gemini/claude members (e.g.
+        // gpt-oss-120b-medium) stay per-model only — no third family, by
+        // intent (rollup covers the two pooled families the user asked
+        // about; a new pooled family means a new explicit branch here).
         const lowerKey = modelKey.toLowerCase();
         const registryKind = PROVIDERS?.antigravity?.models?.find(
           (m) => typeof m === "object" && m !== null && m.id === modelKey
@@ -234,7 +237,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
             ? null
             : lowerKey.startsWith("claude")
               ? "claude"
-              : lowerKey.startsWith("gemini") || modelKey === "gemini-pro-agent"
+              : lowerKey.startsWith("gemini") || lowerKey.startsWith("gemini-pro-agent")
                 ? "gemini"
                 : null;
         if (family) {
