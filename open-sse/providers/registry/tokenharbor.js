@@ -1,6 +1,6 @@
 const tokenharborConfig = {
   id: "tokenharbor",
-  priority: 70,
+  priority: 71,
   alias: "tokenharbor",
   aliases: [
     "th",
@@ -10,7 +10,7 @@ const tokenharborConfig = {
   display: {
     name: "TokenHarbor",
     icon: "hub",
-    color: "#0EA5E9",
+    color: "#0D9488",
     textIcon: "TH",
     website: "https://tokenharbor.ai/",
     notice: {

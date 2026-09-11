@@ -64,6 +64,16 @@ describe("tokenharbor provider registration", () => {
     ]);
   });
 
+  it("short aliases resolve via ALIAS_TO_ID + getProviderByAlias", async () => {
+    const { ALIAS_TO_ID, getProviderByAlias } = await import("../../src/shared/constants/providers.js");
+    expect(ALIAS_TO_ID["th"]).toBe("tokenharbor");
+    expect(ALIAS_TO_ID["token-harbor"]).toBe("tokenharbor");
+    expect(getProviderByAlias("th")?.id).toBe("tokenharbor");
+    expect(getProviderByAlias("token-harbor")?.id).toBe("tokenharbor");
+    // No silent collision: th is owned by tokenharbor only.
+    expect(ALIAS_TO_ID["tokenharbor"]).toBe("tokenharbor");
+  });
+
   it("free members appear in auto/best-free candidates", async () => {
     const { resolveVirtualAutoCombo } = await import("../../open-sse/services/autoCombo/virtualFactory.js");
     const combo = resolveVirtualAutoCombo("auto/best-free");

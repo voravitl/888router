@@ -35,6 +35,7 @@ function buildProviderEntry(r) {
     ...(r.authModes ? { authModes: r.authModes } : {}),
     ...(r.authType ? { authType: r.authType } : {}),
     ...(r.authHint ? { authHint: r.authHint } : {}),
+    ...(Array.isArray(r.aliases) && r.aliases.length ? { allAliases: [...r.aliases] } : {}),
   };
 }
 
@@ -107,10 +108,16 @@ export const AUTH_METHODS = {
   cookie: { id: "cookie" },
 };
 
-// Helper: Get provider by alias
+// Helper: Get provider by alias (primary alias, id, or any of aliases[]).
+// buildProviderEntry drops registry `aliases`, so carry them through as
+// `allAliases` and match here — otherwise short aliases like th never
+// resolve (review finding on tokenharbor).
 export function getProviderByAlias(alias) {
   for (const provider of Object.values(AI_PROVIDERS)) {
     if (provider.alias === alias || provider.id === alias) {
+      return provider;
+    }
+    if (Array.isArray(provider.allAliases) && provider.allAliases.includes(alias)) {
       return provider;
     }
   }
@@ -129,9 +136,13 @@ export function getProviderAlias(providerId) {
   return provider?.alias || providerId;
 }
 
-// Alias to ID mapping (for quick lookup)
+// Alias to ID mapping (for quick lookup) — includes every aliases[] entry,
+// not just the primary alias, so short aliases (th, oc, ag, ...) resolve.
 export const ALIAS_TO_ID = Object.values(AI_PROVIDERS).reduce((acc, p) => {
   acc[p.alias] = p.id;
+  for (const a of p.allAliases || []) {
+    if (!(a in acc)) acc[a] = p.id;
+  }
   return acc;
 }, {});
 
