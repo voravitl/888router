@@ -1,3 +1,14 @@
+# v0.15.93 (2026-09-11)
+
+## Providers, combos & quota
+
+- **New provider `tokenharbor.ai`** (OpenAI-compatible, Bearer key): 21-surface seed from the public /models page (18 paid + 3 free: `deepseek-v4.1-flash:free`, `deepseek-v4-flash:free`, `mimo-v2.5:free`), generic openai modelsFetcher syncs live after a key, passthroughModels forward-compat. Free rows join `auto/best-free` via the free gate. Closes #399.
+- **ClinePass live catalog fixed**: resolver accepted only `cline-pass/`-prefixed ids but the live wire uses bare `provider/model` — sync returned null forever, hiding 19 live `:free` ids. Strict bare-id schema (segment grammar, 2MB streamed body cap, display-name sanitize), fail-open. Closes #397.
+- **Removed stale `ox-alpha-free`**: absent from live opencode-go catalog (36 ids, `omen-alpha` instead). Dropped from seed, combo fallback, caps; tests repointed + resurrection guard.
+- **Auto-combo correctness** (closes #389): free-tier gate on the static loop (paid gemini/anthropic leaked into `best-free`), non-chat modality gate + dedup, `coding` category gate (token-based `isCodingModelId`), `cheap` folds to free-only keeping its own strategy, registry-verified gated fallbacks failing closed.
+- **OpenCode Go live sync** (closes #393): dedicated `opencode-go` resolver (Bearer public, 8s timeout, strict schema, 10-min cache + 30s neg-cache, in-flight dedup) shared by /v1/models and dashboard; static seed stays the transport-capability truth.
+- **Antigravity Quota Tracker** (closes #391): Gemini (all models) + Claude (all models) family rollup bars (MIN fraction + earliest reset); per-model rows stay for drill-down.
+
 # v0.15.92 (2026-09-08)
 
 ## Chore: Remove broken `duckduckgo-web` provider
