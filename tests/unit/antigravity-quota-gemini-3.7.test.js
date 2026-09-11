@@ -76,6 +76,7 @@ describe("Antigravity quota tracker: Gemini 3.7 Flash usage bars", () => {
       "gemini-3.7-flash-medium",
       "gemini-3.7-flash-low",
       "gemini-3.6-flash-high",
+      "Gemini (all models)",
     ]);
   });
 

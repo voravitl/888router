@@ -3,6 +3,7 @@
  */
 
 import { CLIENT_METADATA } from "../../config/appConstants.js";
+import { PROVIDERS } from "../../providers/index.js";
 import { ANTIGRAVITY_OAUTH_CLIENT, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
 
@@ -181,6 +182,15 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'gemini-3.1-flash-image',
       ];
 
+      // Family rollup: Gemini versions share one pooled quota server-side, so
+      // per-version bars all move together and confuse. Aggregate per family
+      // (Gemini total / Claude total) using the MINIMUM remaining fraction —
+      // the tightest pool is what the user can actually still spend.
+      // Per-model rows are kept under `models` for drill-down; the UI renders
+      // the two `families` rows as the primary bars.
+      const familyFractions = { gemini: [], claude: [] };
+      const familyResets = { gemini: [], claude: [] };
+
       for (const [modelKey, info] of Object.entries(data.models)) {
         // Skip models without quota info
         if (!info.quotaInfo) {
@@ -208,6 +218,55 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           remainingPercentage,
           unlimited: false,
           displayName: info.displayName || modelKey,
+        };
+
+        // Classify into family for rollup. Non-LLM modalities (image) are
+        // excluded — separate pool, not part of the LLM quota. The check
+        // uses the registry `kind`, not the id: image ids also start with
+        // "gemini" (e.g. gemini-3.1-flash-image) and a prefix test alone
+        // would wrongly pull them in. Non-gemini/claude members (e.g.
+        // gpt-oss-120b-medium) stay per-model only — no third family, by
+        // intent (rollup covers the two pooled families the user asked
+        // about; a new pooled family means a new explicit branch here).
+        const lowerKey = modelKey.toLowerCase();
+        const registryKind = PROVIDERS?.antigravity?.models?.find(
+          (m) => typeof m === "object" && m !== null && m.id === modelKey
+        )?.kind;
+        const family =
+          registryKind && registryKind !== "chat"
+            ? null
+            : lowerKey.startsWith("claude")
+              ? "claude"
+              : lowerKey.startsWith("gemini") || lowerKey.startsWith("gemini-pro-agent")
+                ? "gemini"
+                : null;
+        if (family) {
+          familyFractions[family].push(remainingFraction);
+          const resetAt = parseResetTime(info.quotaInfo.resetTime);
+          if (resetAt) familyResets[family].push(resetAt);
+        }
+      }
+
+      // Emit one rollup row per family that has at least one member.
+      for (const [family, fractions] of Object.entries(familyFractions)) {
+        if (fractions.length === 0) continue;
+        const minFraction = Math.min(...fractions);
+        const total = 1000;
+        const remaining = Math.round(total * minFraction);
+        const label = family === "gemini" ? "Gemini" : "Claude";
+        quotas[`${label} (all models)`] = {
+          used: total - remaining,
+          total,
+          // Earliest reset across members — the first pool to refill.
+          resetAt: familyResets[family].length
+            ? familyResets[family].sort()[0]
+            : null,
+          remainingPercentage: minFraction * 100,
+          unlimited: false,
+          displayName: `${label} (all models)`,
+          family,
+          familyKey: family,
+          memberCount: fractions.length,
         };
       }
     }
