@@ -1,3 +1,9 @@
+# v0.15.94 (2026-09-11)
+
+## Quota Tracker fix
+
+- **Antigravity family bars unburied** (closes #403): parseQuotaData forwarded `family`/`familyKey`/`memberCount` (normalized, fails closed on malformed rows); QuotaTable pins the Gemini/Claude rollup bars above pagination on every page (models paginate alone), keeps family source order, clamps page on shrink.
+
 # v0.15.93 (2026-09-11)
 
 ## Providers, combos & quota
