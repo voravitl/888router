@@ -312,6 +312,21 @@ export function getRemainingPercentage(quota) {
 }
 
 /**
+ * Strict family-rollup discriminator for antigravity rollup rows.
+ * Only backend-emitted rollups (`family` in {gemini, claude} with a matching
+ * `familyKey` and positive integer `memberCount`) pin above pagination —
+ * a bare `typeof family === "string"` check would also pin `""` or any
+ * malformed provider payload and bypass the pagination bound (#403).
+ */
+export function isFamilyRollup(quota) {
+  return (
+    (quota?.family === "gemini" || quota?.family === "claude") &&
+    quota?.familyKey === quota?.family &&
+    Number.isInteger(quota?.memberCount) &&
+    quota.memberCount > 0
+  );
+}
+/**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)
  * @param {Object} data - Raw quota data from provider
@@ -348,13 +363,21 @@ export function parseQuotaData(provider, data) {
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
               // Family rollup rows ("Gemini (all models)" / "Claude (all models)")
-              // carry family/familyKey/memberCount from the usage handler —
-              // forward them so QuotaTable's family-first sort can lift the
-              // rollup bars above per-model rows (#403).
-              ...(quota.family !== undefined ? { family: quota.family } : {}),
-              ...(quota.familyKey !== undefined ? { familyKey: quota.familyKey } : {}),
-              ...(quota.memberCount !== undefined ? { memberCount: quota.memberCount } : {}),
-              ...(quota.displayName !== undefined ? { displayName: quota.displayName } : {}),
+              // arrive validated via isFamilyRollup: only forward well-formed
+              // family metadata so malformed payloads fail closed to
+              // per-model rows instead of pinning above pagination (#403).
+              ...(typeof quota.family === "string" && quota.family.trim() !== ""
+                ? { family: quota.family.trim() }
+                : {}),
+              ...(typeof quota.familyKey === "string" && quota.familyKey.trim() !== ""
+                ? { familyKey: quota.familyKey.trim() }
+                : {}),
+              ...(Number.isInteger(quota.memberCount) && quota.memberCount > 0
+                ? { memberCount: quota.memberCount }
+                : {}),
+              ...(typeof quota.displayName === "string"
+                ? { displayName: quota.displayName }
+                : {}),
             });
           });
         }
