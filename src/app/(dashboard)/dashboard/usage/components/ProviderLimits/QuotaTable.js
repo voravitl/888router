@@ -98,26 +98,36 @@ export default function QuotaTable({
   // Family rows are pinned above pagination (#403): with 13 antigravity rows
   // vs PAGE_SIZE=10 the rollups must stay visible even on later pages.
   const familyRows = useMemo(
-    () => quotas.filter(isFamilyRollup).map((quota, index) => ({
-      ...quota,
-      index: `family-${index}`,
-      remaining: getRemainingPercentage(quota),
-      isFamily: true,
-    })),
+    () =>
+      (Array.isArray(quotas) ? quotas : [])
+        .filter(isFamilyRollup)
+        .map((quota, index) => ({
+          ...quota,
+          index: `family-${index}`,
+          remaining: getRemainingPercentage(quota),
+          isFamily: true,
+        })),
     [quotas],
   );
 
   const modelRows = useMemo(
-    () =>
-      quotas
+    () => {
+      // When family rollups are present (e.g. Antigravity Gemini / Claude),
+      // omit individual model rows from table display so the card displays
+      // only the 2 pooled family bars without clutter or pagination.
+      if ((familyRows?.length || 0) > 0) {
+        return [];
+      }
+      return (Array.isArray(quotas) ? quotas : [])
         .filter((quota) => !isFamilyRollup(quota))
         .map((quota, index) => ({
           ...quota,
           index,
           remaining: getRemainingPercentage(quota),
           isFamily: false,
-        })),
-    [quotas],
+        }));
+    },
+    [quotas, familyRows],
   );
 
   const sortedModelRows = useMemo(
