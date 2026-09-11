@@ -92,12 +92,16 @@ export default function QuotaTable({
 }) {
   const [page, setPage] = useState(1);
 
+  // Family rollup rows (antigravity `Gemini (all models)` /
+  // `Claude (all models)` — flagged via `family` by the usage handler)
+  // render FIRST as the primary bars; per-model rows follow for drill-down.
   const normalizedQuotas = useMemo(
     () => quotas.map((quota, index) => ({
       ...quota,
       index,
       remaining: getRemainingPercentage(quota),
-    })),
+      isFamily: typeof quota?.family === "string",
+    })).sort((a, b) => Number(b.isFamily) - Number(a.isFamily)),
     [quotas],
   );
 
