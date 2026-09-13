@@ -28,11 +28,11 @@ const naraConfig = {
     validateUrl: "https://router.bynara.id/v1/models",
   },
   // Seed snapshot from public /pricing page (verified 2026-09-13:
-  // 55 models, 10 free surfaces with 7M/day recurring pool on free tier).
+  // 50 chat/LLM surfaces + legacy compatibility aliases, 10 free surfaces with 7M/day recurring pool on free tier).
+  // Non-chat image/video generation models (agnes-image, agnes-video, grok-imagine) are omitted to prevent chat transport routing errors.
   // Full catalogue is fetched via modelsFetcher after adding a key; other ids via passthroughModels.
   models: [
     { id: "agnes-2.5-flash", name: "Agnes 2.5 Flash" },
-    { id: "agnes-video-v2.0", name: "Agnes Video V2.0" },
     { id: "claude-fable-5", name: "Claude Fable 5" },
     { id: "claude-fable-5.1", name: "Claude Fable 5.1" },
     { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
@@ -82,10 +82,10 @@ const naraConfig = {
     { id: "stepfun-3.7-flash", name: "StepFun 3.7 Flash" },
     { id: "tencent-hy3-free", name: "Tencent Hy3 Free" },
     { id: "tencent-hy4-preview", name: "Tencent Hy4 Preview" },
-    { id: "agnes-image-2.0-flash", name: "Agnes Image 2.0 Flash" },
-    { id: "agnes-image-2.1-flash", name: "Agnes Image 2.1 Flash" },
-    { id: "grok-imagine", name: "Grok Imagine" },
-    { id: "nano-banana-pro", name: "Nano Banana Pro" },
+    // Backwards-compatibility aliases for legacy model IDs
+    { id: "tencent-hy3", name: "Tencent Hy3 (Legacy)" },
+    { id: "mistral-large", name: "Mistral Large (Legacy)" },
+    { id: "mistral-medium-3-5", name: "Mistral Medium 3.5 (Legacy)" },
   ],
   modelsFetcher: { url: "https://router.bynara.id/v1/models", type: "openai" },
   passthroughModels: true,
