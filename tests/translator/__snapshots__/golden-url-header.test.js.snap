@@ -1207,6 +1207,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > nanobanana → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > nara → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > nebius → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2027,6 +2046,13 @@ exports[`GOLDEN buildUrl (default executor providers) > nanobanana → url (stre
 {
   "nonStream": "https://api.nanobananaapi.ai/v1/chat/completions",
   "stream": "https://api.nanobananaapi.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > nara → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://router.bynara.id/v1/chat/completions",
+  "stream": "https://router.bynara.id/v1/chat/completions",
 }
 `;
 
