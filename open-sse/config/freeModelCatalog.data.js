@@ -16,7 +16,7 @@
  * rewrites file timestamps on every deploy, which would report a months-old
  * catalog as "updated today". Bump this whenever the entries below change.
  */
-export const FREE_CATALOG_CURATED_AT = "2026-09-11";
+export const FREE_CATALOG_CURATED_AT = "2026-09-13";
 
 export const FREE_MODEL_BUDGETS = [
   { provider: "tokenharbor", modelId: "deepseek-v4.1-flash:free", displayName: "DeepSeek V4.1 Flash (TokenHarbor Free)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-daily", poolKey: "tokenharbor-free", tos: "caution" },
@@ -496,7 +496,14 @@ export const FREE_MODEL_BUDGETS = [
   { provider: "routeway", modelId: "laguna-m.1:free", displayName: "Laguna M.1 (free)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "routeway-free", tos: "caution" },
   { provider: "routeway", modelId: "laguna-xs.2:free", displayName: "Laguna XS.2 (free)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "routeway-free", tos: "caution" },
   { provider: "routeway", modelId: "llama-3.2-3b-instruct:free", displayName: "Llama 3.2 3B Instruct (free)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "routeway-free", tos: "caution" },
-  { provider: "nara", modelId: "tencent-hy3", displayName: "Tencent Hy3", monthlyTokens: 150000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
-  { provider: "nara", modelId: "mistral-large", displayName: "Mistral Large", monthlyTokens: 150000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
-  { provider: "nara", modelId: "mistral-medium-3-5", displayName: "Mistral Medium 3.5", monthlyTokens: 150000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "agnes-2.5-flash", displayName: "Agnes 2.5 Flash (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "laguna-s-2.1", displayName: "Laguna S 2.1 (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "ling-3.0-flash-fin-free", displayName: "Ling 3.0 Flash Fin (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "stepfun-3.7-flash", displayName: "StepFun 3.7 Flash (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "tencent-hy3-free", displayName: "Tencent Hy3 (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "deepseek-v4.1-flash-free", displayName: "DeepSeek V4.1 Flash (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "glm-5.3-free", displayName: "GLM-5.3 (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "mimo-v2.5-free", displayName: "MiMo V2.5 (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "muse-spark-1.3-contributor-free", displayName: "Muse Spark 1.3 Contributor (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
+  { provider: "nara", modelId: "qwen3.8-flash-free", displayName: "Qwen3.8 Flash (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
 ];
