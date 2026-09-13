@@ -1,3 +1,11 @@
+# v0.15.96 (2026-09-13)
+
+## Providers & Free Tier
+
+- **New provider `nara` (NaraRouter / byNara)**: Added OpenAI-compatible gateway (`https://router.bynara.id/v1/chat/completions`) with Bearer API key auth, generic openai `modelsFetcher` (`https://router.bynara.id/v1/models`), and aliases (`nararouter`, `bynara`, `by-nara`).
+- **Free Model Catalog update**: Added 10 free surfaces with 7M tokens/day pool (`nara-free`, `recurring-daily`, 210M/month pool) including `agnes-2.5-flash`, `laguna-s-2.1`, `ling-3.0-flash-fin-free`, `stepfun-3.7-flash`, `tencent-hy3-free`, `deepseek-v4.1-flash-free`, `glm-5.3-free`, `mimo-v2.5-free`, `muse-spark-1.3-contributor-free`, and `qwen3.8-flash-free`.
+- **Legacy backwards compatibility**: Preserved legacy aliases for `tencent-hy3`, `mistral-large`, and `mistral-medium-3-5`.
+
 # v0.15.95 (2026-09-11)
 
 ## Antigravity Quota UI
