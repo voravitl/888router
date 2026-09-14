@@ -1,3 +1,10 @@
+# v0.15.97 (2026-09-14)
+
+## Provider UI & NaraRouter Sync
+
+- **NaraRouter logo assets**: Added 128x128 PNG logos for `nara.png` and aliases (`nararouter.png`, `bynara.png`, `by-nara.png`) in `public/providers/`.
+- **Static model sync for Nara**: Switched NaraRouter to direct static model catalog sync, eliminating 403 errors on user API keys when fetching restricted `/v1/models`.
+
 # v0.15.96 (2026-09-13)
 
 ## Providers & Free Tier

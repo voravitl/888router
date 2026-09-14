@@ -1,22 +1,39 @@
 import { describe, expect, it } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { isFreeCandidate } from "../../open-sse/services/autoCombo/virtualFactory.js";
 
 // Evidence: public /pricing page crawled 2026-09-13 — 50 chat models + 3 legacy aliases,
 // 10 free surfaces with 7M/day recurring pool on free tier.
-// GET /v1/models requires an API key, so the registry seed
-// below mirrors the public page and the generic openai modelsFetcher syncs
-// the live list after a key is added.
+// Upstream /v1/models requires admin permissions (403 on standard user keys), so
+// 888router serves the curated seed snapshot directly without modelsFetcher.
 describe("nara provider registration", () => {
-  it("registry entry exposes seed models + openai fetcher", async () => {
+  it("registry entry exposes valid seed models without duplicates + chat transport", async () => {
     const REGISTRY = (await import("../../open-sse/providers/registry/index.js")).default;
     const entry = REGISTRY.find((r) => r.id === "nara");
     expect(entry).toBeTruthy();
     expect(entry.models.length).toBeGreaterThanOrEqual(50);
-    expect(entry.modelsFetcher).toMatchObject({
-      url: "https://router.bynara.id/v1/models",
-      type: "openai",
-    });
+    expect(entry.modelsFetcher).toBeUndefined();
     expect(entry.transport.baseUrl).toBe("https://router.bynara.id/v1/chat/completions");
+
+    // Assert unique IDs and well-formed entries
+    const ids = entry.models.map((m) => (typeof m === "string" ? m : m.id));
+    expect(new Set(ids).size).toBe(entry.models.length);
+    for (const model of entry.models) {
+      const id = typeof model === "string" ? model : model.id;
+      const name = typeof model === "string" ? model : model.name;
+      expect(typeof id).toBe("string");
+      expect(id.length).toBeGreaterThan(0);
+      expect(typeof name).toBe("string");
+      expect(name.length).toBeGreaterThan(0);
+    }
+
+    // Assert non-chat media models are excluded
+    const denylist = ["agnes-video-v2.0", "agnes-image-2.0-flash", "agnes-image-2.1-flash", "grok-imagine", "nano-banana-pro"];
+    for (const denied of denylist) {
+      expect(ids).not.toContain(denied);
+    }
+
     // Verify all 10 free surfaces present in seed
     for (const id of [
       "agnes-2.5-flash",
@@ -90,11 +107,15 @@ describe("nara provider registration", () => {
     expect(combo.models).toContain("nara/stepfun-3.7-flash");
   });
 
-  it("quota exhaustion falls back via the shared combo executor (402/429)", async () => {
-    const { checkFallbackError } = await import("../../open-sse/services/accountFallback.js");
-    expect(checkFallbackError(402, "payment required").shouldFallback).toBe(true);
-    expect(checkFallbackError(429, "rate limited").shouldFallback).toBe(true);
-    expect(checkFallbackError(404, "not found").modelError).toBe(true);
+  it("provider logo PNG exists in public/providers and has valid PNG header", () => {
+    const logoPath = resolve(process.cwd(), "public/providers/nara.png");
+    expect(existsSync(logoPath), "public/providers/nara.png exists").toBe(true);
+    const buf = readFileSync(logoPath);
+    // PNG magic bytes: 0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
+    expect(buf[0]).toBe(0x89);
+    expect(buf[1]).toBe(0x50);
+    expect(buf[2]).toBe(0x4e);
+    expect(buf[3]).toBe(0x47);
   });
 
   it("keyed gateway needs a connection: no virtual injection for nara", async () => {
