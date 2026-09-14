@@ -26,10 +26,11 @@ const naraConfig = {
   transport: {
     baseUrl: "https://router.bynara.id/v1/chat/completions",
   },
-  // Seed snapshot from public /pricing page (verified 2026-09-13:
-  // 50 chat/LLM surfaces + legacy compatibility aliases, 10 free surfaces with 7M/day recurring pool on free tier).
+  // Seed snapshot from public /pricing page (verified 2026-09-14:
+  // 49 chat/LLM surfaces + legacy compatibility aliases; 4 active zero-balance free surfaces with 7M/day recurring pool).
   // Non-chat image/video generation models (agnes-image, agnes-video, grok-imagine) are omitted to prevent chat transport routing errors.
-  // Upstream /v1/models requires admin permissions (403 on standard user keys), so static seed is used directly.
+  // Models flagged free_for_paid upstream (e.g. deepseek-v4.1-flash-free) require an active paid balance/subscription.
+  // Upstream /v1/models requires admin permissions or returns 500, so static seed is used directly.
   models: [
     { id: "agnes-2.5-flash", name: "Agnes 2.5 Flash" },
     { id: "claude-fable-5", name: "Claude Fable 5" },
@@ -61,7 +62,6 @@ const naraConfig = {
     { id: "kimi-k2.7-code", name: "Kimi K2.7 Code" },
     { id: "kimi-k3", name: "Kimi K3" },
     { id: "laguna-s-2.1", name: "Laguna S 2.1" },
-    { id: "ling-3.0-flash-fin-free", name: "Ling 3.0 Flash Fin Free" },
     { id: "mimo-v2.5", name: "MiMo V2.5" },
     { id: "mimo-v2.5-free", name: "MiMo V2.5 Free" },
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro" },

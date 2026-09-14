@@ -498,12 +498,6 @@ export const FREE_MODEL_BUDGETS = [
   { provider: "routeway", modelId: "llama-3.2-3b-instruct:free", displayName: "Llama 3.2 3B Instruct (free)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "routeway-free", tos: "caution" },
   { provider: "nara", modelId: "agnes-2.5-flash", displayName: "Agnes 2.5 Flash (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
   { provider: "nara", modelId: "laguna-s-2.1", displayName: "Laguna S 2.1 (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
-  { provider: "nara", modelId: "ling-3.0-flash-fin-free", displayName: "Ling 3.0 Flash Fin (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
   { provider: "nara", modelId: "stepfun-3.7-flash", displayName: "StepFun 3.7 Flash (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
   { provider: "nara", modelId: "tencent-hy3-free", displayName: "Tencent Hy3 (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
-  { provider: "nara", modelId: "deepseek-v4.1-flash-free", displayName: "DeepSeek V4.1 Flash (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
-  { provider: "nara", modelId: "glm-5.3-free", displayName: "GLM-5.3 (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
-  { provider: "nara", modelId: "mimo-v2.5-free", displayName: "MiMo V2.5 (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
-  { provider: "nara", modelId: "muse-spark-1.3-contributor-free", displayName: "Muse Spark 1.3 Contributor (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
-  { provider: "nara", modelId: "qwen3.8-flash-free", displayName: "Qwen3.8 Flash (Nara Free)", monthlyTokens: 210000000, creditTokens: 0, freeType: "recurring-daily", poolKey: "nara-free", tos: "caution" },
 ];

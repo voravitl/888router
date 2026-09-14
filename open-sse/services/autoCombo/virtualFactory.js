@@ -52,6 +52,16 @@ export function isCodingModelId(modelId) {
   return false;
 }
 
+// Non-free or defunct models that contain "free" in their name but require paid balance or are unavailable upstream
+const EXCLUDED_FREE_CANDIDATES = new Set([
+  "nara/deepseek-v4.1-flash-free",
+  "nara/glm-5.3-free",
+  "nara/mimo-v2.5-free",
+  "nara/muse-spark-1.3-contributor-free",
+  "nara/qwen3.8-flash-free",
+  "nara/ling-3.0-flash-fin-free",
+]);
+
 /**
  * Check if a provider/model qualifies as free
  * @param {string} provider
@@ -59,9 +69,12 @@ export function isCodingModelId(modelId) {
  * @returns {boolean}
  */
 export function isFreeCandidate(provider, modelId) {
-  if (!modelId) return false;
-  if (modelId.endsWith(":free") || modelId.includes("free")) return true;
-  const key = `${provider}/${modelId}`.toLowerCase();
+  if (typeof provider !== "string" || typeof modelId !== "string" || !modelId) return false;
+  const normalizedProvider = provider.toLowerCase();
+  const normalizedModelId = modelId.toLowerCase();
+  const key = `${normalizedProvider}/${normalizedModelId}`;
+  if (EXCLUDED_FREE_CANDIDATES.has(key)) return false;
+  if (normalizedModelId.endsWith(":free") || normalizedModelId.includes("free")) return true;
   return FREE_MODEL_KEYS.has(key);
 }
 

@@ -1,3 +1,11 @@
+# v0.15.99 (2026-09-14)
+
+## Nara Free Tier Catalog & Auto-Combo Routing Fix
+
+- **Purged paid/defunct models from free catalog**: Removed `deepseek-v4.1-flash-free`, `glm-5.3-free`, `mimo-v2.5-free`, `muse-spark-1.3-contributor-free`, `qwen3.8-flash-free` (require paid balance/plan upstream), and defunct `ling-3.0-flash-fin-free` from `freeModelCatalog.data.js`. Kept the 4 verified 200 OK models (`agnes-2.5-flash`, `laguna-s-2.1`, `stepfun-3.7-flash`, `tencent-hy3-free`).
+- **Hardened free candidate gate (`isFreeCandidate`)**: Added `EXCLUDED_FREE_CANDIDATES` and normalized string handling to ensure models with `-free` in their name that require paid subscription are never admitted into virtual auto-combos (e.g. `auto/best-free`), eliminating upstream 403 plan exclusion errors.
+- **Decommissioned model cleanup**: Removed defunct `ling-3.0-flash-fin-free` from Nara registry seed.
+
 # v0.15.98 (2026-09-14)
 
 ## Provider Fixes & Nara Validation
