@@ -3,19 +3,15 @@ import { isFreeCandidate } from "../../open-sse/services/autoCombo/virtualFactor
 
 // Evidence: public /pricing page crawled 2026-09-13 — 50 chat models + 3 legacy aliases,
 // 10 free surfaces with 7M/day recurring pool on free tier.
-// GET /v1/models requires an API key, so the registry seed
-// below mirrors the public page and the generic openai modelsFetcher syncs
-// the live list after a key is added.
+// Upstream /v1/models requires admin permissions (403 on standard user keys), so
+// 888router serves the curated seed snapshot directly without modelsFetcher.
 describe("nara provider registration", () => {
-  it("registry entry exposes seed models + openai fetcher", async () => {
+  it("registry entry exposes seed models + chat completions transport", async () => {
     const REGISTRY = (await import("../../open-sse/providers/registry/index.js")).default;
     const entry = REGISTRY.find((r) => r.id === "nara");
     expect(entry).toBeTruthy();
     expect(entry.models.length).toBeGreaterThanOrEqual(50);
-    expect(entry.modelsFetcher).toMatchObject({
-      url: "https://router.bynara.id/v1/models",
-      type: "openai",
-    });
+    expect(entry.modelsFetcher).toBeUndefined();
     expect(entry.transport.baseUrl).toBe("https://router.bynara.id/v1/chat/completions");
     // Verify all 10 free surfaces present in seed
     for (const id of [

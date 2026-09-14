@@ -95,6 +95,10 @@ DIRECT_DOWNLOADS = {
     "airforce.png": "https://api.airforce/airforce-logo.png",
     "freebuff.png": "https://www.codebuff.com/favicon/apple-touch-icon.png",
     "codebuff.png": "https://www.codebuff.com/favicon/apple-touch-icon.png",
+    "nara.png": "https://router.bynara.id/logo_light.png",
+    "nararouter.png": "https://router.bynara.id/logo_light.png",
+    "bynara.png": "https://router.bynara.id/logo_light.png",
+    "by-nara.png": "https://router.bynara.id/logo_light.png",
 }
 for filename, url in DIRECT_DOWNLOADS.items():
     dest = os.path.join(PROVIDERS_DIR, filename)

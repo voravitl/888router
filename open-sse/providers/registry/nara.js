@@ -11,7 +11,7 @@ const naraConfig = {
   uiAlias: "nara",
   display: {
     name: "NaraRouter (byNara)",
-    icon: "router",
+    icon: "nara",
     color: "#6366F1",
     textIcon: "NR",
     website: "https://router.bynara.id",
@@ -25,12 +25,11 @@ const naraConfig = {
   authModes: ["apikey"],
   transport: {
     baseUrl: "https://router.bynara.id/v1/chat/completions",
-    validateUrl: "https://router.bynara.id/v1/models",
   },
   // Seed snapshot from public /pricing page (verified 2026-09-13:
   // 50 chat/LLM surfaces + legacy compatibility aliases, 10 free surfaces with 7M/day recurring pool on free tier).
   // Non-chat image/video generation models (agnes-image, agnes-video, grok-imagine) are omitted to prevent chat transport routing errors.
-  // Full catalogue is fetched via modelsFetcher after adding a key; other ids via passthroughModels.
+  // Upstream /v1/models requires admin permissions (403 on standard user keys), so static seed is used directly.
   models: [
     { id: "agnes-2.5-flash", name: "Agnes 2.5 Flash" },
     { id: "claude-fable-5", name: "Claude Fable 5" },
@@ -87,7 +86,6 @@ const naraConfig = {
     { id: "mistral-large", name: "Mistral Large (Legacy)" },
     { id: "mistral-medium-3-5", name: "Mistral Medium 3.5 (Legacy)" },
   ],
-  modelsFetcher: { url: "https://router.bynara.id/v1/models", type: "openai" },
   passthroughModels: true,
 };
 
