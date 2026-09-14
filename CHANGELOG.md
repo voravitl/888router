@@ -1,3 +1,10 @@
+# v0.15.98 (2026-09-14)
+
+## Provider Fixes & Nara Validation
+
+- **NaraRouter static model sync**: Return curated 50-model static seed catalog directly on model sync, bypassing broken upstream `/v1/models` endpoint (500 internal server error). Registered `nara` and its aliases in `isPublicModelsProvider`.
+- **NaraRouter connection testing & validation**: Implemented explicit connection testing and API key validation via minimal chat completion with `agnes-2.5-flash`, surfacing clear guidance when upstream requires Telegram account binding (`telegram_required`).
+
 # v0.15.97 (2026-09-14)
 
 ## Provider UI & NaraRouter Sync

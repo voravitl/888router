@@ -869,6 +869,57 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
+      case "nara":
+      case "nararouter":
+      case "bynara":
+      case "by-nara": {
+        // NaraRouter /v1/models returns 500 and user keys require Telegram binding.
+        // Probe via minimal chat completion with fixed known free model (agnes-2.5-flash).
+        const res = await fetchWithConnectionProxy("https://router.bynara.id/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${connection.apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "agnes-2.5-flash",
+            messages: [{ role: "user", content: "ping" }],
+            max_tokens: 1,
+          }),
+          signal: AbortSignal.timeout(10000),
+        }, effectiveProxy);
+
+        // 401 is always invalid credential regardless of body
+        if (res.status === 401) {
+          return { valid: false, error: "Invalid API key" };
+        }
+
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          if (Array.isArray(data?.choices)) {
+            return { valid: true, error: null };
+          }
+          return { valid: false, error: "Upstream returned an invalid completion response" };
+        }
+
+        const data = await res.json().catch(() => null);
+        const rawMsg = data?.error?.message || "";
+        const lowerMsg = rawMsg.toLowerCase();
+
+        if (lowerMsg.includes("telegram_required")) {
+          return { valid: false, error: "Please bind Telegram account at https://router.bynara.id/settings" };
+        }
+
+        // 403 with plan exclusion or 429 with credit/quota limits confirms valid API key accepted
+        if (res.status === 403 && lowerMsg.includes("plan does not include")) {
+          return { valid: true, error: null };
+        }
+        if (res.status === 429 && (lowerMsg.includes("insufficient credits") || lowerMsg.includes("quota"))) {
+          return { valid: true, error: null };
+        }
+
+        return { valid: false, error: rawMsg ? rawMsg.slice(0, 200) : `API returned ${res.status}` };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }

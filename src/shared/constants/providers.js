@@ -205,6 +205,10 @@ export function isPublicModelsProvider(providerId) {
     "aipass-th",
     "aipass-bridge",
     "ap",
+    "nara",
+    "nararouter",
+    "bynara",
+    "by-nara",
   ]);
   if (publicGateways.has(pId)) return true;
   const provider = AI_PROVIDERS[pId];
