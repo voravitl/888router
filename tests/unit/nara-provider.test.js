@@ -124,4 +124,192 @@ describe("nara provider registration", () => {
     expect(def, "nara registered in AI_PROVIDERS").toBeDefined();
     expect(def.noAuth, "nara is keyed (no virtual injection)").toBeFalsy();
   });
+
+  it("nara and aliases are registered as public models providers", async () => {
+    const { isPublicModelsProvider } = await import("../../src/shared/constants/providers.js");
+    expect(isPublicModelsProvider("nara")).toBe(true);
+    expect(isPublicModelsProvider("nararouter")).toBe(true);
+    expect(isPublicModelsProvider("bynara")).toBe(true);
+    expect(isPublicModelsProvider("by-nara")).toBe(true);
+  });
+
+  describe("nara API key validation and models sync", () => {
+    it("validates nara key with 200 OK probe response", async () => {
+      const originalFetch = global.fetch;
+      try {
+        global.fetch = async (url, opts) => {
+          expect(url).toBe("https://router.bynara.id/v1/chat/completions");
+          expect(opts.method).toBe("POST");
+          return new Response(JSON.stringify({ choices: [{ message: { content: "pong" } }] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        };
+        const { POST } = await import("../../src/app/api/providers/validate/route.js");
+        const req = new Request("http://localhost/api/providers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: "nara", apiKey: "sk-valid" }),
+        });
+        const res = await POST(req);
+        const data = await res.json();
+        expect(data.valid).toBe(true);
+        expect(data.error).toBeNull();
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("surfaces telegram_required error clearly", async () => {
+      const originalFetch = global.fetch;
+      try {
+        global.fetch = async (url) => {
+          return new Response(JSON.stringify({
+            error: { type: "forbidden", message: "telegram_required: Please bind your Telegram account at /settings to continue." }
+          }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        };
+        const { POST } = await import("../../src/app/api/providers/validate/route.js");
+        const req = new Request("http://localhost/api/providers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: "nara", apiKey: "sk-unbound" }),
+        });
+        const res = await POST(req);
+        const data = await res.json();
+        expect(data.valid).toBe(false);
+        expect(data.error).toContain("Telegram");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("treats 429 quota / insufficient credits as accepted key", async () => {
+      const originalFetch = global.fetch;
+      try {
+        global.fetch = async () => {
+          return new Response(JSON.stringify({
+            error: { message: "Insufficient credits. Please top up your balance." }
+          }), {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          });
+        };
+        const { POST } = await import("../../src/app/api/providers/validate/route.js");
+        const req = new Request("http://localhost/api/providers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: "nara", apiKey: "sk-nocredit" }),
+        });
+        const res = await POST(req);
+        const data = await res.json();
+        expect(data.valid).toBe(true);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("rejects 401 unauthorized as invalid API key even if body mentions plan", async () => {
+      const originalFetch = global.fetch;
+      try {
+        global.fetch = async () => {
+          return new Response(JSON.stringify({
+            error: { message: "Invalid API key — check your plan balance" }
+          }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
+        };
+        const { POST } = await import("../../src/app/api/providers/validate/route.js");
+        const req = new Request("http://localhost/api/providers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: "nara", apiKey: "sk-bad" }),
+        });
+        const res = await POST(req);
+        const data = await res.json();
+        expect(data.valid).toBe(false);
+        expect(data.error).toBe("Invalid API key");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("rejects 200 with malformed or missing choices response", async () => {
+      const originalFetch = global.fetch;
+      try {
+        global.fetch = async () => {
+          return new Response("<html>Maintenance</html>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" },
+          });
+        };
+        const { POST } = await import("../../src/app/api/providers/validate/route.js");
+        const req = new Request("http://localhost/api/providers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: "nara", apiKey: "sk-test" }),
+        });
+        const res = await POST(req);
+        const data = await res.json();
+        expect(data.valid).toBe(false);
+        expect(data.error).toContain("invalid completion response");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("accepts 403 plan exclusion as valid key", async () => {
+      const originalFetch = global.fetch;
+      try {
+        global.fetch = async () => {
+          return new Response(JSON.stringify({
+            error: { type: "forbidden", message: "Your plan does not include the requested model." }
+          }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        };
+        const { POST } = await import("../../src/app/api/providers/validate/route.js");
+        const req = new Request("http://localhost/api/providers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: "nara", apiKey: "sk-plan-limit" }),
+        });
+        const res = await POST(req);
+        const data = await res.json();
+        expect(data.valid).toBe(true);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("rejects generic 429 without credits/quota message", async () => {
+      const originalFetch = global.fetch;
+      try {
+        global.fetch = async () => {
+          return new Response(JSON.stringify({
+            error: { message: "Too many requests from this IP" }
+          }), {
+            status: 429,
+            headers: { "Content-Type": "application/json" },
+          });
+        };
+        const { POST } = await import("../../src/app/api/providers/validate/route.js");
+        const req = new Request("http://localhost/api/providers/validate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider: "nara", apiKey: "sk-ip-ratelimit" }),
+        });
+        const res = await POST(req);
+        const data = await res.json();
+        expect(data.valid).toBe(false);
+        expect(data.error).toContain("Too many requests");
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+  });
 });

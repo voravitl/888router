@@ -16,7 +16,7 @@ const naraConfig = {
     textIcon: "NR",
     website: "https://router.bynara.id",
     notice: {
-      text: "OpenAI-compatible AI gateway by byNara with daily subscription quotas and PAYG. 7M tokens/day free tier.",
+      text: "OpenAI-compatible AI gateway by byNara with daily subscription quotas and PAYG. 7M tokens/day free tier. Note: Telegram account binding at /settings is required upstream to activate API keys.",
       apiKeyUrl: "https://router.bynara.id",
     },
   },

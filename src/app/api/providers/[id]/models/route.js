@@ -629,6 +629,28 @@ export async function GET(request, { params }) {
       });
     }
 
+    // Nara: Upstream /v1/models returns 500 / 403 on user keys.
+    // Return curated static seed catalog (50 models) directly.
+    if (["nara", "nararouter", "bynara", "by-nara"].includes(connection.provider)) {
+      const staticModels = PROVIDERS["nara"]?.models || [];
+      return buildModelsResponse({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: staticModels
+          .map((m) => {
+            if (typeof m === "string") return { id: m, name: m };
+            const id = m?.id || m?.name;
+            if (!id) return null;
+            return {
+              ...m,
+              id,
+              name: m.name || id,
+            };
+          })
+          .filter(Boolean),
+      });
+    }
+
     // AiPASS TH: Fetch live models from de.aipass.net via connected Chrome extension bridge
     if (["aipass", "aipass-th", "aipass-bridge", "ap"].includes(connection.provider)) {
       let warning;

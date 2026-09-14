@@ -649,6 +649,60 @@ export async function POST(request) {
           break;
         }
 
+        case "nara":
+        case "nararouter":
+        case "bynara":
+        case "by-nara": {
+          const res = await fetch("https://router.bynara.id/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "agnes-2.5-flash",
+              messages: [{ role: "user", content: "ping" }],
+              max_tokens: 1,
+            }),
+            signal: AbortSignal.timeout(10000),
+          });
+
+          // 401 is always invalid credential regardless of body
+          if (res.status === 401) {
+            isValid = false;
+            error = "Invalid API key";
+            break;
+          }
+
+          if (res.ok) {
+            const data = await res.json().catch(() => null);
+            if (Array.isArray(data?.choices)) {
+              isValid = true;
+            } else {
+              isValid = false;
+              error = "Upstream returned an invalid completion response";
+            }
+            break;
+          }
+
+          const data = await res.json().catch(() => null);
+          const rawMsg = data?.error?.message || "";
+          const lowerMsg = rawMsg.toLowerCase();
+
+          if (lowerMsg.includes("telegram_required")) {
+            isValid = false;
+            error = "Please bind Telegram account at https://router.bynara.id/settings";
+          } else if (res.status === 403 && lowerMsg.includes("plan does not include")) {
+            isValid = true;
+          } else if (res.status === 429 && (lowerMsg.includes("insufficient credits") || lowerMsg.includes("quota"))) {
+            isValid = true;
+          } else {
+            isValid = false;
+            error = rawMsg ? rawMsg.slice(0, 200) : `Validation returned ${res.status}`;
+          }
+          break;
+        }
+
         default: {
           // Generic probe for OpenAI-compatible providers (config-driven from PROVIDERS)
           const cfg = PROVIDERS[provider];
