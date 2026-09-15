@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: 888router
+  labels:
+    app.kubernetes.io/name: 888router
+    app.kubernetes.io/part-of: 888router-stack

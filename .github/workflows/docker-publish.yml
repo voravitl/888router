@@ -494,3 +494,68 @@ jobs:
             exit 1
           fi
           echo "verified $checked tag(s)"
+
+  # The self-hosted OrbStack runner owns its kubeconfig. This job intentionally
+  # does not receive or construct Kubernetes credentials.
+  deploy-local-kubernetes:
+    name: deploy local Kubernetes
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: merge
+    runs-on: [self-hosted, macOS, orbstack-k8s]
+    environment: local-kubernetes
+    concurrency:
+      group: local-kubernetes
+      cancel-in-progress: false
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Kustomize and OrbStack Kubernetes context
+        run: |
+          set -euo pipefail
+          command -v kustomize >/dev/null || {
+            echo "::error::kustomize must be installed on the self-hosted runner"
+            exit 1
+          }
+          context="$(kubectl config current-context)"
+          if [ "$context" != "orbstack" ]; then
+            echo "::error::expected kubectl context orbstack, got $context"
+            exit 1
+          fi
+
+      - name: Render and apply local overlay
+        run: |
+          set -euo pipefail
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf "$work_dir"' EXIT
+          cp -R k8s "$work_dir/k8s"
+          overlay="$work_dir/k8s/overlays/local"
+
+          image="voravitl/888router:sha-${GITHUB_SHA::7}"
+          (
+            cd "$overlay"
+            kustomize edit set image "voravitl/888router=$image"
+          )
+          kustomize build "$overlay" > "$work_dir/rendered.yaml"
+          grep -Fqx "          image: $image" "$work_dir/rendered.yaml"
+          kubectl apply -k "$overlay"
+
+          # Pre-deploy availability snapshot: fail closed if rolling update
+          # would start without quorum (maxUnavailable=0 needs >= 2 ready).
+          ready_before="$(kubectl get deployment/888router --namespace 888router -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)"
+          if [ "${ready_before:-0}" -lt 2 ]; then
+            echo "::error::only ${ready_before:-0} ready replica(s), need >= 2 for zero-downtime rollout"
+            exit 1
+          fi
+
+      - name: Verify local deployment
+        run: |
+          set -euo pipefail
+          kubectl rollout status deployment/888router --namespace 888router --timeout=5m
+          ready_after="$(kubectl get deployment/888router --namespace 888router -o jsonpath='{.status.readyReplicas}')"
+          if [ "${ready_after:-0}" -lt 2 ]; then
+            echo "::error::rollout finished with only ${ready_after:-0} ready replica(s)"
+            exit 1
+          fi
+          curl --fail --show-error --silent --retry 12 --retry-all-errors --retry-delay 2 \
+            https://888router.k8s.orb.local/api/version

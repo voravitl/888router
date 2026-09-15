@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: 888router-config
+  namespace: 888router
+data:
+  PORT: "20128"
+  HOSTNAME: "0.0.0.0"
+  NODE_ENV: "production"
+  DATA_DIR: "/app/data"
+  TZ: "Asia/Bangkok"
+  NEXT_TELEMETRY_DISABLED: "1"
+  OBSERVABILITY_ENABLED: "true"
+  ENABLE_REQUEST_LOGS: "true"
+  RTK_HARD_CAP_BYTES: "65536"
+  KEEP_BACKUPS_TOTAL_BYTES: "7000000000"
+  HEADROOM_URL: "http://headroom:8787"
+  SEARXNG_BASE_URL: "http://searxng:8080/search"
+  NEXT_PUBLIC_CLOUD_URL: "https://9router.com"
+  CLOUD_URL: "https://9router.com"
+  BASE_URL: "https://888router.k8s.orb.local"
+  NEXT_PUBLIC_BASE_URL: "https://888router.k8s.orb.local"
+  NINEROUTER_PUBLIC_URL: "https://888router.k8s.orb.local"
+  AUTH_COOKIE_SECURE: "true"
+  REQUIRE_API_KEY: "false"
