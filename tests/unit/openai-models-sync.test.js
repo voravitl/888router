@@ -60,25 +60,20 @@ describe("OpenAI Provider Model Sync (GPT-6 Support)", () => {
     expect(modelIds).toContain("gpt-4o");
     expect(modelIds).toContain("gpt-4o-mini");
 
-    // Static registry GPT-6 models merged
-    expect(modelIds).toContain("gpt-6");
-    expect(modelIds).toContain("gpt-6-mini");
-    expect(modelIds).toContain("gpt-6-nano");
-    expect(modelIds).toContain("gpt-6-codex");
-    expect(modelIds).toContain("gpt-6-preview");
-    expect(modelIds).toContain("gpt-6-pro");
+    // Static registry GPT-6 models merged (official upstream slug)
+    expect(modelIds).toContain("gpt-6-astra");
 
     // Dynamic caps saved for GPT-6
     expect(mocks.saveModelDynamicCapabilities).toHaveBeenCalledWith(
       "openai",
-      "gpt-6",
+      "gpt-6-astra",
       expect.objectContaining({ contextWindow: 1050000, vision: true, reasoning: true })
     );
 
     // Stamped into synced models kv
     expect(mocks.stampSyncedModels).toHaveBeenCalledWith(
       expect.arrayContaining([
-        expect.objectContaining({ connectionId: "conn-openai-1", modelId: "gpt-6" }),
+        expect.objectContaining({ connectionId: "conn-openai-1", modelId: "gpt-6-astra" }),
       ])
     );
   });

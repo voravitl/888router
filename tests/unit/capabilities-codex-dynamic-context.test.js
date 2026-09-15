@@ -61,10 +61,9 @@ describe("Dynamic Codex & GPT Context Window Resolution", () => {
       expect(resolveGptFamilyCapabilities("gpt-5.9-sol")?.contextWindow).toBe(1050000);
       expect(resolveGptFamilyCapabilities("gpt-5.10")?.contextWindow).toBe(1050000);
 
-      // Future GPT-6 releases
-      expect(resolveGptFamilyCapabilities("gpt-6")?.contextWindow).toBe(1050000);
+      // Future GPT-6 releases (official upstream slug: gpt-6-astra)
+      expect(resolveGptFamilyCapabilities("gpt-6-astra")?.contextWindow).toBe(1050000);
       expect(resolveGptFamilyCapabilities("gpt-6.1-codex")?.contextWindow).toBe(1050000);
-      expect(resolveGptFamilyCapabilities("gpt-6-mini")?.contextWindow).toBe(400000);
       expect(resolveGptFamilyCapabilities("gpt-6-spark")?.contextWindow).toBe(128000);
 
       // Future GPT-7 releases
@@ -130,9 +129,8 @@ describe("Dynamic Codex & GPT Context Window Resolution", () => {
       expect(resolveKnownContextWindow("cx", "gpt-5.7")).toBe(1050000);
       expect(resolveKnownContextWindow("cx", "gpt-5.7-review")).toBe(1050000);
       expect(resolveKnownContextWindow("cx", "gpt-5.8")).toBe(1050000);
-      expect(resolveKnownContextWindow("cx", "gpt-6")).toBe(1050000);
-      expect(resolveKnownContextWindow("cx", "gpt-6-review")).toBe(1050000);
-      expect(resolveKnownContextWindow("cx", "gpt-6-mini")).toBe(400000);
+      expect(resolveKnownContextWindow("cx", "gpt-6-astra")).toBe(1050000);
+      expect(resolveKnownContextWindow("cx", "gpt-6-astra-review")).toBe(1050000);
       expect(resolveKnownContextWindow("cx", "gpt-6-spark")).toBe(128000);
     });
 

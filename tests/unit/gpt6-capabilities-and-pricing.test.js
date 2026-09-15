@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { getCapabilitiesForModel, resolveGptFamilyCapabilities } from "../../open-sse/providers/capabilities.js";
+import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getPricingForModel } from "../../open-sse/providers/pricing.js";
 import { GithubExecutor } from "../../open-sse/executors/github.js";
 import { stripUnsupportedParams } from "../../open-sse/translator/concerns/paramSupport.js";
 
+// Official upstream Codex slugs come from ~/.codex/models_cache.json:
+// gpt-6-astra, gpt-reserve, gpt-5.6-sol/terra/luna, gpt-5.5, codex-auto-review.
+// Bare "gpt-6", "gpt-6-mini", "gpt-6-preview", etc. are invented slugs that the
+// upstream rejects with "not supported when using Codex with a ChatGPT account".
+
 describe("GPT-6 Model Capabilities & Pricing", () => {
   describe("Capabilities resolution", () => {
-    it("resolves flagship GPT-6 with 1.05M context window, 128k output, vision, and reasoning", () => {
-      const caps = getCapabilitiesForModel("openai", "gpt-6");
+    it("resolves official GPT-6 Astra with 1.05M context window, 128k output, vision, and reasoning", () => {
+      const caps = getCapabilitiesForModel("openai", "gpt-6-astra");
       expect(caps.contextWindow).toBe(1050000);
       expect(caps.maxOutput).toBe(128000);
       expect(caps.reasoning).toBe(true);
@@ -16,46 +21,11 @@ describe("GPT-6 Model Capabilities & Pricing", () => {
       expect(caps.thinkingFormat).toBe("openai");
     });
 
-    it("resolves GPT-6 Preview and Pro variants with 1.05M context window", () => {
-      const previewCaps = getCapabilitiesForModel("openai", "gpt-6-preview");
-      expect(previewCaps.contextWindow).toBe(1050000);
-      expect(previewCaps.vision).toBe(true);
-      expect(previewCaps.reasoning).toBe(true);
-
-      const proCaps = getCapabilitiesForModel("openai", "gpt-6-pro");
-      expect(proCaps.contextWindow).toBe(1050000);
-      expect(proCaps.vision).toBe(true);
-      expect(proCaps.reasoning).toBe(true);
-    });
-
-    it("resolves GPT-6 Codex with vision: false and 1.05M context window", () => {
-      const codexCaps = getCapabilitiesForModel("codex", "gpt-6-codex");
+    it("resolves GPT-6 Astra for the codex provider as well", () => {
+      const codexCaps = getCapabilitiesForModel("codex", "gpt-6-astra");
       expect(codexCaps.contextWindow).toBe(1050000);
       expect(codexCaps.maxOutput).toBe(128000);
       expect(codexCaps.reasoning).toBe(true);
-      expect(codexCaps.vision).toBe(false);
-      expect(codexCaps.search).toBe(true);
-
-      const codexMaxCaps = getCapabilitiesForModel("codex", "gpt-6-codex-max");
-      expect(codexMaxCaps.contextWindow).toBe(1050000);
-      expect(codexMaxCaps.vision).toBe(false);
-      expect(codexMaxCaps.reasoning).toBe(true);
-    });
-
-    it("resolves GPT-6 Mini with 400k context window and vision", () => {
-      const miniCaps = getCapabilitiesForModel("openai", "gpt-6-mini");
-      expect(miniCaps.contextWindow).toBe(400000);
-      expect(miniCaps.maxOutput).toBe(128000);
-      expect(miniCaps.reasoning).toBe(true);
-      expect(miniCaps.vision).toBe(true);
-    });
-
-    it("resolves GPT-6 Nano with 400k context window and vision", () => {
-      const nanoCaps = getCapabilitiesForModel("openai", "gpt-6-nano");
-      expect(nanoCaps.contextWindow).toBe(400000);
-      expect(nanoCaps.maxOutput).toBe(128000);
-      expect(nanoCaps.reasoning).toBe(true);
-      expect(nanoCaps.vision).toBe(true);
     });
 
     it("resolves future GPT-6.1+ dynamically via resolveGptFamilyCapabilities", () => {
@@ -63,9 +33,6 @@ describe("GPT-6 Model Capabilities & Pricing", () => {
       expect(gpt61Caps.contextWindow).toBe(1050000);
       expect(gpt61Caps.reasoning).toBe(true);
       expect(gpt61Caps.vision).toBe(true);
-
-      const gpt61MiniCaps = getCapabilitiesForModel("openai", "gpt-6.1-mini");
-      expect(gpt61MiniCaps.contextWindow).toBe(400000);
     });
   });
 
@@ -74,8 +41,7 @@ describe("GPT-6 Model Capabilities & Pricing", () => {
       const gh = new GithubExecutor();
       expect(gh.requiresMaxCompletionTokens("gpt-5")).toBe(true);
       expect(gh.requiresMaxCompletionTokens("gpt-5.4")).toBe(true);
-      expect(gh.requiresMaxCompletionTokens("gpt-6")).toBe(true);
-      expect(gh.requiresMaxCompletionTokens("gpt-6-mini")).toBe(true);
+      expect(gh.requiresMaxCompletionTokens("gpt-6-astra")).toBe(true);
       expect(gh.requiresMaxCompletionTokens("o1")).toBe(true);
       expect(gh.requiresMaxCompletionTokens("o3-mini")).toBe(true);
       expect(gh.requiresMaxCompletionTokens("o4-preview")).toBe(true);
@@ -96,12 +62,8 @@ describe("GPT-6 Model Capabilities & Pricing", () => {
       expect(body510.temperature).toBeUndefined();
 
       const body6 = { temperature: 0.7 };
-      stripUnsupportedParams("github", "gpt-6", body6);
+      stripUnsupportedParams("github", "gpt-6-astra", body6);
       expect(body6.temperature).toBeUndefined();
-
-      const body6Mini = { temperature: 0.7 };
-      stripUnsupportedParams("github", "gpt-6-mini", body6Mini);
-      expect(body6Mini.temperature).toBeUndefined();
 
       const bodyOlder = { temperature: 0.7 };
       stripUnsupportedParams("github", "gpt-5.3", bodyOlder);
@@ -110,47 +72,23 @@ describe("GPT-6 Model Capabilities & Pricing", () => {
   });
 
   describe("Pricing resolution & overload boundary", () => {
-    it("resolves canonical GPT-6 rates", () => {
-      const pricing = getPricingForModel("gpt-6");
+    it("resolves canonical GPT-6 Astra rates", () => {
+      const pricing = getPricingForModel("gpt-6-astra");
       expect(pricing.input).toBe(5.00);
       expect(pricing.output).toBe(25.00);
       expect(pricing.cached).toBe(0.50);
       expect(pricing.reasoning).toBe(25.00);
     });
 
-    it("resolves canonical GPT-6 Mini rates", () => {
-      const pricing = getPricingForModel("gpt-6-mini");
-      expect(pricing.input).toBe(1.00);
-      expect(pricing.output).toBe(5.00);
-      expect(pricing.cached).toBe(0.10);
-    });
-
-    it("resolves canonical GPT-6 Nano rates", () => {
-      const pricing = getPricingForModel("gpt-6-nano");
-      expect(pricing.input).toBe(0.25);
-      expect(pricing.output).toBe(1.50);
-      expect(pricing.cached).toBe(0.025);
-    });
-
-    it("resolves canonical GPT-6 Pro and Codex Max rates", () => {
-      const proPricing = getPricingForModel("gpt-6-pro");
-      expect(proPricing.input).toBe(10.00);
-      expect(proPricing.output).toBe(50.00);
-
-      const codexMaxPricing = getPricingForModel("gpt-6-codex-max");
-      expect(codexMaxPricing.input).toBe(10.00);
-      expect(codexMaxPricing.output).toBe(50.00);
-    });
-
-    it("resolves TokenRouter provider-specific GPT-6 rates", () => {
-      const pricing = getPricingForModel("tokenrouter", "openai/gpt-6");
+    it("resolves TokenRouter provider-specific GPT-6 Astra rates", () => {
+      const pricing = getPricingForModel("tokenrouter", "openai/gpt-6-astra");
       expect(pricing.input).toBe(2.50);
       expect(pricing.output).toBe(15.0);
       expect(pricing.cached).toBe(0.25);
     });
 
-    it("resolves pattern-based GPT-6 fallback for cx/gpt-6", () => {
-      const pricing = getPricingForModel("codex", "cx/gpt-6");
+    it("resolves pattern-based GPT-6 fallback for cx/gpt-6-astra", () => {
+      const pricing = getPricingForModel("codex", "cx/gpt-6-astra");
       expect(pricing.input).toBe(5.00);
       expect(pricing.output).toBe(25.00);
     });
@@ -163,7 +101,7 @@ describe("GPT-6 Model Capabilities & Pricing", () => {
     it("handles overload strictly: 2-arg call with undefined model returns null", () => {
       expect(getPricingForModel("openai", undefined)).toBeNull();
       expect(getPricingForModel("openai", "")).toBeNull();
-      expect(getPricingForModel("gpt-6")).toBeDefined();
+      expect(getPricingForModel("gpt-6-astra")).toBeDefined();
     });
   });
 });
