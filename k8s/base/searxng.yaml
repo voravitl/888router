@@ -30,6 +30,34 @@ spec:
                 secretKeyRef:
                   name: 888router-secrets
                   key: SEARXNG_SECRET
+          # Inject the real secret_key into the mounted settings.yml at startup:
+          # SearXNG only auto-generates a secret when the file is ABSENT, but our
+          # ConfigMap mount always presents a file — so without this the public
+          # placeholder would ship as the real key. Fail closed on missing secret.
+          # NOTE: the ConfigMap mount is read-only, so copy to a writable path
+          # first (sed -i cannot rename over a mounted file: "Device or resource
+          # busy"). SEARXNG_CONFIG_PATH redirects the entrypoint to the copy.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              case "${SEARXNG_SECRET:-}" in
+                ""|*change-me*|*placeholder*|*example*|*REPLACED_AT_STARTUP*)
+                  echo "FATAL: SEARXNG_SECRET is missing or a placeholder" >&2
+                  exit 1
+                  ;;
+              esac
+              # Internal __-prefixed var is what entrypoint.sh actually reads
+              # (__SEARXNG_CONFIG_PATH, default /etc/searxng).
+              mkdir -p /tmp/searxng-config
+              cp /etc/searxng/settings.yml /tmp/searxng-config/settings.yml
+              sed -i "s|REPLACED_AT_STARTUP_FROM_SEARXNG_SECRET|${SEARXNG_SECRET}|g" /tmp/searxng-config/settings.yml
+              grep -q "REPLACED_AT_STARTUP_FROM_SEARXNG_SECRET" /tmp/searxng-config/settings.yml && {
+                echo "FATAL: secret_key placeholder was not replaced" >&2
+                exit 1
+              }
+              export __SEARXNG_CONFIG_PATH=/tmp/searxng-config
+              exec /usr/local/searxng/entrypoint.sh
           volumeMounts:
             - name: searxng-settings
               mountPath: /etc/searxng/settings.yml

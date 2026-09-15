@@ -8,7 +8,10 @@ data:
     use_default_settings: true
 
     server:
-      secret_key: "change-me-from-SEARXNG_SECRET"
+      # Placeholder replaced at container startup by searxng.yaml's command
+      # wrapper using the SEARXNG_SECRET env (from the 888router-secrets
+      # Secret). Never deploy with the literal value below.
+      secret_key: "REPLACED_AT_STARTUP_FROM_SEARXNG_SECRET"
       image_proxy: true
       limiter: false
 
