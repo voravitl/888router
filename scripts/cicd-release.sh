@@ -1,54 +1,56 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# Helper script for 888router 7-Step CI/CD Delivery Pipeline Execution
-# Usage: ./scripts/cicd-release.sh <version>
-# Example: ./scripts/cicd-release.sh 0.11.2
+VERSION="${1:-$(node -e 'console.log(require("./package.json").version)')}"
+KUBE_CONTEXT="${KUBE_CONTEXT:-orbstack}"
+OVERLAY="${KUSTOMIZE_OVERLAY:-k8s/overlays/local}"
+IMAGE="voravitl/888router:${VERSION}"
 
-VERSION="$1"
+for command in kubectl kustomize curl node; do
+  command -v "$command" >/dev/null || {
+    echo "missing required command: $command" >&2
+    exit 1
+  }
+done
 
-if [ -z "$VERSION" ]; then
-  # Read current version from package.json if not specified
-  VERSION=$(node -e 'console.log(require("./package.json").version)')
+if [ "$(kubectl config current-context)" != "$KUBE_CONTEXT" ]; then
+  echo "refusing to deploy: current Kubernetes context is not $KUBE_CONTEXT" >&2
+  exit 1
 fi
 
-echo "====================================================="
-echo "🚀 Starting 888router CI/CD Release Pipeline v${VERSION}"
-echo "====================================================="
+workdir=$(mktemp -d)
+trap 'rm -rf "$workdir"' EXIT
+cp -R k8s "$workdir/k8s"
+overlay="$workdir/$OVERLAY"
 
-# Step 2: Automated Verification
-echo "➡️ [Step 2] Running Automated Unit Tests..."
-npx vitest run tests/unit/antigravity-quota-gemini-3.8.test.js tests/unit/antigravity-quota-gemini-3.7.test.js tests/unit/universal-tool-engine.test.js tests/unit/pruner.test.js tests/unit/kimchi.test.js tests/unit/kimchi-strip-reasoning.test.js tests/unit/db-benchmark.test.js --config tests/vitest.config.js
+kubectl kustomize "$overlay" >/dev/null
+(
+  cd "$overlay"
+  kustomize edit set image "voravitl/888router=$IMAGE"
+)
 
+rendered=$(kubectl kustomize "$overlay")
+printf '%s\n' "$rendered" | grep -F "image: $IMAGE" >/dev/null || {
+  echo "rendered manifest does not use $IMAGE" >&2
+  exit 1
+}
 
-# Step 4: Production & Docker Build Gate
-echo "➡️ [Step 4] Building Next.js Production App..."
-npm run build
+kubectl --context "$KUBE_CONTEXT" apply -k "$overlay"
 
-echo "➡️ [Step 4] Building Docker Container Images..."
-docker build -t "voravitl/888router:v${VERSION}" -t "voravitl/888router:latest" .
-
-# Step 5: Version Bumping, Release Tagging, Registry Push & Merge
-echo "➡️ [Step 5] Pushing Docker Images to Registry..."
-docker push "voravitl/888router:v${VERSION}"
-docker push "voravitl/888router:latest"
-
-echo "➡️ [Step 5] Creating Git Release Tag v${VERSION} & Pushing to Remote..."
-if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-  git tag -a "v${VERSION}" -m "Release v${VERSION}"
+# Pre-deploy availability snapshot: fail closed if fewer than 2 ready pods
+# exist before the rollout (rolling update with maxUnavailable=0 needs quorum).
+ready_before=$(kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router \
+  -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
+if [ "${ready_before:-0}" -lt 2 ]; then
+  echo "refusing to deploy: only ${ready_before:-0} ready replica(s), need >= 2 for zero-downtime rollout" >&2
+  exit 1
 fi
-git push origin master
-git push origin "v${VERSION}" --force
 
-# Step 6: Local Container Redeploy & Liveness Check
-echo "➡️ [Step 6] Redeploying Local Container..."
-docker compose up -d --force-recreate
+kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s
+kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="888router")].image}' | grep -Fx "$IMAGE" >/dev/null
 
-echo "➡️ [Step 6] Verifying Container Liveness..."
-sleep 3
-LIVENESS=$(curl -s http://localhost:20128/api/version || echo '{"error":"unreachable"}')
-echo "Liveness Health Check Result: ${LIVENESS}"
-
-echo "====================================================="
-echo "✅ CI/CD Release Pipeline v${VERSION} Completed Successfully!"
-echo "====================================================="
+# Post-deploy availability gate: version endpoint must stay reachable
+# throughout and after the rollout (catches bad image that passes probes).
+curl --fail --show-error --retry 12 --retry-all-errors --retry-delay 2 \
+  https://888router.k8s.orb.local/api/version

@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: 888router
+
+resources:
+  - ../../base
+
+images:
+  - name: voravitl/888router
+    newTag: 0.15.99
+
+# PRD is declarative-only in this repo: no automated apply exists yet.
+# Production needs its own BASE_URL/NINEROUTER_PUBLIC_URL, TLS ingress, and
+# storage class before this overlay is safe to deploy. Do not apply this
+# overlay until those replacements are added.
+labels:
+  - pairs:
+      environment: production
+      deployed-by: kustomize
+    includeSelectors: false

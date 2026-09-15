@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: 888router
+  namespace: 888router
+  labels:
+    app: 888router
+spec:
+  # SQLite lives on a shared ReadWriteOnce PVC: multiple writers corrupt data.
+  # Keep a single replica with Recreate; accept brief downtime on deploy.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: 888router
+  template:
+    metadata:
+      labels:
+        app: 888router
+    spec:
+      containers:
+        - name: 888router
+          image: voravitl/888router:0.15.99
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 20128
+              name: http
+          envFrom:
+            - configMapRef:
+                name: 888router-config
+            - secretRef:
+                name: 888router-secrets
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+          livenessProbe:
+            httpGet:
+              path: /api/version
+              port: 20128
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/version
+              port: 20128
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "250m"
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2048Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: 888router-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: router-888
+  namespace: 888router
+  labels:
+    app: 888router
+spec:
+  type: ClusterIP
+  selector:
+    app: 888router
+  ports:
+    - name: http
+      protocol: TCP
+      port: 20128
+      targetPort: 20128

@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: searxng-settings
+  namespace: 888router
+data:
+  settings.yml: |
+    use_default_settings: true
+
+    server:
+      # Placeholder replaced at container startup by searxng.yaml's command
+      # wrapper using the SEARXNG_SECRET env (from the 888router-secrets
+      # Secret). Never deploy with the literal value below.
+      secret_key: "REPLACED_AT_STARTUP_FROM_SEARXNG_SECRET"
+      image_proxy: true
+      limiter: false
+
+    search:
+      formats:
+        - html
+        - json
