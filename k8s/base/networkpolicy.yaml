@@ -43,6 +43,19 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # open-sse/utils/proxyFetch.js resolves MITM_BYPASS_HOSTS through public
+    # resolvers (GOOGLE_DNS_SERVERS) instead of CoreDNS. Without this rule those
+    # queries are refused, which is what stalled antigravity/kiro quota fetches.
+    - to:
+        - ipBlock:
+            cidr: 8.8.8.8/32
+        - ipBlock:
+            cidr: 8.8.4.4/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
     - to:
         - podSelector:
             matchLabels:
