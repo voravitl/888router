@@ -1,54 +1,113 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# Helper script for 888router 7-Step CI/CD Delivery Pipeline Execution
-# Usage: ./scripts/cicd-release.sh <version>
-# Example: ./scripts/cicd-release.sh 0.11.2
+# Local Kustomize deploy (NOT a full release: image must already be published).
+# Usage: ./scripts/cicd-release.sh <version>   (e.g. ./scripts/cicd-release.sh 0.15.99)
+# Deploys voravitl/888router:<version> to the local OrbStack overlay with:
+#   - server-side dry-run validation before any mutation
+#   - bootstrap/update split: fresh installs apply+wait; updates require the
+#     existing Deployment to be fully stable BEFORE apply (fail closed)
+#   - automatic rollback to the previous ReplicaSet on rollout/version failure
+#   - version comparison (endpoint must report the deployed version)
+VERSION="${1:-$(node -e 'console.log(require("./package.json").version)')}"
+IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
+KUBE_CONTEXT="${KUBE_CONTEXT:-orbstack}"
+OVERLAY="${KUSTOMIZE_OVERLAY:-k8s/overlays/local}"
+IMAGE="voravitl/888router:${IMAGE_TAG}"
 
-VERSION="$1"
+for command in kubectl kustomize curl node jq; do
+  command -v "$command" >/dev/null || {
+    echo "missing required command: $command" >&2
+    exit 1
+  }
+done
 
-if [ -z "$VERSION" ]; then
-  # Read current version from package.json if not specified
-  VERSION=$(node -e 'console.log(require("./package.json").version)')
+if [ "$(kubectl config current-context)" != "$KUBE_CONTEXT" ]; then
+  echo "refusing to deploy: current Kubernetes context is not $KUBE_CONTEXT" >&2
+  exit 1
 fi
 
-echo "====================================================="
-echo "🚀 Starting 888router CI/CD Release Pipeline v${VERSION}"
-echo "====================================================="
+workdir=$(mktemp -d)
+trap 'rm -rf "$workdir"' EXIT
+cp -R k8s "$workdir/k8s"
+overlay="$workdir/$OVERLAY"
 
-# Step 2: Automated Verification
-echo "➡️ [Step 2] Running Automated Unit Tests..."
-npx vitest run tests/unit/antigravity-quota-gemini-3.8.test.js tests/unit/antigravity-quota-gemini-3.7.test.js tests/unit/universal-tool-engine.test.js tests/unit/pruner.test.js tests/unit/kimchi.test.js tests/unit/kimchi-strip-reasoning.test.js tests/unit/db-benchmark.test.js --config tests/vitest.config.js
+kubectl kustomize "$overlay" >/dev/null
+(
+  cd "$overlay"
+  kustomize edit set image "voravitl/888router=$IMAGE"
+)
 
+rendered=$(kubectl kustomize "$overlay")
+printf '%s\n' "$rendered" | grep -F "image: $IMAGE" >/dev/null || {
+  echo "rendered manifest does not use $IMAGE" >&2
+  exit 1
+}
 
-# Step 4: Production & Docker Build Gate
-echo "➡️ [Step 4] Building Next.js Production App..."
-npm run build
+# Server-side dry-run before any mutation (admission/schema/storage failures
+# surface here without starting a rollout).
+kubectl --context "$KUBE_CONTEXT" apply --dry-run=server -k "$overlay" >/dev/null
 
-echo "➡️ [Step 4] Building Docker Container Images..."
-docker build -t "voravitl/888router:v${VERSION}" -t "voravitl/888router:latest" .
+# Bootstrap vs update: a fresh install has no Deployment yet — apply and wait.
+# An existing Deployment must be fully stable BEFORE we mutate it.
+if ! kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router >/dev/null 2>&1; then
+  echo "bootstrap: no existing deployment, applying and waiting..."
+  kubectl --context "$KUBE_CONTEXT" apply -k "$overlay"
+  kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s
+else
+  stable=$(kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router -o json)
+  check() { printf '%s' "$stable" | jq -e "$1" >/dev/null; }
+  stable_ok=1
+  check '.status.observedGeneration == .metadata.generation' || stable_ok=0
+  check '.status.updatedReplicas == .spec.replicas' || stable_ok=0
+  check '.status.readyReplicas == .spec.replicas' || stable_ok=0
+  check '.status.availableReplicas == .spec.replicas' || stable_ok=0
+  check '(.status.unavailableReplicas // 0) == 0' || stable_ok=0
+  if [ "$stable_ok" -ne 1 ]; then
+    echo "refusing to deploy: existing deployment is not fully stable (in-progress rollout or degraded)" >&2
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=30s || true
+    exit 1
+  fi
 
-# Step 5: Version Bumping, Release Tagging, Registry Push & Merge
-echo "➡️ [Step 5] Pushing Docker Images to Registry..."
-docker push "voravitl/888router:v${VERSION}"
-docker push "voravitl/888router:latest"
+  prev_image=$(kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="888router")].image}')
+  prev_revision=$(kubectl --context "$KUBE_CONTEXT" -n 888router rollout history deployment/888router \
+    -o jsonpath='{.metadata.generation}' 2>/dev/null || echo unknown)
 
-echo "➡️ [Step 5] Creating Git Release Tag v${VERSION} & Pushing to Remote..."
-if ! git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-  git tag -a "v${VERSION}" -m "Release v${VERSION}"
+  kubectl --context "$KUBE_CONTEXT" apply -k "$overlay"
+
+  rollback() {
+    echo "deploy failed — rolling back to previous ReplicaSet (was $prev_image, revision $prev_revision)..." >&2
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout undo deployment/888router || true
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s || true
+    echo "--- failure diagnostics ---" >&2
+    kubectl --context "$KUBE_CONTEXT" -n 888router describe deployment/888router >&2 || true
+    kubectl --context "$KUBE_CONTEXT" -n 888router get pods -l app=888router >&2 || true
+    kubectl --context "$KUBE_CONTEXT" -n 888router logs -l app=888router --tail=100 >&2 || true
+  }
+
+  if ! kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s; then
+    rollback
+    exit 1
+  fi
+  if ! kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="888router")].image}' | grep -Fx "$IMAGE" >/dev/null; then
+    echo "deployed image does not match $IMAGE" >&2
+    rollback
+    exit 1
+  fi
 fi
-git push origin master
-git push origin "v${VERSION}" --force
 
-# Step 6: Local Container Redeploy & Liveness Check
-echo "➡️ [Step 6] Redeploying Local Container..."
-docker compose up -d --force-recreate
+# Version gate: the endpoint must report the deployed version, not just HTTP 200.
+reported=$(curl --fail --show-error --retry 12 --retry-all-errors --retry-delay 2 \
+  https://888router.k8s.orb.local/api/version | jq -r '.currentVersion')
+if [ "$reported" != "$VERSION" ]; then
+  echo "version mismatch: endpoint reports $reported, expected $VERSION" >&2
+  if kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router >/dev/null 2>&1; then
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout undo deployment/888router || true
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s || true
+  fi
+  exit 1
+fi
 
-echo "➡️ [Step 6] Verifying Container Liveness..."
-sleep 3
-LIVENESS=$(curl -s http://localhost:20128/api/version || echo '{"error":"unreachable"}')
-echo "Liveness Health Check Result: ${LIVENESS}"
-
-echo "====================================================="
-echo "✅ CI/CD Release Pipeline v${VERSION} Completed Successfully!"
-echo "====================================================="
+echo "✅ Deployed $IMAGE, endpoint reports version $reported"

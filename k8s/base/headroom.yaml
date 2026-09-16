@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headroom
+  namespace: 888router
+  labels:
+    app: headroom
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: headroom
+  template:
+    metadata:
+      labels:
+        app: headroom
+    spec:
+      # Upstream images run as root; runAsNonRoot would break them. Keep
+      # drop-all capabilities + seccomp as the hardening that applies.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: headroom
+          image: ghcr.io/chopratejas/headroom@sha256:50b85d8e320cfcdf1b38919bb7ae067b93ff7a8de0a93f05b2c1246370200d1c
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - containerPort: 8787
+              name: http
+          resources:
+            limits:
+              cpu: "1.5"
+              memory: 1024Mi
+            requests:
+              cpu: "100m"
+              memory: 128Mi
+          env:
+            - name: OMP_NUM_THREADS
+              value: "2"
+            - name: OPENBLAS_NUM_THREADS
+              value: "2"
+            - name: MKL_NUM_THREADS
+              value: "2"
+            - name: VECLIB_MAXIMUM_THREADS
+              value: "2"
+            - name: NUMEXPR_NUM_THREADS
+              value: "2"
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 8787
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /livez
+              port: 8787
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /livez
+              port: 8787
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: headroom
+  namespace: 888router
+spec:
+  selector:
+    app: headroom
+  ports:
+    - protocol: TCP
+      port: 8787
+      targetPort: 8787
+      name: http

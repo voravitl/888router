@@ -494,3 +494,42 @@ jobs:
             exit 1
           fi
           echo "verified $checked tag(s)"
+
+  # The self-hosted OrbStack runner owns its kubeconfig. This job intentionally
+  # does not receive or construct Kubernetes credentials.
+  deploy-local-kubernetes:
+    name: deploy local Kubernetes
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    needs: merge
+    runs-on: [self-hosted, macOS, orbstack-k8s]
+    environment: local-kubernetes
+    concurrency:
+      group: local-kubernetes
+      cancel-in-progress: false
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require Kustomize and OrbStack Kubernetes context
+        run: |
+          set -euo pipefail
+          command -v kustomize >/dev/null || {
+            echo "::error::kustomize must be installed on the self-hosted runner"
+            exit 1
+          }
+          context="$(kubectl config current-context)"
+          if [ "$context" != "orbstack" ]; then
+            echo "::error::expected kubectl context orbstack, got $context"
+            exit 1
+          fi
+
+      - name: Deploy through Kustomize SSOT
+        env:
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Keep manual and CI deployments on one path: server validation,
+          # stable-state preflight, apply, rollback, and endpoint version gate.
+          # The workflow image tag uses the short SHA published by metadata-action.
+          export IMAGE_TAG="sha-${GITHUB_SHA::7}"
+          ./scripts/cicd-release.sh "$(node -p 'require(\"./package.json\").version')"

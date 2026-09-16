@@ -12,7 +12,7 @@ services:
     # build:
     #   context: .
     container_name: 888router
-    restart: always
+    restart: "no"
     ports:
       - "20128:20128"
     labels:
@@ -61,7 +61,7 @@ services:
   headroom:
     image: ghcr.io/chopratejas/headroom:latest
     container_name: headroom
-    restart: always
+    restart: "no"
     ports:
       - "8787:8787"
     deploy:
@@ -92,7 +92,7 @@ services:
   searxng:
     image: searxng/searxng:latest
     container_name: searxng
-    restart: unless-stopped
+    restart: "no"
     # Internal-only: SearXNG is a search proxy — do NOT publish to a public
     # host without auth (open-proxy/SSR abuse risk). Expose only for local dev
     # via a separate override. The gateway reaches it by service name.
@@ -138,7 +138,7 @@ services:
   watchtower:
     image: containrrr/watchtower@sha256:6dd50763bbd632a83cb154d5451700530d1e44200b268a4e9488fefdfcf2b038
     container_name: watchtower
-    restart: unless-stopped
+    restart: "no"
     command:
       - 888router
     environment:
