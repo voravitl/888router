@@ -32,7 +32,7 @@ ENV DATA_DIR=/app/data
 
 # Time zone for usage stats — Thailand time (default, override via -e TZ=<zone>)
 # docker run -e TZ=Europe/Berlin ... to use a different zone
-RUN apk --no-cache add tzdata
+RUN apk --no-cache add tzdata su-exec
 ENV TZ=Asia/Bangkok
 
 COPY --from=builder /app/public ./public
@@ -57,11 +57,18 @@ RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
   ln -sf /app/data-home /root/.9router 2>/dev/null || true
 
-# No su-exec needed — container runs as node (uid 1000) directly.
-# K8s fsGroup: 1000 handles PVC permissions; Docker named volumes
-# inherit ownership from the image mountpoint on first creation.
-USER node
+# Dual-mode entrypoint (su-exec / gosu pattern, like the official postgres/redis images):
+#   * as root (plain `docker run`, possibly a root-owned bind mount) -> chown the data
+#     dirs, then drop to the unprivileged `node` user.
+#   * already non-root (k8s runAsUser=1000 + drop ALL caps) -> exec directly. Calling
+#     su-exec here would hit setgroups() EPERM because CAP_SETGID is dropped, which is
+#     exactly what crash-looped image 0.15.99 ("su-exec: setgroups: Operation not
+#     permitted" -> CrashLoopBackOff -> ingress 503). See docker-entrypoint.sh.
+# No hard-coded `USER`: k8s pins runAsUser=1000 (non-root path); plain Docker starts as
+# root so the entrypoint can fix volume ownership before dropping privileges.
+COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 20128
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "custom-server.js"]
