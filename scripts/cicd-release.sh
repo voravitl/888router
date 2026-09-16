@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Local Kustomize deploy (NOT a full release: image must already be published).
+# Usage: ./scripts/cicd-release.sh <version>   (e.g. ./scripts/cicd-release.sh 0.15.99)
+# Deploys voravitl/888router:<version> to the local OrbStack overlay with:
+#   - server-side dry-run validation before any mutation
+#   - bootstrap/update split: fresh installs apply+wait; updates require the
+#     existing Deployment to be fully stable BEFORE apply (fail closed)
+#   - automatic rollback to the previous ReplicaSet on rollout/version failure
+#   - version comparison (endpoint must report the deployed version)
 VERSION="${1:-$(node -e 'console.log(require("./package.json").version)')}"
+IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-orbstack}"
 OVERLAY="${KUSTOMIZE_OVERLAY:-k8s/overlays/local}"
-IMAGE="voravitl/888router:${VERSION}"
+IMAGE="voravitl/888router:${IMAGE_TAG}"
 
-for command in kubectl kustomize curl node; do
+for command in kubectl kustomize curl node jq; do
   command -v "$command" >/dev/null || {
     echo "missing required command: $command" >&2
     exit 1
@@ -35,22 +44,70 @@ printf '%s\n' "$rendered" | grep -F "image: $IMAGE" >/dev/null || {
   exit 1
 }
 
-kubectl --context "$KUBE_CONTEXT" apply -k "$overlay"
+# Server-side dry-run before any mutation (admission/schema/storage failures
+# surface here without starting a rollout).
+kubectl --context "$KUBE_CONTEXT" apply --dry-run=server -k "$overlay" >/dev/null
 
-# Pre-deploy availability snapshot: fail closed if fewer than 2 ready pods
-# exist before the rollout (rolling update with maxUnavailable=0 needs quorum).
-ready_before=$(kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router \
-  -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo 0)
-if [ "${ready_before:-0}" -lt 2 ]; then
-  echo "refusing to deploy: only ${ready_before:-0} ready replica(s), need >= 2 for zero-downtime rollout" >&2
+# Bootstrap vs update: a fresh install has no Deployment yet — apply and wait.
+# An existing Deployment must be fully stable BEFORE we mutate it.
+if ! kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router >/dev/null 2>&1; then
+  echo "bootstrap: no existing deployment, applying and waiting..."
+  kubectl --context "$KUBE_CONTEXT" apply -k "$overlay"
+  kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s
+else
+  stable=$(kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router -o json)
+  check() { printf '%s' "$stable" | jq -e "$1" >/dev/null; }
+  stable_ok=1
+  check '.status.observedGeneration == .metadata.generation' || stable_ok=0
+  check '.status.updatedReplicas == .spec.replicas' || stable_ok=0
+  check '.status.readyReplicas == .spec.replicas' || stable_ok=0
+  check '.status.availableReplicas == .spec.replicas' || stable_ok=0
+  check '(.status.unavailableReplicas // 0) == 0' || stable_ok=0
+  if [ "$stable_ok" -ne 1 ]; then
+    echo "refusing to deploy: existing deployment is not fully stable (in-progress rollout or degraded)" >&2
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=30s || true
+    exit 1
+  fi
+
+  prev_image=$(kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="888router")].image}')
+  prev_revision=$(kubectl --context "$KUBE_CONTEXT" -n 888router rollout history deployment/888router \
+    -o jsonpath='{.metadata.generation}' 2>/dev/null || echo unknown)
+
+  kubectl --context "$KUBE_CONTEXT" apply -k "$overlay"
+
+  rollback() {
+    echo "deploy failed — rolling back to previous ReplicaSet (was $prev_image, revision $prev_revision)..." >&2
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout undo deployment/888router || true
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s || true
+    echo "--- failure diagnostics ---" >&2
+    kubectl --context "$KUBE_CONTEXT" -n 888router describe deployment/888router >&2 || true
+    kubectl --context "$KUBE_CONTEXT" -n 888router get pods -l app=888router >&2 || true
+    kubectl --context "$KUBE_CONTEXT" -n 888router logs -l app=888router --tail=100 >&2 || true
+  }
+
+  if ! kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s; then
+    rollback
+    exit 1
+  fi
+  if ! kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="888router")].image}' | grep -Fx "$IMAGE" >/dev/null; then
+    echo "deployed image does not match $IMAGE" >&2
+    rollback
+    exit 1
+  fi
+fi
+
+# Version gate: the endpoint must report the deployed version, not just HTTP 200.
+reported=$(curl --fail --show-error --retry 12 --retry-all-errors --retry-delay 2 \
+  https://888router.k8s.orb.local/api/version | jq -r '.currentVersion')
+if [ "$reported" != "$VERSION" ]; then
+  echo "version mismatch: endpoint reports $reported, expected $VERSION" >&2
+  if kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router >/dev/null 2>&1; then
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout undo deployment/888router || true
+    kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s || true
+  fi
   exit 1
 fi
 
-kubectl --context "$KUBE_CONTEXT" -n 888router rollout status deployment/888router --timeout=300s
-kubectl --context "$KUBE_CONTEXT" -n 888router get deployment/888router \
-  -o jsonpath='{.spec.template.spec.containers[?(@.name=="888router")].image}' | grep -Fx "$IMAGE" >/dev/null
-
-# Post-deploy availability gate: version endpoint must stay reachable
-# throughout and after the rollout (catches bad image that passes probes).
-curl --fail --show-error --retry 12 --retry-all-errors --retry-delay 2 \
-  https://888router.k8s.orb.local/api/version
+echo "✅ Deployed $IMAGE, endpoint reports version $reported"

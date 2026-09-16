@@ -15,10 +15,22 @@ spec:
       labels:
         app: searxng
     spec:
+      # Upstream image runs as root (entrypoint does update-ca-certificates);
+      # runAsNonRoot would break it. Keep drop-all + seccomp hardening.
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: searxng
-          image: searxng/searxng:latest
+          image: searxng/searxng@sha256:f1aca3f61c7ff4552b8d54c0ab7fb458e907b78f51c503210cf450c900adca2c
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - containerPort: 8080
               name: http
@@ -71,6 +83,21 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /
+              port: 8080
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
       volumes:
         - name: searxng-settings
           configMap:

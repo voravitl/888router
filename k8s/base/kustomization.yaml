@@ -11,3 +11,4 @@ resources:
   - searxng.yaml
   - 888router.yaml
   - ingress.yaml
+  - networkpolicy.yaml
