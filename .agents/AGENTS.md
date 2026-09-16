@@ -1,5 +1,11 @@
 # Project-Scoped AGENTS.md Rules for 888router
 
+> **See the repo-root [`../AGENTS.md`](../AGENTS.md) for the canonical tool-agnostic delivery
+> rules and operational lessons** (e.g. the Docker `su-exec`/`setgroups` vs. hardened k8s
+> `securityContext` regression, v0.15.99 → v0.15.100, and "a fix isn't shipped until the
+> version + every k8s image tag move together"). Incident write-ups: `.agents/incidents/`.
+> This file adds the project-scoped CI/CD pipeline detail on top of those shared rules.
+
 ## 🚀 Standard 7-Step End-to-End CI/CD Delivery Pipeline Rule (SSOT)
 ทุกครั้งที่มีการพัฒนา แก้ไขโค้ด หรือทำภารกิจในโปรเจกต์นี้ ต้องปฏิบัติตาม **7-Step CI/CD Delivery Pipeline** นี้โดยอัตโนมัติ ห้ามข้ามขั้นตอนเด็ดขาด:
 
