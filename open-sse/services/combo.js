@@ -434,7 +434,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         // usable. Inspect the stream head via comboStreamGuard and fall through
         // when it ends empty (the non-stream JSON path below already handles
         // the same condition via isReasoningEmptyContent).
-        if (body.stream === true && !emptyBody && result.body && typeof result.body.getReader === "function") {
+        //
+        // The gate keys on the RESPONSE content-type, never on `body.stream`:
+        // some upstreams (opencode Zen -free models) answer a non-stream
+        // request with `text/event-stream` anyway. Gating on `body.stream ===
+        // true` skipped the guard entirely for those, so a zero-text SSE was
+        // piped to the client as a 200 with no content instead of falling
+        // through to the next combo model.
+        if (!emptyBody && result.body && typeof result.body.getReader === "function") {
           const contentType = result.headers?.get('content-type') || "";
           if (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson')) {
             const guard = createComboStreamGuard();
@@ -496,12 +503,28 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         // non-stream (JSON body) case is handled — the stream:true SSE case needs
         // per-chunk finish_reason inspection; add when reasoning models are used
         // with streaming.
-        if (!body.stream && result.headers?.get('content-type')?.includes('application/json')) {
+        if (result.headers?.get('content-type')?.includes('application/json')) {
           let completion = null;
           try {
             completion = await result.clone().json();
           } catch {
             // not JSON — leave completion null
+          }
+          // Some upstreams answer HTTP 200 while carrying the failure INSIDE the
+          // body (observed: kilo-gateway/nvidia `{"error":{"message":"Upstream
+          // error from Nvidia: Service temporarily overloaded","code":502}}`).
+          // `result.ok` is true, so without this check the combo treated the
+          // failure as a success and piped an error object to the client
+          // instead of falling through to the next model. Only an error with no
+          // usable choices counts — a partial response that has both is left to
+          // the normal path.
+          if (completion?.error && !completion?.choices?.length) {
+            const e = completion.error;
+            const embedded = (typeof e === "string" ? e : e?.message) || "embedded error";
+            log.warn("COMBO", `Model ${modelStr} returned ${result.status} with embedded error, trying next: ${embedded}`);
+            lastError = lastError ? `${lastError}; ${embedded}` : embedded;
+            if (!lastStatus) lastStatus = Number(e?.code) || 502;
+            continue;
           }
           const choice = completion?.choices?.[0];
           const msg = choice?.message;

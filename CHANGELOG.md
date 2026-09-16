@@ -1,3 +1,32 @@
+# v0.15.101 (2026-09-16)
+
+## Combo: a 2xx that carries no usable answer now falls through to the next model
+
+Two upstream shapes let a failing model end a combo as if it had succeeded, so the
+client got a 200 with nothing usable while the remaining combo models were never
+tried. Both were found while rebuilding the `9-free` combo from live probes.
+
+- **Non-stream request answered with SSE bypassed the stream guard.** The guard in
+  `handleComboChat` was gated on `body.stream === true`, but opencode Zen `-free`
+  models answer a plain (non-stream) request with `content-type:
+  text/event-stream` anyway. For those the guard never ran, so a zero-text stream
+  (`delta: {}`, `finish_reason: "stop"`, no reasoning) was piped straight through.
+  Observed on `oc/muse-spark-1.3-contributor-free`: with `max_tokens: 700` it
+  returned an empty SSE on 4/4 attempts and the combo did not advance to the next
+  model. The gate now keys on the response content-type only; the inner
+  content-type check was already there and is unchanged.
+- **HTTP 200 with the error inside the body was treated as success.** kilo-gateway
+  /nvidia answers `200` with `{"error":{"message":"Upstream error from Nvidia:
+  Service temporarily overloaded","code":502}}` and no `choices`. `result.ok` is
+  true, so the combo returned that error envelope to the caller. An error envelope
+  with no usable `choices` is now a fall-through; a body carrying both an `error`
+  field and usable `choices` stays on the normal path. The same JSON inspection is
+  no longer skipped for streamed requests.
+
+Regression coverage: `tests/unit/combo-empty-2xx-fallthrough.test.js` (4 tests).
+Verified failing 3/4 with the fix reverted. Full suite from the repo root shows no
+regression against the committed baseline (`now fails=0, baseline known=25`).
+
 # v0.15.100 (2026-09-16)
 
 ## Docker/k8s: fix `su-exec: setgroups` CrashLoop under hardened securityContext
