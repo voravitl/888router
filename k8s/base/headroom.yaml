@@ -37,10 +37,10 @@ spec:
           resources:
             limits:
               cpu: "1.5"
-              memory: 1024Mi
+              memory: 2048Mi
             requests:
               cpu: "100m"
-              memory: 128Mi
+              memory: 512Mi
           env:
             - name: OMP_NUM_THREADS
               value: "2"

@@ -1,3 +1,23 @@
+# v0.15.100 (2026-09-16)
+
+## Docker/k8s: fix `su-exec: setgroups` CrashLoop under hardened securityContext
+
+- **Root cause**: image `0.15.99` shipped an entrypoint (added in `8c51edab`, "use
+  entrypoint to fix /app/data permissions") that unconditionally ran `su-exec node`.
+  `su-exec` calls `setgroups()`, which requires `CAP_SETGID`. Under the Kubernetes
+  hardened `securityContext` (`runAsUser: 1000`, `runAsNonRoot: true`,
+  `capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false`) that capability is
+  dropped, so `setgroups()` returned `EPERM` → `su-exec: setgroups: Operation not
+  permitted` → container exit 1 → CrashLoopBackOff → 0/1 backends → ingress `503`.
+- **Fix**: `docker-entrypoint.sh` now uses the standard dual-mode su-exec/gosu pattern.
+  When started as root (plain `docker run`, possibly a root-owned bind mount) it chowns
+  the data dirs and drops to `node`; when already started non-root (k8s) it `exec`s the
+  app directly and never touches `su-exec`/`setgroups`. Works under both Docker and the
+  hardened k8s securityContext.
+- **Manifests**: repinned `voravitl/888router` image tag from `0.15.99` to `0.15.100`
+  in `k8s/base/888router.yaml` and both overlays (`local`, `prd`). The poisoned `0.15.99`
+  tag (su-exec entrypoint) is superseded; do not redeploy it.
+
 # v0.15.99 (2026-09-14)
 
 ## Nara Free Tier Catalog & Auto-Combo Routing Fix

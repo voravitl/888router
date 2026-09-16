@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Canonical delivery rules + operational lessons live in [`AGENTS.md`](./AGENTS.md).**
+> It is tool-agnostic (Claude Code, Codex, Grok, Agy, OpenCode, Kiro, and humans all follow
+> it) and is the single source of truth for: the branch → evidence → test → review →
+> version+changelog → build+redeploy pipeline, the mandatory independent-review ladder, and
+> hard-won lessons — including the Docker `su-exec`/`setgroups` vs. hardened k8s
+> `securityContext` regression (v0.15.99 → v0.15.100) and the rule that "a fix isn't shipped
+> until `package.json` + `CHANGELOG` + every k8s image tag move together." **Read `AGENTS.md`
+> before shipping any change.** Recent incident write-ups live under `.agents/incidents/`.
+
 ## What this is
 
 9Router (`9router-app`) — a local AI routing gateway + Next.js dashboard. It exposes one OpenAI-compatible endpoint (`/v1/*`) and routes traffic across 40+ upstream providers with format translation, model-combo fallback, multi-account fallback, OAuth/API-key credential management, token refresh, quota/usage tracking, and optional cloud sync.

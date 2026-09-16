@@ -78,6 +78,46 @@ Fallback ladder (top preferred; descend until one returns real findings):
 - Structural fix over per-model patch: if new models of the same family will
   keep hitting the bug, fix the resolution mechanism instead of enumerating IDs.
 
+### Docker entrypoint vs. hardened k8s securityContext (v0.15.99 → v0.15.100)
+
+Symptom seen in prod: pod `CrashLoopBackOff`, container logs show only
+`su-exec: setgroups: Operation not permitted`, and the ingress serves **503** because
+0/1 backends are Ready.
+
+Root cause: an entrypoint that runs `su-exec` (or `gosu`) **unconditionally** calls
+`setgroups()`, which needs `CAP_SETGID`. Our k8s `securityContext` is `runAsNonRoot: true`,
+`runAsUser: 1000`, `capabilities.drop: [ALL]`, `allowPrivilegeEscalation: false`, so
+`setgroups()` returns `EPERM` and the process exits 1. `su-exec` is only usable when the
+container **starts as root** (the plain-Docker case) — never on the already-non-root k8s
+path. This shipped in image `0.15.99` (added by commit `8c51edab`, "use entrypoint to fix
+/app/data permissions").
+
+Rule for any privilege-drop entrypoint — make it **dual-mode** (see `docker-entrypoint.sh`):
+
+```sh
+if [ "$(id -u)" = "0" ]; then chown -R node:node /app/data …; exec su-exec node "$@"; fi
+exec "$@"   # already non-root (k8s): NEVER touch su-exec/setgroups here
+```
+
+The deployment landmine that turned a fixed bug back into an outage: the Dockerfile was
+fixed on `master` but the release was **not versioned** (`package.json` stayed `0.15.99`)
+and `k8s/base` + both overlays still pinned `newTag: 0.15.99`. A later `kubectl apply -k`
+re-pulled the poisoned `0.15.99` image and re-broke prod. Therefore:
+
+- A code fix is **not shipped** until `package.json`/`package-lock.json`/`CHANGELOG` AND
+  every k8s image reference (`k8s/base/888router.yaml` + `overlays/local` + `overlays/prd`)
+  move to the new tag together. Grep `grep -rn 0.15.<old> k8s/ package.json` before calling
+  it done.
+- Treat a known-bad published tag as **burned**: supersede it with a new version, never try
+  to "reuse"/overwrite it.
+- Verify a privilege / securityContext change locally before deploying:
+  `docker run --user 1000 --cap-drop ALL --security-opt no-new-privileges … <image>` must
+  reach Ready, and the root path must end with PID 1 at uid 1000 (`cat /proc/1/status`).
+- Fast incident mitigation is `kubectl rollout undo deploy -n 888router 888router
+  --to-revision=<last-good>` (confirm the revision→image map first with
+  `kubectl get rs -n 888router -o jsonpath` on the `deployment.kubernetes.io/revision`
+  annotation).
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
