@@ -21,6 +21,33 @@
  * prefix are parsed as raw JSON so the application/x-ndjson content type is
  * actually supported.
  */
+/**
+ * Text carried by a whole-completion `message` object, across the shapes an
+ * upstream may use: a plain string, or an array of content parts (OpenAI
+ * `{type:"text",text}` / Anthropic-style blocks). Returns "" when there is none.
+ */
+export function messageContentText(message) {
+  const content = message && message.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  let out = "";
+  for (const part of content) {
+    if (typeof part === "string") out += part;
+    else if (part && typeof part.text === "string") out += part.text;
+  }
+  return out;
+}
+
+/** A non-empty tool-call list on a delta or a whole-completion message. */
+export function hasToolCalls(node) {
+  if (!node) return false;
+  const calls = node.tool_calls ?? node.toolCalls;
+  if (Array.isArray(calls) && calls.length > 0) return true;
+  if (node.function_call || node.functionCall) return true;
+  return Array.isArray(node.content)
+    && node.content.some((p) => p && p.type === "tool_use");
+}
+
 export function createComboStreamGuard() {
   /** Raw chunk bytes buffered until the verdict. */
   let chunks = [];
@@ -70,15 +97,27 @@ export function createComboStreamGuard() {
         }
 
         const ollamaText = typeof json.response === "string" ? json.response : "";
-        const delta = json.choices && json.choices[0] && json.choices[0].delta;
+        const choice = json.choices && json.choices[0];
+        const delta = choice && choice.delta;
         const deltaText = (delta && (delta.content || delta.text)) || "";
+        // A NON-stream completion delivered over SSE: some upstreams (kilo-gateway,
+        // opencode Zen) answer a plain request with content-type
+        // text/event-stream and put the WHOLE completion in one frame under
+        // `message.content`, never `delta.content`. Reading only the delta judged
+        // those real answers empty and made the combo discard them.
+        const messageText = messageContentText(choice && choice.message);
         // Anthropic SSE: delta.text or delta.partial_json inside content_block_delta
         const anthropicText = (json.delta && typeof json.delta.text === "string") ? json.delta.text
           : (json.delta && typeof json.delta.partial_json === "string") ? json.delta.partial_json
           : "";
 
-        const textVal = ollamaText || deltaText || anthropicText;
+        const textVal = ollamaText || deltaText || messageText || anthropicText;
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
+
+        // A tool-call-only turn carries no text but IS a usable answer — never
+        // treat it as an empty stream. Covers both the streamed (delta) and
+        // whole-completion (message) shapes.
+        if (hasToolCalls(delta) || hasToolCalls(choice && choice.message)) sawText = true;
 
         // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE)
         // or Anthropic delta.thinking (Claude 3.7/Kiro thinking delta)
