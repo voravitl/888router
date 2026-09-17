@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleComboChat } from "../../open-sse/services/combo.js";
+import {
+  handleComboChat,
+  hasUsableCompletionPayload,
+  toHttpStatus,
+} from "../../open-sse/services/combo.js";
 
 const enc = (s) => new TextEncoder().encode(s);
 
@@ -129,6 +133,89 @@ describe("handleComboChat: 2xx that carries no usable answer falls through", () 
 
     expect(handleSingleModel).toHaveBeenCalledTimes(1);
     expect((await result.clone().json()).choices[0].message.content).toBe("still fine");
+  });
+
+  // Review finding (confirmed): a provider error `code` is not an HTTP status.
+  // `lastStatus` is handed to `new Response`, which throws RangeError outside
+  // 200-599 — that dropped the connection instead of returning an error body.
+  it("does not adopt an out-of-range provider error code as the HTTP status", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const handleSingleModel = vi.fn(async () => jsonResponse({
+      error: { message: "quota blown", code: 10004 },
+    }));
+
+    const result = await handleComboChat({
+      body: { model: "9-free", messages: [{ role: "user", content: "hi" }] },
+      models: ["a/one", "b/two"],
+      handleSingleModel,
+      log,
+      comboName: "9-free",
+      comboStrategy: "fallback",
+    });
+
+    // Every model failed; the all-failed path must still produce a real
+    // response rather than throwing on an invalid status.
+    expect(result.status).toBe(502);
+    expect((await result.clone().json()).error.message).toContain("quota blown");
+  });
+
+  // Review finding (confirmed): gating the payload check on OpenAI `choices`
+  // discarded Claude (`content`) and Gemini (`candidates`) answers that also
+  // carried a non-fatal error/warning field.
+  it.each([
+    ["claude content + benign error", { content: [{ type: "text", text: "hi" }], error: { message: "deprecation notice" } }],
+    ["gemini candidates + benign error", { candidates: [{ content: { parts: [{ text: "hi" }] } }], error: { message: "safety note" } }],
+    ["responses output + benign error", { output: [{ type: "message", content: "hi" }], error: { message: "warning" } }],
+  ])("keeps a non-OpenAI answer that also carries an error field (%s)", async (_name, payload) => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const handleSingleModel = vi.fn(async () => jsonResponse(payload));
+
+    await handleComboChat({
+      body: { model: "9-free", messages: [{ role: "user", content: "hi" }] },
+      models: ["a/one", "b/two"],
+      handleSingleModel,
+      log,
+      comboName: "9-free",
+      comboStrategy: "fallback",
+    });
+
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
+  });
+
+  describe("hasUsableCompletionPayload", () => {
+    it.each([
+      ["openai choices", { choices: [{ message: { content: "hi" } }] }, true],
+      ["claude content", { content: [{ type: "text", text: "hi" }] }, true],
+      ["gemini candidates", { candidates: [{}] }, true],
+      ["responses output", { output: [{}] }, true],
+      ["responses output_text", { output_text: "hi" }, true],
+      ["empty choices", { choices: [] }, false],
+      ["empty content", { content: [] }, false],
+      ["empty output_text", { output_text: "" }, false],
+      ["error envelope only", { error: { message: "boom" } }, false],
+      ["null", null, false],
+      ["non-object", "nope", false],
+    ])("%s → %s", (_n, input, expected) => {
+      expect(hasUsableCompletionPayload(input)).toBe(expected);
+    });
+  });
+
+  describe("toHttpStatus", () => {
+    it.each([
+      [502, 502],
+      ["502", 502],
+      [200, 200],
+      [599, 599],
+      [10004, null],
+      [199, null],
+      [600, null],
+      ["rate_limit", null],
+      [null, null],
+      [undefined, null],
+      [502.7, null],
+    ])("%s → %s", (input, expected) => {
+      expect(toHttpStatus(input)).toBe(expected);
+    });
   });
 
   it("still retries once with a raised budget on the reasoning-length signature", async () => {

@@ -23,9 +23,36 @@ tried. Both were found while rebuilding the `9-free` combo from live probes.
   field and usable `choices` stays on the normal path. The same JSON inspection is
   no longer skipped for streamed requests.
 
-Regression coverage: `tests/unit/combo-empty-2xx-fallthrough.test.js` (4 tests).
-Verified failing 3/4 with the fix reverted. Full suite from the repo root shows no
-regression against the committed baseline (`now fails=0, baseline known=25`).
+Two further defects in the first cut of the above were found in independent review
+and fixed before merge:
+
+- **A provider error `code` is not an HTTP status.** `lastStatus = Number(e?.code)`
+  adopted proprietary values (e.g. `10004`), and `lastStatus` is passed straight to
+  `new Response` on the all-models-failed path, where anything outside 200-599
+  throws `RangeError` — dropping the connection instead of returning an error body.
+  Now routed through `toHttpStatus()`, which only accepts a real 200-599 integer
+  and otherwise falls back to 502. Reproduced as a thrown `RangeError` before the
+  fix.
+- **The payload check was OpenAI-only.** `!completion?.choices?.length` treated a
+  Claude (`content`) or Gemini (`candidates`) answer that also carried a non-fatal
+  `error`/warning field as a pure error envelope and discarded a successful
+  response. Replaced with `hasUsableCompletionPayload()`, which spans `choices`,
+  `content`, `candidates`, `output` and `output_text`.
+
+Regression coverage: `tests/unit/combo-empty-2xx-fallthrough.test.js` (30 tests,
+including unit coverage for both new helpers). The four original cases were
+verified failing 3/4 with the fix reverted.
+
+Also refreshes `tests/translator/__snapshots__/golden-url-header.test.js.snap`,
+which embeds the version string in `User-Agent` / `X-CLIENT-VERSION` /
+`X-CORE-VERSION` / `X-Msh-Version` (24 lines, `0.15.100` → `0.15.101`) — the same
+version-bump follow-up as `c3f2af47`.
+
+Full-suite state (run with the pinned `tests/node_modules/.bin/vitest`, not `npx`,
+which resolves a different major): 6 failures remain, all pre-existing on a clean
+HEAD and environmental — the `nip.io` SSRF tests need DNS resolution of
+`127-0-0-1.nip.io`, which times out on this network. Failure-set delta against a
+clean-HEAD run of the same suite: 0 caused, 4 fixed (the golden snapshots above).
 
 # v0.15.100 (2026-09-16)
 

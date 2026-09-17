@@ -24,6 +24,35 @@ export function isReasoningEmptyContent(finishReason, content, reasoningContent)
   );
 }
 
+// Does a parsed 200 body carry a usable answer? Spans every client format this
+// router serves — OpenAI (`choices`), Claude messages (`content`), Gemini
+// (`candidates`), OpenAI Responses (`output`) — so a Claude/Gemini answer that
+// also carries a non-fatal `error`/warning field is not mistaken for a pure
+// error envelope. Pure function, exported for tests.
+export function hasUsableCompletionPayload(completion) {
+  if (!completion || typeof completion !== "object") return false;
+  const nonEmpty = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === "string" ? v.length > 0 : !!v);
+  return (
+    nonEmpty(completion.choices) ||
+    nonEmpty(completion.content) ||
+    nonEmpty(completion.candidates) ||
+    nonEmpty(completion.output) ||
+    nonEmpty(completion.output_text)
+  );
+}
+
+// Coerce a provider error `code` into an HTTP status, or null when it is not one.
+// Provider codes are NOT HTTP statuses: kilo-gateway sends 502, but others send
+// proprietary integers (10004) or strings ("rate_limit"). `lastStatus` is handed
+// straight to `new Response`, which throws RangeError outside 200-599 — that
+// would drop the connection instead of returning an error body. Pure function,
+// exported for tests.
+export function toHttpStatus(code) {
+  const n = typeof code === "string" ? Number(code) : code;
+  if (!Number.isInteger(n) || n < 200 || n > 599) return null;
+  return n;
+}
+
 // Raise max_tokens for the retry: original x3 or +512 (whichever is larger), minimum 2048, capped
 // at 65536. Returns a new body object, never mutates the original.
 function withRaisedMaxTokens(body) {
@@ -515,15 +544,25 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           // error from Nvidia: Service temporarily overloaded","code":502}}`).
           // `result.ok` is true, so without this check the combo treated the
           // failure as a success and piped an error object to the client
-          // instead of falling through to the next model. Only an error with no
-          // usable choices counts — a partial response that has both is left to
-          // the normal path.
-          if (completion?.error && !completion?.choices?.length) {
+          // instead of falling through to the next model.
+          //
+          // Only an error envelope with NO usable payload counts. The payload
+          // check spans every client format this router serves, not just
+          // OpenAI `choices`: a Claude (`content`) or Gemini (`candidates`)
+          // response that also carries a non-fatal `error`/warning field is a
+          // successful answer and must stay on the normal path.
+          if (completion?.error && !hasUsableCompletionPayload(completion)) {
             const e = completion.error;
             const embedded = (typeof e === "string" ? e : e?.message) || "embedded error";
             log.warn("COMBO", `Model ${modelStr} returned ${result.status} with embedded error, trying next: ${embedded}`);
             lastError = lastError ? `${lastError}; ${embedded}` : embedded;
-            if (!lastStatus) lastStatus = Number(e?.code) || 502;
+            // Provider error `code`s are NOT HTTP statuses — kilo-gateway sends
+            // 502 but others send proprietary values (e.g. 10004) or strings
+            // ("rate_limit"). `lastStatus` is passed straight to `new Response`
+            // on the all-models-failed path, where anything outside 200-599
+            // throws RangeError and drops the connection instead of returning
+            // an error body. Only adopt a real HTTP status; else 502.
+            if (!lastStatus) lastStatus = toHttpStatus(e?.code) ?? 502;
             continue;
           }
           const choice = completion?.choices?.[0];
