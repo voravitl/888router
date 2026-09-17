@@ -231,17 +231,35 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Picks the NEXT eligible pool (first not excluded) so chat.js's fallback
     // loop rotates across pools on failure. Returns null when every pool has
     // been tried (exhausted).
+    // `keyed` is reused as `connections` below to avoid querying twice.
+    let keyed = null;
     if (FREE_PROVIDERS[providerId]?.noAuth || AI_PROVIDERS[providerId]?.noAuth) {
-      const chosen = await pickVirtualNoAuthConnection(providerId, excludeSet);
-      if (!chosen) {
-        log.warn("AUTH", `${provider} | all proxy pools exhausted (or none eligible)`);
-        return null;
+      // Prefer user-supplied keyed connections (BYOK) over anonymous pools:
+      // upstream blocks anonymous third-party free-tier calls (403
+      // FreeTierError), so a saved key must win whenever one is usable.
+      keyed = await getProviderConnections({ provider: providerId, isActive: true });
+      const excluded = excludeSet instanceof Set ? excludeSet : new Set();
+      const hasUsableKey = keyed.some((c) => {
+        if (excluded.has(c.id)) return false;
+        if (isModelLockActive(c, model)) return false;
+        return !!(
+          (typeof c.apiKey === "string" && c.apiKey.trim()) ||
+          (typeof c.accessToken === "string" && c.accessToken.trim())
+        );
+      });
+      if (!hasUsableKey) {
+        const chosen = await pickVirtualNoAuthConnection(providerId, excludeSet);
+        if (!chosen) {
+          log.warn("AUTH", `${provider} | all proxy pools exhausted (or none eligible)`);
+          return null;
+        }
+        log.info("AUTH", `Using ${provider} proxy pool: ${chosen.connectionName}`);
+        return chosen;
       }
-      log.info("AUTH", `Using ${provider} proxy pool: ${chosen.connectionName}`);
-      return chosen;
+      log.info("AUTH", `${provider} | keyed connection available, skipping anonymous pool (BYOK)`);
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const connections = keyed ?? await getProviderConnections({ provider: providerId, isActive: true });
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {

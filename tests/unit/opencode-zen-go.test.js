@@ -42,6 +42,22 @@ describe("OpenCode Zen & Go Unified Executor & Registry", () => {
     expect(url).toBe("https://opencode.ai/zen/v1/messages");
   });
 
+  it("should forward a user Zen key for -free models instead of Bearer public (BYOK)", () => {
+    const executor = new OpenCodeExecutor();
+    const creds = { apiKey: "sk-zen-test-key" };
+    const url = executor.buildUrl("mimo-v2.5-free", true, 0, creds);
+    const headers = executor.buildHeaders(creds, true, "mimo-v2.5-free");
+
+    expect(url).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(headers["Authorization"]).toBe("Bearer sk-zen-test-key");
+  });
+
+  it("should keep Bearer public for -free models when no key is configured", () => {
+    const executor = new OpenCodeExecutor();
+    const headers = executor.buildHeaders(null, true, "mimo-v2.5-free");
+
+    expect(headers["Authorization"]).toBe("Bearer public");
+  });
   it("should route to OpenCode Go when a valid API key is provided and include x-opencode-client", () => {
     const executor = new OpenCodeExecutor();
     const creds = { apiKey: "sk-test-opencode-key" };

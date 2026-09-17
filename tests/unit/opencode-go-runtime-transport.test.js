@@ -40,10 +40,13 @@ describe("OpenCode Go honors chatCore runtimeTransport (#385)", () => {
     }
   });
 
-  it("does not let a Go key steal muse-spark off Zen /responses", () => {
+  it("keeps muse-spark on Zen /responses but forwards the user key (BYOK)", () => {
+    // URL must stay on Zen /responses (not Go); with a user-supplied Zen key
+    // the key is forwarded instead of Bearer public so -free models are
+    // authenticated as the user (anonymous public is 403-blocked off-client).
     const model = "muse-spark-1.3-contributor-free";
     expect(zen.buildUrl(model, true, 0, GO_KEY)).toBe("https://opencode.ai/zen/v1/responses");
-    expect(zen.buildHeaders(GO_KEY, true, "", model).Authorization).toBe("Bearer public");
+    expect(zen.buildHeaders(GO_KEY, true, "", model).Authorization).toBe("Bearer sk-test-opencode-key");
   });
 
   it("never treats -free-suffixed opencode-go models as Zen public", () => {

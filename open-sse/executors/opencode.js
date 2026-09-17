@@ -227,7 +227,6 @@ export class OpenCodeExecutor extends BaseExecutor {
     const rawKey = credentials?.apiKey || credentials?.accessToken;
     const key = typeof rawKey === "string" ? rawKey.trim() : null;
     const effectiveModel = model || (typeof url === "string" && !url.startsWith("http") ? url : null);
-    const isFreeModel = isZenFreeModel(this.provider, effectiveModel);
     const rtAuth = credentials?.runtimeTransport?.auth;
 
     const headers = {
@@ -247,8 +246,11 @@ export class OpenCodeExecutor extends BaseExecutor {
         headers["Authorization"] = `Bearer ${key}`;
       }
       if (rtAuth.anthropicVersion) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
-    } else if (key && !isFreeModel) {
-      // OpenCode Go with API Key
+    } else if (key) {
+      // User-supplied key (BYOK). Zen keys authenticate -free models on
+      // /zen/v1 (anonymous Bearer public is 403-blocked for third-party
+      // clients with FreeTierError). Go provider ids never reach this branch
+      // as free models (isZenFreeModel is false for opencode-go).
       if (effectiveModel && MESSAGES_MODELS.has(effectiveModel)) {
         headers["x-api-key"] = key;
         headers["anthropic-version"] = ANTHROPIC_API_VERSION;

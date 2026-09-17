@@ -19,7 +19,7 @@ const opencodeConfig = {
   noAuth: true,
   category: "free",
   authModes: ["noauth", "apikey"],
-  authHint: "OpenCode Free (Zen) mode - public access or OpenCode Go API key.",
+  authHint: "OpenCode Zen mode - public access or Zen API key (key required for free models via third-party clients).",
   transport: {
     baseUrl: "https://opencode.ai",
     headers: {

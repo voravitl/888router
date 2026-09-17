@@ -225,3 +225,58 @@ describe("markAccountUnavailable on auto-rotate pool", () => {
     expect(r.shouldFallback).toBe(false);
   });
 });
+
+describe("BYOK: keyed connection wins over anonymous pool on noAuth providers", () => {
+  beforeEach(async () => {
+    proxyPools.length = 0;
+    settings.providerStrategies = {};
+    // POOL_A/POOL_B are module-shared and earlier suites park them via
+    // updateProxyPool (unavailableUntil/testStatus) — reset to pristine.
+    for (const p of [POOL_A, POOL_B]) {
+      delete p.unavailableUntil;
+      delete p.testStatus;
+      delete p.lastError;
+      delete p.lastErrorCode;
+      delete p.backoffLevel;
+    }
+    const { getProviderConnections } = await import("@/lib/localDb");
+    getProviderConnections.mockReset().mockResolvedValue([]);
+  });
+
+  async function mockKeyed(rows) {
+    const { getProviderConnections } = await import("@/lib/localDb");
+    getProviderConnections.mockResolvedValue(rows);
+  }
+
+  const KEYED = {
+    id: "conn-zen-key",
+    provider: "opencode",
+    authType: "apikey",
+    name: "OpenCode",
+    isActive: true,
+    priority: 1,
+    apiKey: "sk-zen-test-key",
+  };
+
+  it("prefers the keyed connection instead of the virtual pool", async () => {
+    proxyPools.push(POOL_A, POOL_B);
+    await mockKeyed([KEYED]);
+    const creds = await getProviderCredentials("opencode", null, "mimo-v2.5-free");
+    expect(creds.connectionId).toBe("conn-zen-key");
+    expect(creds.apiKey).toBe("sk-zen-test-key");
+  });
+
+  it("falls back to the virtual pool when the keyed connection is excluded", async () => {
+    proxyPools.push(POOL_A, POOL_B);
+    await mockKeyed([KEYED]);
+    const creds = await getProviderCredentials("opencode", new Set(["conn-zen-key"]), "mimo-v2.5-free");
+    expect(creds.id).toBe("noauth:poolA");
+  });
+
+  it("falls back to the virtual pool when the keyed connection has a blank key", async () => {
+    proxyPools.push(POOL_A);
+    await mockKeyed([{ ...KEYED, apiKey: "   " }]);
+    const creds = await getProviderCredentials("opencode", null, "mimo-v2.5-free");
+    expect(creds.id).toBe("noauth:poolA");
+  });
+});
