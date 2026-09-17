@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   handleComboChat,
   hasUsableCompletionPayload,
-  toHttpStatus,
+  toHttpFailureStatus,
 } from "../../open-sse/services/combo.js";
 
 const enc = (s) => new TextEncoder().encode(s);
@@ -200,22 +200,93 @@ describe("handleComboChat: 2xx that carries no usable answer falls through", () 
     });
   });
 
-  describe("toHttpStatus", () => {
+  describe("toHttpFailureStatus", () => {
     it.each([
       [502, 502],
       ["502", 502],
-      [200, 200],
+      [400, 400],
+      [429, 429],
       [599, 599],
+      // A 2xx must never become the failure status: every failing shape this
+      // file detects arrives WITH a 2xx, so adopting it verbatim served an
+      // error envelope to the client under a success status.
+      [200, null],
+      [204, null],
+      [299, null],
+      // Not a failure status either.
+      [302, null],
+      // Provider-proprietary codes and non-numerics.
       [10004, null],
-      [199, null],
+      [399, null],
       [600, null],
       ["rate_limit", null],
       [null, null],
       [undefined, null],
       [502.7, null],
     ])("%s → %s", (input, expected) => {
-      expect(toHttpStatus(input)).toBe(expected);
+      expect(toHttpFailureStatus(input)).toBe(expected);
     });
+  });
+
+  // Self-review finding (confirmed): every failing shape detected here arrives
+  // WITH a 2xx status, so adopting that status as `lastStatus` served the
+  // all-models-failed error envelope to the client under a success code. A
+  // caller checking only the status would read the error as an answer.
+  it("never reports a 2xx as the all-models-failed status (embedded error with code 200)", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const handleSingleModel = vi.fn(async () => jsonResponse({
+      error: { message: "upstream exploded", code: 200 },
+    }));
+
+    const result = await handleComboChat({
+      body: { model: "9-free", messages: [{ role: "user", content: "hi" }] },
+      models: ["a/one", "b/two"],
+      handleSingleModel,
+      log,
+      comboName: "9-free",
+      comboStrategy: "fallback",
+    });
+
+    expect(result.status).toBe(502);
+    expect((await result.clone().json()).error.message).toContain("upstream exploded");
+  });
+
+  it("never reports a 2xx as the all-models-failed status (empty body)", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const handleSingleModel = vi.fn(async () => new Response(null, {
+      status: 200,
+      headers: { "content-length": "0" },
+    }));
+
+    const result = await handleComboChat({
+      body: { model: "9-free", messages: [{ role: "user", content: "hi" }] },
+      models: ["a/one", "b/two"],
+      handleSingleModel,
+      log,
+      comboName: "9-free",
+      comboStrategy: "fallback",
+    });
+
+    expect(result.status).toBe(502);
+  });
+
+  it("still reports a genuine upstream failure status verbatim", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const handleSingleModel = vi.fn(async () => new Response(
+      JSON.stringify({ error: { message: "model gone" } }),
+      { status: 404, headers: { "content-type": "application/json" } },
+    ));
+
+    const result = await handleComboChat({
+      body: { model: "9-free", messages: [{ role: "user", content: "hi" }] },
+      models: ["a/one", "b/two"],
+      handleSingleModel,
+      log,
+      comboName: "9-free",
+      comboStrategy: "fallback",
+    });
+
+    expect(result.status).toBe(404);
   });
 
   it("still retries once with a raised budget on the reasoning-length signature", async () => {

@@ -41,15 +41,25 @@ export function hasUsableCompletionPayload(completion) {
   );
 }
 
-// Coerce a provider error `code` into an HTTP status, or null when it is not one.
-// Provider codes are NOT HTTP statuses: kilo-gateway sends 502, but others send
-// proprietary integers (10004) or strings ("rate_limit"). `lastStatus` is handed
-// straight to `new Response`, which throws RangeError outside 200-599 — that
-// would drop the connection instead of returning an error body. Pure function,
-// exported for tests.
-export function toHttpStatus(code) {
+// Coerce a candidate status into an HTTP FAILURE status, or null when it is not
+// one. Used for `lastStatus`, which describes why the combo gave up and is handed
+// straight to `new Response` on the all-models-failed path.
+//
+// Two traps this closes:
+//  - Provider error `code`s are not HTTP statuses. kilo-gateway sends 502, but
+//    others send proprietary integers (10004) or strings ("rate_limit"). Anything
+//    outside 200-599 makes `new Response` throw RangeError, dropping the
+//    connection instead of returning an error body.
+//  - A 2xx must never become the failure status. The failing shapes this file
+//    detects (embedded error envelope, empty body, zero-text stream) all arrive
+//    WITH a 2xx status, so adopting it verbatim served a failure to the client as
+//    a success — a caller checking only the status code would treat the error
+//    envelope as an answer. Only 400-599 is accepted; callers fall back to 502.
+//
+// Pure function, exported for tests.
+export function toHttpFailureStatus(code) {
   const n = typeof code === "string" ? Number(code) : code;
-  if (!Number.isInteger(n) || n < 200 || n > 599) return null;
+  if (!Number.isInteger(n) || n < 400 || n > 599) return null;
   return n;
 }
 
@@ -454,7 +464,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         if (emptyBody) {
           log.warn("COMBO", `Model ${modelStr} returned ${result.status} with empty body, trying next`);
           lastError = `empty body (${result.status})`;
-          if (!lastStatus) lastStatus = result.status;
+          // `result.status` here is a 2xx by construction (this branch only runs
+          // under `result.ok`), and a 2xx must never become the failure status —
+          // see toHttpFailureStatus.
+          if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 502;
           continue;
         }
         // Reasoning models (deepseek, kimi, ...) can exhaust max_tokens on the
@@ -556,13 +569,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             const embedded = (typeof e === "string" ? e : e?.message) || "embedded error";
             log.warn("COMBO", `Model ${modelStr} returned ${result.status} with embedded error, trying next: ${embedded}`);
             lastError = lastError ? `${lastError}; ${embedded}` : embedded;
-            // Provider error `code`s are NOT HTTP statuses — kilo-gateway sends
-            // 502 but others send proprietary values (e.g. 10004) or strings
-            // ("rate_limit"). `lastStatus` is passed straight to `new Response`
-            // on the all-models-failed path, where anything outside 200-599
-            // throws RangeError and drops the connection instead of returning
-            // an error body. Only adopt a real HTTP status; else 502.
-            if (!lastStatus) lastStatus = toHttpStatus(e?.code) ?? 502;
+            // A provider error `code` is neither an HTTP status nor necessarily a
+            // failure status — see toHttpFailureStatus. Anything that is not a
+            // real 4xx/5xx becomes 502.
+            if (!lastStatus) lastStatus = toHttpFailureStatus(e?.code) ?? 502;
             continue;
           }
           const choice = completion?.choices?.[0];
@@ -647,7 +657,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       // Fallback to next model
       lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
+      // Non-2xx by construction, but a 3xx is still not a failure status the
+      // client should receive as the combo's verdict — see toHttpFailureStatus.
+      if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 502;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues

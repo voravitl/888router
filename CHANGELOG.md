@@ -30,16 +30,28 @@ and fixed before merge:
   adopted proprietary values (e.g. `10004`), and `lastStatus` is passed straight to
   `new Response` on the all-models-failed path, where anything outside 200-599
   throws `RangeError` — dropping the connection instead of returning an error body.
-  Now routed through `toHttpStatus()`, which only accepts a real 200-599 integer
-  and otherwise falls back to 502. Reproduced as a thrown `RangeError` before the
-  fix.
+  Now routed through `toHttpFailureStatus()`, which only accepts a real 400-599
+  integer and otherwise falls back to 502. Reproduced as a thrown `RangeError`
+  before the fix.
 - **The payload check was OpenAI-only.** `!completion?.choices?.length` treated a
   Claude (`content`) or Gemini (`candidates`) answer that also carried a non-fatal
   `error`/warning field as a pure error envelope and discarded a successful
   response. Replaced with `hasUsableCompletionPayload()`, which spans `choices`,
   `content`, `candidates`, `output` and `output_text`.
 
-Regression coverage: `tests/unit/combo-empty-2xx-fallthrough.test.js` (30 tests,
+A third defect, found in a follow-up self-review pass, is fixed alongside those:
+
+- **A 2xx could become the combo's failure status.** Every failing shape this file
+  detects — embedded error envelope, empty body, zero-text stream — arrives *with*
+  a 2xx status, and `lastStatus` was set from that status verbatim (or from a
+  provider `code` that could itself be `200`). When every model then failed, the
+  all-models-failed error envelope was served under HTTP 200, so a caller checking
+  only the status code read the error as an answer. `toHttpFailureStatus()` now
+  accepts only 400-599 (a 2xx or 3xx falls back to 502), and both the new
+  embedded-error branch and the pre-existing empty-body branch route through it. A
+  genuine upstream failure status (404, 429, …) is still reported verbatim.
+
+Regression coverage: `tests/unit/combo-empty-2xx-fallthrough.test.js` (38 tests,
 including unit coverage for both new helpers). The four original cases were
 verified failing 3/4 with the fix reverted.
 
@@ -53,6 +65,17 @@ which resolves a different major): 6 failures remain, all pre-existing on a clea
 HEAD and environmental — the `nip.io` SSRF tests need DNS resolution of
 `127-0-0-1.nip.io`, which times out on this network. Failure-set delta against a
 clean-HEAD run of the same suite: 0 caused, 4 fixed (the golden snapshots above).
+
+Two unrelated observations from that verification, neither addressed here:
+
+- The suite has **flaky cross-file pollution**. Two back-to-back full runs of the
+  *same* tree produced 23 and 6 failures; the 17 that differed (`/v1/models`
+  Claude-dash-ids, noAuth injection, Auto-Combo parity, live model resolvers,
+  xai/oauth) all pass when run in isolation. Judge a full run against a second
+  full run, not a single one.
+- `npx vitest` resolves a **different major** (5.x) than the `^4.0.0` pinned in
+  `tests/package.json`, and the two disagree on results. Use
+  `./tests/node_modules/.bin/vitest`.
 
 # v0.15.100 (2026-09-16)
 
