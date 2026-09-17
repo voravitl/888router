@@ -1,3 +1,33 @@
+# v0.15.104 (2026-09-17)
+
+## OpenCode Zen free models: use the user's own Zen key (BYOK)
+
+**Live failure on the deployed cluster.** `oc/*-free` calls (e.g.
+`oc/mimo-v2.5-free`) failed with `403 FreeTierError: OpenCode's free tier can
+only be used from within OpenCode`. Two compounding causes, both on our side:
+
+1. The executor forced `Authorization: Bearer public` for every `-free` model
+   even when the user had saved a Zen API key
+   (`open-sse/executors/opencode.js`), so upstream always saw an anonymous
+   third-party call.
+2. Account selection short-circuited every `noAuth`-provider request to the
+   virtual anonymous pool *before* looking at saved connections
+   (`src/sse/services/auth.js`), so a newly saved keyed `opencode` connection
+   (`testStatus: active`) was never picked — the live log kept showing
+   `Using opencode account: Direct Connection`.
+
+With a saved key, requests now authenticate as the user against `/zen/v1`
+(Zen keys from `opencode.ai/auth`; anonymous `Bearer public` remains the
+fallback when no key is saved, and `opencode-go` routing is untouched).
+Caveat carried over from live probing: even keyed, `mimo-v2.5-free` is subject
+to Zen's own free quota (`429 FreeUsageLimitError` when exhausted), and
+`hy3-free` now answers `401 Model not supported` — it has left the catalog.
+
+Tests: 5 new cases (`tests/unit/noauth-proxy-rotate.test.js` BYOK priority /
+excluded / blank-key fallback; `tests/unit/opencode-zen-go.test.js` keyed vs
+anonymous `-free` headers) plus one updated `muse-spark` assertion. Full
+suite: 2831 passed. Independently reviewed (APPROVE, no CRITICAL/HIGH).
+
 # v0.15.103 (2026-09-17)
 
 ## Combo stream guard: parse a line that carries more than one payload
