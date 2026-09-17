@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createComboStreamGuard } from "open-sse/services/comboStreamGuard.js";
+import { createComboStreamGuard, extractLinePayloads } from "open-sse/services/comboStreamGuard.js";
 
 const enc = (s) => new TextEncoder().encode(s);
 
@@ -244,5 +244,75 @@ describe("comboStreamGuard whole-completion frames (non-stream over SSE)", () =>
     g.feed(enc(JSON.stringify({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "" } }] }) + "\n"));
     g.feedEnd();
     expect(g.isEmpty()).toBe(true);
+  });
+});
+
+describe("comboStreamGuard concatenated payloads on one line", () => {
+  // Regression (live, 0.15.102): upstreams that answer a non-stream request over
+  // SSE emit the whole completion and the terminator with NO separator between
+  // them — `{"choices":[...]}data: [DONE]`. Parsing the line as a single payload
+  // threw on the trailing text, the frame was dropped, and a real answer was
+  // judged empty. 9-free returned "empty stream content" for 14 of 16 models
+  // that had each actually replied.
+  const completion = JSON.stringify({
+    choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "42" } }],
+  });
+
+  it("sees a completion glued to data: [DONE] with no separator", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(completion + "data: [DONE]"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+    expect(g.finishReason()).toBe("stop");
+  });
+
+  it("handles a payload split across two feeds then glued to [DONE]", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(completion.slice(0, 30)));
+    g.feed(enc(completion.slice(30) + "data: [DONE]"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("does not end an object early on braces or quotes inside a string", () => {
+    const tricky = JSON.stringify({
+      choices: [{ finish_reason: "stop", message: { content: 'a{b}"c" }' } }],
+    });
+    const g = createComboStreamGuard();
+    g.feed(enc(tricky + "data: [DONE]"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("still reports empty when the glued completion carries no content", () => {
+    const empty = JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: "" } }] });
+    const g = createComboStreamGuard();
+    g.feed(enc(empty + "data: [DONE]"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+  });
+
+  describe("extractLinePayloads", () => {
+    it("splits a completion glued to the terminator", () => {
+      expect(extractLinePayloads(completion + "data: [DONE]")).toEqual([completion, "[DONE]"]);
+    });
+
+    it("returns a lone data: frame unchanged", () => {
+      expect(extractLinePayloads("data: " + completion)).toEqual([completion]);
+    });
+
+    it("returns nothing for incomplete JSON so the caller can buffer it", () => {
+      expect(extractLinePayloads('{"choices":[{"mess')).toEqual([]);
+    });
+
+    it("handles multiple complete frames on one line", () => {
+      const a = '{"a":1}';
+      const b = '{"b":2}';
+      expect(extractLinePayloads(`data: ${a}data: ${b}data: [DONE]`)).toEqual([a, b, "[DONE]"]);
+    });
+
+    it("returns [DONE] alone", () => {
+      expect(extractLinePayloads("data: [DONE]")).toEqual(["[DONE]"]);
+    });
   });
 });

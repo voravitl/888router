@@ -1,3 +1,34 @@
+# v0.15.103 (2026-09-17)
+
+## Combo stream guard: parse a line that carries more than one payload
+
+**Second live regression from the 0.15.101 guard widening, found on the deployed
+0.15.102 cluster.** 0.15.102 taught the guard to read `choices[0].message.content`,
+but the answer still never reached it: upstreams that answer a non-stream request
+over SSE emit the completion and the terminator on ONE line with no separator —
+
+```
+{"choices":[{"index":0,"finish_reason":"stop","message":{"content":"42"}}]}data: [DONE]
+```
+
+The parser treated a line as exactly one payload, so `JSON.parse` threw on the
+trailing `data: [DONE]`, the whole frame was discarded, and the answer was judged
+empty. `9-free` returned `empty stream content` for 14 of its 16 models, each of
+which had actually replied. The 0.15.102 unit tests passed only because they fed
+the frame with a trailing newline rather than the bytes the upstream really sends.
+
+`extractLinePayloads()` (exported for tests) now scans a line and yields each
+`[DONE]` marker and each complete JSON object/array in order. Brace counting is
+string- and escape-aware, so `{`, `}` or `"` inside a string value cannot end an
+object early; trailing incomplete JSON yields nothing and stays buffered in
+`pending` until more bytes arrive.
+
+Regression coverage: 10 new cases in `tests/unit/combo-stream-guard.test.js`
+(glued terminator, payload split across two feeds then glued, braces/quotes inside
+a string value, a glued-but-genuinely-empty completion, plus direct
+`extractLinePayloads` unit tests). Verified failing 8/33 with the parser change
+reverted. Combo suites: 114/114.
+
 # v0.15.102 (2026-09-17)
 
 ## Combo stream guard: stop discarding whole-completion answers (regression in 0.15.101)
