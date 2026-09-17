@@ -48,6 +48,56 @@ export function hasToolCalls(node) {
     && node.content.some((p) => p && p.type === "tool_use");
 }
 
+/**
+ * Split one SSE/NDJSON line into the payloads it actually carries.
+ *
+ * A line is NOT always one payload. Upstreams that answer a non-stream request
+ * over SSE (kilo-gateway, opencode Zen) emit the whole completion and the
+ * terminator with no separator between them:
+ *
+ *   {"choices":[{"message":{"content":"42"}}]}data: [DONE]
+ *
+ * Parsing the line as a single JSON payload throws on the trailing `data: [DONE]`,
+ * so the frame was dropped and a real answer was judged empty. This scans the
+ * line and yields each `[DONE]` marker and each complete JSON object/array in
+ * order. Brace counting is string- and escape-aware so a `{`, `}` or `"` inside a
+ * string value cannot end an object early. Trailing incomplete JSON yields
+ * nothing — the caller keeps it in `pending` until more bytes arrive.
+ * Exported for tests.
+ */
+export function extractLinePayloads(line) {
+  const out = [];
+  let i = 0;
+  const n = line.length;
+  while (i < n) {
+    while (i < n && (line[i] === " " || line[i] === "\t" || line[i] === "\r")) i++;
+    if (i >= n) break;
+    if (line.startsWith("data:", i)) { i += 5; continue; }
+    if (line.startsWith("[DONE]", i)) { out.push("[DONE]"); i += 6; continue; }
+    const ch = line[i];
+    if (ch !== "{" && ch !== "[") { i++; continue; }
+    const open = ch;
+    const close = open === "{" ? "}" : "]";
+    let depth = 0;
+    let inStr = false;
+    let esc = false;
+    let end = -1;
+    for (let j = i; j < n; j++) {
+      const c = line[j];
+      if (esc) { esc = false; continue; }
+      if (c === "\\") { if (inStr) esc = true; continue; }
+      if (c === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (c === open) depth++;
+      else if (c === close) { depth--; if (depth === 0) { end = j; break; } }
+    }
+    if (end < 0) break; // incomplete — leave for the next feed()
+    out.push(line.slice(i, end + 1));
+    i = end + 1;
+  }
+  return out;
+}
+
 export function createComboStreamGuard() {
   /** Raw chunk bytes buffered until the verdict. */
   let chunks = [];
@@ -82,8 +132,11 @@ export function createComboStreamGuard() {
     for (const line of lines) {
       const t = line.trim();
       if (!t) continue;
-      // SSE `data:` lines and bare NDJSON JSON lines both parse the same way.
-      const payload = t.startsWith("data:") ? t.slice(5).trim() : t;
+      // One line can carry MORE than one payload: a whole-completion frame is
+      // often emitted with the terminator glued on with no separator
+      // (`{...}data: [DONE]`). Parsing the line as a single payload threw and
+      // dropped the frame, so a real answer was judged empty.
+      for (const payload of extractLinePayloads(t)) {
       if (payload === "[DONE]") { sawTerminal = true; continue; }
       try {
         const json = JSON.parse(payload);
@@ -131,6 +184,7 @@ export function createComboStreamGuard() {
           sawTerminal = true;
         }
       } catch { /* incomplete / non-JSON line — not meaningful for the guard */ }
+      }
     }
   };
 
