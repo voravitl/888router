@@ -1,3 +1,32 @@
+# v0.15.105 (2026-09-17)
+
+## OpenCode free tier: canonical client identity (port upstream #4105)
+
+**Live failure continued after 0.15.104.** BYOK plumbing was correct (the
+gateway log showed the keyed account selected and the key forwarded), but
+upstream still answered `403 FreeTierError` — including on anonymous calls.
+Upstream `decolua/9router#4105` (merged today, verified live there) found the
+real gate: Console validates the *client identity format*, not just the key.
+`User-Agent` must be `opencode/<version>` with version >= 1.17 (bare
+`opencode` or foreign UAs → 403; < 1.17 → 426), and `x-opencode-session` must
+match `ses_[12 hex][14 Base62]` (UUID-style sessions → 403). Our executor sent
+bare `opencode` with `ses_<32 hex>` — failing both checks.
+
+Ported: `OPENCODE_UA = opencode/1.18.31` with downstream-UA validation,
+canonical descending `ses_`/`msg_` generators, deterministic translation of
+foreign session ids (prompt caching preserved), request-local session state
+via `execute()` override (drops the singleton `_currentSessionId`), plus the
+16 upstream session unit tests. Local BYOK/selection behavior from 0.15.104 is
+unchanged.
+
+Live-verified from this tree before release: streaming `mimo-v2.5-free`
+chat → `200`, `/responses` `muse-spark-1.3-contributor-free` with
+`"stream": true` → `200`. New finding beyond upstream: the free tier is
+**streaming-only** — identical non-stream requests still get `403`, so
+non-streaming clients on `oc/*-free` will keep failing (documented in code).
+
+Tests: full suite green (2847 passed). Independently reviewed (APPROVE).
+
 # v0.15.104 (2026-09-17)
 
 ## OpenCode Zen free models: use the user's own Zen key (BYOK)
