@@ -195,3 +195,54 @@ describe("comboStreamGuard reasoning-budget signature", () => {
     expect(g.isEmpty()).toBe(false);
   });
 });
+
+describe("comboStreamGuard whole-completion frames (non-stream over SSE)", () => {
+  // Regression: some upstreams (kilo-gateway, opencode Zen) answer a NON-stream
+  // request with content-type text/event-stream and put the whole completion in
+  // one frame under `message.content`, never `delta.content`. Reading only the
+  // delta judged those real answers empty, so the combo discarded every model
+  // that replies this way — observed live on 9-free after 0.15.101 deployed,
+  // where kgw/stepfun and kgw/cohere both answered correctly and were dropped.
+  it("sees text in message.content (string)", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({ choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "42" } }] }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("sees text in message.content (array of parts)", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: [{ type: "text", text: "hi" }] } }] }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("treats a tool-call-only turn as usable even with no text", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({ choices: [{ finish_reason: "tool_calls", message: { content: null, tool_calls: [{ id: "1", function: { name: "get_weather" } }] } }] }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("treats a streamed tool_calls delta as usable", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("data: " + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "1", function: { name: "get_weather" } }] } }] }) + "\n\n"));
+    g.feed(enc("data: " + JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] }) + "\n\n"));
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("still reports a genuinely empty frame as empty", () => {
+    // oc/muse-spark-1.3-contributor-free at a low max_tokens: delta {} and
+    // finish_reason stop, no text, no reasoning, no tool calls.
+    const g = createComboStreamGuard();
+    g.feed(enc("data: " + JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] }) + "\n\n"));
+    expect(g.isEmpty()).toBe(true);
+  });
+
+  it("still reports an empty message.content as empty", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({ choices: [{ finish_reason: "stop", message: { role: "assistant", content: "" } }] }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+  });
+});

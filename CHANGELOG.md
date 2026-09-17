@@ -1,3 +1,36 @@
+# v0.15.102 (2026-09-17)
+
+## Combo stream guard: stop discarding whole-completion answers (regression in 0.15.101)
+
+**Live regression, found on the deployed 0.15.101 cluster.** Widening the guard in
+0.15.101 so it inspects SSE responses to non-stream requests exposed a blind spot
+in the guard itself: it read text only from `choices[0].delta`. Several upstreams
+(kilo-gateway, opencode Zen) answer a non-stream request with
+`content-type: text/event-stream` and put the WHOLE completion in one frame under
+`choices[0].message.content` — never `delta.content`. The guard judged those real
+answers empty, so the combo fell through past every model that replies this way.
+
+Observed on `9-free`: `kgw/cohere/north-mini-code:free` and
+`kgw/stepfun/step-3.7-flash:free` each returned a correct `"42"` in ~2.2s
+(`[STREAM] … complete` in the gateway log) and were both discarded; the combo
+walked 9+ of its 17 models and the client got nothing. Before 0.15.101 the guard
+never ran on these responses at all, so the answer was piped through — which is
+why this only appeared once 0.15.101 was live.
+
+The guard now also reads `choices[0].message.content` (string, or an array of
+`{type:"text",text}` / block parts), and treats a tool-call-only turn — `tool_calls`
+/ `function_call` on either the delta or the message, or a `tool_use` content block
+— as a usable answer rather than an empty stream. Two helpers,
+`messageContentText()` and `hasToolCalls()`, are exported for tests.
+
+Genuinely empty responses are still detected: `oc/muse-spark-1.3-contributor-free`
+at a low `max_tokens` (`delta: {}`, `finish_reason: "stop"`, no reasoning, no tool
+calls) and an empty-string `message.content` both still report empty, so the
+0.15.101 fall-through behaviour is intact.
+
+Regression coverage: 6 new cases in `tests/unit/combo-stream-guard.test.js`,
+verified failing 4/24 with the guard change reverted. Combo suites: 105/105.
+
 # v0.15.101 (2026-09-16)
 
 ## Combo: a 2xx that carries no usable answer now falls through to the next model
