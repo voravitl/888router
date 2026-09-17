@@ -24,6 +24,45 @@ export function isReasoningEmptyContent(finishReason, content, reasoningContent)
   );
 }
 
+// Does a parsed 200 body carry a usable answer? Spans every client format this
+// router serves — OpenAI (`choices`), Claude messages (`content`), Gemini
+// (`candidates`), OpenAI Responses (`output`) — so a Claude/Gemini answer that
+// also carries a non-fatal `error`/warning field is not mistaken for a pure
+// error envelope. Pure function, exported for tests.
+export function hasUsableCompletionPayload(completion) {
+  if (!completion || typeof completion !== "object") return false;
+  const nonEmpty = (v) => (Array.isArray(v) ? v.length > 0 : typeof v === "string" ? v.length > 0 : !!v);
+  return (
+    nonEmpty(completion.choices) ||
+    nonEmpty(completion.content) ||
+    nonEmpty(completion.candidates) ||
+    nonEmpty(completion.output) ||
+    nonEmpty(completion.output_text)
+  );
+}
+
+// Coerce a candidate status into an HTTP FAILURE status, or null when it is not
+// one. Used for `lastStatus`, which describes why the combo gave up and is handed
+// straight to `new Response` on the all-models-failed path.
+//
+// Two traps this closes:
+//  - Provider error `code`s are not HTTP statuses. kilo-gateway sends 502, but
+//    others send proprietary integers (10004) or strings ("rate_limit"). Anything
+//    outside 200-599 makes `new Response` throw RangeError, dropping the
+//    connection instead of returning an error body.
+//  - A 2xx must never become the failure status. The failing shapes this file
+//    detects (embedded error envelope, empty body, zero-text stream) all arrive
+//    WITH a 2xx status, so adopting it verbatim served a failure to the client as
+//    a success — a caller checking only the status code would treat the error
+//    envelope as an answer. Only 400-599 is accepted; callers fall back to 502.
+//
+// Pure function, exported for tests.
+export function toHttpFailureStatus(code) {
+  const n = typeof code === "string" ? Number(code) : code;
+  if (!Number.isInteger(n) || n < 400 || n > 599) return null;
+  return n;
+}
+
 // Raise max_tokens for the retry: original x3 or +512 (whichever is larger), minimum 2048, capped
 // at 65536. Returns a new body object, never mutates the original.
 function withRaisedMaxTokens(body) {
@@ -425,7 +464,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         if (emptyBody) {
           log.warn("COMBO", `Model ${modelStr} returned ${result.status} with empty body, trying next`);
           lastError = `empty body (${result.status})`;
-          if (!lastStatus) lastStatus = result.status;
+          // `result.status` here is a 2xx by construction (this branch only runs
+          // under `result.ok`), and a 2xx must never become the failure status —
+          // see toHttpFailureStatus.
+          if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 502;
           continue;
         }
         // Reasoning models (deepseek, kimi, ...) can exhaust max_tokens on the
@@ -434,7 +476,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         // usable. Inspect the stream head via comboStreamGuard and fall through
         // when it ends empty (the non-stream JSON path below already handles
         // the same condition via isReasoningEmptyContent).
-        if (body.stream === true && !emptyBody && result.body && typeof result.body.getReader === "function") {
+        //
+        // The gate keys on the RESPONSE content-type, never on `body.stream`:
+        // some upstreams (opencode Zen -free models) answer a non-stream
+        // request with `text/event-stream` anyway. Gating on `body.stream ===
+        // true` skipped the guard entirely for those, so a zero-text SSE was
+        // piped to the client as a 200 with no content instead of falling
+        // through to the next combo model.
+        if (!emptyBody && result.body && typeof result.body.getReader === "function") {
           const contentType = result.headers?.get('content-type') || "";
           if (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson')) {
             const guard = createComboStreamGuard();
@@ -496,12 +545,35 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         // non-stream (JSON body) case is handled — the stream:true SSE case needs
         // per-chunk finish_reason inspection; add when reasoning models are used
         // with streaming.
-        if (!body.stream && result.headers?.get('content-type')?.includes('application/json')) {
+        if (result.headers?.get('content-type')?.includes('application/json')) {
           let completion = null;
           try {
             completion = await result.clone().json();
           } catch {
             // not JSON — leave completion null
+          }
+          // Some upstreams answer HTTP 200 while carrying the failure INSIDE the
+          // body (observed: kilo-gateway/nvidia `{"error":{"message":"Upstream
+          // error from Nvidia: Service temporarily overloaded","code":502}}`).
+          // `result.ok` is true, so without this check the combo treated the
+          // failure as a success and piped an error object to the client
+          // instead of falling through to the next model.
+          //
+          // Only an error envelope with NO usable payload counts. The payload
+          // check spans every client format this router serves, not just
+          // OpenAI `choices`: a Claude (`content`) or Gemini (`candidates`)
+          // response that also carries a non-fatal `error`/warning field is a
+          // successful answer and must stay on the normal path.
+          if (completion?.error && !hasUsableCompletionPayload(completion)) {
+            const e = completion.error;
+            const embedded = (typeof e === "string" ? e : e?.message) || "embedded error";
+            log.warn("COMBO", `Model ${modelStr} returned ${result.status} with embedded error, trying next: ${embedded}`);
+            lastError = lastError ? `${lastError}; ${embedded}` : embedded;
+            // A provider error `code` is neither an HTTP status nor necessarily a
+            // failure status — see toHttpFailureStatus. Anything that is not a
+            // real 4xx/5xx becomes 502.
+            if (!lastStatus) lastStatus = toHttpFailureStatus(e?.code) ?? 502;
+            continue;
           }
           const choice = completion?.choices?.[0];
           const msg = choice?.message;
@@ -585,7 +657,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       // Fallback to next model
       lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
+      // Non-2xx by construction, but a 3xx is still not a failure status the
+      // client should receive as the combo's verdict — see toHttpFailureStatus.
+      if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 502;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues

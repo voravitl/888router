@@ -1,3 +1,82 @@
+# v0.15.101 (2026-09-16)
+
+## Combo: a 2xx that carries no usable answer now falls through to the next model
+
+Two upstream shapes let a failing model end a combo as if it had succeeded, so the
+client got a 200 with nothing usable while the remaining combo models were never
+tried. Both were found while rebuilding the `9-free` combo from live probes.
+
+- **Non-stream request answered with SSE bypassed the stream guard.** The guard in
+  `handleComboChat` was gated on `body.stream === true`, but opencode Zen `-free`
+  models answer a plain (non-stream) request with `content-type:
+  text/event-stream` anyway. For those the guard never ran, so a zero-text stream
+  (`delta: {}`, `finish_reason: "stop"`, no reasoning) was piped straight through.
+  Observed on `oc/muse-spark-1.3-contributor-free`: with `max_tokens: 700` it
+  returned an empty SSE on 4/4 attempts and the combo did not advance to the next
+  model. The gate now keys on the response content-type only; the inner
+  content-type check was already there and is unchanged.
+- **HTTP 200 with the error inside the body was treated as success.** kilo-gateway
+  /nvidia answers `200` with `{"error":{"message":"Upstream error from Nvidia:
+  Service temporarily overloaded","code":502}}` and no `choices`. `result.ok` is
+  true, so the combo returned that error envelope to the caller. An error envelope
+  with no usable `choices` is now a fall-through; a body carrying both an `error`
+  field and usable `choices` stays on the normal path. The same JSON inspection is
+  no longer skipped for streamed requests.
+
+Two further defects in the first cut of the above were found in independent review
+and fixed before merge:
+
+- **A provider error `code` is not an HTTP status.** `lastStatus = Number(e?.code)`
+  adopted proprietary values (e.g. `10004`), and `lastStatus` is passed straight to
+  `new Response` on the all-models-failed path, where anything outside 200-599
+  throws `RangeError` — dropping the connection instead of returning an error body.
+  Now routed through `toHttpFailureStatus()`, which only accepts a real 400-599
+  integer and otherwise falls back to 502. Reproduced as a thrown `RangeError`
+  before the fix.
+- **The payload check was OpenAI-only.** `!completion?.choices?.length` treated a
+  Claude (`content`) or Gemini (`candidates`) answer that also carried a non-fatal
+  `error`/warning field as a pure error envelope and discarded a successful
+  response. Replaced with `hasUsableCompletionPayload()`, which spans `choices`,
+  `content`, `candidates`, `output` and `output_text`.
+
+A third defect, found in a follow-up self-review pass, is fixed alongside those:
+
+- **A 2xx could become the combo's failure status.** Every failing shape this file
+  detects — embedded error envelope, empty body, zero-text stream — arrives *with*
+  a 2xx status, and `lastStatus` was set from that status verbatim (or from a
+  provider `code` that could itself be `200`). When every model then failed, the
+  all-models-failed error envelope was served under HTTP 200, so a caller checking
+  only the status code read the error as an answer. `toHttpFailureStatus()` now
+  accepts only 400-599 (a 2xx or 3xx falls back to 502), and both the new
+  embedded-error branch and the pre-existing empty-body branch route through it. A
+  genuine upstream failure status (404, 429, …) is still reported verbatim.
+
+Regression coverage: `tests/unit/combo-empty-2xx-fallthrough.test.js` (38 tests,
+including unit coverage for both new helpers). The four original cases were
+verified failing 3/4 with the fix reverted.
+
+Also refreshes `tests/translator/__snapshots__/golden-url-header.test.js.snap`,
+which embeds the version string in `User-Agent` / `X-CLIENT-VERSION` /
+`X-CORE-VERSION` / `X-Msh-Version` (24 lines, `0.15.100` → `0.15.101`) — the same
+version-bump follow-up as `c3f2af47`.
+
+Full-suite state (run with the pinned `tests/node_modules/.bin/vitest`, not `npx`,
+which resolves a different major): 6 failures remain, all pre-existing on a clean
+HEAD and environmental — the `nip.io` SSRF tests need DNS resolution of
+`127-0-0-1.nip.io`, which times out on this network. Failure-set delta against a
+clean-HEAD run of the same suite: 0 caused, 4 fixed (the golden snapshots above).
+
+Two unrelated observations from that verification, neither addressed here:
+
+- The suite has **flaky cross-file pollution**. Two back-to-back full runs of the
+  *same* tree produced 23 and 6 failures; the 17 that differed (`/v1/models`
+  Claude-dash-ids, noAuth injection, Auto-Combo parity, live model resolvers,
+  xai/oauth) all pass when run in isolation. Judge a full run against a second
+  full run, not a single one.
+- `npx vitest` resolves a **different major** (5.x) than the `^4.0.0` pinned in
+  `tests/package.json`, and the two disagree on results. Use
+  `./tests/node_modules/.bin/vitest`.
+
 # v0.15.100 (2026-09-16)
 
 ## Docker/k8s: fix `su-exec: setgroups` CrashLoop under hardened securityContext
