@@ -9,6 +9,13 @@ set -euo pipefail
 #     existing Deployment to be fully stable BEFORE apply (fail closed)
 #   - automatic rollback to the previous ReplicaSet on rollout/version failure
 #   - version comparison (endpoint must report the deployed version)
+#
+# OUTAGE DISCIPLINE (single-replica Recreate + SQLite RWO single-writer means
+# EVERY rollout has a downtime gap): push-to-master ALSO auto-deploys via the
+# docker-publish.yml deploy-local-kubernetes job. Running this script and then
+# pushing therefore causes TWO outages back-to-back. Pick exactly one path per
+# release: prefer push → CI auto-deploy; use this script only when the change
+# will not be pushed (or accept the second rollout).
 VERSION="${1:-$(node -e 'console.log(require("./package.json").version)')}"
 IMAGE_TAG="${IMAGE_TAG:-$VERSION}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-orbstack}"
@@ -21,6 +28,23 @@ for command in kubectl kustomize curl node jq; do
     exit 1
   }
 done
+
+# Warn (never block CI) when this manual deploy will be followed by a second
+# auto-deploy: local commits ahead of origin/master get pushed later, and that
+# push re-rolls the single-replica Recreate deployment (second outage gap).
+if [ -z "${CICD_SKIP_DOUBLE_DEPLOY_CHECK:-}" ]; then
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    ahead=$(git rev-list --count "origin/master..HEAD" 2>/dev/null || echo 0)
+    case "${ahead:-0}" in
+      ''|*[!0-9]*) ahead=0 ;;
+    esac
+    if [ "$ahead" -gt 0 ]; then
+      echo "warning: branch is ${ahead} commit(s) ahead of origin/master;" >&2
+      echo "warning: a later push triggers CI auto-deploy = SECOND outage gap (Recreate)." >&2
+      echo "warning: prefer one path per release (push→CI) or set CICD_SKIP_DOUBLE_DEPLOY_CHECK=1." >&2
+    fi
+  fi
+fi
 
 if [ "$(kubectl config current-context)" != "$KUBE_CONTEXT" ]; then
   echo "refusing to deploy: current Kubernetes context is not $KUBE_CONTEXT" >&2

@@ -57,6 +57,16 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 3
+          # Slow boots (large image pull + Next.js + 484MB SQLite open) must
+          # not trip liveness restarts: startupProbe owns the boot window
+          # (5s × 24 = 120s); liveness/readiness stay dormant until it passes.
+          startupProbe:
+            httpGet:
+              path: /api/version
+              port: 20128
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 24
           readinessProbe:
             httpGet:
               path: /api/version
