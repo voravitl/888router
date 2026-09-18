@@ -1,3 +1,21 @@
+# v0.15.107 (2026-09-18)
+
+## Cleanup: dead OpenCode seeds, 1-day requestDetails retention, CICD discipline
+
+- **Registry**: dropped `hy3-free` (401), `x-preview-f-free` and
+  `laguna-s-2.1-free` (absent from the live `/zen/v1/models` catalog) from
+  the `opencode` seed; capability entries kept for Go-side/metadata tests.
+- **Retention**: `requestDetails` defaults 30d/10k → **1d/3000** (repo,
+  settings, and backup-prune fallback aligned). Live DB pruned + VACUUMed
+  separately (690MB → 452MB, integrity ok). `request-details-dba` fixtures
+  moved off the exact-24h prune boundary (was flaky by milliseconds).
+- **CICD**: `cicd-release.sh` warns on double-deploy (manual + push-triggered
+  auto-deploy back-to-back on single-replica Recreate); base manifest gains a
+  `startupProbe` so slow boots don't trip liveness restarts. Recreate kept:
+  SQLite RWO is single-writer by design.
+
+Tests: full suite green. Reviewed (APPROVE; one HIGH + one MEDIUM fixed).
+
 # v0.15.106 (2026-09-18)
 
 ## OpenCode free tier: force streaming + tool fingerprint (port upstream #4132)
