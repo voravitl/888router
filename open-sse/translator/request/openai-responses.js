@@ -8,6 +8,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { normalizeResponsesInput } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { generateToolCallId } from "../concerns/toolCall.js";
 
 // Responses API enforces max 64 chars on call_id (#393)
 const MAX_CALL_ID_LEN = 64;
@@ -31,6 +32,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let currentAssistantMsg = null;
   let pendingToolResults = [];
   let pendingReasoning = "";
+  const pendingToolCallIds = [];
+  let toolCallSeq = 0;
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -80,6 +83,18 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         })
         : item.content;
       const msg = { role: item.role, content };
+      // Chat-style tool item that leaked into the Responses endpoint (Droid/OpenCode):
+      // repair its correlation id or downgrade it to user context.
+      if (item.role === ROLE.TOOL && !item.tool_call_id) {
+        const repairedToolId = pendingToolCallIds.shift();
+        if (repairedToolId) {
+          msg.tool_call_id = repairedToolId;
+        } else {
+          // orphaned result: salvage the text instead of sending an unpairable tool message
+          msg.role = ROLE.USER;
+          msg.content = `[Tool result: ${typeof item.content === "string" ? item.content : JSON.stringify(item.content)}]`;
+        }
+      }
       // Attach buffered reasoning to assistant turn (required by xiaomi-mimo thinking mode)
       if (item.role === ROLE.ASSISTANT && pendingReasoning) {
         msg.reasoning_content = pendingReasoning;
@@ -87,7 +102,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       pendingReasoning = "";
       result.messages.push(msg);
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
         currentAssistantMsg = {
@@ -105,17 +120,19 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         : "unknown_function";
       const funcArgs = typeof item.arguments === "string"
         ? item.arguments
-        : JSON.stringify(item.arguments ?? {});
+        : (item.input !== undefined ? (typeof item.input === "string" ? item.input : JSON.stringify(item.input)) : JSON.stringify(item.arguments ?? {}));
+      const callId = item.call_id || generateToolCallId(toolCallSeq++, currentAssistantMsg.tool_calls.length, item.name);
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id || `call_${Math.random().toString(36).slice(2, 10)}`,
+        id: callId,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: funcName,
           arguments: funcArgs
         }
       });
+      pendingToolCallIds.push(callId);
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT) {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
@@ -128,12 +145,21 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         }
         pendingToolResults = [];
       }
-      // Add tool result immediately
-      result.messages.push({
-        role: ROLE.TOOL,
-        tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
-      });
+      const outputContent = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
+      let outputCallId = typeof item.call_id === "string" && item.call_id ? item.call_id : "";
+      if (outputCallId) {
+        const queued = pendingToolCallIds.indexOf(outputCallId);
+        if (queued >= 0) pendingToolCallIds.splice(queued, 1);
+      } else {
+        outputCallId = pendingToolCallIds.shift() || "";
+      }
+      if (outputCallId) {
+        result.messages.push({
+          role: ROLE.TOOL,
+          tool_call_id: outputCallId,
+          content: outputContent
+        });
+      }
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Buffer reasoning text; attached to next assistant message/function_call
@@ -372,22 +398,18 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       let callId = rawToolId ? resolveCallId(rawToolId, `tool_${mIdx}`) : null;
       if (callId) {
         const pendingIdx = pendingAssistantCallIds.indexOf(callId);
-        if (pendingIdx === -1) {
-          throw new Error(`Tool output at message index ${mIdx} references unknown or non-pending call id "${callId}"`);
-        }
-        pendingAssistantCallIds.splice(pendingIdx, 1);
+        if (pendingIdx >= 0) pendingAssistantCallIds.splice(pendingIdx, 1);
       } else {
-        const nextId = pendingAssistantCallIds.shift();
-        if (!nextId) {
-          throw new Error(`Orphan or ambiguous tool output at message index ${mIdx} cannot be paired with any pending tool call`);
-        }
-        callId = nextId;
+        callId = pendingAssistantCallIds.shift() || null;
       }
-      result.input.push({
-        type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
-        call_id: callId,
-        output
-      });
+      if (callId) {
+        result.input.push({
+          type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
+          call_id: callId,
+          output
+        });
+      }
+      // else: orphan tool output with no matching call is dropped per orphan contract
     }
   }
 
@@ -403,7 +425,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           name: tool.function.name,
           description: String(tool.function.description || ""),
           parameters: normalizeToolParameters(tool.function.parameters),
-          strict: tool.function.strict
+          strict: tool.function.strict ?? false
         };
       }
       return tool;

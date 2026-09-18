@@ -25,6 +25,8 @@ function sanitizeToolId(id) {
 export function ensureToolCallIds(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
 
+  const pendingToolCallIds = [];
+
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
     if (msg.role === "assistant" && msg.tool_calls && Array.isArray(msg.tool_calls)) {
@@ -42,13 +44,18 @@ export function ensureToolCallIds(body) {
         if (tc.function?.arguments && typeof tc.function.arguments !== "string") {
           tc.function.arguments = JSON.stringify(tc.function.arguments);
         }
+        pendingToolCallIds.push(tc.id);
       }
     }
 
     // Validate tool_call_id in tool messages (role: "tool")
-    if (msg.role === "tool" && msg.tool_call_id && !TOOL_ID_PATTERN.test(msg.tool_call_id)) {
-      const sanitized = sanitizeToolId(msg.tool_call_id);
-      msg.tool_call_id = sanitized || generateToolCallId(i, 0);
+    if (msg.role === "tool") {
+      if (msg.tool_call_id && TOOL_ID_PATTERN.test(msg.tool_call_id)) {
+        const queued = pendingToolCallIds.indexOf(msg.tool_call_id);
+        if (queued >= 0) pendingToolCallIds.splice(queued, 1);
+      } else {
+        msg.tool_call_id = sanitizeToolId(msg.tool_call_id) || pendingToolCallIds.shift() || generateToolCallId(i, 0);
+      }
     }
 
     // Also validate tool_use blocks in content (Claude format)

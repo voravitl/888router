@@ -75,7 +75,8 @@ export function claudeToOpenAIRequest(model, body, stream) {
         function: {
           name: String(name),
           ...(description ? { description } : {}),
-          parameters
+          parameters,
+          ...(typeof tool.strict === "boolean" ? { strict: tool.strict } : {})
         }
       };
     });

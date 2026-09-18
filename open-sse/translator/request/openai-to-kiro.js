@@ -318,6 +318,10 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   const usesNativeGptEffort = usesKiroNativeGptEffort(thinkingBody, upstreamModel);
 
   const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
+  const reverseToolNameMap = new Map();
+  for (const [raw, kiro] of nameMap.entries()) {
+    if (raw !== kiro) reverseToolNameMap.set(kiro, raw);
+  }
   const { history, currentMessage } = convertMessages(messages, upstreamModel);
 
   // API-key (headless) auth uses a raw CodeWhisperer credential whose profile is
@@ -420,11 +424,11 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   if (profileArn) {
     payload.profileArn = profileArn;
   }
-  if (systemPrompt) {
-    payload.systemPrompt = systemPrompt;
-  }
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
+  }
+  if (reverseToolNameMap.size > 0) {
+    payload._toolNameMap = reverseToolNameMap;
   }
 
   if (maxTokens || temperature !== undefined || topP !== undefined) {
