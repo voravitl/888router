@@ -1,3 +1,30 @@
+# v0.15.106 (2026-09-18)
+
+## OpenCode free tier: force streaming + tool fingerprint (port upstream #4132)
+
+**Follow-up to 0.15.105.** Canonical UA/session got anonymous streaming
+calls through, but two more gates remained (found by upstream via live
+bisection against the genuine client, independently re-verified here before
+porting: quartet-injected request → `200`, identical request without tools →
+`403`):
+
+1. **Tool-signature gate**: 0–3 tools → 403; the `{bash, glob, grep, read}`
+   quartet → 200 on both `/chat/completions` and `/responses`. Plain chat
+   callers send no tools, so every such request failed.
+2. **Streaming gate**: `stream:false` → 403 on both endpoints.
+
+`transformRequest` now forces `stream:true` upstream and merges the missing
+quartet declarations (caller tools preserved verbatim), and the `opencode`
+transport declares `forceStream:true` so chatCore serves SSE upstream and
+converts back to JSON for non-streaming clients. Scoped to Zen `-free`
+traffic only (thinking suffixes stripped before matching) — `opencode-go`
+paid traffic is untouched. Caution carried over: injected no-op tools may be
+visibly called by the model on rare prompts; the alternative is a certain
+403.
+
+Tests: 6 new gate cases. Full suite green. Independently reviewed (APPROVE
+with one HIGH fixed before merge: thinking-suffixed ids bypassed the gate).
+
 # v0.15.105 (2026-09-17)
 
 ## OpenCode free tier: canonical client identity (port upstream #4105)
