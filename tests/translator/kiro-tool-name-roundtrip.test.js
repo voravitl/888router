@@ -76,6 +76,7 @@ describe("Kiro tool name normalization and roundtrip", () => {
     const chunk = {
       id: "chatcmpl-1",
       choices: [{
+        finish_reason: "tool_calls",
         delta: {
           tool_calls: [{
             index: 0,

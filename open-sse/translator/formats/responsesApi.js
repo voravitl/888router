@@ -121,18 +121,22 @@ export function convertResponsesApiFormat(body) {
       let tcId = normalizeCallId(item.call_id) || "";
       if (tcId) {
         const pendingIdx = pendingGeneratedCallIds.indexOf(tcId);
-        if (pendingIdx >= 0) pendingGeneratedCallIds.splice(pendingIdx, 1);
+        if (pendingIdx === -1) {
+          throw new Error(`Tool output references unknown or non-pending call id "${tcId}"`);
+        }
+        pendingGeneratedCallIds.splice(pendingIdx, 1);
       } else {
-        tcId = pendingGeneratedCallIds.shift() || "";
+        const nextId = pendingGeneratedCallIds.shift();
+        if (!nextId) {
+          throw new Error("Orphan or ambiguous tool output cannot be paired with any pending tool call");
+        }
+        tcId = nextId;
       }
-      if (tcId) {
-        pendingToolResults.push({
-          role: ROLE.TOOL,
-          tool_call_id: tcId,
-          content: outputContent
-        });
-      }
-      // else: orphaned output with no matching call → dropped per orphan contract
+      pendingToolResults.push({
+        role: ROLE.TOOL,
+        tool_call_id: tcId,
+        content: outputContent
+      });
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Skip reasoning items - they are for display only

@@ -139,18 +139,19 @@ describe("Responses tool output without call_id", () => {
     expect(toolId.length).toBeGreaterThan(0);
   });
 
-  it("convertResponsesApiFormat (responsesHandler path) never emits an id-less tool message", () => {
+  it("convertResponsesApiFormat (responsesHandler path) never emits an id-less tool message and fails closed on orphan output", () => {
     const body = convertResponsesApiFormat({
       input: [user("rode a tool"), call("call_abc"), { type: "function_call_output", output: "ok" }],
       tools: TOOLS,
     });
 
     expect(serializedToolIds(body)).toEqual(["call_abc"]);
-    const onlyIdless = convertResponsesApiFormat({
-      input: [user("oi"), { type: "function_call_output", output: "late" }],
-      tools: TOOLS,
-    });
-    expect(JSON.parse(JSON.stringify(onlyIdless)).messages.filter((m) => m.role === "tool")).toEqual([]);
+    expect(() => {
+      convertResponsesApiFormat({
+        input: [user("oi"), { type: "function_call_output", output: "late" }],
+        tools: TOOLS,
+      });
+    }).toThrow(/Orphan or ambiguous tool output/);
   });
 
   it("ensureToolCallIds repairs a chat-format tool message without tool_call_id", () => {

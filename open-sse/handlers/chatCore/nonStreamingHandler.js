@@ -176,6 +176,34 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     }
   } else if (targetFormat === FORMATS.OLLAMA) {
     openAIFormatted = ollamaBodyToOpenAI(responseBody);
+  } else if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+    const textItem = (responseBody.output || []).find(item => item.type === "message" || item.content);
+    let textContent = "";
+    if (textItem?.content) {
+      textContent = Array.isArray(textItem.content)
+        ? textItem.content.map(c => c.text || "").join("")
+        : (typeof textItem.content === "string" ? textItem.content : "");
+    }
+    const funcCalls = (responseBody.output || []).filter(item => item.type === "function_call");
+    const toolCalls = funcCalls.map((fc, idx) => ({
+      id: fc.call_id || `call_${fc.name}_${idx}`,
+      type: "function",
+      function: { name: fc.name, arguments: typeof fc.arguments === "string" ? fc.arguments : JSON.stringify(fc.arguments || {}) }
+    }));
+    const message = { role: "assistant" };
+    if (textContent) message.content = textContent;
+    if (toolCalls.length > 0) message.tool_calls = toolCalls;
+    if (!message.content && !message.tool_calls) message.content = "";
+    const inTokens = responseBody.usage?.input_tokens || 0;
+    const outTokens = responseBody.usage?.output_tokens || 0;
+    openAIFormatted = {
+      id: responseBody.id || `chatcmpl-${Date.now()}`,
+      object: "chat.completion",
+      created: responseBody.created_at || Math.floor(Date.now() / 1000),
+      model: responseBody.model || "unknown",
+      choices: [{ index: 0, message, finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop" }],
+      usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens }
+    };
   }
 
   if (sourceFormat === FORMATS.CLAUDE) {

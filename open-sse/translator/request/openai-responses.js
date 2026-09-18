@@ -398,18 +398,22 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       let callId = rawToolId ? resolveCallId(rawToolId, `tool_${mIdx}`) : null;
       if (callId) {
         const pendingIdx = pendingAssistantCallIds.indexOf(callId);
-        if (pendingIdx >= 0) pendingAssistantCallIds.splice(pendingIdx, 1);
+        if (pendingIdx === -1) {
+          throw new Error(`Tool output at message index ${mIdx} references unknown or non-pending call id "${callId}"`);
+        }
+        pendingAssistantCallIds.splice(pendingIdx, 1);
       } else {
-        callId = pendingAssistantCallIds.shift() || null;
+        const nextId = pendingAssistantCallIds.shift();
+        if (!nextId) {
+          throw new Error(`Orphan or ambiguous tool output at message index ${mIdx} cannot be paired with any pending tool call`);
+        }
+        callId = nextId;
       }
-      if (callId) {
-        result.input.push({
-          type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
-          call_id: callId,
-          output
-        });
-      }
-      // else: orphan tool output with no matching call is dropped per orphan contract
+      result.input.push({
+        type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
+        call_id: callId,
+        output
+      });
     }
   }
 

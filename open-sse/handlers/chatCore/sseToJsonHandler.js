@@ -109,7 +109,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, prunerStats = null, rtkStats = null, headroomStats = null, headroomDiagnostics = null, detailId = null, clientModel = null, universalToolsMode }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, prunerStats = null, rtkStats = null, headroomStats = null, headroomDiagnostics = null, detailId = null, clientModel = null, universalToolsMode }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -129,7 +129,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   const detailOverrides = { endpoint: clientRawRequest?.endpoint || null, ...(detailId ? { id: detailId } : {}) };
 
   // Codex/Responses API SSE path
-  const isCodexResponsesApi = isResponsesProvider(provider) || sourceFormat === FORMATS.OPENAI_RESPONSES;
+  const isCodexResponsesApi = isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES || sourceFormat === FORMATS.OPENAI_RESPONSES;
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
@@ -172,7 +172,44 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       }));
       const hasToolCalls = toolCalls.length > 0;
 
-      if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
+      if (sourceFormat === FORMATS.CLAUDE) {
+        const content = [];
+        if (textContent) {
+          content.push({ type: "text", text: textContent });
+        }
+        for (const tc of toolCalls) {
+          let parsedArgs = {};
+          try {
+            parsedArgs = typeof tc.function.arguments === "string" ? JSON.parse(tc.function.arguments) : (tc.function.arguments || {});
+          } catch {
+            parsedArgs = {};
+          }
+          content.push({
+            type: "tool_use",
+            id: tc.id,
+            name: tc.function.name,
+            input: parsedArgs
+          });
+        }
+        if (content.length === 0) {
+          content.push({ type: "text", text: "" });
+        }
+        const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
+        const stopReason = hasToolCalls ? "tool_use" : (responseDone ? "end_turn" : (jsonResponse.status || "end_turn"));
+        finalResp = {
+          id: String(jsonResponse.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
+          type: "message",
+          role: "assistant",
+          model: jsonResponse.model || model,
+          content,
+          stop_reason: stopReason,
+          stop_sequence: null,
+          usage: {
+            input_tokens: inTokens,
+            output_tokens: outTokens
+          }
+        };
+      } else if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
         finalResp = {
           response: {
             candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
@@ -263,6 +300,52 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
           delete choice.message.reasoning_content;
         }
       }
+    }
+
+    if (sourceFormat === FORMATS.CLAUDE) {
+      const choice = parsed?.choices?.[0] || {};
+      const msg = choice.message || {};
+      const content = [];
+      if (msg.content) {
+        content.push({ type: "text", text: msg.content });
+      }
+      if (Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          let parsedArgs = {};
+          try {
+            parsedArgs = typeof tc.function?.arguments === "string" ? JSON.parse(tc.function.arguments) : (tc.function?.arguments || {});
+          } catch {
+            parsedArgs = {};
+          }
+          content.push({
+            type: "tool_use",
+            id: tc.id || `toolu_${Date.now()}`,
+            name: tc.function?.name || "",
+            input: parsedArgs
+          });
+        }
+      }
+      if (content.length === 0) {
+        content.push({ type: "text", text: "" });
+      }
+      const claudeResp = {
+        id: String(parsed.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
+        type: "message",
+        role: "assistant",
+        model: parsed.model || model,
+        content,
+        stop_reason: choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
+        stop_sequence: null,
+        usage: {
+          input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+          output_tokens: usage.completion_tokens || usage.output_tokens || 0
+        }
+      };
+      return { success: true, response: new Response(JSON.stringify(claudeResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    }
+
+    if (!parsed.usage) {
+      parsed.usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     }
 
     return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };

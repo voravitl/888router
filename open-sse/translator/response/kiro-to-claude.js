@@ -157,36 +157,21 @@ export function kiroToClaudeResponse(chunk, state) {
     if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
-      if (tc.id) {
-        stopThinkingBlock(state, results);
-        stopTextBlock(state, results);
-        const rawToolName = tc.function?.name || "";
-        const toolName = state?.toolNameMap?.get(rawToolName) ?? rawToolName;
-        const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, {
-          id: tc.id,
-          name: toolName,
-          blockIndex: toolBlockIndex,
-        });
-        results.push({
-          type: "content_block_start",
-          index: toolBlockIndex,
-          content_block: {
-            type: "tool_use",
-            id: tc.id,
-            name: toolName,
-            input: {},
-          },
-        });
+      // Provisional slot keyed on index alone so a name/args fragment arriving
+      // before the id is not lost; id/name filled in as fragments arrive.
+      if (!state.toolCalls.has(idx)) {
+        state.toolCalls.set(idx, { id: null, name: "" });
+      }
+      const toolInfo = state.toolCalls.get(idx);
+      if (tc.id) toolInfo.id = toolInfo.id || tc.id;
+      if (tc.function?.name) {
+        toolInfo.name = accumulateToolName(toolInfo.name, tc.function.name);
       }
       if (tc.function?.arguments) {
-        const toolInfo = state.toolCalls.get(idx);
-        if (toolInfo) {
-          state.toolArgBuffers.set(
-            idx,
-            (state.toolArgBuffers.get(idx) || "") + tc.function.arguments
-          );
-        }
+        state.toolArgBuffers.set(
+          idx,
+          (state.toolArgBuffers.get(idx) || "") + tc.function.arguments
+        );
       }
     }
   }
