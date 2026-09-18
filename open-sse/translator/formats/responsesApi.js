@@ -117,10 +117,8 @@ export function convertResponsesApiFormat(body) {
         currentAssistantMsg = null;
         funcCallIndex = 0;
       }
-      // Add tool result
-      const explicitId = normalizeCallId(item.call_id) || normalizeCallId(item.id);
-
-      let tcId = explicitId;
+      const outputContent = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
+      let tcId = normalizeCallId(item.call_id) || "";
       if (tcId) {
         const pendingIdx = pendingGeneratedCallIds.indexOf(tcId);
         if (pendingIdx === -1) {
@@ -137,7 +135,7 @@ export function convertResponsesApiFormat(body) {
       pendingToolResults.push({
         role: ROLE.TOOL,
         tool_call_id: tcId,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
+        content: outputContent
       });
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {

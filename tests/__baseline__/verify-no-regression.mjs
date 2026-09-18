@@ -12,10 +12,15 @@ const resultsPath = process.argv[2];
 if (!resultsPath) { console.error("Missing results.json path"); process.exit(2); }
 
 const r = JSON.parse(readFileSync(resultsPath, "utf8"));
-const nowFails = r.testResults.flatMap(f =>
-  f.assertionResults.filter(a => a.status === "failed")
-    .map(a => f.name.split("/app/")[1] + " :: " + a.fullName)
-);
+const nowFails = r.testResults.flatMap(f => {
+  const relPath = f.name.includes("/888router/")
+    ? f.name.slice(f.name.indexOf("/888router/") + 11)
+    : f.name.includes("/app/")
+      ? f.name.slice(f.name.indexOf("/app/") + 5)
+      : f.name;
+  return f.assertionResults.filter(a => a.status === "failed")
+    .map(a => relPath + " :: " + a.fullName);
+});
 
 // Regression = fail bây giờ NHƯNG không có trong baseline known-fails
 const regressions = nowFails.filter(f => !knownFails.has(f));

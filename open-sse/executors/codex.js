@@ -150,6 +150,7 @@ function normalizeCodexTools(body) {
     const strict = typeof tool.strict === "boolean" ? tool.strict : (typeof fn?.strict === "boolean" ? fn.strict : undefined);
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
+    if (typeof strict === "boolean") tool.strict = strict;
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
     tool.parameters = parameters;

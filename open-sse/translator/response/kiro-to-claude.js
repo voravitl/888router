@@ -186,7 +186,9 @@ export function kiroToClaudeResponse(chunk, state) {
       for (const [idx, toolInfo] of state.toolCalls) {
         // A provisional slot missing either the id or the name is not a valid
         // tool_use — skip it rather than emit a block the Claude client rejects.
-        if (!toolInfo.id || !toolInfo.name) continue;
+        const rawToolName = toolInfo.name;
+        const toolName = (state?.toolNameMap || state?._toolNameMap)?.get?.(rawToolName) ?? rawToolName;
+        if (!toolInfo.id || !toolName) continue;
         emittedToolBlocks++;
 
         // Allocate the block index now (deferred from first-sight of the id)
@@ -198,7 +200,7 @@ export function kiroToClaudeResponse(chunk, state) {
           content_block: {
             type: "tool_use",
             id: toolInfo.id,
-            name: toolInfo.name,
+            name: toolName,
             input: {},
           },
         });
@@ -261,10 +263,12 @@ export function kiroToClaudeNonStreaming(data) {
       } catch {
         input = {};
       }
+      const rawToolName = tc.function?.name || "";
+      const toolName = (data?.toolNameMap || data?._toolNameMap)?.get?.(rawToolName) ?? rawToolName;
       content.push({
         type: "tool_use",
         id: tc.id || `toolu_${Date.now()}`,
-        name: tc.function?.name || "",
+        name: toolName,
         input,
       });
     }
