@@ -6,10 +6,10 @@ because your tool makes one convenient.
 
 ### Never hotfix a running container
 
-The deployed container runs a published image (`voravitl/888router:*`) and does
-**not** mount this source tree. Editing files here and running
-`docker compose restart` changes nothing — the bundled code in `/app/.next`
-still holds the old logic. Every change ships through the pipeline below.
+The deployed workload runs a published image (`voravitl/888router:*`) on Kubernetes
+(namespace `888router`) and does **not** mount this source tree. Editing files here
+changes nothing — the bundled code in `/app/.next` inside running pods still holds
+the old logic. Every change ships through the pipeline below.
 
 ### Pipeline (do not skip steps)
 
@@ -27,13 +27,22 @@ still holds the old logic. Every change ships through the pipeline below.
    (regenerate via `npm install`, do not hand-edit the version strings) and add
    a `CHANGELOG.md` entry **before** tagging. Keep the changelog claim no
    broader than the diff actually is.
-6. **Build image → redeploy → verify.** Rebuild, then
-   `docker stop && docker rm && docker run` (a restart keeps the old image), and
-   confirm with `curl http://localhost:20128/api/version`.
+   - **Crucial:** Version bump touches **3 Kubernetes files** alongside `package.json`:
+     - `k8s/base/888router.yaml` (image tag)
+     - `k8s/overlays/local/kustomization.yaml` (`images[].newTag`)
+     - `k8s/overlays/prd/kustomization.yaml` (`images[].newTag`)
+6. **Build image → redeploy (k8s) → verify.**
+   - Confirm the `v*` tag's GitHub Action "Build and Push Docker Image" completes.
+     The `:{{version}}` image tag builds ONLY on a `v*` tag event.
+   - Deploy with Kustomize:
+     `kubectl apply -k k8s/overlays/local` (or `k8s/` which defaults to local)
+   - Confirm via live endpoint:
+     `curl http://router.k8s.orb.local/api/version` (or `http://localhost:20129/api/version` / `http://localhost:20128/api/version`).
+     Must equal `package.json` and git tag. Pod in `Running` state alone is not enough.
 7. **Capture.** Record the lesson in the wiki/skill so the next agent does not
    repeat the mistake.
 
-Nothing is "done" until `git log`, `/api/version` and the running compose stack
+Nothing is "done" until `git log`, `/api/version` and the live Kubernetes deployment
 all agree.
 
 ### Review is mandatory — the reviewer is not

@@ -1175,11 +1175,16 @@ cp .env.example .env
 # JWT_SECRET, INITIAL_PASSWORD, and SEARXNG_SECRET
 # (SearXNG secret required: openssl rand -hex 32)
 
-# 3. Start containers
-docker compose up -d
+# 3. Deploy to Kubernetes (Local / OrbStack)
+kubectl apply -k k8s/overlays/local
+
+# Or with Docker Compose (legacy):
+# docker compose up -d
 ```
 
-→ Open `http://localhost:20128`
+→ Open `http://router.k8s.orb.local` (or `http://localhost:20129` / `http://localhost:20128`)
+
+See [`k8s/README.md`](k8s/README.md) for complete Kubernetes deployment guides, ingress setup, and secret management.
 
 **Standalone Docker Run:**
 
