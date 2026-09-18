@@ -221,15 +221,16 @@ function parseNonNeg(val, fallback) {
 
 export function optimizeDbBeforeBackup(adapter) {
   try {
-    // 1. Prune requestDetails using retention policy
-    let retentionDays = 30;
-    let maxRecords = 10000;
+    // 1. Prune requestDetails using retention policy (1d / 3000 rows —
+    // keep in sync with requestDetailsRepo + settingsRepo defaults).
+    let retentionDays = 1;
+    let maxRecords = 3000;
     try {
       const settingsRow = adapter.get(`SELECT data FROM settings WHERE id = 1`);
       if (settingsRow?.data) {
         const parsed = JSON.parse(settingsRow.data);
-        if (parsed.observabilityRetentionDays !== undefined) retentionDays = parseNonNeg(parsed.observabilityRetentionDays, 30);
-        if (parsed.observabilityMaxRecords !== undefined) maxRecords = parseNonNeg(parsed.observabilityMaxRecords, 10000);
+        if (parsed.observabilityRetentionDays !== undefined) retentionDays = parseNonNeg(parsed.observabilityRetentionDays, 1);
+        if (parsed.observabilityMaxRecords !== undefined) maxRecords = parseNonNeg(parsed.observabilityMaxRecords, 3000);
       }
     } catch {}
 

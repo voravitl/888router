@@ -1,11 +1,13 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
-const DEFAULT_MAX_RECORDS = 10000;
+const DEFAULT_MAX_RECORDS = 3000;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
-const DEFAULT_RETENTION_DAYS = 30;
+// 1-day retention: requestDetails blobs dominate DB size (615MB/10k rows
+// observed); dashboard history beyond a day is not worth the disk.
+const DEFAULT_RETENTION_DAYS = 1;
 const PRUNE_THROTTLE_MS = 5 * 60 * 1000; // 5 min
 let lastPruneTs = 0;
 const CONFIG_CACHE_TTL_MS = 5000;

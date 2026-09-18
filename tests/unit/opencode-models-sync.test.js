@@ -20,12 +20,9 @@ describe("OpenCode Model Sync Support", () => {
   it("should include all current free models in opencode static registry", () => {
     const modelIds = opencodeRegistry.models.map((m) => m.id);
     expect(modelIds).toContain("mimo-v2.5-free");
-    expect(modelIds).toContain("hy3-free");
     expect(modelIds).toContain("ling-3.0-flash-fin-free");
     expect(modelIds).toContain("nemotron-3-ultra-free");
     expect(modelIds).toContain("nemotron-3.5-lightning-free");
-    expect(modelIds).toContain("x-preview-f-free");
-    expect(modelIds).toContain("laguna-s-2.1-free");
     expect(modelIds).toContain("muse-spark-1.2-contributor-free");
     expect(modelIds).toContain("muse-spark-1.3-contributor-free");
     expect(modelIds).toContain("big-pickle");

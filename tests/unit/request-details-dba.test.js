@@ -29,7 +29,9 @@ describe("requestDetails DBA denormalized columns", () => {
       "../../src/lib/db/repos/requestDetailsRepo.js"
     );
 
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    // 12h ago: safely inside the 1-day retention default (exactly-24h
+    // fixtures sit on the prune cutoff and flake by milliseconds).
+    const yesterday = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -50,7 +52,7 @@ describe("requestDetails DBA denormalized columns", () => {
       "../../src/lib/db/repos/requestDetailsRepo.js"
     );
 
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const yesterday = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 

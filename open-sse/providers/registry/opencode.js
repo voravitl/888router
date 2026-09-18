@@ -34,12 +34,9 @@ const opencodeConfig = {
   passthroughModels: true,
   models: [
     { id: "mimo-v2.5-free", name: "mimo-v2.5-free" },
-    { id: "hy3-free", name: "hy3-free" },
     { id: "ling-3.0-flash-fin-free", name: "ling-3.0-flash-fin-free" },
     { id: "nemotron-3-ultra-free", name: "nemotron-3-ultra-free" },
     { id: "nemotron-3.5-lightning-free", name: "nemotron-3.5-lightning-free" },
-    { id: "x-preview-f-free", name: "Ox Alpha Free", targetFormat: "openai", supportedFormats: ["openai"] },
-    { id: "laguna-s-2.1-free", name: "laguna-s-2.1-free" },
     { id: "muse-spark-1.2-contributor-free", name: "muse-spark-1.2-contributor-free", targetFormat: "openai-responses" },
     { id: "muse-spark-1.3-contributor-free", name: "muse-spark-1.3-contributor-free", targetFormat: "openai-responses" },
     { id: "big-pickle", name: "big-pickle" },
