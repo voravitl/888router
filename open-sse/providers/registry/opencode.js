@@ -22,6 +22,10 @@ const opencodeConfig = {
   authHint: "OpenCode Zen mode - public access or Zen API key (key required for free models via third-party clients).",
   transport: {
     baseUrl: "https://opencode.ai",
+    // Upstream free-tier gate rejects stream:false with 403 FreeTierError
+    // (verified live). Force SSE upstream; chatCore converts back to JSON
+    // for non-streaming clients via the existing forced-SSE path.
+    forceStream: true,
     headers: {
       "x-opencode-client": "desktop",
     },

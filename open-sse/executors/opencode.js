@@ -20,6 +20,16 @@ const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+// Upstream free-tier gate (verified live 2026-09-18, cf. decolua/9router#4132):
+// /zen/v1/chat/completions and /zen/v1/responses with
+// `Authorization: Bearer public` reject requests that do not look like the
+// official OpenCode agentic client, even when User-Agent/session shape are
+// valid. Concretely enforced:
+// - stream must be true (stream:false → 403 FreeTierError);
+// - tools must include the file-search quartet {bash, glob, grep, read}
+//   (0–3 of them → 403; extras are allowed). Plain chat callers send no
+//   tools, so without injection every such request 403s.
+const OPENCODE_FINGERPRINT_TOOLS = ["bash", "glob", "grep", "read"];
 
 export function hasValidOpencodeVersion(ua) {
   const m = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
@@ -55,7 +65,9 @@ function isResponsesPath(model, credentials) {
 // public models — regardless of any -free suffix they may carry.
 function isZenFreeModel(provider, model) {
   if (provider === "opencode-go") return false;
-  return typeof model === "string" && (model.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(model));
+  // Strip thinking suffixes ("mimo-v2.5-free(high)") before matching.
+  const base = baseModelId(model);
+  return base.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(base);
 }
 
 function runtimeTransportUrl(credentials) {
@@ -171,6 +183,68 @@ function normalizeSession(value) {
   return normalized;
 }
 
+function toolNameOf(tool) {
+  if (!tool || typeof tool !== "object" || Array.isArray(tool)) return "";
+  const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
+  const raw = typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : "");
+  return raw.trim();
+}
+
+// Merge the upstream-mandated file-search quartet into Chat Completions
+// bodies. Caller tools are preserved verbatim (extras are allowed upstream);
+// only the missing fingerprint names are appended as no-op declarations the
+// model may ignore. Without this, plain chat callers that send no tools get
+// 403 FreeTierError on every request.
+function ensureChatFingerprintTools(body) {
+  if (!body || typeof body !== "object") return;
+  const present = new Set();
+  if (Array.isArray(body.tools)) {
+    for (const tool of body.tools) {
+      const name = toolNameOf(tool);
+      if (name) present.add(name);
+    }
+  } else {
+    body.tools = [];
+  }
+  for (const name of OPENCODE_FINGERPRINT_TOOLS) {
+    if (present.has(name)) continue;
+    body.tools.push({
+      type: "function",
+      function: {
+        name,
+        description: `OpenCode built-in ${name} tool`,
+        parameters: { type: "object", properties: {} },
+      },
+    });
+    present.add(name);
+  }
+}
+
+// Same fingerprint for the Responses flat tool shape
+// ({type:"function", name, ...}).
+function ensureResponsesFingerprintTools(body) {
+  if (!body || typeof body !== "object") return;
+  const present = new Set();
+  if (Array.isArray(body.tools)) {
+    for (const tool of body.tools) {
+      const name = toolNameOf(tool);
+      if (name) present.add(name);
+    }
+  } else {
+    body.tools = [];
+  }
+  for (const name of OPENCODE_FINGERPRINT_TOOLS) {
+    if (present.has(name)) continue;
+    body.tools.push({
+      type: "function",
+      name,
+      description: `OpenCode built-in ${name} tool`,
+      parameters: { type: "object", properties: {} },
+    });
+    present.add(name);
+  }
+}
+
 function nativeSession(headers) {
   if (!headers || typeof headers !== "object") return null;
   for (const [key, value] of Object.entries(headers)) {
@@ -257,6 +331,17 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     if (!body || typeof body !== "object") return body;
+    // Free-tier gates below apply to Zen -free models only (never Go/paid):
+    // upstream documents the identity/stream/tool checks against
+    // `Authorization: Bearer public` free traffic.
+    const freeGate = isZenFreeModel(this.provider, model);
+    if (freeGate) {
+      // Upstream rejects non-streaming free-tier requests with 403 even when
+      // everything else is valid. chatCore forces SSE upstream for forceStream
+      // providers and converts back for non-stream clients, so always send
+      // stream:true here.
+      body.stream = true;
+    }
 
     // Sanitize messages: OpenCode Zen HTTP 400s on content: null/undefined/[] and
     // text parts with null/missing text. Assistant turns with non-empty tool_calls
@@ -293,6 +378,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       // Claude Code `/model` probes send max_tokens: 1, which Anthropic accepts.
       clampResponsesMaxOutputTokens(body);
       normalizeOpencodeReasoning(model, body);
+      if (freeGate) ensureResponsesFingerprintTools(body);
       return injectReasoningContent({ provider: this.provider, model, body });
     }
 
@@ -301,10 +387,12 @@ export class OpenCodeExecutor extends BaseExecutor {
     // max_tokens from clients (e.g. Claude Code). Upstream defaults to a low budget
     // (~40-150 tokens) which exhausts on reasoning, leaving empty text content.
     // Inject min max_tokens: 2000 when body.max_tokens is absent/undefined.
-    const isFreeModel = typeof model === "string" && (model.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(model));
+    const freeSuffix = baseModelId(model);
+    const isFreeModel = freeSuffix.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(freeSuffix);
     if (isFreeModel && (nextBody?.max_tokens === undefined || nextBody?.max_tokens === null)) {
       nextBody = { ...nextBody, max_tokens: 2000 };
     }
+    if (freeGate) ensureChatFingerprintTools(nextBody);
     return nextBody;
   }
 
