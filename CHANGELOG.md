@@ -1,3 +1,21 @@
+# v0.15.108 (2026-09-18)
+
+## Translator: Claude probe validation, Responses API fail-closed, Kiro MCP & streaming tools
+
+- **Claude probe**: convert forced-SSE responses back to Claude Message format with
+  valid `usage` (`input_tokens`, `output_tokens`), fixing Claude Code `/model` validation
+  crash (`Er.usage.input_tokens is undefined`) on streaming-only providers.
+- **Responses API**: fail-closed (throw Error) on orphan or unpairable tool outputs
+  per 9-Opus contract to prevent state desync and model hallucinations.
+- **Kiro MCP & tools**: preserve consecutive underscores for MCP tools (`mcp__server__tool`),
+  roundtrip tool names with `_toolNameMap`, and defer tool block emission to `finish_reason`
+  to handle split names across streaming chunks.
+- **Upstream ports**: port PRs #4110 (missing tool call ID pairing), #4090 (tool name
+  normalization), #4096 (thinking delta conversion), #4114 (non-streaming Kiro), and
+  commit 1892ed77 (`custom_tool_call` / `custom_tool_call_output` blocks).
+
+Tests: full regression green (297 test files). Reviewed (APPROVE).
+
 # v0.15.107 (2026-09-18)
 
 ## Cleanup: dead OpenCode seeds, 1-day requestDetails retention, CICD discipline
