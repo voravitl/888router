@@ -1,3 +1,19 @@
+# v0.15.109 (2026-09-22)
+
+## Fix: ollama-local Sync Models shows empty list
+
+- **ollama-local models**: normalize Ollama `/api/tags` response
+  (`{ models: [{ name, model, details }] }`, no `id` field) to standard
+  `{ id, name }` in the `ollama-local` branch of
+  `GET /api/providers/[id]/models` — previously items passed through
+  `parseOpenAIStyleModels` untouched and `buildModelsResponse` dropped
+  every model on its `m.id` filter, leaving Sync Models empty.
+  Custom remote hosts (e.g. `https://ollama.olanla66.org`) via
+  `providerSpecificData.baseUrl` work the same path.
+
+Tests: new regression `tests/unit/ollama-local-sync-normalize.test.js`
+(2 cases); 17/17 related suites green. Closes #419 (PR #420).
+
 # v0.15.108 (2026-09-18)
 
 ## Translator: Claude probe validation, Responses API fail-closed, Kiro MCP & streaming tools
