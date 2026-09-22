@@ -29,6 +29,11 @@ export function getProviderCustomModelRows({
       fullModel,
       source: model.source || "custom",
       type: rowType,
+      // Stored upstream context (e.g. Ollama details.context_length saved at
+      // sync time). ModelsTable prefers this over catalogue pattern guesses.
+      ...(Number.isFinite(Number(model.contextLength)) && Number(model.contextLength) > 0
+        ? { contextLength: Number(model.contextLength) }
+        : {}),
     });
   }
 

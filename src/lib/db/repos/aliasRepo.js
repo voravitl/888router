@@ -29,15 +29,21 @@ export async function getCustomModels() {
   return Object.values(all);
 }
 
-// Atomic check-then-insert inside transaction to prevent duplicate races
-export async function addCustomModel({ providerAlias, id, type = "llm", name, source }) {
+// Atomic check-then-insert inside transaction to prevent duplicate races.
+// contextLength (when provided) persists the upstream context window (e.g.
+// Ollama details.context_length from a sync) so the dashboard table shows
+// the real value instead of a catalogue pattern guess.
+export async function addCustomModel({ providerAlias, id, type = "llm", name, source, contextLength }) {
   const k = customKey(providerAlias, id, type);
   const db = await getAdapter();
   let added = false;
+  const cw = Number(contextLength);
+  const row_value = { providerAlias, id, type, name: name || id, source: source || "custom" };
+  if (Number.isFinite(cw) && cw > 0) row_value.contextLength = cw;
   db.transaction(() => {
     const row = db.get(`SELECT 1 FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
     if (row) return;
-    const value = stringifyJson({ providerAlias, id, type, name: name || id, source: source || "custom" });
+    const value = stringifyJson(row_value);
     db.run(`INSERT INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, value]);
     added = true;
   });

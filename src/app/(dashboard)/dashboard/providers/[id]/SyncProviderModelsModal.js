@@ -170,6 +170,10 @@ export default function SyncProviderModelsModal({
       await onAddModels(selectedModels.map((model) => ({
         id: model.id,
         alias: defaultAlias(model.id, passthroughModels),
+        // Carry the upstream context window so the dashboard table can show
+        // the real value (e.g. Ollama details.context_length) instead of
+        // falling back to a catalogue pattern guess (e.g. *qwen*coder* → 1M).
+        ...(model.maxInputTokens ? { contextLength: model.maxInputTokens } : {}),
       })));
       onClose();
     } catch (err) {

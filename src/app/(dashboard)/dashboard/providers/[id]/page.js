@@ -742,6 +742,28 @@ export default function ProviderDetailPage() {
       if (!res.ok) throw new Error(data.error || `Failed to add ${item.id}`);
       usedAliases.add(alias);
       usedModels.add(fullModel);
+      // Persist the upstream context window (when the sync item carries one)
+      // into the custom-models row, so the table shows the real value
+      // instead of a catalogue pattern guess. Fail-open: alias already
+      // succeeded, a context write failure must not roll it back.
+      const cw = Number(item.contextLength);
+      if (Number.isFinite(cw) && cw > 0) {
+        try {
+          await fetch("/api/models/custom", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              providerAlias: providerStorageAlias,
+              id: item.id,
+              type: "llm",
+              source: "synced",
+              contextLength: cw,
+            }),
+          });
+        } catch {
+          // fail-open: alias already succeeded
+        }
+      }
     }
 
     await fetchAliases();
@@ -1186,6 +1208,8 @@ export default function ProviderDetailPage() {
           fullModel: `${providerDisplayAlias}/${row.id}`,
           source: row.source,
           alias: row.alias,
+          // Stored upstream context wins over catalogue guesses in ModelsTable.
+          ...(row.contextLength ? { contextLength: row.contextLength } : {}),
           isCustom: true,
           lastSyncedAt: synced.lastSyncedAt || null,
           firstSeenAt: synced.firstSeenAt || null,
