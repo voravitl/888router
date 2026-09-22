@@ -1,3 +1,12 @@
+# v0.15.112 (2026-09-23)
+
+## Antigravity quota tracker parity with upstream
+
+- **free-tier gate and weekly reconciliation**: align the quota tracker with
+  upstream free-tier gating, weekly overlays (`gemini_weekly` and
+  `claude_gpt_weekly`), and family-exhausted reconciliation while retaining
+  existing Gemini and Claude all-model rollups. PR #428, closes #427.
+
 # v0.15.111 (2026-09-22)
 
 ## Fix: ollama-local stream no longer blocked by non-SSE gate
