@@ -6,14 +6,27 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch,
 }));
 
-const weeklySummary = (remainingFraction = 0.75, resetTime = "2026-09-15T00:00:00Z") => ({
+const weeklySummary = (
+  geminiRemainingFraction = 0.75,
+  geminiResetTime = "2026-09-15T00:00:00Z",
+  claudeRemainingFraction = 0.5,
+  claudeResetTime = "2026-09-16T00:00:00Z"
+) => ({
   groups: [{
     displayName: "Gemini Models",
     buckets: [{
       bucketId: "gemini-weekly",
       displayName: "Weekly Limit",
-      remainingFraction,
-      resetTime,
+      remainingFraction: geminiRemainingFraction,
+      resetTime: geminiResetTime,
+    }],
+  }, {
+    displayName: "Claude and GPT models",
+    buckets: [{
+      bucketId: "claude-gpt-weekly",
+      displayName: "Weekly Limit",
+      remainingFraction: claudeRemainingFraction,
+      resetTime: claudeResetTime,
     }],
   }],
 });
@@ -90,16 +103,26 @@ describe("Antigravity weekly quota overlay", () => {
       remainingPercentage: 75,
       displayName: "Gemini (Weekly)",
     });
+    expect(usage.quotas.claude_gpt_weekly).toMatchObject({
+      remainingPercentage: 50,
+      displayName: "Claude & GPT (Weekly)",
+    });
   });
 
-  it("forces a misleading available weekly quota to zero when a family is exhausted", async () => {
+  it("forces misleading available weekly quotas to zero when families are exhausted", async () => {
     mockUsage({
       models: {
         "gemini-3.8-flash-high": {
           quotaInfo: { resetTime: "2026-09-13T12:00:00Z" },
         },
+        "claude-sonnet-4-6": {
+          quotaInfo: { resetTime: "2026-09-14T12:00:00Z" },
+        },
+        "claude-opus-4-6-thinking": {
+          quotaInfo: { resetTime: "2026-09-15T12:00:00Z" },
+        },
       },
-      weekly: weeklySummary(1),
+      weekly: weeklySummary(1, "2026-09-20T00:00:00Z", 1, "2026-09-21T00:00:00Z"),
     });
 
     const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
@@ -111,6 +134,12 @@ describe("Antigravity weekly quota overlay", () => {
       total: 1000,
       remainingPercentage: 0,
       resetAt: "2026-09-13T12:00:00.000Z",
+    });
+    expect(usage.quotas.claude_gpt_weekly).toMatchObject({
+      used: 1000,
+      total: 1000,
+      remainingPercentage: 0,
+      resetAt: "2026-09-15T12:00:00.000Z",
     });
   });
 });
