@@ -1,3 +1,17 @@
+# v0.15.110 (2026-09-22)
+
+## Fix: synced rows show real context instead of 1M guess
+
+- **sync-add context carry-through**: upstream `contextLength` (e.g. Ollama
+  `details.context_length = 32768`) was dropped at sync-add, so the table
+  fell back to catalogue pattern guesses (`*qwen*coder*` → 1000000 → "1M").
+  The chain now carries it: sync modal item → `POST /api/models/custom`
+  → `customModels` row → table row, preferred by `ModelsTable` over
+  `getContextWindow`. Rows added before this fix need delete + re-sync.
+
+Tests: new `tests/unit/ollama-local-sync-context.test.js` (3 cases);
+related suites 8/8 green. Closes #422 (PR #423).
+
 # v0.15.109 (2026-09-22)
 
 ## Fix: ollama-local Sync Models shows empty list
