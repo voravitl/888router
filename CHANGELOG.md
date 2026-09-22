@@ -1,3 +1,21 @@
+# v0.15.111 (2026-09-22)
+
+## Fix: ollama-local stream no longer blocked by non-SSE gate
+
+- **streaming gate ndjson allowlist**: `handleStreamingResponse`
+  (`open-sse/handlers/chatCore/streamingHandler.js`) rejected any upstream
+  `content-type` outside `text/event-stream` / `application/json`, so
+  ollama-local streams (Ollama answers `application/x-ndjson`, 200 OK)
+  failed with "blocked pipe / upstream non-SSE: 200" and the client saw
+  `Provider error (reset after 30s)`. The gate now allows ndjson only when
+  `targetFormat` is ollama — the chunk translator (`ollama-to-openai`) and
+  `parseSSELine` already handle raw JSON lines; non-ollama ndjson bodies
+  still block.
+
+Tests: new `tests/unit/ollama-local-ndjson-stream.test.js` (3 cases:
+pipe ndjson, block HTML, block non-ollama ndjson); related stream+ollama
+suites 86/86 green; new suite 3/3 green. Closes #425 (PR #426).
+
 # v0.15.110 (2026-09-22)
 
 ## Fix: synced rows show real context instead of 1M guess

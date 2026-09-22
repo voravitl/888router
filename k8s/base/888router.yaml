@@ -29,7 +29,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: 888router
-          image: voravitl/888router:0.15.110
+          image: voravitl/888router:0.15.111
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
