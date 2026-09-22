@@ -6,6 +6,7 @@ import { CLIENT_METADATA } from "../../config/appConstants.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { ANTIGRAVITY_OAUTH_CLIENT, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
+import { fetchAntigravityWeeklyQuota } from "./antigravity-weekly.js";
 
 // Antigravity API config (from Quotio) — urls from registry, oauth client + dynamic UA kept here
 const ANTIGRAVITY_CONFIG = {
@@ -158,8 +159,13 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     const data = await response.json();
     const quotas = {};
 
-    // Parse model quotas (inspired by vscode-antigravity-cockpit)
-    if (data.models) {
+    // Detect tier: free-tier accounts only have weekly quotas (no separate 5h window).
+    // On free-tier, fetchAvailableModels returns misleading per-model quota info.
+    const paidTierId = subscriptionInfo?.paidTier?.id;
+    const isFreeTier = !paidTierId || paidTierId === "free-tier";
+
+    // Parse model quotas only for paid-tier accounts.
+    if (!isFreeTier && data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
         'gemini-3.8-flash-high',
@@ -269,6 +275,49 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           memberCount: fractions.length,
         };
       }
+    }
+
+    // Best-effort weekly quota overlay — never blocks or breaks per-model results.
+    try {
+      const weeklyQuotas = await fetchAntigravityWeeklyQuota(
+        accessToken,
+        projectId,
+        proxyOptions
+      );
+
+      // If every per-model quota in a family is exhausted, do not show a
+      // misleading available weekly quota for that family.
+      const entries = Object.entries(quotas);
+      const geminiModels = entries.filter(([key]) => key.startsWith("gemini-") && !key.includes("image"));
+      const claudeModels = entries.filter(([key]) => key.startsWith("claude-"));
+
+      if (weeklyQuotas.gemini_weekly && geminiModels.length > 0) {
+        const allGeminiExhausted = geminiModels.every(([, quota]) => (quota.remainingPercentage ?? 0) === 0);
+        if (allGeminiExhausted && weeklyQuotas.gemini_weekly.remainingPercentage > 0) {
+          const maxResetAt = geminiModels.reduce((max, [, quota]) =>
+            !max || (quota.resetAt && new Date(quota.resetAt) > new Date(max)) ? quota.resetAt : max, null
+          );
+          weeklyQuotas.gemini_weekly.used = weeklyQuotas.gemini_weekly.total;
+          weeklyQuotas.gemini_weekly.remainingPercentage = 0;
+          if (maxResetAt) weeklyQuotas.gemini_weekly.resetAt = maxResetAt;
+        }
+      }
+
+      if (weeklyQuotas.claude_gpt_weekly && claudeModels.length > 0) {
+        const allClaudeExhausted = claudeModels.every(([, quota]) => (quota.remainingPercentage ?? 0) === 0);
+        if (allClaudeExhausted && weeklyQuotas.claude_gpt_weekly.remainingPercentage > 0) {
+          const maxResetAt = claudeModels.reduce((max, [, quota]) =>
+            !max || (quota.resetAt && new Date(quota.resetAt) > new Date(max)) ? quota.resetAt : max, null
+          );
+          weeklyQuotas.claude_gpt_weekly.used = weeklyQuotas.claude_gpt_weekly.total;
+          weeklyQuotas.claude_gpt_weekly.remainingPercentage = 0;
+          if (maxResetAt) weeklyQuotas.claude_gpt_weekly.resetAt = maxResetAt;
+        }
+      }
+
+      Object.assign(quotas, weeklyQuotas);
+    } catch {
+      // Silently ignore — weekly is best-effort.
     }
 
     return {
