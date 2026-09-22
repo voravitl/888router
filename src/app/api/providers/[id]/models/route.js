@@ -914,7 +914,25 @@ export async function GET(request, { params }) {
         );
       }
       const data = await response.json();
-      const models = parseOpenAIStyleModels(data);
+      // Ollama /api/tags returns { models: [{ name, model, details, ... }] } —
+      // no `id` field, so parseOpenAIStyleModels items get dropped by
+      // buildModelsResponse's `m.id` filter. Normalize name → id here.
+      const raw = data.models || data.data || [];
+      const models = raw
+        .map((m) => {
+          if (typeof m === "string") return { id: m, name: m };
+          const id = m.name || m.model || m.id;
+          if (!id) return null;
+          return {
+            id,
+            name: m.name || m.id || id,
+            size: m.size || 0,
+            details: m.details || {},
+            contextLength: m.contextLength || m.details?.context_length || 0,
+            modified_at: m.modified_at,
+          };
+        })
+        .filter(Boolean);
       return buildModelsResponse({
         provider: connection.provider,
         connectionId: connection.id,
