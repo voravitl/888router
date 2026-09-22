@@ -70,7 +70,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json')) {
+  // Ollama streams NDJSON (application/x-ndjson), not SSE — its chunk
+  // translator (ollama-to-openai) and parseSSELine already handle raw
+  // JSON lines. Allow ndjson ONLY when we expect ollama-format upstream,
+  // so a non-ollama ndjson body still hits the blocked-pipe path.
+  const isOllamaNdjson = upstreamContentType.includes('ndjson') && targetFormat === FORMATS.OLLAMA;
+  if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json') && !isOllamaNdjson) {
     const bodyText = await providerResponse.text().catch(() => '');
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
