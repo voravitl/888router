@@ -17,11 +17,11 @@ export async function GET() {
 // POST /api/models/custom - Add custom model
 export async function POST(request) {
   try {
-    const { providerAlias, id, type, name, source } = await request.json();
+    const { providerAlias, id, type, name, source, contextLength } = await request.json();
     if (!providerAlias || !id) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
-    const added = await addCustomModel({ providerAlias, id, type: type || "llm", name, source: source || "custom" });
+    const added = await addCustomModel({ providerAlias, id, type: type || "llm", name, source: source || "custom", contextLength });
     return NextResponse.json({ success: true, added });
   } catch (error) {
     console.log("Error adding custom model:", error);
