@@ -228,8 +228,13 @@ export function openaiToClaudeResponse(chunk, state) {
     } else if (!state.textBlockStarted) {
       // Buffer leading whitespace; flushed when the first real text opens
       // the block. A stream ending with only buffered whitespace stays an
-      // empty response (existing behavior preserved).
-      state.leadingWhitespaceBuf = (state.leadingWhitespaceBuf || "") + cleanedText;
+      // empty response (existing behavior preserved). Capped so a runaway
+      // whitespace-only upstream cannot grow memory unbounded.
+      const MAX_LEADING_WHITESPACE = 64 * 1024;
+      const next = (state.leadingWhitespaceBuf || "") + cleanedText;
+      state.leadingWhitespaceBuf = next.length > MAX_LEADING_WHITESPACE
+        ? next.slice(-MAX_LEADING_WHITESPACE)
+        : next;
     }
     // else: text block already closed → drop (no valid target block).
   }
