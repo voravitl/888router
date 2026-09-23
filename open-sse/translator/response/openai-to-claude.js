@@ -72,12 +72,15 @@ function stopTextBlock(state, results) {
 
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) {
-    // Abnormal termination (cancel/timeout/disconnect): drop pending
-    // whitespace so pooled/reused state cannot leak it into the next stream.
+  // Stream teardown (flush path passes null): drop pending whitespace so
+  // pooled/reused state cannot leak it into the next stream. Non-null
+  // chunks without choices[0] are legitimate metadata/usage frames
+  // (e.g. stream_options.include_usage) — ignore without touching state.
+  if (!chunk) {
     if (state) state.leadingWhitespaceBuf = "";
     return null;
   }
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];
@@ -255,6 +258,9 @@ export function openaiToClaudeResponse(chunk, state) {
   // chunks and defer the block emission to finish (the same shape the
   // antigravity translator already uses), so the name is always complete.
   if (delta?.tool_calls) {
+    // A tool block supersedes pending whitespace: buffered text belongs to
+    // the pre-tool turn, never to a post-tool text block.
+    state.leadingWhitespaceBuf = "";
     if (!state.toolCalls) state.toolCalls = new Map();
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;

@@ -328,6 +328,31 @@ describe("openaiToClaudeResponse", () => {
     expect(state.leadingWhitespaceBuf).toBe("");
   });
 
+  it("ignores usage chunks without touching buffered whitespace", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "   ",
+      toolCalls: new Map()
+    };
+    const chunk = (content) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: null, delta: { content } }]
+    });
+    // Usage/metadata frame: no choices[0] — must not clear the buffer.
+    const usage = openaiToClaudeResponse({ id: "chatcmpl-t", model: "m", usage: { prompt_tokens: 5, completion_tokens: 0 } }, state);
+    expect(usage).toBeNull();
+    const text = openaiToClaudeResponse(chunk("hi"), state);
+    const texts = (text || []).filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text);
+    expect(texts.join("")).toBe("   hi");
+  });
+
   it("keeps a whitespace-only stream as an empty response", () => {
     const state = {
       messageStartSent: true,
