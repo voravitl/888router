@@ -260,6 +260,32 @@ describe("openaiToClaudeResponse", () => {
     expect(texts.join("")).toBe("    const x = 1;");
   });
 
+  it("reopens a new text block for text arriving after close", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "",
+      toolCalls: new Map()
+    };
+    const chunk = (content, finish = null) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: finish, delta: content ? { content } : {} }]
+    });
+    openaiToClaudeResponse(chunk("one"), state);
+    openaiToClaudeResponse(chunk(null, "stop"), state);
+    const reopen = openaiToClaudeResponse(chunk("two"), state);
+    const starts = (reopen || []).filter((e) => e.type === "content_block_start");
+    expect(starts).toHaveLength(1);
+    expect(starts[0].index).toBe(2);
+    expect(state.textBlockClosed).toBe(false);
+  });
+
   it("keeps a whitespace-only stream as an empty response", () => {
     const state = {
       messageStartSent: true,

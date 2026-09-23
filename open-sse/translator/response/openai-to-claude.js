@@ -189,7 +189,8 @@ export function openaiToClaudeResponse(chunk, state) {
   if (hasNonWhitespaceText) {
     stopThinkingBlock(state, results);
 
-    if (!state.textBlockStarted) {
+    // Reopen when never opened OR after a close (closed block index is dead).
+    if (!state.textBlockStarted || state.textBlockClosed) {
       state.textBlockIndex = state.nextBlockIndex++;
       state.textBlockStarted = true;
       state.textBlockClosed = false;
@@ -229,12 +230,14 @@ export function openaiToClaudeResponse(chunk, state) {
       // Buffer leading whitespace; flushed when the first real text opens
       // the block. A stream ending with only buffered whitespace stays an
       // empty response (existing behavior preserved). Capped so a runaway
-      // whitespace-only upstream cannot grow memory unbounded.
+      // whitespace-only upstream cannot grow memory unbounded; keeps the
+      // prefix (indentation) and sheds the tail.
       const MAX_LEADING_WHITESPACE = 64 * 1024;
-      const next = (state.leadingWhitespaceBuf || "") + cleanedText;
-      state.leadingWhitespaceBuf = next.length > MAX_LEADING_WHITESPACE
-        ? next.slice(-MAX_LEADING_WHITESPACE)
-        : next;
+      const current = state.leadingWhitespaceBuf || "";
+      const remaining = MAX_LEADING_WHITESPACE - current.length;
+      if (remaining > 0) {
+        state.leadingWhitespaceBuf = current + cleanedText.slice(0, remaining);
+      }
     }
     // else: text block already closed → drop (no valid target block).
   }
@@ -282,6 +285,9 @@ export function openaiToClaudeResponse(chunk, state) {
   if (choice.finish_reason) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
+    // Whitespace-only streams never opened a block: clear any buffered
+    // leading whitespace so pooled/reused state cannot leak it.
+    state.leadingWhitespaceBuf = "";
 
     let emittedToolBlocks = 0;
     for (const [idx, toolInfo] of (state.toolCalls || [])) {
