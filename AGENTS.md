@@ -53,16 +53,19 @@ unavailable (missing binary, auth failure, non-zero exit, timeout, empty output,
 `402` quota exhausted, `429`), **substitute the next reviewer of equal or higher
 capability — never skip the review and never merge unreviewed.**
 
+> **Current status:** `grok` is currently unavailable (`402` quota exhausted).
+> **Active primary reviewer:** `9-opus` via 888router.
+
 Fallback ladder (top preferred; descend until one returns real findings):
 
-| Rank | Reviewer | How |
-|------|----------|-----|
-| 1 | Grok 4.6 (`grok` CLI) | `cat /tmp/pr.diff \| grok -p "<review prompt>"` |
-| 2 | `9-opus` via 888router | `python3 ~/.hermes/scripts/888router-review.py --model 9-opus --file /tmp/pr.diff` |
-| 3 | `cc/claude-opus-4-8` via 888router | same script, `--model cc/claude-opus-4-8` |
-| 4 | Claude Opus Thinking (`agy` CLI) | `cat /tmp/pr.diff \| agy -p "<review prompt>"` |
-| 5 | `codex` CLI | `codex exec "review this diff: ..."` |
-| 6 | `kr/claude-opus-4-8-thinking` via 888router | same script |
+| Rank | Reviewer | How | Note |
+|------|----------|-----|------|
+| 1 | Grok 4.6 (`grok` CLI) | `cat /tmp/pr.diff \| grok -p "<review prompt>"` | *Quota exhausted (skip to Rank 2)* |
+| 2 | `9-opus` via 888router | `python3 ~/.hermes/scripts/888router-review.py --model 9-opus --file /tmp/pr.diff` | **Active primary reviewer** |
+| 3 | `cc/claude-opus-4-8` via 888router | same script, `--model cc/claude-opus-4-8` | |
+| 4 | Claude Opus Thinking (`agy` CLI) | `cat /tmp/pr.diff \| agy -p "<review prompt>"` | |
+| 5 | `codex` CLI | `codex exec "review this diff: ..."` | |
+| 6 | `kr/claude-opus-4-8-thinking` via 888router | same script | |
 
 - **Equal or better only.** Never drop to a weaker/cheaper model just to get a
   faster green light. Opus/Grok tier is the floor.
