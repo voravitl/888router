@@ -28,6 +28,16 @@ describe("GPT-6 Model Capabilities & Pricing", () => {
       expect(codexCaps.reasoning).toBe(true);
     });
 
+    it("resolves GPT-6 Sol and Luna for the codex provider", () => {
+      const solCaps = getCapabilitiesForModel("codex", "gpt-6-sol");
+      expect(solCaps.contextWindow).toBe(1050000);
+      expect(solCaps.reasoning).toBe(true);
+
+      const lunaCaps = getCapabilitiesForModel("codex", "gpt-6-luna");
+      expect(lunaCaps.contextWindow).toBe(1050000);
+      expect(lunaCaps.reasoning).toBe(true);
+    });
+
     it("resolves future GPT-6.1+ dynamically via resolveGptFamilyCapabilities", () => {
       const gpt61Caps = getCapabilitiesForModel("openai", "gpt-6.1");
       expect(gpt61Caps.contextWindow).toBe(1050000);
@@ -78,6 +88,18 @@ describe("GPT-6 Model Capabilities & Pricing", () => {
       expect(pricing.output).toBe(25.00);
       expect(pricing.cached).toBe(0.50);
       expect(pricing.reasoning).toBe(25.00);
+    });
+
+    it("resolves canonical GPT-6 Sol and Luna rates", () => {
+      const solPricing = getPricingForModel("gpt-6-sol");
+      expect(solPricing.input).toBe(4.00);
+      expect(solPricing.output).toBe(20.00);
+      expect(solPricing.cached).toBe(0.40);
+
+      const lunaPricing = getPricingForModel("gpt-6-luna");
+      expect(lunaPricing.input).toBe(0.25);
+      expect(lunaPricing.output).toBe(1.25);
+      expect(lunaPricing.cached).toBe(0.025);
     });
 
     it("resolves TokenRouter provider-specific GPT-6 Astra rates", () => {

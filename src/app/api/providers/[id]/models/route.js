@@ -10,6 +10,7 @@ import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js"
 import { refreshProviderCredentials } from "open-sse/services/oauthCredentialManager.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { formatModelsFetchError, safeLogDetail } from "@/lib/upstreamErrorDetail";
+import { CODEX_CLI_VERSION } from "open-sse/providers/shared.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -221,7 +222,7 @@ const PROVIDER_MODELS_CONFIG = {
     parseResponse: (data) => data.data || []
   },
   codex: {
-    url: "https://chatgpt.com/backend-api/codex/models?client_version=0.144.6",
+    url: `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLI_VERSION}`,
     method: "GET",
     headers: { "Content-Type": "application/json", "Accept": "application/json", "originator": "codex_cli_rs" },
     authHeader: "Authorization",
