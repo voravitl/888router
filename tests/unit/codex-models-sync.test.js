@@ -71,8 +71,10 @@ describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
       }),
     });
 
-    const { GET, CODEX_CLI_CLIENT_VERSION } = await import("../../src/app/api/providers/[id]/models/route.js");
-    expect(CODEX_CLI_CLIENT_VERSION).toBe("0.156.1");
+    const { CODEX_CLI_VERSION } = await import("../../open-sse/providers/shared.js");
+    expect(CODEX_CLI_VERSION).toBe("0.156.1");
+
+    const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
 
     const res = await GET(new Request("http://localhost/api/providers/conn-codex-1/models"), {
       params: Promise.resolve({ id: "conn-codex-1" }),
