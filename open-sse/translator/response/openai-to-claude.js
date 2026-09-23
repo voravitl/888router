@@ -203,8 +203,16 @@ export function openaiToClaudeResponse(chunk, state) {
       delta: { type: "text_delta", text: cleanedText }
     });
   } else if (cleanedText) {
-    // whitespace-only text: don't open a text block, just stop thinking
     stopThinkingBlock(state, results);
+    // Forward whitespace-only deltas when a text block is already open so
+    // newlines/indentation inside lists and code blocks are preserved.
+    if (state.textBlockStarted && !state.textBlockClosed) {
+      results.push({
+        type: "content_block_delta",
+        index: state.textBlockIndex,
+        delta: { type: "text_delta", text: cleanedText }
+      });
+    }
   }
 
   // Tool calls

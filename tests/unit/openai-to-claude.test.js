@@ -204,4 +204,53 @@ describe("openaiToClaudeResponse", () => {
       limit: 120
     });
   });
+
+  it("forwards whitespace-only deltas when a text block is already open", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      toolCalls: new Map()
+    };
+    const chunk = (content) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: null, delta: { content } }]
+    });
+
+    openaiToClaudeResponse(chunk("- item one"), state);
+    const ws = openaiToClaudeResponse(chunk("\n"), state);
+    const wsText = (ws || []).filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(wsText).toBe("\n");
+    openaiToClaudeResponse(chunk("- item two"), state);
+
+    const finish = openaiToClaudeResponse(
+      { id: "chatcmpl-t", model: "m", choices: [{ finish_reason: "stop", delta: {} }] },
+      state
+    );
+    expect(finish).not.toBeNull();
+  });
+
+  it("drops a leading whitespace-only delta before any text block opens", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      toolCalls: new Map()
+    };
+    const result = openaiToClaudeResponse(
+      { id: "chatcmpl-t", model: "m", choices: [{ finish_reason: null, delta: { content: "   " } }] },
+      state
+    );
+    const deltas = (result || []).filter((e) => e.delta?.type === "text_delta");
+    expect(deltas).toHaveLength(0);
+  });
 });
