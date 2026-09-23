@@ -1,3 +1,19 @@
+# v0.15.114 (2026-09-23)
+
+## Fix: Codex models sync unhides GPT-6 Astra, Sol, and Luna
+
+- **Codex client_version bump**: OpenAI's `backend-api/codex/models` endpoint
+  gated visibility of new models on `client_version`, hiding all GPT-6 models
+  for versions < 0.155.0. Bumped `CODEX_CLI_VERSION` from `0.144.6` to `0.156.1`
+  (single-sourced in `open-sse/providers/shared.js`) so the live sync unhides
+  `gpt-6-astra`, `gpt-6-sol`, and `gpt-6-luna`.
+- **Codex registry & pricing**: Added `gpt-6-sol` and `gpt-6-luna` to the static
+  model registry with automatic review pairs, official pricing (`gpt-6-sol` $4/$20,
+  `gpt-6-luna` $0.25/$1.25), and reasoning level mappings up to ultra/max.
+- **Quota tier normalization**: Refined `isFreeTier` in `open-sse/services/usage/google.js`
+  to check both normalized `paidTierId` and `tierName`, accurately handling
+  starter-tier accounts.
+
 # v0.15.113 (2026-09-23)
 
 ## Fix: codex output no longer garbled on Claude clients
