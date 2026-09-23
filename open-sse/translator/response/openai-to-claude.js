@@ -237,11 +237,28 @@ export function openaiToClaudeResponse(chunk, state) {
     } else {
       // Buffer whenever no writable text block exists — before the first
       // block AND after a close (pending whitespace for the next block).
+      // Overflow policy: open a text block and flush instead of silently
+      // truncating, so exact formatting is never lost without a signal.
       const MAX_LEADING_WHITESPACE = 64 * 1024;
       const current = state.leadingWhitespaceBuf || "";
-      const remaining = MAX_LEADING_WHITESPACE - current.length;
-      if (remaining > 0) {
-        state.leadingWhitespaceBuf = current + cleanedText.slice(0, remaining);
+      const pending = current + cleanedText;
+      if (pending.length > MAX_LEADING_WHITESPACE) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+        results.push({
+          type: "content_block_delta",
+          index: state.textBlockIndex,
+          delta: { type: "text_delta", text: pending }
+        });
+        state.leadingWhitespaceBuf = "";
+      } else {
+        state.leadingWhitespaceBuf = pending;
       }
     }
   }
@@ -258,9 +275,32 @@ export function openaiToClaudeResponse(chunk, state) {
   // chunks and defer the block emission to finish (the same shape the
   // antigravity translator already uses), so the name is always complete.
   if (delta?.tool_calls) {
-    // A tool block supersedes pending whitespace: buffered text belongs to
-    // the pre-tool turn, never to a post-tool text block.
-    state.leadingWhitespaceBuf = "";
+    // A tool turn supersedes pending pre-tool whitespace: flush it into its
+    // own text block first so upstream ordering (text, then tool) survives.
+    // A text chunk carrying both content + tool_calls in one delta is
+    // processed above (text first), so by here the buffer only holds
+    // whitespace from strictly earlier whitespace-only deltas.
+    if (state.leadingWhitespaceBuf) {
+      state.textBlockIndex = state.nextBlockIndex++;
+      state.textBlockStarted = true;
+      state.textBlockClosed = false;
+      results.push({
+        type: "content_block_start",
+        index: state.textBlockIndex,
+        content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+      });
+      results.push({
+        type: "content_block_delta",
+        index: state.textBlockIndex,
+        delta: { type: "text_delta", text: state.leadingWhitespaceBuf }
+      });
+      results.push({
+        type: "content_block_stop",
+        index: state.textBlockIndex
+      });
+      state.textBlockClosed = true;
+      state.leadingWhitespaceBuf = "";
+    }
     if (!state.toolCalls) state.toolCalls = new Map();
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;

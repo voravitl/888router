@@ -311,23 +311,6 @@ describe("openaiToClaudeResponse", () => {
     expect(texts.join("")).toBe("\n  two");
   });
 
-  it("clears buffered whitespace on abnormal termination", () => {
-    const state = {
-      messageStartSent: true,
-      messageId: "msg_test",
-      model: "m",
-      nextBlockIndex: 1,
-      thinkingBlockStarted: false,
-      textBlockStarted: false,
-      textBlockClosed: false,
-      leadingWhitespaceBuf: "   ",
-      toolCalls: new Map()
-    };
-    const result = openaiToClaudeResponse(null, state);
-    expect(result).toBeNull();
-    expect(state.leadingWhitespaceBuf).toBe("");
-  });
-
   it("ignores usage chunks without touching buffered whitespace", () => {
     const state = {
       messageStartSent: true,
@@ -351,6 +334,51 @@ describe("openaiToClaudeResponse", () => {
     const text = openaiToClaudeResponse(chunk("hi"), state);
     const texts = (text || []).filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text);
     expect(texts.join("")).toBe("   hi");
+  });
+
+  it("flushes buffered whitespace before a tool turn preserves order", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "",
+      toolCalls: new Map()
+    };
+    openaiToClaudeResponse(
+      { id: "chatcmpl-t", model: "m", choices: [{ finish_reason: null, delta: { content: "\n" } }] },
+      state
+    );
+    const toolChunk = {
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: "tool_calls", delta: { tool_calls: [{ index: 0, id: "call_1", function: { name: "Read", arguments: "{}" } }] } }]
+    };
+    const result = openaiToClaudeResponse(toolChunk, state);
+    const types = (result || []).map((e) => e.type);
+    expect(types).toContain("content_block_start");
+    // Whitespace text block emitted before the tool_use block.
+    const firstStart = (result || []).find((e) => e.type === "content_block_start");
+    expect(firstStart.content_block.type).toBe("text");
+  });
+
+  it("clears buffered whitespace on null flush", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "   ",
+      toolCalls: new Map()
+    };
+    expect(openaiToClaudeResponse(null, state)).toBeNull();
+    expect(state.leadingWhitespaceBuf).toBe("");
   });
 
   it("keeps a whitespace-only stream as an empty response", () => {
