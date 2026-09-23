@@ -83,6 +83,28 @@ describe("Antigravity weekly quota overlay", () => {
     });
   });
 
+  it("skips misleading per-model quotas for starter-tier accounts with truthy paidTierId", async () => {
+    mockUsage({
+      paidTierId: "starter-tier",
+      models: {
+        "gemini-3.8-flash-high": {
+          quotaInfo: { remainingFraction: 1, resetTime: "2026-09-10T00:00:00Z" },
+        },
+      },
+    });
+
+    const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
+    const usage = await getAntigravityUsage("access-token", {});
+
+    expect(usage.quotas["gemini-3.8-flash-high"]).toBeUndefined();
+    expect(usage.quotas["Gemini (all models)"]).toBeUndefined();
+    expect(usage.quotas.gemini_weekly).toMatchObject({
+      used: 250,
+      total: 1000,
+      remainingPercentage: 75,
+    });
+  });
+
   it("adds weekly quota rows without changing paid-tier family rollups", async () => {
     mockUsage({
       models: {
