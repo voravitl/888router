@@ -183,7 +183,10 @@ export function openaiToClaudeResponse(chunk, state) {
     });
   }
 
-  if (cleanedText && cleanedText.trim()) {
+  const hasText = typeof cleanedText === "string" && cleanedText.length > 0;
+  const hasNonWhitespaceText = hasText && cleanedText.trim().length > 0;
+
+  if (hasNonWhitespaceText) {
     stopThinkingBlock(state, results);
 
     if (!state.textBlockStarted) {
@@ -195,6 +198,16 @@ export function openaiToClaudeResponse(chunk, state) {
         index: state.textBlockIndex,
         content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
       });
+      // Flush buffered leading whitespace first so indented/code responses
+      // keep their exact formatting.
+      if (state.leadingWhitespaceBuf) {
+        results.push({
+          type: "content_block_delta",
+          index: state.textBlockIndex,
+          delta: { type: "text_delta", text: state.leadingWhitespaceBuf }
+        });
+        state.leadingWhitespaceBuf = "";
+      }
     }
 
     results.push({
@@ -202,7 +215,7 @@ export function openaiToClaudeResponse(chunk, state) {
       index: state.textBlockIndex,
       delta: { type: "text_delta", text: cleanedText }
     });
-  } else if (cleanedText) {
+  } else if (hasText) {
     stopThinkingBlock(state, results);
     // Forward whitespace-only deltas when a text block is already open so
     // newlines/indentation inside lists and code blocks are preserved.
@@ -212,7 +225,13 @@ export function openaiToClaudeResponse(chunk, state) {
         index: state.textBlockIndex,
         delta: { type: "text_delta", text: cleanedText }
       });
+    } else if (!state.textBlockStarted) {
+      // Buffer leading whitespace; flushed when the first real text opens
+      // the block. A stream ending with only buffered whitespace stays an
+      // empty response (existing behavior preserved).
+      state.leadingWhitespaceBuf = (state.leadingWhitespaceBuf || "") + cleanedText;
     }
+    // else: text block already closed → drop (no valid target block).
   }
 
   // Tool calls
