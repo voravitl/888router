@@ -162,7 +162,10 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     // Detect tier: free-tier accounts only have weekly quotas (no separate 5h window).
     // On free-tier, fetchAvailableModels returns misleading per-model quota info.
     const paidTierId = subscriptionInfo?.paidTier?.id;
-    const isFreeTier = !paidTierId || paidTierId === "free-tier";
+    const tierName = subscriptionInfo?.currentTier?.name?.toLowerCase() || "";
+    const isFreeTier = paidTierId
+      ? paidTierId === "free-tier"
+      : (tierName.includes("free") || tierName.includes("starter") || !tierName);
 
     // Parse model quotas only for paid-tier accounts.
     if (!isFreeTier && data.models) {

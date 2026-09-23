@@ -37,6 +37,8 @@ export const MODEL_PRICING = {
   "gpt-4o-mini":                  { input: 0.15,  output: 0.60,  cached: 0.075, reasoning: 0.90,   cache_creation: 0.15  },
   "gpt-4.1":                      { input: 2.50,  output: 10.00, cached: 1.25,  reasoning: 15.00,  cache_creation: 2.50  },
   "gpt-6-astra":                  { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  },
+  "gpt-6-sol":                    { input: 4.00,  output: 20.00, cached: 0.40,  reasoning: 20.00,  cache_creation: 4.00  },
+  "gpt-6-luna":                   { input: 0.25,  output: 1.25,  cached: 0.025, reasoning: 1.25,   cache_creation: 0.25  },
   "gpt-5":                        { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
   "gpt-5-mini":                   { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  },
   "gpt-5-codex":                  { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
@@ -252,7 +254,9 @@ export const PATTERN_PRICING = [
   { pattern: "gemini-2.5-*",    pricing: { input: 0.30,  output: 2.50,  cached: 0.03,  reasoning: 3.75,   cache_creation: 0.30  } },
   { pattern: "gemini-*",        pricing: { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  } },
 
-  // --- GPT-6 (official upstream slug: gpt-6-astra) ---
+  // --- GPT-6 (specific first, generic last) ---
+  { pattern: "gpt-6-luna*",       pricing: { input: 0.25,  output: 1.25,  cached: 0.025, reasoning: 1.25,   cache_creation: 0.25  } },
+  { pattern: "gpt-6-sol*",        pricing: { input: 4.00,  output: 20.00, cached: 0.40,  reasoning: 20.00,  cache_creation: 4.00  } },
   { pattern: "gpt-6-astra*",    pricing: { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  } },
   { pattern: "gpt-6-*",         pricing: { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  } },
   { pattern: "gpt-6.*",         pricing: { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 25.00,  cache_creation: 5.00  } },
