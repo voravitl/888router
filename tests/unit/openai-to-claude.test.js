@@ -204,4 +204,207 @@ describe("openaiToClaudeResponse", () => {
       limit: 120
     });
   });
+
+  it("forwards whitespace-only deltas when a text block is already open", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      toolCalls: new Map()
+    };
+    const chunk = (content) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: null, delta: { content } }]
+    });
+
+    openaiToClaudeResponse(chunk("- item one"), state);
+    const ws = openaiToClaudeResponse(chunk("\n"), state);
+    const wsText = (ws || []).filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(wsText).toBe("\n");
+    openaiToClaudeResponse(chunk("- item two"), state);
+
+    const finish = openaiToClaudeResponse(
+      { id: "chatcmpl-t", model: "m", choices: [{ finish_reason: "stop", delta: {} }] },
+      state
+    );
+    expect(finish).not.toBeNull();
+  });
+
+  it("drops a leading whitespace-only delta before any text block opens", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "",
+      toolCalls: new Map()
+    };
+    const chunk = (content) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: null, delta: { content } }]
+    });
+    // Leading whitespace is buffered, then flushed when real text arrives.
+    const ws = openaiToClaudeResponse(chunk("    "), state);
+    expect((ws || []).filter((e) => e.delta?.type === "text_delta")).toHaveLength(0);
+    const text = openaiToClaudeResponse(chunk("const x = 1;"), state);
+    const texts = (text || []).filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text);
+    expect(texts.join("")).toBe("    const x = 1;");
+  });
+
+  it("reopens a new text block for text arriving after close", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "",
+      toolCalls: new Map()
+    };
+    const chunk = (content, finish = null) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: finish, delta: content ? { content } : {} }]
+    });
+    openaiToClaudeResponse(chunk("one"), state);
+    openaiToClaudeResponse(chunk(null, "stop"), state);
+    const reopen = openaiToClaudeResponse(chunk("two"), state);
+    const starts = (reopen || []).filter((e) => e.type === "content_block_start");
+    expect(starts).toHaveLength(1);
+    expect(starts[0].index).toBe(2);
+    expect(state.textBlockClosed).toBe(false);
+  });
+
+  it("buffers whitespace arriving after a close for the next block", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "",
+      toolCalls: new Map()
+    };
+    const chunk = (content, finish = null) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: finish, delta: content ? { content } : {} }]
+    });
+    openaiToClaudeResponse(chunk("one"), state);
+    openaiToClaudeResponse(chunk(null, "stop"), state);
+    openaiToClaudeResponse(chunk("\n  "), state);
+    const reopen = openaiToClaudeResponse(chunk("two"), state);
+    const texts = (reopen || []).filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text);
+    expect(texts.join("")).toBe("\n  two");
+  });
+
+  it("ignores usage chunks without touching buffered whitespace", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "   ",
+      toolCalls: new Map()
+    };
+    const chunk = (content) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: null, delta: { content } }]
+    });
+    // Usage/metadata frame: no choices[0] — must not clear the buffer.
+    const usage = openaiToClaudeResponse({ id: "chatcmpl-t", model: "m", usage: { prompt_tokens: 5, completion_tokens: 0 } }, state);
+    expect(usage).toBeNull();
+    const text = openaiToClaudeResponse(chunk("hi"), state);
+    const texts = (text || []).filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text);
+    expect(texts.join("")).toBe("   hi");
+  });
+
+  it("flushes buffered whitespace before a tool turn preserves order", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "",
+      toolCalls: new Map()
+    };
+    openaiToClaudeResponse(
+      { id: "chatcmpl-t", model: "m", choices: [{ finish_reason: null, delta: { content: "\n" } }] },
+      state
+    );
+    const toolChunk = {
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: "tool_calls", delta: { tool_calls: [{ index: 0, id: "call_1", function: { name: "Read", arguments: "{}" } }] } }]
+    };
+    const result = openaiToClaudeResponse(toolChunk, state);
+    const types = (result || []).map((e) => e.type);
+    expect(types).toContain("content_block_start");
+    // Whitespace text block emitted before the tool_use block.
+    const firstStart = (result || []).find((e) => e.type === "content_block_start");
+    expect(firstStart.content_block.type).toBe("text");
+  });
+
+  it("clears buffered whitespace on null flush", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "   ",
+      toolCalls: new Map()
+    };
+    expect(openaiToClaudeResponse(null, state)).toBeNull();
+    expect(state.leadingWhitespaceBuf).toBe("");
+  });
+
+  it("keeps a whitespace-only stream as an empty response", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "",
+      toolCalls: new Map()
+    };
+    const chunk = (content) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: null, delta: { content } }]
+    });
+    openaiToClaudeResponse(chunk("   "), state);
+    const finish = openaiToClaudeResponse(
+      { id: "chatcmpl-t", model: "m", choices: [{ finish_reason: "stop", delta: {} }] },
+      state
+    );
+    const deltas = (finish || []).filter((e) => e.delta?.type === "text_delta");
+    expect(deltas).toHaveLength(0);
+    expect(state.textBlockStarted).toBe(false);
+  });
 });

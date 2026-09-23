@@ -72,7 +72,15 @@ function stopTextBlock(state, results) {
 
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  // Stream teardown (flush path passes null): drop pending whitespace so
+  // pooled/reused state cannot leak it into the next stream. Non-null
+  // chunks without choices[0] are legitimate metadata/usage frames
+  // (e.g. stream_options.include_usage) — ignore without touching state.
+  if (!chunk) {
+    if (state) state.leadingWhitespaceBuf = "";
+    return null;
+  }
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];
@@ -183,10 +191,14 @@ export function openaiToClaudeResponse(chunk, state) {
     });
   }
 
-  if (cleanedText && cleanedText.trim()) {
+  const hasText = typeof cleanedText === "string" && cleanedText.length > 0;
+  const hasNonWhitespaceText = hasText && cleanedText.trim().length > 0;
+
+  if (hasNonWhitespaceText) {
     stopThinkingBlock(state, results);
 
-    if (!state.textBlockStarted) {
+    // Reopen when never opened OR after a close (closed block index is dead).
+    if (!state.textBlockStarted || state.textBlockClosed) {
       state.textBlockIndex = state.nextBlockIndex++;
       state.textBlockStarted = true;
       state.textBlockClosed = false;
@@ -195,6 +207,16 @@ export function openaiToClaudeResponse(chunk, state) {
         index: state.textBlockIndex,
         content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
       });
+      // Flush buffered leading whitespace first so indented/code responses
+      // keep their exact formatting.
+      if (state.leadingWhitespaceBuf) {
+        results.push({
+          type: "content_block_delta",
+          index: state.textBlockIndex,
+          delta: { type: "text_delta", text: state.leadingWhitespaceBuf }
+        });
+        state.leadingWhitespaceBuf = "";
+      }
     }
 
     results.push({
@@ -202,9 +224,43 @@ export function openaiToClaudeResponse(chunk, state) {
       index: state.textBlockIndex,
       delta: { type: "text_delta", text: cleanedText }
     });
-  } else if (cleanedText) {
-    // whitespace-only text: don't open a text block, just stop thinking
+  } else if (hasText) {
     stopThinkingBlock(state, results);
+    // Forward whitespace-only deltas when a text block is already open so
+    // newlines/indentation inside lists and code blocks are preserved.
+    if (state.textBlockStarted && !state.textBlockClosed) {
+      results.push({
+        type: "content_block_delta",
+        index: state.textBlockIndex,
+        delta: { type: "text_delta", text: cleanedText }
+      });
+    } else {
+      // Buffer whenever no writable text block exists — before the first
+      // block AND after a close (pending whitespace for the next block).
+      // Overflow policy: open a text block and flush instead of silently
+      // truncating, so exact formatting is never lost without a signal.
+      const MAX_LEADING_WHITESPACE = 64 * 1024;
+      const current = state.leadingWhitespaceBuf || "";
+      const pending = current + cleanedText;
+      if (pending.length > MAX_LEADING_WHITESPACE) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+        results.push({
+          type: "content_block_delta",
+          index: state.textBlockIndex,
+          delta: { type: "text_delta", text: pending }
+        });
+        state.leadingWhitespaceBuf = "";
+      } else {
+        state.leadingWhitespaceBuf = pending;
+      }
+    }
   }
 
   // Tool calls
@@ -219,6 +275,32 @@ export function openaiToClaudeResponse(chunk, state) {
   // chunks and defer the block emission to finish (the same shape the
   // antigravity translator already uses), so the name is always complete.
   if (delta?.tool_calls) {
+    // A tool turn supersedes pending pre-tool whitespace: flush it into its
+    // own text block first so upstream ordering (text, then tool) survives.
+    // A text chunk carrying both content + tool_calls in one delta is
+    // processed above (text first), so by here the buffer only holds
+    // whitespace from strictly earlier whitespace-only deltas.
+    if (state.leadingWhitespaceBuf) {
+      state.textBlockIndex = state.nextBlockIndex++;
+      state.textBlockStarted = true;
+      state.textBlockClosed = false;
+      results.push({
+        type: "content_block_start",
+        index: state.textBlockIndex,
+        content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+      });
+      results.push({
+        type: "content_block_delta",
+        index: state.textBlockIndex,
+        delta: { type: "text_delta", text: state.leadingWhitespaceBuf }
+      });
+      results.push({
+        type: "content_block_stop",
+        index: state.textBlockIndex
+      });
+      state.textBlockClosed = true;
+      state.leadingWhitespaceBuf = "";
+    }
     if (!state.toolCalls) state.toolCalls = new Map();
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
@@ -250,6 +332,9 @@ export function openaiToClaudeResponse(chunk, state) {
   if (choice.finish_reason) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
+    // Whitespace-only streams never opened a block: clear any buffered
+    // leading whitespace so pooled/reused state cannot leak it.
+    state.leadingWhitespaceBuf = "";
 
     let emittedToolBlocks = 0;
     for (const [idx, toolInfo] of (state.toolCalls || [])) {
