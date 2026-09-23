@@ -1,3 +1,15 @@
+# v0.15.113 (2026-09-23)
+
+## Fix: codex output no longer garbled on Claude clients
+
+- **whitespace-only delta preservation**: `openaiToClaudeResponse`
+  (`open-sse/translator/response/openai-to-claude.js`) dropped every
+  whitespace-only `delta.content`, so Codex Responses SSE streams glued
+  list items and paragraphs together. Whitespace deltas are now forwarded
+  inside open text blocks, leading/post-close whitespace is buffered and
+  flushed with the next block, and tool turns flush pending whitespace
+  first to preserve upstream order. PR #432, closes #431.
+
 # v0.15.112 (2026-09-23)
 
 ## Antigravity quota tracker parity with upstream
