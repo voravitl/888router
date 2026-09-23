@@ -286,6 +286,48 @@ describe("openaiToClaudeResponse", () => {
     expect(state.textBlockClosed).toBe(false);
   });
 
+  it("buffers whitespace arriving after a close for the next block", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "",
+      toolCalls: new Map()
+    };
+    const chunk = (content, finish = null) => ({
+      id: "chatcmpl-t",
+      model: "m",
+      choices: [{ finish_reason: finish, delta: content ? { content } : {} }]
+    });
+    openaiToClaudeResponse(chunk("one"), state);
+    openaiToClaudeResponse(chunk(null, "stop"), state);
+    openaiToClaudeResponse(chunk("\n  "), state);
+    const reopen = openaiToClaudeResponse(chunk("two"), state);
+    const texts = (reopen || []).filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text);
+    expect(texts.join("")).toBe("\n  two");
+  });
+
+  it("clears buffered whitespace on abnormal termination", () => {
+    const state = {
+      messageStartSent: true,
+      messageId: "msg_test",
+      model: "m",
+      nextBlockIndex: 1,
+      thinkingBlockStarted: false,
+      textBlockStarted: false,
+      textBlockClosed: false,
+      leadingWhitespaceBuf: "   ",
+      toolCalls: new Map()
+    };
+    const result = openaiToClaudeResponse(null, state);
+    expect(result).toBeNull();
+    expect(state.leadingWhitespaceBuf).toBe("");
+  });
+
   it("keeps a whitespace-only stream as an empty response", () => {
     const state = {
       messageStartSent: true,

@@ -72,7 +72,12 @@ function stopTextBlock(state, results) {
 
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk || !chunk.choices?.[0]) {
+    // Abnormal termination (cancel/timeout/disconnect): drop pending
+    // whitespace so pooled/reused state cannot leak it into the next stream.
+    if (state) state.leadingWhitespaceBuf = "";
+    return null;
+  }
 
   const results = [];
   const choice = chunk.choices[0];
@@ -226,12 +231,9 @@ export function openaiToClaudeResponse(chunk, state) {
         index: state.textBlockIndex,
         delta: { type: "text_delta", text: cleanedText }
       });
-    } else if (!state.textBlockStarted) {
-      // Buffer leading whitespace; flushed when the first real text opens
-      // the block. A stream ending with only buffered whitespace stays an
-      // empty response (existing behavior preserved). Capped so a runaway
-      // whitespace-only upstream cannot grow memory unbounded; keeps the
-      // prefix (indentation) and sheds the tail.
+    } else {
+      // Buffer whenever no writable text block exists — before the first
+      // block AND after a close (pending whitespace for the next block).
       const MAX_LEADING_WHITESPACE = 64 * 1024;
       const current = state.leadingWhitespaceBuf || "";
       const remaining = MAX_LEADING_WHITESPACE - current.length;
@@ -239,7 +241,6 @@ export function openaiToClaudeResponse(chunk, state) {
         state.leadingWhitespaceBuf = current + cleanedText.slice(0, remaining);
       }
     }
-    // else: text block already closed → drop (no valid target block).
   }
 
   // Tool calls
