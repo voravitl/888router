@@ -364,6 +364,7 @@ export function applyComboContextFields(entry, combo) {
     : {};
   entry.capabilities = {
     ...DEFAULT_CAPABILITIES,
+    ...(comboContextWindow ? { contextWindow: comboContextWindow } : {}),
     ...existing,
     tools: (combo?.kind ?? LLM_KIND) === LLM_KIND,
   };
@@ -549,10 +550,18 @@ export async function buildModelsList(kindFilter) {
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
+    const memberIds = Array.isArray(combo?.models)
+      ? combo.models.map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean)
+      : [];
     const entry = {
       id: combo.name,
       object: "model",
       owned_by: "combo",
+      isCombo: true,
+      ...(memberIds.length > 0 ? {
+        comboMembers: memberIds.slice(0, 8),
+        comboMemberCount: memberIds.length,
+      } : {}),
     };
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
