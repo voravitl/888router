@@ -44,7 +44,7 @@ import { getCachedResponse, isResponseCacheOptIn } from "../translator/concerns/
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode, isCombo = false, signal = null }) {
   const requestStartTime = Date.now();
   const detailId = `detail_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   let rtkStats = null;
@@ -311,7 +311,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       if (onDisconnect) onDisconnect(reason);
     },
     onError: () => trackPendingRequest(model, provider, connectionId, false),
-    log, provider, model
+    log, provider, model, signal
   });
 
   const connProxyEnabled = credentials?.providerSpecificData?.connectionProxyEnabled === true;
@@ -359,7 +359,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const effectiveModel = upstreamModel || model;
   const execCredentials = requestCredentials || credentials;
   try {
-    const result = await executor.execute({ model: effectiveModel, body: upstreamPayload, stream, credentials: execCredentials, signal: streamController.signal, log, proxyOptions });
+    const result = await executor.execute({ model: effectiveModel, body: upstreamPayload, stream, credentials: execCredentials, signal: streamController.signal, log, proxyOptions, isCombo });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;

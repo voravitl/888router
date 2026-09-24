@@ -139,10 +139,16 @@ export function getModelLockKey(model) {
  * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
  */
 export function isModelLockActive(connection, model) {
+  if (!connection) return false;
+  const now = Date.now();
+  if (connection.provider && healthStore.isProviderOpen(connection.provider)) return true;
+  if (connection.rateLimitedUntil && new Date(connection.rateLimitedUntil).getTime() > now) return true;
+  if (connection.unavailableUntil && new Date(connection.unavailableUntil).getTime() > now) return true;
+  if (connection.testStatus === "unavailable" && connection.lastErrorAt && (now - new Date(connection.lastErrorAt).getTime() < 30000)) return true;
   const key = getModelLockKey(model);
   const expiry = connection[key] || connection[MODEL_LOCK_ALL];
   if (!expiry) return false;
-  return new Date(expiry).getTime() > Date.now();
+  return new Date(expiry).getTime() > now;
 }
 
 /**
@@ -165,9 +171,17 @@ export function getEarliestModelLockUntil(connection) {
 /**
  * Build update object to set a model lock on a connection.
  */
-export function buildModelLockUpdate(model, cooldownMs) {
+export function buildModelLockUpdate(model, cooldownMs, isAccountLevel = false) {
+  const expiry = new Date(Date.now() + cooldownMs).toISOString();
+  if (isAccountLevel || !model) {
+    return {
+      [MODEL_LOCK_ALL]: expiry,
+      rateLimitedUntil: expiry,
+      unavailableUntil: expiry
+    };
+  }
   const key = getModelLockKey(model);
-  return { [key]: new Date(Date.now() + cooldownMs).toISOString() };
+  return { [key]: expiry };
 }
 
 /**

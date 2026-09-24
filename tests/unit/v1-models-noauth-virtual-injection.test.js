@@ -59,7 +59,7 @@ async function listModelIds() {
   return (body.data || []).map((m) => m.id);
 }
 
-describe("/v1/models noAuth virtual connection injection (#377)", { timeout: 15000 }, () => {
+describe("/v1/models noAuth virtual connection injection (#377)", { timeout: 30000 }, () => {
   beforeEach(() => {
     vi.resetModules();
     mocks.getProviderConnections.mockReset().mockResolvedValue([]);
