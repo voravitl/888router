@@ -296,7 +296,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     if (availableConnections.length === 0) {
       // Find earliest lock expiry across all connections for retry timing
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c) || c.rateLimitedUntil || c.unavailableUntil).filter(Boolean);
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];
@@ -524,7 +524,9 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0, modelError: !!modelError };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  const isAccountLevel = status === 402 || status === 403 ||
+    (status === 429 && /quota|limit|credit|balance|allowance|capacity/i.test(errorText || ""));
+  const lockUpdate = buildModelLockUpdate(model, cooldownMs, isAccountLevel);
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,

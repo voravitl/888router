@@ -100,7 +100,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, isCombo = false }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -125,7 +125,7 @@ export class BaseExecutor {
       // per-call param (response.status or network-error 502), not an outer
       // constant. (Fix from agy review: was computed outside, always false.)
       const isServerError5xx = typeof statusKey === "number" && statusKey >= 500 && statusKey < 600;
-      const skipForPool = throughProxyPool && isServerError5xx;
+      const skipForPool = (throughProxyPool || isCombo) && isServerError5xx;
       const { attempts, delayMs } = resolveRetryEntry(skipForPool ? undefined : retryConfig[statusKey]);
       if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
       // Hook: subclass may derive delay from the response (headers/body). null → skip retry, use fallback.
@@ -150,7 +150,8 @@ export class BaseExecutor {
 
       // Abort if upstream doesn't return response headers within connection timeout
       const connectCtrl = new AbortController();
-      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      const defaultTimeout = isCombo ? 10000 : FETCH_CONNECT_TIMEOUT_MS;
+      const timeoutMs = this.config?.timeoutMs ? (isCombo ? Math.min(this.config.timeoutMs, 10000) : this.config.timeoutMs) : defaultTimeout;
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
@@ -186,8 +187,8 @@ export class BaseExecutor {
         // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
         if (error.name === "AbortError" && !isConnectTimeout) throw error;
 
-        // Map network/fetch exceptions to 502 retry config
-        if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) { urlIndex--; continue; }
+        // Map network/fetch exceptions to 502 retry config (skip in-executor retry when in combo for fast failover)
+        if (!isCombo && await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) { urlIndex--; continue; }
 
         if (urlIndex + 1 < fallbackCount) {
           log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);

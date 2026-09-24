@@ -65,11 +65,11 @@ describe("Universal Tool Call & MCP Engine", () => {
       _declaredTools: [{ name: "foo" }]
     };
 
-    stripPrivateToolFields(body);
+    const stripped = stripPrivateToolFields(body);
 
-    expect(body._universalToolPromptInjected).toBeUndefined();
-    expect(body._declaredTools).toBeUndefined();
-    expect(body.model).toBe("test");
+    expect(stripped._universalToolPromptInjected).toBeUndefined();
+    expect(stripped._declaredTools).toBeUndefined();
+    expect(stripped.model).toBe("test");
   });
 
   it("adaptHistoryForUniversalTools translates role:tool and Anthropic tool_use to taught prose", () => {

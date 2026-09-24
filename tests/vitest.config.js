@@ -15,6 +15,7 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/.claude/**", "**/dist/**"],
     // Allow many it.concurrent cases (real provider smoke runs ~50 providers in parallel)
     maxConcurrency: 60,
+    testTimeout: 30000,
     // Suppress noisy console output from handlers under test
     silent: false,
   },

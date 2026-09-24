@@ -426,7 +426,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null }) {
   // Apply rotation strategy if enabled (supports round-robin, cache-optimized)
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit, body);
 
@@ -447,11 +447,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastStatus = null;
 
   for (let i = 0; i < rotatedModels.length; i++) {
+    if (signal && signal.aborted) {
+      log.warn("COMBO", `Client aborted request, terminating combo loop (${comboName || ""})`);
+      return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+        status: 499,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const result = await handleSingleModel(body, modelStr, { isCombo: true, signal });
       
       // Success (2xx) - return response
       if (result.ok) {
@@ -491,13 +499,34 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             // Read the SSE head until the guard has a verdict: first content
             // delta OR the terminal finish event. The guard caps its buffer
             // (MAX_BUFFER_BYTES) and releases the head itself.
+            const COMBO_TTFT_TIMEOUT_MS = Number.parseInt(process.env.COMBO_TTFT_TIMEOUT_MS, 10) || 10000;
+            let streamHeadTimedOut = false;
+            let timer;
+            const timeoutPromise = new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error("TTFT timeout")), COMBO_TTFT_TIMEOUT_MS);
+            });
             while (!guard.hasDecision()) {
-              const { done, value } = await reader.read();
-              if (done) {
-                guard.feedEnd();
+              try {
+                const readPromise = reader.read();
+                readPromise.catch(() => {});
+                const { done, value } = await Promise.race([readPromise, timeoutPromise]);
+                if (done) {
+                  guard.feedEnd();
+                  break;
+                }
+                guard.feed(value);
+              } catch (err) {
+                streamHeadTimedOut = true;
+                log.warn("COMBO", `Model ${modelStr} stream head timed out waiting for decision (${COMBO_TTFT_TIMEOUT_MS}ms)`);
                 break;
               }
-              guard.feed(value);
+            }
+            clearTimeout(timer);
+            if (streamHeadTimedOut) {
+              await reader.cancel().catch(() => {});
+              lastError = `stream head TTFT timeout (${COMBO_TTFT_TIMEOUT_MS}ms)`;
+              if (!lastStatus) lastStatus = 504;
+              continue;
             }
             if (guard.isEmpty()) {
               // Reasoning-budget exhaustion signature: the stream carried
@@ -646,14 +675,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         log.warn("COMBO", `Model ${modelStr} permanent model-error, skipping to next model`, { status: result.status });
       }
 
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
-      }
+      // Fast failover: do NOT sleep in hot-path between candidates in a combo;
+      // cooldown is recorded for subsequent requests, but current request immediately tries next candidate.
 
       // Fallback to next model
       lastError = errorText || String(result.status);
@@ -786,7 +809,7 @@ function buildJudgePrompt(answers) {
 const FUSION_DEFAULTS = {
   minPanel: 2,             // answers needed before stragglers get a grace window
   stragglerGraceMs: 8000,  // wait this long for laggards once quorum is reached
-  panelHardTimeoutMs: 90000, // absolute cap so one hung model can't stall forever
+  panelHardTimeoutMs: Number.parseInt(process.env.FUSION_HARD_TIMEOUT_MS, 10) || 30000, // absolute cap (30s) so one hung model cannot stall forever
 };
 
 // Resolve a Response (or {__error}) within ms; the loser keeps running but is ignored.
