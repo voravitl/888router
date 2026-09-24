@@ -34,7 +34,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { pruneMessageHistory } from "../translator/concerns/pruner.js";
 import { injectPromptCaching } from "../translator/concerns/promptCache.js";
 import { routeByIntent } from "../translator/concerns/intentRouter.js";
-import { getCachedResponse } from "../translator/concerns/responseCache.js";
+import { getCachedResponse, isResponseCacheOptIn } from "../translator/concerns/responseCache.js";
 
 
 /**
@@ -71,33 +71,34 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (bypassResponse) return bypassResponse;
 
   // Response Caching Layer (Exact Q&A replay when opt-in header x-888-response-cache is present)
-  // Snapshot the original body for cache key — body gets mutated by RTK/pruner/prefetch below
-  const cacheRequestBody = JSON.parse(JSON.stringify(body));
-  const cachedHit = getCachedResponse(cacheRequestBody, model, clientRawRequest?.headers || {});
-  if (cachedHit && cachedHit.hit) {
-    log?.info?.("RESPONSE_CACHE", `Cache HIT for model ${model} (key: ${cachedHit.cacheKey.slice(0, 8)}...)`);
-    // Track cache hit in requestDetails for dashboard visibility
-    saveRequestDetail(buildRequestDetail({
-      provider: provider || "unknown",
-      model: model || "unknown",
-      clientModel: clientModel || null,
-      connectionId: connectionId || undefined,
-      timestamp: new Date().toISOString(),
-      latency: { ttft: 0, total: 0 },
-      tokens: { prompt_tokens: 0, completion_tokens: 0 },
-      request: extractRequestConfig(body, body.stream),
-      status: "success",
-      cacheHit: true,
-      cacheKey: cachedHit.cacheKey,
-    }, { id: detailId })).catch(() => {});
-    return {
-      success: true,
-      response: new Response(JSON.stringify(cachedHit.cachedResponse), {
-        status: HTTP_STATUS.OK,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-Cache": "HIT" }
-      }),
-      cached: true
-    };
+  // Only check cache when opt-in header is present to avoid synchronous JSON clone on hot path
+  if (isResponseCacheOptIn(body, clientRawRequest?.headers || {})) {
+    const cachedHit = getCachedResponse(body, model, clientRawRequest?.headers || {});
+    if (cachedHit && cachedHit.hit) {
+      log?.info?.("RESPONSE_CACHE", `Cache HIT for model ${model} (key: ${cachedHit.cacheKey.slice(0, 8)}...)`);
+      // Track cache hit in requestDetails for dashboard visibility
+      saveRequestDetail(buildRequestDetail({
+        provider: provider || "unknown",
+        model: model || "unknown",
+        clientModel: clientModel || null,
+        connectionId: connectionId || undefined,
+        timestamp: new Date().toISOString(),
+        latency: { ttft: 0, total: 0 },
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, body.stream),
+        status: "success",
+        cacheHit: true,
+        cacheKey: cachedHit.cacheKey,
+      }, { id: detailId })).catch(() => {});
+      return {
+        success: true,
+        response: new Response(JSON.stringify(cachedHit.cachedResponse), {
+          status: HTTP_STATUS.OK,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-Cache": "HIT" }
+        }),
+        cached: true
+      };
+    }
   }
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
@@ -354,7 +355,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
-  const upstreamPayload = stripPrivateToolFields(JSON.parse(JSON.stringify(translatedBody)));
+  const upstreamPayload = stripPrivateToolFields({ ...translatedBody });
   const effectiveModel = upstreamModel || model;
   const execCredentials = requestCredentials || credentials;
   try {

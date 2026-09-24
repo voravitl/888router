@@ -9,7 +9,7 @@ import {
 // when Headroom was reachable but slow. Override with HEADROOM_TIMEOUT_MS.
 const DEFAULT_TIMEOUT_MS = Math.max(
   1000,
-  parseInt(process.env.HEADROOM_TIMEOUT_MS || "15000", 10) || 15000,
+  parseInt(process.env.HEADROOM_TIMEOUT_MS || "2000", 10) || 2000,
 );
 
 function jsonBytes(value) {
