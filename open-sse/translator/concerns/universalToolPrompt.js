@@ -229,7 +229,6 @@ Do not add conversational fluff before or after <tool_call>. Output strictly val
  */
 export function stripPrivateToolFields(body) {
   if (!body || typeof body !== "object") return body;
-  delete body._universalToolPromptInjected;
-  delete body._declaredTools;
-  return body;
+  const { _universalToolPromptInjected, _declaredTools, ...clean } = body;
+  return clean;
 }
