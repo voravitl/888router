@@ -1,3 +1,10 @@
+# v0.15.117 (2026-09-24)
+
+## Fix: Sync capabilities.contextWindow and add comboMembers for user combos (#439)
+
+- **User combo metadata & members parity**: Added `comboMembers`, `comboMemberCount`, and `isCombo: true` to user-defined DB combos in `/v1/models` and `/v1/models/info`, matching virtual auto-combos.
+- **Context window metadata consistency**: Synced `capabilities.contextWindow` with the calculated min member context window (`comboContextWindow`) in `applyComboContextFields()`, preventing contradictory entries (e.g. `context_length: 128000` vs `capabilities.contextWindow: 200000`).
+
 # v0.15.116 (2026-09-24)
 
 ## Fix: Eliminate multi-provider sequential failover timeouts across all combo modes (#438)
