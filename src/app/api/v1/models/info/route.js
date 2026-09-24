@@ -68,6 +68,8 @@ async function lookup(fullId, requestedKind) {
           kind: "llm",
           owned_by: "auto-combo",
           endpoint: KIND_ENDPOINT["llm"] || "/v1/chat/completions",
+          comboMembers: memberIds.slice(0, 8),
+          comboMemberCount: memberIds.length,
         };
         applyComboContextFields(out, { models: memberIds });
         return out;
@@ -82,12 +84,19 @@ async function lookup(fullId, requestedKind) {
       const combo = await getComboByName(fullId);
       if (combo) {
         const kind = combo.kind || "llm";
+        const memberIds = Array.isArray(combo?.models)
+          ? combo.models.map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean)
+          : [];
         const out = {
           id: combo.name,
           name: combo.name,
           kind,
           owned_by: "combo",
           endpoint: KIND_ENDPOINT[kind] || "/v1/chat/completions",
+          ...(memberIds.length > 0 ? {
+            comboMembers: memberIds.slice(0, 8),
+            comboMemberCount: memberIds.length,
+          } : {}),
         };
         // webSearch/webFetch: no chat context; LLM: only catalog-resolved fields
         applyComboContextFields(out, combo);

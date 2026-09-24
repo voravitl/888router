@@ -4,7 +4,6 @@ import {
   resolveComboMaxOutput,
   applyComboContextFields,
 } from "@/app/api/v1/models/route.js";
-import { DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
 
 describe("Combo context window resolution", () => {
   it("resolves context window for combos with provider-prefixed models", () => {
@@ -77,11 +76,12 @@ describe("Combo context window resolution", () => {
     expect(llm.max_tokens).toBeDefined();
   });
 
-  it("attaches capabilities with tools:true to LLM combos (not web/non-LLM combos)", () => {
+  it("attaches capabilities with matching contextWindow when resolved", () => {
     const llm = applyComboContextFields({ id: "good" }, { models: ["gpt-4o"] });
     expect(llm.capabilities).toBeDefined();
     expect(llm.capabilities.tools).toBe(true);
-    expect(llm.capabilities.contextWindow).toBe(DEFAULT_CAPABILITIES.contextWindow);
+    expect(llm.capabilities.contextWindow).toBe(128000);
+    expect(llm.context_length).toBe(128000);
 
     const web = applyComboContextFields(
       { id: "search-combo" },
