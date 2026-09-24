@@ -1,3 +1,11 @@
+# v0.15.115 (2026-09-24)
+
+## Perf: Eliminate Ingress buffering delay and CPU event-loop blocking
+
+- **Ingress SSE Proxy Buffering disabled**: Added `nginx.ingress.kubernetes.io/proxy-buffering: "off"` and `proxy-http-version: "1.1"` to `k8s/base/ingress.yaml`, and injected `"X-Accel-Buffering": "no"` into all streaming headers (`SSE_HEADERS`, `SSE_HEADERS_CORS`). This ensures real-time token delivery to clients without Nginx Ingress buffering tokens up to 4KB-16KB.
+- **Hot-path CPU JSON clone elimination**: Replaced synchronous deep `JSON.parse(JSON.stringify(body))` calls in `chatCore.js` with opt-in gated response caching and immutable `stripPrivateToolFields`, preventing Node.js event-loop freezing on large prompt/tool payloads.
+- **Headroom timeout fail-open**: Reduced default headroom timeout in `open-sse/rtk/headroom.js` from 15s to 2s, preventing degraded sidecar restarts from stalling LLM request dispatches.
+
 # v0.15.114 (2026-09-23)
 
 ## Fix: Codex models sync unhides GPT-6 Astra, Sol, and Luna
