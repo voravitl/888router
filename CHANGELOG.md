@@ -1,3 +1,13 @@
+# v0.15.116 (2026-09-24)
+
+## Fix: Eliminate multi-provider sequential failover timeouts across all combo modes (#438)
+
+- **Zero-delay failover & retry suppression**: When requests originate from a combo (`isCombo: true`), upstream 5xx errors bypass hot-path sleep (`cooldownMs`) in `combo.js`, and `BaseExecutor` skips internal exponential retries while clamping connect timeouts to 10s. Transient failures fail over instantly (<1ms) to subsequent candidates instead of hanging clients.
+- **Account-level lock pre-flight pruning**: `isModelLockActive` in `accountFallback.js` now prunes accounts in 0ms on active `rateLimitedUntil`, `unavailableUntil`, recent `testStatus === "unavailable"`, and circuit breaker open states. Account-level quota/billing rejections (402, 403, 429 quota exhaustion) set `MODEL_LOCK_ALL`, preventing sequential dead attempts across sibling models on the same broken connection.
+- **Stream head TTFT timeout defense**: Introduced cumulative `COMBO_TTFT_TIMEOUT_MS = 10000` (10s) timeout on the stream head decision buffer via `Promise.race` with unhandled rejection protection (`readPromise.catch(() => {})`), falling over to next candidates if an upstream connection stalls before the first token.
+- **Client disconnect abort propagation**: Linked client `signal` through `handleChatCore`, `handleComboChat`, and `createStreamController`, immediately terminating combo iteration (HTTP 499) and aborting upstream requests if client disconnects.
+- **Fusion panel timeout clamp & recursion guards**: Capped fusion panel execution at 30s (`panelHardTimeoutMs`) and bounded nested combo recursion depth (`depth > 2`).
+
 # v0.15.115 (2026-09-24)
 
 ## Perf: Eliminate Ingress buffering delay and CPU event-loop blocking
