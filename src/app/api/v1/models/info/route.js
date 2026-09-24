@@ -67,6 +67,7 @@ async function lookup(fullId, requestedKind) {
           name: fullId,
           kind: "llm",
           owned_by: "auto-combo",
+          isCombo: true,
           endpoint: KIND_ENDPOINT["llm"] || "/v1/chat/completions",
           comboMembers: memberIds.slice(0, 8),
           comboMemberCount: memberIds.length,
@@ -92,6 +93,7 @@ async function lookup(fullId, requestedKind) {
           name: combo.name,
           kind,
           owned_by: "combo",
+          isCombo: true,
           endpoint: KIND_ENDPOINT[kind] || "/v1/chat/completions",
           ...(memberIds.length > 0 ? {
             comboMembers: memberIds.slice(0, 8),

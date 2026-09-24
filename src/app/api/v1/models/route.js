@@ -557,6 +557,7 @@ export async function buildModelsList(kindFilter) {
       id: combo.name,
       object: "model",
       owned_by: "combo",
+      isCombo: true,
       ...(memberIds.length > 0 ? {
         comboMembers: memberIds.slice(0, 8),
         comboMemberCount: memberIds.length,
