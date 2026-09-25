@@ -396,8 +396,8 @@ describe("Combo Fast Failover & Timeout Defenses", () => {
 
     expect(res.status).toBe(200);
     expect(handleSingleModel).toHaveBeenCalledTimes(3);
-    // Failed candidates (fail-1, fail-2) cleaned up their listeners! Only the selected success-model keeps its listener active.
-    expect(listenerCount).toBe(1);
+    // Both failed candidates and completed JSON responses clean up their listeners completely!
+    expect(listenerCount).toBe(0);
   });
   it("terminates combo loop promptly on client abort during pending stream head read without waiting for timeout", async () => {
     // 30s timeout, but client aborts after 30ms.
@@ -434,5 +434,285 @@ describe("Combo Fast Failover & Timeout Defenses", () => {
     expect(res.status).toBe(499);
     expect(handleSingleModel).toHaveBeenCalledTimes(1);
     expect(elapsed).toBeLessThan(500);
+  });
+  it("aborts candidate upstream signal and cleans up listener when client cancels selected stream body", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const abortCtrl = new AbortController();
+    const signal = abortCtrl.signal;
+
+    let listenerCount = 0;
+    const origAdd = signal.addEventListener.bind(signal);
+    const origRemove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = (type, fn, opts) => {
+      if (type === "abort") listenerCount++;
+      return origAdd(type, fn, opts);
+    };
+    signal.removeEventListener = (type, fn, opts) => {
+      if (type === "abort") listenerCount--;
+      return origRemove(type, fn, opts);
+    };
+
+    let candidateSignal;
+    const testStream = makeStream([
+      "data: {\"choices\":[{\"delta\":{\"content\":\"chunk 1\"}}]}\\n\\n",
+      "data: {\"choices\":[{\"delta\":{\"content\":\"chunk 2\"}}]}\\n\\n",
+    ]);
+
+    const handleSingleModel = vi.fn(async (body, model, opts) => {
+      candidateSignal = opts?.signal;
+      return new Response(testStream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    const res = await handleComboChat({
+      body: { stream: true, messages: [{ role: "user", content: "hi" }] },
+      models: ["stream-model"],
+      handleSingleModel,
+      log,
+      signal,
+    });
+
+    expect(res.status).toBe(200);
+    expect(listenerCount).toBe(1);
+    expect(candidateSignal.aborted).toBe(false);
+
+    // Downstream cancels reading
+    await res.body.cancel();
+
+    // Upstream candidate signal is aborted, and listener on client signal is removed!
+    expect(candidateSignal.aborted).toBe(true);
+    expect(listenerCount).toBe(0);
+  });
+
+  it("cleans up client abort listener after selected stream body is consumed to completion", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const abortCtrl = new AbortController();
+    const signal = abortCtrl.signal;
+
+    let listenerCount = 0;
+    const origAdd = signal.addEventListener.bind(signal);
+    const origRemove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = (type, fn, opts) => {
+      if (type === "abort") listenerCount++;
+      return origAdd(type, fn, opts);
+    };
+    signal.removeEventListener = (type, fn, opts) => {
+      if (type === "abort") listenerCount--;
+      return origRemove(type, fn, opts);
+    };
+
+    const testStream = makeStream([
+      "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\\n\\n",
+      "data: [DONE]\\n\\n",
+    ]);
+
+    const handleSingleModel = vi.fn(async () => {
+      return new Response(testStream, {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    const res = await handleComboChat({
+      body: { stream: true, messages: [{ role: "user", content: "hi" }] },
+      models: ["stream-model"],
+      handleSingleModel,
+      log,
+      signal,
+    });
+
+    expect(res.status).toBe(200);
+    expect(listenerCount).toBe(1);
+
+    // Consume stream completely
+    const text = await res.text();
+    expect(text).toContain("hello");
+    // After EOF, listener is cleaned up
+    expect(listenerCount).toBe(0);
+  });
+
+  it("aborts upstream signal and cleans up listener when streamed reasoning-budget retry is cancelled", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const abortCtrl = new AbortController();
+    const signal = abortCtrl.signal;
+
+    let listenerCount = 0;
+    const origAdd = signal.addEventListener.bind(signal);
+    const origRemove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = (type, fn, opts) => {
+      if (type === "abort") listenerCount++;
+      return origAdd(type, fn, opts);
+    };
+    signal.removeEventListener = (type, fn, opts) => {
+      if (type === "abort") listenerCount--;
+      return origRemove(type, fn, opts);
+    };
+
+    let retrySignal;
+    let callCount = 0;
+    const handleSingleModel = vi.fn(async (body, model, opts) => {
+      callCount++;
+      if (callCount === 1) {
+        // Stream exhausted on reasoning
+        return new Response(makeStream([
+          "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think\"},\"finish_reason\":\"length\"}]}\\n\\n",
+          "data: [DONE]\\n\\n",
+        ]), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      retrySignal = opts?.signal;
+      return new Response(makeStream([
+        "data: {\"choices\":[{\"delta\":{\"content\":\"retry answer\"}}]}\\n\\n",
+      ]), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    });
+
+    const res = await handleComboChat({
+      body: { stream: true, messages: [{ role: "user", content: "hi" }] },
+      models: ["reasoning-model"],
+      handleSingleModel,
+      log,
+      signal,
+    });
+
+    expect(res.status).toBe(200);
+    expect(callCount).toBe(2);
+    expect(listenerCount).toBe(1);
+    expect(retrySignal.aborted).toBe(false);
+
+    // Cancel the retry stream body
+    await res.body.cancel();
+    expect(retrySignal.aborted).toBe(true);
+    expect(listenerCount).toBe(0);
+  });
+
+  it("cleans up client abort listener when streamed reasoning-budget retry throws", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const abortCtrl = new AbortController();
+    const signal = abortCtrl.signal;
+
+    let listenerCount = 0;
+    const origAdd = signal.addEventListener.bind(signal);
+    const origRemove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = (type, fn, opts) => {
+      if (type === "abort") listenerCount++;
+      return origAdd(type, fn, opts);
+    };
+    signal.removeEventListener = (type, fn, opts) => {
+      if (type === "abort") listenerCount--;
+      return origRemove(type, fn, opts);
+    };
+
+    let callCount = 0;
+    const handleSingleModel = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        // Stream exhausted on reasoning
+        return new Response(makeStream([
+          "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think\"},\"finish_reason\":\"length\"}]}\\n\\n",
+          "data: [DONE]\\n\\n",
+        ]), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      // Retry throws network error
+      throw new Error("retry network reset");
+    });
+
+    const res = await handleComboChat({
+      body: { stream: true, messages: [{ role: "user", content: "hi" }] },
+      models: ["reasoning-model"],
+      handleSingleModel,
+      log,
+      signal,
+    });
+
+    expect(res.status).toBe(500);
+    expect(callCount).toBe(2);
+    // Listener must be cleaned up on throw
+    expect(listenerCount).toBe(0);
+  });
+
+  it("terminates combo loop with 499 when client aborts during retry and does not try subsequent models", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const abortCtrl = new AbortController();
+    const signal = abortCtrl.signal;
+
+    let callCount = 0;
+    const handleSingleModel = vi.fn(async (body, model) => {
+      callCount++;
+      if (callCount === 1) {
+        return new Response(makeStream([
+          "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think\"},\"finish_reason\":\"length\"}]}\\n\\n",
+          "data: [DONE]\\n\\n",
+        ]), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      if (callCount === 2) {
+        // Model 1 retry: client aborts while retry is in flight
+        abortCtrl.abort();
+        const err = new Error("AbortError");
+        err.name = "AbortError";
+        throw err;
+      }
+      // Model 2: should NEVER be reached!
+      return new Response(JSON.stringify({ choices: [{ message: { content: "model-b ok" } }] }), { status: 200 });
+    });
+
+    const res = await handleComboChat({
+      body: { stream: true, messages: [{ role: "user", content: "hi" }] },
+      models: ["model-a", "model-b"],
+      handleSingleModel,
+      log,
+      signal,
+    });
+
+    expect(res.status).toBe(499);
+    // model-b was NOT tried!
+    expect(callCount).toBe(2);
+  });
+
+  it("handles empty body with throwing cancel without crashing and falls over to next candidate", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+
+    const brokenEmptyStream = new ReadableStream({
+      start(c) {
+        c.close();
+      },
+      cancel() {
+        throw new Error("sync cancel crash");
+      }
+    });
+
+    const handleSingleModel = vi.fn(async (body, model) => {
+      if (model === "empty-crashing-model") {
+        return new Response(brokenEmptyStream, {
+          status: 200,
+          headers: { "content-length": "0" },
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "fallback ok" } }] }), { status: 200 });
+    });
+
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["empty-crashing-model", "working-model"],
+      handleSingleModel,
+      log,
+    });
+
+    expect(res.status).toBe(200);
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    const body = await res.json();
+    expect(body.choices[0].message.content).toBe("fallback ok");
   });
 });

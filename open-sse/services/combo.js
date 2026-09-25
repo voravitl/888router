@@ -426,6 +426,71 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
+/**
+ * Cancel a stream body or reader with an absolute 300ms bound and sync-exception safety
+ * @param {ReadableStream|ReadableStreamDefaultReader|object} target
+ */
+export async function safeCancelStream(target) {
+  if (!target || typeof target.cancel !== "function") return;
+  let timer;
+  try {
+    const cancelPromise = Promise.resolve().then(() => target.cancel());
+    cancelPromise.catch(() => {});
+    await Promise.race([
+      cancelPromise,
+      new Promise(resolve => { timer = setTimeout(resolve, 300); })
+    ]);
+  } catch {} finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Wrap a ReadableStream to propagate cancellation/abort to upstream and clean up listeners on completion
+ * @param {ReadableStream} stream
+ * @param {Function} [onDone]
+ * @param {Function} [onCancel]
+ * @returns {ReadableStream}
+ */
+export function attachStreamAbortCleanup(stream, onDone, onCancel) {
+  if (!stream || typeof stream.getReader !== "function") {
+    if (typeof onDone === "function") onDone();
+    return stream;
+  }
+  const reader = stream.getReader();
+  let doneCalled = false;
+  const callDone = () => {
+    if (!doneCalled) {
+      doneCalled = true;
+      if (typeof onDone === "function") onDone();
+    }
+  };
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          try { controller.close(); } catch {}
+          callDone();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (err) {
+        try { controller.error(err); } catch {}
+        callDone();
+      }
+    },
+    async cancel(reason) {
+      try {
+        if (typeof onCancel === "function") onCancel(reason);
+      } finally {
+        callDone();
+        await safeCancelStream(reader);
+      }
+    },
+  });
+}
+
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null }) {
   // Apply rotation strategy if enabled (supports round-robin, cache-optimized)
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit, body);
@@ -461,6 +526,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     const candidateAbortCtrl = new AbortController();
     const onClientAbort = () => candidateAbortCtrl.abort();
     let isCandidateSelected = false;
+    let abortListenerRemoved = false;
+    const removeClientAbortListener = () => {
+      if (signal && !abortListenerRemoved) {
+        abortListenerRemoved = true;
+        signal.removeEventListener("abort", onClientAbort);
+      }
+    };
     if (signal) {
       if (signal.aborted) {
         candidateAbortCtrl.abort();
@@ -481,8 +553,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         const emptyBody = result.headers?.get("content-length") === "0" || result.body === null;
         if (emptyBody) {
           candidateAbortCtrl.abort();
-          if (result.body && typeof result.body.cancel === "function") {
-            result.body.cancel().catch(() => {});
+          if (result.body) {
+            await safeCancelStream(result.body);
           }
           log.warn("COMBO", `Model ${modelStr} returned ${result.status} with empty body, trying next`);
           lastError = `empty body (${result.status})`;
@@ -520,15 +592,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
             const safeCancelReader = async (r) => {
               candidateAbortCtrl.abort();
-              let cancelTimer;
-              try {
-                await Promise.race([
-                  r.cancel().catch(() => {}),
-                  new Promise(resolve => { cancelTimer = setTimeout(resolve, 300); })
-                ]);
-              } catch {} finally {
-                clearTimeout(cancelTimer);
-              }
+              await safeCancelStream(r);
             };
 
             while (!guard.hasDecision()) {
@@ -568,6 +632,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                   log.warn("COMBO", `Client aborted request during stream head read (${comboName || ""})`);
                   await safeCancelReader(reader);
                   isCandidateSelected = true;
+                  removeClientAbortListener();
                   return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
                     status: 499,
                     headers: { "Content-Type": "application/json" }
@@ -622,16 +687,50 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                   if (signal.aborted) retryAbortCtrl.abort();
                   else signal.addEventListener("abort", onRetryClientAbort, { once: true });
                 }
-                const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: retryAbortCtrl.signal });
-                if (signal && !retried.ok) signal.removeEventListener("abort", onRetryClientAbort);
-                if (retried.ok) {
-                  log.info("COMBO", `Model ${modelStr} succeeded after streamed reasoning-budget retry`);
-                  isCandidateSelected = true;
-                  return attachRouterDecisionHeader(retried, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+                let retryAbortListenerRemoved = false;
+                const cleanupRetryAbort = () => {
+                  if (signal && !retryAbortListenerRemoved) {
+                    retryAbortListenerRemoved = true;
+                    signal.removeEventListener("abort", onRetryClientAbort);
+                  }
+                };
+                let retried;
+                try {
+                  retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: retryAbortCtrl.signal });
+                } catch (retryErr) {
+                  cleanupRetryAbort();
+                  if (signal?.aborted) {
+                    log.warn("COMBO", `Client aborted request during streamed reasoning retry (${comboName || ""})`);
+                    isCandidateSelected = true;
+                    removeClientAbortListener();
+                    return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+                      status: 499,
+                      headers: { "Content-Type": "application/json" }
+                    });
+                  }
+                  throw retryErr;
                 }
-                lastError = `reasoning budget exhausted; streamed retry failed (${retried.status})`;
-                if (!lastStatus) lastStatus = retried.status;
-                continue;
+                if (!retried.ok) {
+                  cleanupRetryAbort();
+                  lastError = `reasoning budget exhausted; streamed retry failed (${retried.status})`;
+                  if (!lastStatus) lastStatus = retried.status;
+                  continue;
+                }
+                log.info("COMBO", `Model ${modelStr} succeeded after streamed reasoning-budget retry`);
+                isCandidateSelected = true;
+                removeClientAbortListener();
+                let wrappedBody = retried.body;
+                if (retried.body && typeof retried.body.getReader === "function") {
+                  wrappedBody = attachStreamAbortCleanup(retried.body, cleanupRetryAbort, () => retryAbortCtrl.abort());
+                } else {
+                  cleanupRetryAbort();
+                }
+                const retriedResponse = new Response(wrappedBody, {
+                  status: retried.status,
+                  statusText: retried.statusText,
+                  headers: retried.headers,
+                });
+                return attachRouterDecisionHeader(retriedResponse, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
               }
               log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
               await safeCancelReader(reader);
@@ -645,8 +744,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             // the client.
             const streamHeaders = new Headers(result.headers);
             streamHeaders.delete("content-length");
-            const cleanupAbort = () => { if (signal) signal.removeEventListener("abort", onClientAbort); };
-            const responseWithHeaders = new Response(pipeStreamWithHead(reader, guard.release(), cleanupAbort), {
+            const responseWithHeaders = new Response(pipeStreamWithHead(
+              reader,
+              guard.release(),
+              removeClientAbortListener,
+              () => candidateAbortCtrl.abort()
+            ), {
               status: result.status,
               headers: streamHeaders,
             });
@@ -698,9 +801,25 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             msg.reasoning_content ?? msg.reasoning ?? msg.reasoningContent,
           )) {
             log.warn("COMBO", `Model ${modelStr} exhausted max_tokens on reasoning, retrying once with raised budget`);
-            const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr);
+            let retried;
+            try {
+              retried = signal ? await handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: candidateAbortCtrl.signal }) : await handleSingleModel(withRaisedMaxTokens(body), modelStr);
+            } catch (retryErr) {
+              if (signal?.aborted) {
+                log.warn("COMBO", `Client aborted request during reasoning retry (${comboName || ""})`);
+                isCandidateSelected = true;
+                removeClientAbortListener();
+                return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+                  status: 499,
+                  headers: { "Content-Type": "application/json" }
+                });
+              }
+              throw retryErr;
+            }
             if (retried.ok) {
               log.info("COMBO", `Model ${modelStr} succeeded after reasoning-budget retry`);
+              isCandidateSelected = true;
+              removeClientAbortListener();
               return attachRouterDecisionHeader(retried, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
             }
             lastError = `reasoning-empty-content retry failed (${retried.status})`;
@@ -710,7 +829,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         }
         log.info("COMBO", `Model ${modelStr} succeeded`);
         isCandidateSelected = true;
-        return attachRouterDecisionHeader(result, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+        let wrappedResultBody = result.body;
+        if (body?.stream && result.body && typeof result.body.getReader === "function") {
+          wrappedResultBody = attachStreamAbortCleanup(result.body, removeClientAbortListener, () => candidateAbortCtrl.abort());
+        } else {
+          removeClientAbortListener();
+        }
+        const finalResult = (wrappedResultBody !== result.body)
+          ? new Response(wrappedResultBody, { status: result.status, statusText: result.statusText, headers: result.headers })
+          : result;
+        return attachRouterDecisionHeader(finalResult, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
       }
 
       // Extract error info from response
@@ -756,6 +884,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (!shouldFallback && !modelError) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         isCandidateSelected = true;
+        removeClientAbortListener();
         return result;
       }
 
@@ -773,13 +902,22 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 502;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
+      if (signal?.aborted) {
+        log.warn("COMBO", `Client aborted request during combo execution (${comboName || ""})`);
+        isCandidateSelected = true;
+        removeClientAbortListener();
+        return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+          status: 499,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     } finally {
-      if (signal && !isCandidateSelected) {
-        signal.removeEventListener("abort", onClientAbort);
+      if (!isCandidateSelected) {
+        removeClientAbortListener();
       }
     }
   }
@@ -1119,42 +1257,54 @@ function dedupChunk(chunk, state) {
   return typeof chunk === "string" ? joined : new TextEncoder().encode(joined);
 }
 
-export function pipeStreamWithHead(reader, head, onDone) {
+export function pipeStreamWithHead(reader, head, onDone, onCancel) {
+  let doneCalled = false;
+  const callDone = () => {
+    if (!doneCalled) {
+      doneCalled = true;
+      if (typeof onDone === "function") onDone();
+    }
+  };
+  let headSent = false;
+  const dedupState = createDedupState();
   return new ReadableStream({
     async start(controller) {
-      try {
-        // Tee the rest of the stream through the dedup filter so identical
-        // SSE `data:` lines emitted by the upstream (notably some OpenRouter
-        // free models) are collapsed before reaching the client. See
-        // tests/unit/combo-pipe-stream-with-head.test.js for the
-        // reproduce/fix spec. The head is prepended verbatim — the guard
-        // already vetted it for the empty-stream verdict, so any
-        // back-to-back dup between the head and the first body chunk is
-        // still the same payload and is correctly dropped by the filter.
-        const dedupState = createDedupState();
-        if (head && head.length > 0) {
-          const filteredHead = dedupChunk(head, dedupState);
-          if (filteredHead && filteredHead.length > 0) controller.enqueue(filteredHead);
+      if (head && head.length > 0) {
+        const filteredHead = dedupChunk(head, dedupState);
+        if (filteredHead && filteredHead.length > 0) {
+          controller.enqueue(filteredHead);
+          headSent = true;
         }
+      }
+    },
+    async pull(controller) {
+      try {
         for (;;) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            try { controller.close(); } catch {}
+            callDone();
+            return;
+          }
           const filtered = dedupChunk(value, dedupState);
           if (filtered && filtered.length > 0) {
-            try { controller.enqueue(filtered); } catch { break; }
+            controller.enqueue(filtered);
+            return;
           }
         }
-        try { controller.close(); } catch {}
       } catch (err) {
         console.error("[combo] pipeStreamWithHead failed:", err?.message || err);
         try { controller.error(err); } catch {}
-      } finally {
-        if (typeof onDone === "function") onDone();
+        callDone();
       }
     },
-    cancel() {
-      if (typeof onDone === "function") onDone();
-      reader.cancel().catch(() => {});
+    async cancel(reason) {
+      try {
+        if (typeof onCancel === "function") onCancel(reason);
+      } finally {
+        callDone();
+        await safeCancelStream(reader);
+      }
     },
   });
 }
