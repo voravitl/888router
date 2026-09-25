@@ -41,6 +41,9 @@ const opencodeConfig = {
     { id: "muse-spark-1.3-contributor-free", name: "muse-spark-1.3-contributor-free", targetFormat: "openai-responses" },
     { id: "big-pickle", name: "big-pickle" },
     { id: "deepseek-v4-flash-free", name: "deepseek-v4-flash-free" },
+    { id: "jev-1.13-free", name: "jev-1.13-free" },
+    { id: "mimo-v2.6-flash-free", name: "mimo-v2.6-flash-free" },
+    { id: "space-bunny-free", name: "space-bunny-free" },
   ],
 };
 

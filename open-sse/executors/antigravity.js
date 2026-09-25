@@ -372,18 +372,21 @@ export class AntigravityExecutor extends BaseExecutor {
     return null;
   }
 
-  // Parse retry time from Antigravity error message body
-  // Format: "Your quota will reset after 2h7m23s" or "1h30m" or "45m" or "30s"
+  // Parse retry time from Antigravity error message body.
+  // Covers both observed spellings of the quota-reset hint:
+  //   "Your quota will reset after 2h7m23s" / "1h30m" / "45m" / "30s"
+  //   "Individual quota reached. ... Resets in 80h25m39s."   (cloudcode-pa 429)
   parseRetryFromErrorMessage(errorMessage) {
     if (!errorMessage || typeof errorMessage !== "string") return null;
 
-    const match = errorMessage.match(/reset after (\d+h)?(\d+m)?(\d+s)?/i);
+    const match = errorMessage.match(/resets? (?:in|after) (\d+h)?(\d+m)?(\d+(?:\.\d+)?s)?/i)
+      || errorMessage.match(/reset after (\d+h)?(\d+m)?(\d+s)?/i);
     if (!match) return null;
 
     let totalMs = 0;
-    if (match[1]) totalMs += parseInt(match[1]) * 3600 * 1000; // hours
-    if (match[2]) totalMs += parseInt(match[2]) * 60 * 1000; // minutes
-    if (match[3]) totalMs += parseInt(match[3]) * 1000; // seconds
+    if (match[1]) totalMs += parseFloat(match[1]) * 3600 * 1000; // hours
+    if (match[2]) totalMs += parseFloat(match[2]) * 60 * 1000; // minutes
+    if (match[3]) totalMs += parseFloat(match[3]) * 1000; // seconds
 
     return totalMs > 0 ? totalMs : null;
   }
@@ -420,6 +423,27 @@ export class AntigravityExecutor extends BaseExecutor {
 
     const errorMessage = this.extractErrorMessage(errorJson, bodyText);
 
+    // Structured hint first: google.rpc.RetryInfo.retryDelay (e.g. "289539.38s")
+    // and ErrorInfo.quotaResetTimeStamp (e.g. "2026-09-28T13:41:54Z") are more
+    // precise than any regex over the message. A retryDelay beyond the cap is a
+    // hard quota window (observed: 80h) — veto the in-executor retry so the
+    // combo loop fails over to the next model instead of burning ~95s on 6
+    // attempts against an 80h wall (12:29:53 → 12:31:33 in the 0.15.117 log).
+    if (!retryMs && Array.isArray(errorJson?.error?.details)) {
+      for (const d of errorJson.error.details) {
+        const type = d?.["@type"] || "";
+        if (type.includes("RetryInfo") && d.retryDelay) {
+          const secs = parseFloat(d.retryDelay);
+          if (Number.isFinite(secs) && secs > 0) { retryMs = secs * 1000; break; }
+        }
+        if (type.includes("ErrorInfo") && d.metadata?.quotaResetTimeStamp) {
+          const ts = Date.parse(d.metadata.quotaResetTimeStamp);
+          // Guard ts > now: a stale/past timestamp would yield negative retryMs,
+          // which is truthy and would skip the message-regex fallback below.
+          if (!Number.isNaN(ts) && ts > Date.now()) { retryMs = ts - Date.now(); break; }
+        }
+      }
+    }
     if (!retryMs) {
       retryMs = this.parseRetryFromErrorMessage(errorMessage);
     }

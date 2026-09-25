@@ -426,6 +426,138 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
+/**
+ * Cancel a stream body or reader with an absolute 300ms bound and sync-exception safety
+ * @param {ReadableStream|ReadableStreamDefaultReader|object} target
+ */
+export async function safeCancelStream(target) {
+  if (!target || typeof target.cancel !== "function") return;
+  let timer;
+  try {
+    const cancelPromise = Promise.resolve().then(() => target.cancel());
+    cancelPromise.catch(() => {});
+    await Promise.race([
+      cancelPromise,
+      new Promise(resolve => { timer = setTimeout(resolve, 300); })
+    ]);
+  } catch {} finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Wrap a ReadableStream to propagate cancellation/abort to upstream and clean up listeners on completion
+ * @param {ReadableStream} stream
+ * @param {Function} [onDone]
+ * @param {Function} [onCancel]
+ * @returns {ReadableStream}
+ */
+export function attachStreamAbortCleanup(stream, onDone, onCancel) {
+  if (!stream || typeof stream.getReader !== "function") {
+    if (typeof onDone === "function") onDone();
+    return stream;
+  }
+  const reader = stream.getReader();
+  let doneCalled = false;
+  const callDone = () => {
+    if (!doneCalled) {
+      doneCalled = true;
+      if (typeof onDone === "function") onDone();
+    }
+  };
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          try { controller.close(); } catch {}
+          callDone();
+          return;
+        }
+        controller.enqueue(value);
+      } catch (err) {
+        try { controller.error(err); } catch {}
+        callDone();
+      }
+    },
+    async cancel(reason) {
+      try {
+        if (typeof onCancel === "function") onCancel(reason);
+      } finally {
+        callDone();
+        await safeCancelStream(reader);
+      }
+    },
+  });
+}
+
+/**
+ * Race a promise against an AbortSignal so client abort immediately rejects without waiting for uncooperative executors
+ * @param {Promise<any>} promise
+ * @param {AbortSignal|null} abortSignal
+ * @returns {Promise<any>}
+ */
+export function withAbortRace(promise, abortSignal) {
+  if (!abortSignal) return promise;
+  let aborted = Boolean(abortSignal.aborted);
+  const wrappedPromise = Promise.resolve(promise)
+    .then(async (res) => {
+      if (aborted && res && res.body) {
+        await safeCancelStream(res.body);
+      }
+      return res;
+    })
+    .catch((err) => {
+      if (aborted) {
+        // losing branch rejection after abort — suppress unhandled rejection
+        return;
+      }
+      throw err;
+    });
+
+  if (aborted) {
+    const err = new Error("Request aborted by client");
+    err.name = "AbortError";
+    return Promise.reject(err);
+  }
+  let onAbort;
+  const abortPromise = new Promise((_, reject) => {
+    onAbort = () => {
+      aborted = true;
+      const err = new Error("Request aborted by client");
+      err.name = "AbortError";
+      reject(err);
+    };
+    abortSignal.addEventListener("abort", onAbort, { once: true });
+  });
+  return Promise.race([
+    wrappedPromise.finally(() => {
+      if (onAbort) abortSignal.removeEventListener("abort", onAbort);
+    }),
+    abortPromise,
+  ]);
+}
+
+/**
+ * Wrap a selected response body with abort cleanup and upstream cancellation on downstream cancel
+ * @param {Response} response
+ * @param {Function} [cleanup]
+ * @param {Function} [onCancel]
+ * @returns {Response}
+ */
+export function wrapSelectedBody(response, cleanup, onCancel) {
+  if (!response || !response.body || typeof response.body.getReader !== "function") {
+    if (typeof cleanup === "function") cleanup();
+    return response;
+  }
+  const wrapped = attachStreamAbortCleanup(response.body, cleanup, onCancel);
+  return new Response(wrapped, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null }) {
   // Apply rotation strategy if enabled (supports round-robin, cache-optimized)
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit, body);
@@ -458,8 +590,39 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
+    const candidateAbortCtrl = new AbortController();
+    const onClientAbort = () => candidateAbortCtrl.abort();
+    let isCandidateSelected = false;
+    let abortListenerRemoved = false;
+    const removeClientAbortListener = () => {
+      if (signal && !abortListenerRemoved) {
+        abortListenerRemoved = true;
+        signal.removeEventListener("abort", onClientAbort);
+      }
+    };
+    if (signal) {
+      if (signal.aborted) {
+        candidateAbortCtrl.abort();
+      } else {
+        signal.addEventListener("abort", onClientAbort, { once: true });
+      }
+    }
     try {
-      const result = await handleSingleModel(body, modelStr, { isCombo: true, signal });
+      const result = await withAbortRace(
+        handleSingleModel(body, modelStr, { isCombo: true, signal: candidateAbortCtrl.signal }),
+        signal
+      );
+
+      if (signal?.aborted) {
+        if (result?.body) await safeCancelStream(result.body);
+        candidateAbortCtrl.abort();
+        isCandidateSelected = true;
+        removeClientAbortListener();
+        return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+          status: 499,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       
       // Success (2xx) - return response
       if (result.ok) {
@@ -468,64 +631,125 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         // instead of piping an empty response to the client. Best-effort check:
         // explicit Content-Length: 0 or a null body; chunked streams have no
         // content-length header and stay on the normal path.
-        const emptyBody = result.headers?.get('content-length') === '0' || result.body === null;
+        const emptyBody = result.headers?.get("content-length") === "0" || result.body === null;
         if (emptyBody) {
+          candidateAbortCtrl.abort();
+          if (result.body) {
+            await safeCancelStream(result.body);
+          }
           log.warn("COMBO", `Model ${modelStr} returned ${result.status} with empty body, trying next`);
           lastError = `empty body (${result.status})`;
-          // `result.status` here is a 2xx by construction (this branch only runs
-          // under `result.ok`), and a 2xx must never become the failure status —
-          // see toHttpFailureStatus.
           if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 502;
           continue;
         }
-        // Reasoning models (deepseek, kimi, ...) can exhaust max_tokens on the
-        // thinking phase and end the stream with finish_reason "length" and
-        // zero text content. The client would get a 200 SSE with nothing
-        // usable. Inspect the stream head via comboStreamGuard and fall through
-        // when it ends empty (the non-stream JSON path below already handles
-        // the same condition via isReasoningEmptyContent).
-        //
-        // The gate keys on the RESPONSE content-type, never on `body.stream`:
-        // some upstreams (opencode Zen -free models) answer a non-stream
-        // request with `text/event-stream` anyway. Gating on `body.stream ===
-        // true` skipped the guard entirely for those, so a zero-text SSE was
-        // piped to the client as a 200 with no content instead of falling
-        // through to the next combo model.
         if (!emptyBody && result.body && typeof result.body.getReader === "function") {
-          const contentType = result.headers?.get('content-type') || "";
-          if (contentType.includes('text/event-stream') || contentType.includes('application/x-ndjson')) {
+          const contentType = result.headers?.get("content-type") || "";
+          if (contentType.includes("text/event-stream") || contentType.includes("application/x-ndjson")) {
             const guard = createComboStreamGuard();
             const reader = result.body.getReader();
-            // Read the SSE head until the guard has a verdict: first content
-            // delta OR the terminal finish event. The guard caps its buffer
-            // (MAX_BUFFER_BYTES) and releases the head itself.
-            const COMBO_TTFT_TIMEOUT_MS = Number.parseInt(process.env.COMBO_TTFT_TIMEOUT_MS, 10) || 10000;
-            let streamHeadTimedOut = false;
-            let timer;
-            const timeoutPromise = new Promise((_, reject) => {
-              timer = setTimeout(() => reject(new Error("TTFT timeout")), COMBO_TTFT_TIMEOUT_MS);
+            const parseClampedMs = (val, def, min = 50, max = 300000) => {
+              if (val == null || val === "") return def;
+              const n = Number(val);
+              if (!Number.isFinite(n) || n <= 0) return def;
+              return Math.min(Math.max(Math.round(n), min), max);
+            };
+            const COMBO_TTFT_TIMEOUT_MS = parseClampedMs(process.env.COMBO_TTFT_TIMEOUT_MS, 30000);
+            const COMBO_STALL_TIMEOUT_MS = parseClampedMs(process.env.COMBO_STALL_TIMEOUT_MS, Math.min(COMBO_TTFT_TIMEOUT_MS, 30000));
+            const COMBO_HEAD_DEADLINE_MS = parseClampedMs(process.env.COMBO_HEAD_DEADLINE_MS, 120000);
+            const decisionDeadline = Date.now() + COMBO_HEAD_DEADLINE_MS;
+            const TIMEOUT_SENTINEL = Symbol("COMBO_HEAD_TIMEOUT");
+            let onHeadCandidateAbort;
+            const abortPromise = new Promise((_, reject) => {
+              onHeadCandidateAbort = () => reject(new Error("Client aborted"));
+              if (candidateAbortCtrl.signal.aborted) reject(new Error("Client aborted"));
+              else candidateAbortCtrl.signal.addEventListener("abort", onHeadCandidateAbort, { once: true });
             });
-            while (!guard.hasDecision()) {
+
+            let streamHeadTimedOut = false;
+            let streamHeadReadError = null;
+            let timedOutDurationMs = COMBO_TTFT_TIMEOUT_MS;
+            let timeoutType = "TTFT";
+            let receivedChunks = 0;
+
+            const safeCancelReader = async (r) => {
+              candidateAbortCtrl.abort();
+              await safeCancelStream(r);
+            };
+
+            try {
+              while (!guard.hasDecision()) {
+              const remainingDeadlineMs = Math.max(0, decisionDeadline - Date.now());
+              if (remainingDeadlineMs <= 0) {
+                streamHeadTimedOut = true;
+                timedOutDurationMs = COMBO_HEAD_DEADLINE_MS;
+                timeoutType = "deadline";
+                log.warn("COMBO", `Model ${modelStr} stream head exceeded decision deadline (${COMBO_HEAD_DEADLINE_MS}ms, chunks=${receivedChunks})`);
+                break;
+              }
+              const currentTimeoutMs = Math.min(
+                receivedChunks === 0 ? COMBO_TTFT_TIMEOUT_MS : COMBO_STALL_TIMEOUT_MS,
+                remainingDeadlineMs
+              );
+              let timer;
+              const timeoutPromise = new Promise((_, reject) => {
+                timer = setTimeout(() => reject(TIMEOUT_SENTINEL), currentTimeoutMs);
+              });
               try {
                 const readPromise = reader.read();
                 readPromise.catch(() => {});
-                const { done, value } = await Promise.race([readPromise, timeoutPromise]);
+                const racers = [readPromise, timeoutPromise, abortPromise];
+                const { done, value } = await Promise.race(racers);
+                clearTimeout(timer);
                 if (done) {
                   guard.feedEnd();
                   break;
                 }
+                if (value && (value.byteLength || value.length) > 0) {
+                  receivedChunks++;
+                }
                 guard.feed(value);
               } catch (err) {
-                streamHeadTimedOut = true;
-                log.warn("COMBO", `Model ${modelStr} stream head timed out waiting for decision (${COMBO_TTFT_TIMEOUT_MS}ms)`);
+                clearTimeout(timer);
+                if (signal?.aborted) {
+                  log.warn("COMBO", `Client aborted request during stream head read (${comboName || ""})`);
+                  await safeCancelReader(reader);
+                  isCandidateSelected = true;
+                  removeClientAbortListener();
+                  return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+                    status: 499,
+                    headers: { "Content-Type": "application/json" }
+                  });
+                }
+                if (err === TIMEOUT_SENTINEL) {
+                  streamHeadTimedOut = true;
+                  timedOutDurationMs = currentTimeoutMs;
+                  const isDeadline = Date.now() >= decisionDeadline;
+                  timeoutType = isDeadline ? "deadline" : (receivedChunks === 0 ? "TTFT" : "stall");
+                  log.warn("COMBO", `Model ${modelStr} stream head timed out waiting for decision (${currentTimeoutMs}ms, chunks=${receivedChunks})`);
+                } else {
+                  streamHeadReadError = err?.message || String(err);
+                  log.warn("COMBO", `Model ${modelStr} stream head read failed: ${streamHeadReadError}`);
+                }
                 break;
               }
             }
-            clearTimeout(timer);
+            } finally {
+              if (onHeadCandidateAbort) {
+                candidateAbortCtrl.signal.removeEventListener("abort", onHeadCandidateAbort);
+              }
+            }
             if (streamHeadTimedOut) {
-              await reader.cancel().catch(() => {});
-              lastError = `stream head TTFT timeout (${COMBO_TTFT_TIMEOUT_MS}ms)`;
+              await safeCancelReader(reader);
+              if (signal?.aborted) break;
+              lastError = `stream head ${timeoutType} timeout (${timedOutDurationMs}ms)`;
               if (!lastStatus) lastStatus = 504;
+              continue;
+            }
+            if (streamHeadReadError) {
+              await safeCancelReader(reader);
+              if (signal?.aborted) break;
+              lastError = "stream head read error";
+              if (!lastStatus) lastStatus = 502;
               continue;
             }
             if (guard.isEmpty()) {
@@ -538,19 +762,80 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
               // the model one more attempt with a raised budget before
               // falling through to the next combo model.
               if (guard.sawReasoning() && (guard.finishReason() === "length" || guard.finishReason() === "max_tokens")) {
+                if (signal?.aborted) break;
                 log.warn("COMBO", `Model ${modelStr} exhausted max_tokens on reasoning (streamed), retrying once with raised budget`);
-                await reader.cancel().catch(() => {});
-                const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr);
-                if (retried.ok) {
-                  log.info("COMBO", `Model ${modelStr} succeeded after streamed reasoning-budget retry`);
-                  return attachRouterDecisionHeader(retried, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+                await safeCancelReader(reader);
+                if (signal?.aborted) break;
+                const retryAbortCtrl = new AbortController();
+                const onRetryClientAbort = () => retryAbortCtrl.abort();
+                if (signal) {
+                  if (signal.aborted) retryAbortCtrl.abort();
+                  else signal.addEventListener("abort", onRetryClientAbort, { once: true });
                 }
-                lastError = `reasoning budget exhausted; streamed retry failed (${retried.status})`;
-                if (!lastStatus) lastStatus = retried.status;
-                continue;
+                let retryAbortListenerRemoved = false;
+                const cleanupRetryAbort = () => {
+                  if (signal && !retryAbortListenerRemoved) {
+                    retryAbortListenerRemoved = true;
+                    signal.removeEventListener("abort", onRetryClientAbort);
+                  }
+                };
+                let retried;
+                try {
+                  retried = await withAbortRace(
+                    handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: retryAbortCtrl.signal }),
+                    signal
+                  );
+                } catch (retryErr) {
+                  retryAbortCtrl.abort();
+                  cleanupRetryAbort();
+                  if (signal?.aborted) {
+                    log.warn("COMBO", `Client aborted request during streamed reasoning retry (${comboName || ""})`);
+                    isCandidateSelected = true;
+                    removeClientAbortListener();
+                    return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+                      status: 499,
+                      headers: { "Content-Type": "application/json" }
+                    });
+                  }
+                  throw retryErr;
+                }
+                if (signal?.aborted) {
+                  if (retried?.body) await safeCancelStream(retried.body);
+                  retryAbortCtrl.abort();
+                  cleanupRetryAbort();
+                  isCandidateSelected = true;
+                  removeClientAbortListener();
+                  return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+                    status: 499,
+                    headers: { "Content-Type": "application/json" }
+                  });
+                }
+                if (!retried.ok) {
+                  retryAbortCtrl.abort();
+                  if (retried.body) await safeCancelStream(retried.body);
+                  cleanupRetryAbort();
+                  lastError = `reasoning budget exhausted; streamed retry failed (${retried.status})`;
+                  if (!lastStatus) lastStatus = retried.status;
+                  continue;
+                }
+                log.info("COMBO", `Model ${modelStr} succeeded after streamed reasoning-budget retry`);
+                let retriedWithCleanup;
+                try {
+                  retriedWithCleanup = wrapSelectedBody(retried, cleanupRetryAbort, () => retryAbortCtrl.abort());
+                  isCandidateSelected = true;
+                  removeClientAbortListener();
+                } catch (wrapErr) {
+                  retryAbortCtrl.abort();
+                  candidateAbortCtrl.abort();
+                  if (retried.body) await safeCancelStream(retried.body);
+                  cleanupRetryAbort();
+                  removeClientAbortListener();
+                  throw wrapErr;
+                }
+                return attachRouterDecisionHeader(retriedWithCleanup, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
               }
               log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
-              await reader.cancel().catch(() => {});
+              await safeCancelReader(reader);
               lastError = lastError ? `${lastError}; empty stream content` : "empty stream content";
               if (!lastStatus) lastStatus = 502;
               continue;
@@ -561,10 +846,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             // the client.
             const streamHeaders = new Headers(result.headers);
             streamHeaders.delete("content-length");
-            const responseWithHeaders = new Response(pipeStreamWithHead(reader, guard.release()), {
+            const responseWithHeaders = new Response(pipeStreamWithHead(
+              reader,
+              guard.release(),
+              removeClientAbortListener,
+              () => candidateAbortCtrl.abort()
+            ), {
               status: result.status,
               headers: streamHeaders,
             });
+            isCandidateSelected = true;
             return attachRouterDecisionHeader(responseWithHeaders, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
           }
         }
@@ -602,6 +893,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             // failure status — see toHttpFailureStatus. Anything that is not a
             // real 4xx/5xx becomes 502.
             if (!lastStatus) lastStatus = toHttpFailureStatus(e?.code) ?? 502;
+            candidateAbortCtrl.abort();
+            if (result.body) {
+              await safeCancelStream(result.body);
+            }
             continue;
           }
           const choice = completion?.choices?.[0];
@@ -612,29 +907,135 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             msg.reasoning_content ?? msg.reasoning ?? msg.reasoningContent,
           )) {
             log.warn("COMBO", `Model ${modelStr} exhausted max_tokens on reasoning, retrying once with raised budget`);
-            const retried = await handleSingleModel(withRaisedMaxTokens(body), modelStr);
+            if (result.body) {
+              await safeCancelStream(result.body);
+            }
+            let retried;
+            try {
+              retried = await withAbortRace(
+                handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: candidateAbortCtrl.signal }),
+                signal
+              );
+            } catch (retryErr) {
+              candidateAbortCtrl.abort();
+              if (signal?.aborted) {
+                log.warn("COMBO", `Client aborted request during reasoning retry (${comboName || ""})`);
+                isCandidateSelected = true;
+                removeClientAbortListener();
+                return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+                  status: 499,
+                  headers: { "Content-Type": "application/json" }
+                });
+              }
+              throw retryErr;
+            }
+            if (signal?.aborted) {
+              if (retried?.body) await safeCancelStream(retried.body);
+              candidateAbortCtrl.abort();
+              isCandidateSelected = true;
+              removeClientAbortListener();
+              return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+                status: 499,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
             if (retried.ok) {
               log.info("COMBO", `Model ${modelStr} succeeded after reasoning-budget retry`);
-              return attachRouterDecisionHeader(retried, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+              let retriedWithCleanup;
+              try {
+                retriedWithCleanup = wrapSelectedBody(retried, removeClientAbortListener, () => candidateAbortCtrl.abort());
+                isCandidateSelected = true;
+              } catch (wrapErr) {
+                candidateAbortCtrl.abort();
+                if (retried.body) await safeCancelStream(retried.body);
+                removeClientAbortListener();
+                throw wrapErr;
+              }
+              return attachRouterDecisionHeader(retriedWithCleanup, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
             }
+            candidateAbortCtrl.abort();
+            if (retried.body) await safeCancelStream(retried.body);
             lastError = `reasoning-empty-content retry failed (${retried.status})`;
             if (!lastStatus) lastStatus = retried.status;
             continue;
           }
         }
         log.info("COMBO", `Model ${modelStr} succeeded`);
-        return attachRouterDecisionHeader(result, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+        let resultWithCleanup;
+        try {
+          resultWithCleanup = wrapSelectedBody(result, removeClientAbortListener, () => candidateAbortCtrl.abort());
+          isCandidateSelected = true;
+        } catch (wrapErr) {
+          candidateAbortCtrl.abort();
+          if (result.body) await safeCancelStream(result.body);
+          removeClientAbortListener();
+          throw wrapErr;
+        }
+        return attachRouterDecisionHeader(resultWithCleanup, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
       }
 
       // Extract error info from response
       let errorText = result.statusText || "";
       let retryAfter = null;
-      try {
-        const errorBody = await result.clone().json();
-        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
-      } catch {
-        // Ignore JSON parse errors
+      const errContentType = result.headers?.get("content-type") || "";
+      if (!errContentType || errContentType.includes("json")) {
+        let timer = null;
+        let errReader = null;
+        try {
+          if (result.body && typeof result.body.getReader === "function") {
+            errReader = result.body.getReader();
+            const readPromise = errReader.read().then(({ done, value }) => {
+              if (done || !value) return null;
+              const text = new TextDecoder().decode(value);
+              try { return JSON.parse(text); } catch { return { message: text }; }
+            });
+            readPromise.catch(() => {});
+            const timeoutPromise = new Promise((_, reject) => {
+              timer = setTimeout(() => reject(new Error("timeout")), 300);
+            });
+            const errorBody = await withAbortRace(
+              Promise.race([readPromise, timeoutPromise]),
+              signal
+            );
+            errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+            retryAfter = errorBody?.retryAfter || null;
+            // Google-style error envelope (antigravity/gemini-cli): the reset
+            // hint lives in details[] as RetryInfo.retryDelay ("289539.38s")
+            // or ErrorInfo.metadata.quotaResetTimeStamp, not in a top-level
+            // retryAfter field. Without this the combo cannot distinguish an
+            // 80h account quota from a per-minute RPM wall.
+            if (!retryAfter && Array.isArray(errorBody?.error?.details)) {
+              for (const d of errorBody.error.details) {
+                const type = d?.["@type"] || "";
+                if (type.includes("RetryInfo") && d.retryDelay) {
+                  const secs = parseFloat(d.retryDelay);
+                  if (Number.isFinite(secs) && secs > 0) { retryAfter = new Date(Date.now() + secs * 1000).toISOString(); break; }
+                }
+                if (type.includes("ErrorInfo") && d.metadata?.quotaResetTimeStamp) {
+                  const ts = Date.parse(d.metadata.quotaResetTimeStamp);
+                  if (!Number.isNaN(ts) && ts > Date.now()) { retryAfter = new Date(ts).toISOString(); break; }
+                }
+              }
+            }
+          }
+        } catch {
+          // not JSON, timed out, or aborted
+        } finally {
+          if (timer) clearTimeout(timer);
+          if (errReader) await safeCancelStream(errReader);
+        }
+      }
+
+      if (signal?.aborted) {
+        log.warn("COMBO", `Client aborted request during error parsing (${comboName || ""})`);
+        candidateAbortCtrl.abort();
+        if (result.body) await safeCancelStream(result.body);
+        isCandidateSelected = true;
+        removeClientAbortListener();
+        return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+          status: 499,
+          headers: { "Content-Type": "application/json" }
+        });
       }
 
       // Track earliest retryAfter across all combo models
@@ -657,8 +1058,39 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // proxy pool/account before this error reached the combo loop, so a
       // quota-limited combo should STOP and return 429+retry-after rather than
       // switch to a model that shares the same exhausted quota/pool.
-      if (result.status === 429 ||
-          /rate.?limit|usage.?limit|quota|too many requests|overloaded|capacity/i.test(errorText || "")) {
+      const quotaLimited = result.status === 429 ||
+        /rate.?limit|usage.?limit|quota|too many requests|overloaded|capacity/i.test(errorText || "");
+      // Long quota windows (subscription/individual quota, "Resets in 80h…")
+      // are account-level, not request-level: every remaining combo model on
+      // the SAME provider shares the account, so trying them is a guaranteed
+      // second 429 delivered to the client as the combo's verdict. Skip to the
+      // first candidate on a different provider instead (observed: 4/5
+      // ag/claude-sonnet-4-6 429 → 5/5 ag/gemini-3.8-flash-medium 429 again).
+      // Short rate limits (per-minute RPM) do NOT trigger this — the next
+      // model may genuinely have its own headroom.
+      const longQuotaWindow = retryAfter && (new Date(retryAfter).getTime() - Date.now()) > 60_000;
+      if (quotaLimited && longQuotaWindow) {
+        const providerOf = (m) => (typeof m === "string" && m.includes("/")) ? m.slice(0, m.indexOf("/")) : m;
+        const failedProvider = providerOf(modelStr);
+        const nextIdx = rotatedModels.findIndex((m, j) => j > i && providerOf(m) !== failedProvider);
+        log.warn("COMBO", `Model ${modelStr} hit a long quota window (retry-after ${Math.round((new Date(retryAfter).getTime() - Date.now()) / 60000)}m); skipping remaining ${failedProvider} models`);
+        candidateAbortCtrl.abort();
+        if (result.body) await safeCancelStream(result.body);
+        lastError = errorText || String(result.status);
+        if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 429;
+        if (nextIdx > i) {
+          i = nextIdx - 1; // for-loop's i++ lands on nextIdx
+          continue;
+        }
+        // All remaining candidates share the provider — stop with 429 verdict.
+        // Keep the MINIMUM retryAfter: an earlier different-provider model may
+        // have reported a shorter window (T+30m) than this final model's 80h.
+        if (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter)) {
+          earliestRetryAfter = retryAfter;
+        }
+        break;
+      }
+      if (quotaLimited) {
         // Prefer an explicit retryAfter; else derive a cooldown from the
         // fallback classifier so the client gets a usable retry window.
         if (!retryAfter && cooldownMs && cooldownMs > 0) {
@@ -668,7 +1100,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       if (!shouldFallback && !modelError) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
+        isCandidateSelected = true;
+        return wrapSelectedBody(result, removeClientAbortListener, () => candidateAbortCtrl.abort());
       }
 
       if (modelError) {
@@ -678,6 +1111,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Fast failover: do NOT sleep in hot-path between candidates in a combo;
       // cooldown is recorded for subsequent requests, but current request immediately tries next candidate.
 
+      // Fast failover: cancel discarded failure body and abort upstream before trying next candidate
+      candidateAbortCtrl.abort();
+      if (result.body) {
+        await safeCancelStream(result.body);
+      }
+
       // Fallback to next model
       lastError = errorText || String(result.status);
       // Non-2xx by construction, but a 3xx is still not a failure status the
@@ -685,10 +1124,24 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 502;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
+      candidateAbortCtrl.abort();
+      if (signal?.aborted) {
+        log.warn("COMBO", `Client aborted request during combo execution (${comboName || ""})`);
+        isCandidateSelected = true;
+        removeClientAbortListener();
+        return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+          status: 499,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+    } finally {
+      if (!isCandidateSelected) {
+        removeClientAbortListener();
+      }
     }
   }
 
@@ -1027,39 +1480,52 @@ function dedupChunk(chunk, state) {
   return typeof chunk === "string" ? joined : new TextEncoder().encode(joined);
 }
 
-export function pipeStreamWithHead(reader, head) {
+export function pipeStreamWithHead(reader, head, onDone, onCancel) {
+  let doneCalled = false;
+  const callDone = () => {
+    if (!doneCalled) {
+      doneCalled = true;
+      if (typeof onDone === "function") onDone();
+    }
+  };
+  const dedupState = createDedupState();
   return new ReadableStream({
     async start(controller) {
-      try {
-        // Tee the rest of the stream through the dedup filter so identical
-        // SSE `data:` lines emitted by the upstream (notably some OpenRouter
-        // free models) are collapsed before reaching the client. See
-        // tests/unit/combo-pipe-stream-with-head.test.js for the
-        // reproduce/fix spec. The head is prepended verbatim — the guard
-        // already vetted it for the empty-stream verdict, so any
-        // back-to-back dup between the head and the first body chunk is
-        // still the same payload and is correctly dropped by the filter.
-        const dedupState = createDedupState();
-        if (head && head.length > 0) {
-          const filteredHead = dedupChunk(head, dedupState);
-          if (filteredHead && filteredHead.length > 0) controller.enqueue(filteredHead);
+      if (head && head.length > 0) {
+        const filteredHead = dedupChunk(head, dedupState);
+        if (filteredHead && filteredHead.length > 0) {
+          controller.enqueue(filteredHead);
         }
+      }
+    },
+    async pull(controller) {
+      try {
         for (;;) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            try { controller.close(); } catch {}
+            callDone();
+            return;
+          }
           const filtered = dedupChunk(value, dedupState);
           if (filtered && filtered.length > 0) {
-            try { controller.enqueue(filtered); } catch { break; }
+            controller.enqueue(filtered);
+            return;
           }
         }
-        try { controller.close(); } catch {}
       } catch (err) {
         console.error("[combo] pipeStreamWithHead failed:", err?.message || err);
         try { controller.error(err); } catch {}
+        callDone();
       }
     },
-    cancel() {
-      reader.cancel().catch(() => {});
+    async cancel(reason) {
+      try {
+        if (typeof onCancel === "function") onCancel(reason);
+      } finally {
+        callDone();
+        await safeCancelStream(reader);
+      }
     },
   });
 }

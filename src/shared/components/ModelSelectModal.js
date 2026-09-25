@@ -8,6 +8,7 @@ import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { formatContextWindow, CONTEXT_FILTER_OPTIONS } from "@/shared/utils/contextWindow";
+import { matchesModelSearch } from "@/shared/utils/modelSearch";
 import {
   OAUTH_PROVIDERS,
   APIKEY_PROVIDERS,
@@ -19,7 +20,7 @@ import {
   getProviderAlias,
 } from "@/shared/constants/providers";
 
-export { formatContextWindow, CONTEXT_FILTER_OPTIONS };
+export { formatContextWindow, CONTEXT_FILTER_OPTIONS, matchesModelSearch };
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -462,7 +463,16 @@ export default function ModelSelectModal({
     let list = combos;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      list = list.filter((c) => c.name.toLowerCase().includes(q));
+      const tokens = q.split(/[\s\-_/]+/).filter(Boolean);
+      list = list.filter((c) => {
+        const name = (c.name || "").toLowerCase();
+        if (name.includes(q)) return true;
+        if (tokens.length > 0) {
+          const normalized = name.replace(/[\-_/]/g, " ");
+          return tokens.every((t) => normalized.includes(t));
+        }
+        return false;
+      });
     }
     if (contextFilter > 0 || filterVision || filterReasoning) {
       list = list.filter((c) => {
@@ -521,12 +531,7 @@ export default function ModelSelectModal({
           group.name.toLowerCase().includes(query) || providerId.toLowerCase().includes(query);
 
         if (!providerNameMatches) {
-          models = models.filter(
-            (m) =>
-              m.name.toLowerCase().includes(query) ||
-              m.id.toLowerCase().includes(query) ||
-              m.value.toLowerCase().includes(query)
-          );
+          models = models.filter((m) => matchesModelSearch(m, query, group.name, providerId));
           if (models.length === 0) return;
         }
       }

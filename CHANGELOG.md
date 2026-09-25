@@ -1,3 +1,13 @@
+# v0.15.118 (2026-09-25)
+
+## Fix: Combo 429 long-quota failover — veto 80h quota retries, skip same-provider candidates (PR #443)
+
+- **Antigravity structured quota hints**: `computeRetryDelay` now parses `google.rpc.RetryInfo.retryDelay` and `ErrorInfo.metadata.quotaResetTimeStamp` from `error.details[]` first; any window beyond `MAX_RETRY_AFTER_MS` (10s) vetoes the in-executor retry so the combo loop fails over immediately. Previously a 429 "Individual quota reached … Resets in 80h25m39s" burned 6 attempts × 2 fallback URLs ≈ 95s before failover (12:29:53 → 12:31:33 in the 0.15.117 pod log).
+- **"Resets in" regex**: `parseRetryFromErrorMessage` matches the observed cloudcode-pa spelling "Resets in 80h25m39s" alongside the legacy "reset after", with fractional-second support ("289539.38s").
+- **Combo Google error parsing**: the combo error-body parser extracts the reset hint from `details[]` into `retryAfter` so the combo can distinguish an 80h account quota from a per-minute RPM wall.
+- **Same-provider skip**: on a quota-limited 429 with retry-after > 60s, `handleComboChat` skips remaining candidates on the same provider (shared account = guaranteed second 429) and jumps to the first different-provider candidate; it stops with a 429 verdict when none remain. Short RPM rate limits keep normal failover.
+- **TTFT tiers** (from earlier commits in #443): stream-head guard gained TTFT (30s) / stall / decision-deadline (120s) tiers with client-abort racing, abort propagation to upstream, and stream-listener cleanup on all candidate outcomes.
+
 # v0.15.117 (2026-09-24)
 
 ## Fix: Sync capabilities.contextWindow and add comboMembers for user combos (#439)

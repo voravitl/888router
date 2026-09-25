@@ -149,7 +149,8 @@ describe("combo reasoning empty-content retry", () => {
     expect(handleSingleModel).toHaveBeenCalledTimes(2);
     expect(handleSingleModel).toHaveBeenLastCalledWith(
       expect.objectContaining({ max_tokens: expect.any(Number) }),
-      "openai/deepseek-reasoner"
+      "openai/deepseek-reasoner",
+      expect.objectContaining({ isCombo: true })
     );
   });
 

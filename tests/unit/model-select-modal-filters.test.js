@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { formatContextWindow, CONTEXT_FILTER_OPTIONS } from "@/shared/utils/contextWindow";
+import { matchesModelSearch } from "@/shared/utils/modelSearch";
 import { resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
 
 describe("ModelSelectModal Filter & Context Helpers", () => {
@@ -119,6 +120,49 @@ describe("ModelSelectModal Filter & Context Helpers", () => {
         (m) => m.provider === "antigravity" && m.caps.vision && (m.caps.contextWindow || 0) >= 1000000
       );
       expect(filtered.map((m) => m.id)).toEqual(["gemini-2.5-flash"]);
+    });
+  });
+
+  describe("matchesModelSearch", () => {
+    const spaceBunny = {
+      id: "space-bunny-free",
+      name: "space-bunny-free",
+      value: "oc/space-bunny-free",
+    };
+
+    const claudeSonnet = {
+      id: "claude-sonnet-4-6",
+      name: "Claude Sonnet 4.6",
+      value: "claude/claude-sonnet-4-6",
+    };
+
+    it("matches exact substring", () => {
+      expect(matchesModelSearch(spaceBunny, "space-bunny-free")).toBe(true);
+      expect(matchesModelSearch(spaceBunny, "oc/space")).toBe(true);
+    });
+
+    it("matches spaced query against hyphenated model name", () => {
+      expect(matchesModelSearch(spaceBunny, "space bunny")).toBe(true);
+      expect(matchesModelSearch(spaceBunny, "Space Bunny Free")).toBe(true);
+      expect(matchesModelSearch(spaceBunny, "bunny free")).toBe(true);
+      expect(matchesModelSearch(spaceBunny, "bunny")).toBe(true);
+    });
+
+    it("matches query against provider name or provider id", () => {
+      expect(matchesModelSearch(spaceBunny, "opencode", "OpenCode Zen", "opencode")).toBe(true);
+      expect(matchesModelSearch(spaceBunny, "zen", "OpenCode Zen", "opencode")).toBe(true);
+      expect(matchesModelSearch(claudeSonnet, "anthropic", "Anthropic Claude", "claude")).toBe(true);
+    });
+
+    it("returns false for non-matching queries", () => {
+      expect(matchesModelSearch(spaceBunny, "gpt-4o")).toBe(false);
+      expect(matchesModelSearch(spaceBunny, "gemini flash")).toBe(false);
+    });
+
+    it("handles empty or whitespace query as match-all", () => {
+      expect(matchesModelSearch(spaceBunny, "")).toBe(true);
+      expect(matchesModelSearch(spaceBunny, "   ")).toBe(true);
+      expect(matchesModelSearch(spaceBunny, null)).toBe(true);
     });
   });
 });
