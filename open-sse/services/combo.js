@@ -999,6 +999,24 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             );
             errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
             retryAfter = errorBody?.retryAfter || null;
+            // Google-style error envelope (antigravity/gemini-cli): the reset
+            // hint lives in details[] as RetryInfo.retryDelay ("289539.38s")
+            // or ErrorInfo.metadata.quotaResetTimeStamp, not in a top-level
+            // retryAfter field. Without this the combo cannot distinguish an
+            // 80h account quota from a per-minute RPM wall.
+            if (!retryAfter && Array.isArray(errorBody?.error?.details)) {
+              for (const d of errorBody.error.details) {
+                const type = d?.["@type"] || "";
+                if (type.includes("RetryInfo") && d.retryDelay) {
+                  const secs = parseFloat(d.retryDelay);
+                  if (Number.isFinite(secs) && secs > 0) { retryAfter = new Date(Date.now() + secs * 1000).toISOString(); break; }
+                }
+                if (type.includes("ErrorInfo") && d.metadata?.quotaResetTimeStamp) {
+                  const ts = Date.parse(d.metadata.quotaResetTimeStamp);
+                  if (!Number.isNaN(ts) && ts > Date.now()) { retryAfter = new Date(ts).toISOString(); break; }
+                }
+              }
+            }
           }
         } catch {
           // not JSON, timed out, or aborted
@@ -1040,8 +1058,35 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // proxy pool/account before this error reached the combo loop, so a
       // quota-limited combo should STOP and return 429+retry-after rather than
       // switch to a model that shares the same exhausted quota/pool.
-      if (result.status === 429 ||
-          /rate.?limit|usage.?limit|quota|too many requests|overloaded|capacity/i.test(errorText || "")) {
+      const quotaLimited = result.status === 429 ||
+        /rate.?limit|usage.?limit|quota|too many requests|overloaded|capacity/i.test(errorText || "");
+      // Long quota windows (subscription/individual quota, "Resets in 80h…")
+      // are account-level, not request-level: every remaining combo model on
+      // the SAME provider shares the account, so trying them is a guaranteed
+      // second 429 delivered to the client as the combo's verdict. Skip to the
+      // first candidate on a different provider instead (observed: 4/5
+      // ag/claude-sonnet-4-6 429 → 5/5 ag/gemini-3.8-flash-medium 429 again).
+      // Short rate limits (per-minute RPM) do NOT trigger this — the next
+      // model may genuinely have its own headroom.
+      const longQuotaWindow = retryAfter && (new Date(retryAfter).getTime() - Date.now()) > 60_000;
+      if (quotaLimited && longQuotaWindow) {
+        const providerOf = (m) => (typeof m === "string" && m.includes("/")) ? m.slice(0, m.indexOf("/")) : m;
+        const failedProvider = providerOf(modelStr);
+        const nextIdx = rotatedModels.findIndex((m, j) => j > i && providerOf(m) !== failedProvider);
+        log.warn("COMBO", `Model ${modelStr} hit a long quota window (retry-after ${Math.round((new Date(retryAfter).getTime() - Date.now()) / 60000)}m); skipping remaining ${failedProvider} models`);
+        candidateAbortCtrl.abort();
+        if (result.body) await safeCancelStream(result.body);
+        lastError = errorText || String(result.status);
+        if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 429;
+        if (nextIdx > i) {
+          i = nextIdx - 1; // for-loop's i++ lands on nextIdx
+          continue;
+        }
+        // All remaining candidates share the provider — stop with 429 verdict.
+        earliestRetryAfter = retryAfter;
+        break;
+      }
+      if (quotaLimited) {
         // Prefer an explicit retryAfter; else derive a cooldown from the
         // fallback classifier so the client gets a usable retry window.
         if (!retryAfter && cooldownMs && cooldownMs > 0) {

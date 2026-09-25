@@ -51,6 +51,51 @@ describe("antigravity computeRetryDelay hook (D3)", () => {
     expect(await ag.computeRetryDelay(r, 1)).toBe(false);
   });
 
+  it("vetoes (false) on the observed 80h individual-quota envelope (RetryInfo.retryDelay)", async () => {
+    // Regression: 0.15.117 burned ~95s retrying a quota wall that resets in 80h
+    // (12:29:53 → 12:31:33 in the pod log) before the combo could fail over.
+    const r = res(429, {}, {
+      error: {
+        code: 429,
+        message: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 80h25m39s.",
+        status: "RESOURCE_EXHAUSTED",
+        details: [
+          { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "QUOTA_EXHAUSTED",
+            domain: "cloudcode-pa.googleapis.com", metadata: {
+              quotaResetTimeStamp: new Date(Date.now() + 80 * 3600 * 1000).toISOString(),
+            } },
+          { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "289539.38s" },
+        ],
+      },
+    });
+    expect(await ag.computeRetryDelay(r, 1)).toBe(false);
+  });
+
+  it("vetoes (false) when quotaResetTimeStamp is far in the future (no RetryInfo)", async () => {
+    const r = res(429, {}, {
+      error: {
+        code: 429,
+        message: "Individual quota reached. Resets in 80h.",
+        details: [
+          { "@type": "type.googleapis.com/google.rpc.ErrorInfo", metadata: {
+            quotaResetTimeStamp: new Date(Date.now() + 80 * 3600 * 1000).toISOString(),
+          } },
+        ],
+      },
+    });
+    expect(await ag.computeRetryDelay(r, 1)).toBe(false);
+  });
+
+  it("parses 'Resets in 80h25m39s' message text when no structured details exist", () => {
+    expect(ag.parseRetryFromErrorMessage(
+      "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 80h25m39s.",
+    )).toBe(((80 * 60 + 25) * 60 + 39) * 1000);
+  });
+
+  it("still parses the legacy 'reset after' spelling", () => {
+    expect(ag.parseRetryFromErrorMessage("Your quota will reset after 2h7m23s")).toBe(((2 * 60 + 7) * 60 + 23) * 1000);
+  });
+
   it("deduplicates sanitized tool names", () => {
     const out = ag.transformRequest("claude-opus-4-6-thinking", {
       request: {
