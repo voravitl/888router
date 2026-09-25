@@ -396,7 +396,10 @@ describe("Combo Fast Failover & Timeout Defenses", () => {
 
     expect(res.status).toBe(200);
     expect(handleSingleModel).toHaveBeenCalledTimes(3);
-    // Both failed candidates and completed JSON responses clean up their listeners completely!
+    // While the returned response body is unconsumed, the abort listener is active
+    expect(listenerCount).toBe(1);
+    // Once the response body is consumed to completion, listener is cleaned up!
+    await res.json();
     expect(listenerCount).toBe(0);
   });
   it("terminates combo loop promptly on client abort during pending stream head read without waiting for timeout", async () => {
@@ -714,5 +717,78 @@ describe("Combo Fast Failover & Timeout Defenses", () => {
     expect(handleSingleModel).toHaveBeenCalledTimes(2);
     const body = await res.json();
     expect(body.choices[0].message.content).toBe("fallback ok");
+  });
+  it("races pending handleSingleModel against client abort and returns 499 promptly", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const abortCtrl = new AbortController();
+
+    // Model never settles
+    const handleSingleModel = vi.fn(() => new Promise(() => {}));
+
+    setTimeout(() => abortCtrl.abort(), 30);
+
+    const t0 = Date.now();
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["hanging-model"],
+      handleSingleModel,
+      log,
+      signal: abortCtrl.signal,
+    });
+    const elapsed = Date.now() - t0;
+
+    expect(res.status).toBe(499);
+    expect(elapsed).toBeLessThan(500);
+  });
+
+  it("cancels retried.body and aborts retry controller when streamed retry returns non-2xx", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    let retryBodyCanceled = false;
+    let retrySignal;
+
+    const retryFailedStream = new ReadableStream({
+      start(c) {},
+      cancel() { retryBodyCanceled = true; }
+    });
+
+    let callCount = 0;
+    const handleSingleModel = vi.fn(async (body, model, opts) => {
+      callCount++;
+      if (callCount === 1) {
+        // Model 1 exhausts reasoning budget
+        return new Response(makeStream([
+          "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think\"},\"finish_reason\":\"length\"}]}\\n\\n",
+          "data: [DONE]\\n\\n",
+        ]), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      if (callCount === 2) {
+        // Model 1 retry returns 502 with a body
+        retrySignal = opts?.signal;
+        return new Response(retryFailedStream, {
+          status: 502,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }
+      // Model 2 succeeds
+      return new Response(JSON.stringify({ choices: [{ message: { content: "model-2 ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    });
+
+    const res = await handleComboChat({
+      body: { stream: true, messages: [{ role: "user", content: "hi" }] },
+      models: ["model-1", "model-2"],
+      handleSingleModel,
+      log,
+    });
+
+    expect(res.status).toBe(200);
+    expect(callCount).toBe(3);
+    expect(retrySignal?.aborted).toBe(true);
+    expect(retryBodyCanceled).toBe(true);
   });
 });
