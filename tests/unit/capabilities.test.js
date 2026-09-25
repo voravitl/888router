@@ -33,4 +33,18 @@ describe("getCapabilitiesForModel", () => {
       thinkingCanDisable: false,
     });
   });
+
+  it("reports OpenCode space-bunny-free as a 1M reasoning model across all aliases", () => {
+    const expected = {
+      reasoning: true,
+      vision: false,
+      contextWindow: 1048576,
+      maxOutput: 64000,
+    };
+    expect(getCapabilitiesForModel("opencode", "space-bunny-free")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("oc", "space-bunny-free")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("opencode-go", "space-bunny-free")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("opencode-zen", "space-bunny-free")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("oc", "space-bunny-free")).toMatchObject(expected);
+  });
 });

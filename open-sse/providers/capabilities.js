@@ -244,6 +244,14 @@ export function __resetScopedDynamicCache() {
 // the common video transport is end-to-end). Shared by the provider/id pairs
 // below; never exposed globally so other providers' same-named models keep
 // pattern/default caps.
+// Space Bunny Free — reasoning model with 1M context window
+const SPACE_BUNNY_CAPABILITIES = {
+  reasoning: true,
+  vision: false,
+  contextWindow: 1048576,
+  maxOutput: 64000,
+};
+
 const OX_ALPHA_CAPABILITIES = {
   vision: true,
   reasoning: true,
@@ -378,6 +386,7 @@ export const PROVIDER_CAPABILITIES = {
     "gemma4:31b":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 128000, maxOutput: 64000 },
   },
   "opencode": {
+    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
@@ -385,17 +394,20 @@ export const PROVIDER_CAPABILITIES = {
     "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "oc": {
+    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
     "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "opencode-go": {
+    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
     "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
   },
   "opencode-zen": {
+    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },

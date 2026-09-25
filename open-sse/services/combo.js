@@ -676,7 +676,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
               await safeCancelStream(r);
             };
 
-            while (!guard.hasDecision()) {
+            try {
+              while (!guard.hasDecision()) {
               const remainingDeadlineMs = Math.max(0, decisionDeadline - Date.now());
               if (remainingDeadlineMs <= 0) {
                 streamHeadTimedOut = true;
@@ -732,8 +733,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                 break;
               }
             }
-            if (onHeadCandidateAbort) {
-              candidateAbortCtrl.signal.removeEventListener("abort", onHeadCandidateAbort);
+            } finally {
+              if (onHeadCandidateAbort) {
+                candidateAbortCtrl.signal.removeEventListener("abort", onHeadCandidateAbort);
+              }
             }
             if (streamHeadTimedOut) {
               await safeCancelReader(reader);
