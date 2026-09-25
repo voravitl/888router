@@ -791,4 +791,76 @@ describe("Combo Fast Failover & Timeout Defenses", () => {
     expect(retrySignal?.aborted).toBe(true);
     expect(retryBodyCanceled).toBe(true);
   });
+  it("cancels late-resolving response body if executor settles after client abort", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const abortCtrl = new AbortController();
+
+    let lateBodyCanceled = false;
+    const lateStream = new ReadableStream({
+      start(c) {},
+      cancel() { lateBodyCanceled = true; }
+    });
+
+    let resolveModel;
+    const handleSingleModel = vi.fn(() => new Promise((resolve) => {
+      resolveModel = resolve;
+    }));
+
+    // Abort after 20ms
+    setTimeout(() => abortCtrl.abort(), 20);
+
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["slow-model"],
+      handleSingleModel,
+      log,
+      signal: abortCtrl.signal,
+    });
+
+    expect(res.status).toBe(499);
+
+    // Executor resolves late with a response
+    resolveModel(new Response(lateStream, { status: 200 }));
+    // Wait for microtask loop
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Late body must have been automatically cancelled!
+    expect(lateBodyCanceled).toBe(true);
+  });
+
+  it("cancels discarded non-2xx candidate response body before falling through to next model", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    let failedBodyCanceled = false;
+
+    const failedStream = new ReadableStream({
+      start(c) {},
+      cancel() { failedBodyCanceled = true; }
+    });
+
+    const handleSingleModel = vi.fn(async (body, model) => {
+      if (model === "fail-model") {
+        return new Response(failedStream, {
+          status: 502,
+          statusText: "Bad Gateway",
+          headers: { "content-type": "text/plain" }
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    });
+
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["fail-model", "working-model"],
+      handleSingleModel,
+      log,
+    });
+
+    expect(res.status).toBe(200);
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    // Discarded failure body was cancelled!
+    expect(failedBodyCanceled).toBe(true);
+  });
 });

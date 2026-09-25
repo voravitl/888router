@@ -499,7 +499,23 @@ export function attachStreamAbortCleanup(stream, onDone, onCancel) {
  */
 export function withAbortRace(promise, abortSignal) {
   if (!abortSignal) return promise;
-  if (abortSignal.aborted) {
+  let aborted = Boolean(abortSignal.aborted);
+  const wrappedPromise = Promise.resolve(promise)
+    .then(async (res) => {
+      if (aborted && res && res.body) {
+        await safeCancelStream(res.body);
+      }
+      return res;
+    })
+    .catch((err) => {
+      if (aborted) {
+        // losing branch rejection after abort — suppress unhandled rejection
+        return;
+      }
+      throw err;
+    });
+
+  if (aborted) {
     const err = new Error("Request aborted by client");
     err.name = "AbortError";
     return Promise.reject(err);
@@ -507,6 +523,7 @@ export function withAbortRace(promise, abortSignal) {
   let onAbort;
   const abortPromise = new Promise((_, reject) => {
     onAbort = () => {
+      aborted = true;
       const err = new Error("Request aborted by client");
       err.name = "AbortError";
       reject(err);
@@ -514,16 +531,9 @@ export function withAbortRace(promise, abortSignal) {
     abortSignal.addEventListener("abort", onAbort, { once: true });
   });
   return Promise.race([
-    promise.then(
-      (res) => {
-        if (onAbort) abortSignal.removeEventListener("abort", onAbort);
-        return res;
-      },
-      (err) => {
-        if (onAbort) abortSignal.removeEventListener("abort", onAbort);
-        throw err;
-      }
-    ),
+    wrappedPromise.finally(() => {
+      if (onAbort) abortSignal.removeEventListener("abort", onAbort);
+    }),
     abortPromise,
   ]);
 }
@@ -712,7 +722,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                 if (err === TIMEOUT_SENTINEL) {
                   streamHeadTimedOut = true;
                   timedOutDurationMs = currentTimeoutMs;
-                  timeoutType = currentTimeoutMs === remainingDeadlineMs ? "deadline" : (receivedChunks === 0 ? "TTFT" : "stall");
+                  const isDeadline = Date.now() >= decisionDeadline;
+                  timeoutType = isDeadline ? "deadline" : (receivedChunks === 0 ? "TTFT" : "stall");
                   log.warn("COMBO", `Model ${modelStr} stream head timed out waiting for decision (${currentTimeoutMs}ms, chunks=${receivedChunks})`);
                 } else {
                   streamHeadReadError = err?.message || String(err);
@@ -869,6 +880,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             // failure status — see toHttpFailureStatus. Anything that is not a
             // real 4xx/5xx becomes 502.
             if (!lastStatus) lastStatus = toHttpFailureStatus(e?.code) ?? 502;
+            candidateAbortCtrl.abort();
+            if (result.body) {
+              await safeCancelStream(result.body);
+            }
             continue;
           }
           const choice = completion?.choices?.[0];
@@ -879,12 +894,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             msg.reasoning_content ?? msg.reasoning ?? msg.reasoningContent,
           )) {
             log.warn("COMBO", `Model ${modelStr} exhausted max_tokens on reasoning, retrying once with raised budget`);
+            if (result.body) {
+              await safeCancelStream(result.body);
+            }
             let retried;
             try {
-              const retryPromise = signal
-                ? handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: candidateAbortCtrl.signal })
-                : handleSingleModel(withRaisedMaxTokens(body), modelStr);
-              retried = await withAbortRace(retryPromise, signal);
+              retried = await withAbortRace(
+                handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: candidateAbortCtrl.signal }),
+                signal
+              );
             } catch (retryErr) {
               candidateAbortCtrl.abort();
               if (signal?.aborted) {
@@ -929,12 +947,18 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Extract error info from response
       let errorText = result.statusText || "";
       let retryAfter = null;
-      try {
-        const errorBody = await result.clone().json();
-        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
-      } catch {
-        // Ignore JSON parse errors
+      const errContentType = result.headers?.get("content-type") || "";
+      if (!errContentType || errContentType.includes("json")) {
+        try {
+          const errorBody = await Promise.race([
+            result.clone().json(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 300))
+          ]);
+          errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+          retryAfter = errorBody?.retryAfter || null;
+        } catch {
+          // Ignore JSON parse errors or timeouts
+        }
       }
 
       // Track earliest retryAfter across all combo models
@@ -978,6 +1002,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       // Fast failover: do NOT sleep in hot-path between candidates in a combo;
       // cooldown is recorded for subsequent requests, but current request immediately tries next candidate.
+
+      // Fast failover: cancel discarded failure body and abort upstream before trying next candidate
+      candidateAbortCtrl.abort();
+      if (result.body) {
+        await safeCancelStream(result.body);
+      }
 
       // Fallback to next model
       lastError = errorText || String(result.status);
