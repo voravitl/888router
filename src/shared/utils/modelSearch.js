@@ -9,6 +9,8 @@ export function matchesModelSearch(model, query, providerName = "", providerId =
 
   const pName = (providerName || "").toLowerCase();
   const pId = (providerId || "").toLowerCase();
+
+  // If the query matches the provider name or id as a whole phrase, show all its models
   if (pName.includes(q) || pId.includes(q)) return true;
 
   const mName = (model?.name || "").toLowerCase();
@@ -18,11 +20,17 @@ export function matchesModelSearch(model, query, providerName = "", providerId =
   // Fast path: literal match in name, id, or value
   if (mName.includes(q) || mId.includes(q) || mValue.includes(q)) return true;
 
-  // Tokenized match: "space bunny free" matches "space-bunny-free" or "oc/space-bunny-free"
+  // Tokenized match:
   const tokens = q.split(/[\s\-_/]+/).filter(Boolean);
   if (tokens.length > 0) {
-    const fullSearchable = `${mName} ${mId} ${mValue} ${pName} ${pId}`.replace(/[\-_/]/g, " ");
-    return tokens.every((t) => fullSearchable.includes(t));
+    // 1) Match tokens entirely within the model identity (name, id, value)
+    const modelSearchable = `${mName} ${mId} ${mValue}`.replace(/[\-_/]/g, " ");
+    if (tokens.every((t) => modelSearchable.includes(t))) return true;
+
+    // 2) Or match tokens within the explicit provider/model path (e.g. "oc space bunny")
+    const pathSearchable = `${pId} ${pName} ${mId} ${mName}`.replace(/[\-_/]/g, " ");
+    const matchesModelPart = tokens.some((t) => modelSearchable.includes(t));
+    if (matchesModelPart && tokens.every((t) => pathSearchable.includes(t))) return true;
   }
 
   return false;

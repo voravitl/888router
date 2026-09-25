@@ -863,4 +863,116 @@ describe("Combo Fast Failover & Timeout Defenses", () => {
     // Discarded failure body was cancelled!
     expect(failedBodyCanceled).toBe(true);
   });
+
+  it("aborts candidate and returns 499 if client aborts during non-2xx error body parsing", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const abortCtrl = new AbortController();
+    let errorStreamCanceled = false;
+    let candidateAborted = false;
+
+    const hangingErrorStream = new ReadableStream({
+      start(c) {},
+      cancel() { errorStreamCanceled = true; }
+    });
+
+    const handleSingleModel = vi.fn(async (body, model, opts) => {
+      opts?.signal?.addEventListener("abort", () => { candidateAborted = true; });
+      // Trigger abort while error body parsing is in progress
+      setTimeout(() => abortCtrl.abort(), 20);
+      return new Response(hangingErrorStream, {
+        status: 500,
+        headers: { "content-type": "application/json" }
+      });
+    });
+
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["fail-model", "working-model"],
+      handleSingleModel,
+      log,
+      signal: abortCtrl.signal,
+    });
+
+    expect(res.status).toBe(499);
+    expect(candidateAborted).toBe(true);
+    expect(errorStreamCanceled).toBe(true);
+  });
+
+  it("handles stream wrapper failure by aborting candidate and cancelling stream", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    let candidateAborted = false;
+    let streamCanceled = false;
+
+    const handleSingleModel = vi.fn(async (body, model, opts) => {
+      opts?.signal?.addEventListener("abort", () => { candidateAborted = true; });
+      const stream = new ReadableStream({
+        start(c) { c.enqueue(new Uint8Array([1, 2, 3])); },
+        cancel() { streamCanceled = true; }
+      });
+      const resp = new Response(stream, {
+        status: 200,
+        headers: { "content-type": "application/octet-stream" }
+      });
+      // Lock stream AFTER Response creation so wrapSelectedBody fails when calling stream.getReader()
+      resp.body.getReader();
+      return resp;
+    });
+
+    // Should not throw unhandled exception, falls through to next or finishes gracefully
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["locked-model"],
+      handleSingleModel,
+      log,
+    });
+
+    expect(candidateAborted).toBe(true);
+  });
+
+  it("aborts candidate controller when non-streamed reasoning retry fails", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    let initialCandidateAborted = false;
+    let retryBodyCanceled = false;
+
+    const failedRetryStream = new ReadableStream({
+      start(c) {},
+      cancel() { retryBodyCanceled = true; }
+    });
+
+    let callCount = 0;
+    const handleSingleModel = vi.fn(async (body, model, opts) => {
+      callCount++;
+      if (callCount === 1) {
+        opts?.signal?.addEventListener("abort", () => { initialCandidateAborted = true; });
+        return new Response(JSON.stringify({
+          choices: [{ message: { content: "", reasoning_content: "thinking..." }, finish_reason: "length" }]
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (callCount === 2) {
+        // Retry returns non-ok
+        return new Response(failedRetryStream, {
+          status: 502,
+          headers: { "content-type": "text/plain" }
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: "fallback ok" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    });
+
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "hi" }] },
+      models: ["reasoning-fail-model", "fallback-model"],
+      handleSingleModel,
+      log,
+    });
+
+    expect(res.status).toBe(200);
+    expect(initialCandidateAborted).toBe(true);
+    expect(retryBodyCanceled).toBe(true);
+  });
 });
