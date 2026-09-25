@@ -1,3 +1,12 @@
+# v0.15.119 (2026-09-25)
+
+## Fix: Combo same-provider skip fires on re-wrapped "Resets in" text (PR #444)
+
+- **Live-verified gap in 0.15.118**: the antigravity 429 "Resets in 78h1m5s" still walked 4/5 ag/claude-sonnet-4-6 → 5/5 ag/gemini-3.8-flash-medium because chatCore's `errorResponse` re-wraps the upstream error as `{"error":{"message":"[429]: …Resets in 78h1m5s."}}` — the `details[]` array PR #443 parses never survives the re-wrap, so `retryAfter` stayed null and the long-quota skip never fired.
+- **Text fallback**: `handleComboChat` now parses `Resets in Xh Ym( Ss)` / `Resets in Xm Ys` from `errorText` as a fallback window source (same 60s threshold). 78h → skip same-provider candidates; 45s → normal failover.
+- **Regex hardening**: hours/minutes groups independently optional — bare "Resets in 2h" / "Resets in 5m" also parse (previously null); routed by the `/h/` discriminator.
+- Tests: +2 regression cases (78h text skip, 45s no-skip). Full suite 2,931 passed / 0 failed.
+
 # v0.15.118 (2026-09-25)
 
 ## Fix: Combo 429 long-quota failover — veto 80h quota retries, skip same-provider candidates (PR #443)
