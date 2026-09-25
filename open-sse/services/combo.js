@@ -1083,7 +1083,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           continue;
         }
         // All remaining candidates share the provider — stop with 429 verdict.
-        earliestRetryAfter = retryAfter;
+        // Keep the MINIMUM retryAfter: an earlier different-provider model may
+        // have reported a shorter window (T+30m) than this final model's 80h.
+        if (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter)) {
+          earliestRetryAfter = retryAfter;
+        }
         break;
       }
       if (quotaLimited) {

@@ -438,7 +438,9 @@ export class AntigravityExecutor extends BaseExecutor {
         }
         if (type.includes("ErrorInfo") && d.metadata?.quotaResetTimeStamp) {
           const ts = Date.parse(d.metadata.quotaResetTimeStamp);
-          if (!Number.isNaN(ts)) { retryMs = ts - Date.now(); break; }
+          // Guard ts > now: a stale/past timestamp would yield negative retryMs,
+          // which is truthy and would skip the message-regex fallback below.
+          if (!Number.isNaN(ts) && ts > Date.now()) { retryMs = ts - Date.now(); break; }
         }
       }
     }
