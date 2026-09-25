@@ -1068,7 +1068,31 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // ag/claude-sonnet-4-6 429 → 5/5 ag/gemini-3.8-flash-medium 429 again).
       // Short rate limits (per-minute RPM) do NOT trigger this — the next
       // model may genuinely have its own headroom.
-      const longQuotaWindow = retryAfter && (new Date(retryAfter).getTime() - Date.now()) > 60_000;
+      //
+      // retryAfter here is usually NULL for antigravity: by the time the error
+      // reaches the combo it has been re-wrapped by chatCore's errorResponse as
+      // {"error":{"message":"[429]: … Resets in 78h1m5s."}} — the details[]
+      // array is gone. The "Resets in Xh…" TEXT is the surviving hint, so parse
+      // it from errorText as a fallback source for the window length.
+      let longQuotaWindow = retryAfter && (new Date(retryAfter).getTime() - Date.now()) > 60_000;
+      if (quotaLimited && !longQuotaWindow && errorText) {
+        const text = typeof errorText === "string" ? errorText : String(errorText);
+        // Hours/minutes/seconds groups are independently optional so bare
+        // "Resets in 2h" / "Resets in 5m" also match; the /h/ discriminator on
+        // m[0] routes hours text to the h-branch, minutes text to the m-branch.
+        const m = text.match(/Resets? in (\d+)h(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?/i)
+          || text.match(/Resets? in (\d+)m(?:\s*(\d+(?:\.\d+)?)s)?/i);
+        if (m) {
+          const isHours = /h/i.test(m[0]);
+          const ms = isHours
+            ? (parseInt(m[1], 10) * 3600 + (parseInt(m[2], 10) || 0) * 60) * 1000
+            : (parseInt(m[1], 10) * 60 + Math.round(parseFloat(m[2]) || 0)) * 1000;
+          if (ms > 60_000) {
+            retryAfter = retryAfter || new Date(Date.now() + ms).toISOString();
+            longQuotaWindow = true;
+          }
+        }
+      }
       if (quotaLimited && longQuotaWindow) {
         const providerOf = (m) => (typeof m === "string" && m.includes("/")) ? m.slice(0, m.indexOf("/")) : m;
         const failedProvider = providerOf(modelStr);

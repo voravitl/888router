@@ -114,3 +114,68 @@ describe("handleComboChat: long quota windows skip same-provider candidates", ()
     expect(seen).toEqual(["p1/m1", "p1/m2"]);
   });
 });
+describe("handleComboChat: 'Resets in' text fallback (chatCore re-wrap gap)", () => {
+  const log = { info: vi.fn(), warn: vi.fn() };
+  const ok = () =>
+    new Response(
+      JSON.stringify({ choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+
+  it("skips same-provider candidates when details[] is gone but message text carries 'Resets in 78h1m5s'", async () => {
+    const { handleComboChat } = await import("../../open-sse/services/combo.js");
+    const seen = [];
+    const handleSingleModel = vi.fn(async (_body, model) => {
+      seen.push(model);
+      if (model.startsWith("ag/")) {
+        // This is what combo actually receives live: chatCore re-wraps the
+        // upstream 429 into {"error":{"message":"[429]: …Resets in 78h1m5s."}}
+        // — no details[] array survives.
+        return new Response(
+          JSON.stringify({ error: { message: "[antigravity/claude-sonnet-4-6] [429]: {\"error\":{\"message\":\"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 78h1m5s.\"}}" } }),
+          { status: 429, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return ok();
+    });
+
+    const result = await handleComboChat({
+      body: { model: "c", messages: [{ role: "user", content: "hi" }] },
+      models: ["ag/claude-sonnet-4-6", "ag/gemini-3.8-flash-medium", "kr/claude-sonnet-5"],
+      handleSingleModel,
+      log,
+      comboName: "c",
+      comboStrategy: "fallback",
+    });
+
+    expect(result.status).toBe(200);
+    expect(seen).toEqual(["ag/claude-sonnet-4-6", "kr/claude-sonnet-5"]);
+  });
+
+  it("does NOT skip on a short 'Resets in 45s' text", async () => {
+    const { handleComboChat } = await import("../../open-sse/services/combo.js");
+    const seen = [];
+    const handleSingleModel = vi.fn(async (_body, model) => {
+      seen.push(model);
+      if (model === "p1/m1") {
+        return new Response(
+          JSON.stringify({ error: { message: "[p1/m1] [429]: quota exceeded. Resets in 45s." } }),
+          { status: 429, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return ok();
+    });
+
+    const result = await handleComboChat({
+      body: { model: "c", messages: [{ role: "user", content: "hi" }] },
+      models: ["p1/m1", "p1/m2"],
+      handleSingleModel,
+      log,
+      comboName: "c",
+      comboStrategy: "fallback",
+    });
+
+    expect(result.status).toBe(200);
+    expect(seen).toEqual(["p1/m1", "p1/m2"]);
+  });
+});
