@@ -1077,11 +1077,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       let longQuotaWindow = retryAfter && (new Date(retryAfter).getTime() - Date.now()) > 60_000;
       if (quotaLimited && !longQuotaWindow && errorText) {
         const text = typeof errorText === "string" ? errorText : String(errorText);
-        const m = text.match(/Resets? in (\d+)h(\d+)m(\d+(?:\.\d+)?)?s?/i)
-          || text.match(/Resets? in (\d+)m\s*(\d+(?:\.\d+)?)s/i);
+        // Hours/minutes/seconds groups are independently optional so bare
+        // "Resets in 2h" / "Resets in 5m" also match; the /h/ discriminator on
+        // m[0] routes hours text to the h-branch, minutes text to the m-branch.
+        const m = text.match(/Resets? in (\d+)h(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?/i)
+          || text.match(/Resets? in (\d+)m(?:\s*(\d+(?:\.\d+)?)s)?/i);
         if (m) {
-          const ms = /h/i.test(m[0])
-            ? ((parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) * 60 * 1000)
+          const isHours = /h/i.test(m[0]);
+          const ms = isHours
+            ? (parseInt(m[1], 10) * 3600 + (parseInt(m[2], 10) || 0) * 60) * 1000
             : (parseInt(m[1], 10) * 60 + Math.round(parseFloat(m[2]) || 0)) * 1000;
           if (ms > 60_000) {
             retryAfter = retryAfter || new Date(Date.now() + ms).toISOString();
