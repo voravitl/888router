@@ -134,9 +134,18 @@ export default function QuotaTable({
     () => sortQuotas(modelRows, sortMode),
     [modelRows, sortMode],
   );
-  // Family rollups keep source order (Gemini, Claude) — sorting them by
-  // remaining would shuffle the summary bars under the user.
-  const sortedFamilyRows = familyRows;
+  // Family rollups are grouped by family (Gemini first, then Claude),
+  // with non-weekly (5h session) first, followed by weekly limit.
+  const sortedFamilyRows = useMemo(() => {
+    return [...familyRows].sort((a, b) => {
+      const famA = a.family || "";
+      const famB = b.family || "";
+      if (famA !== famB) return famB.localeCompare(famA); // 'gemini' before 'claude'
+      const isWeeklyA = a.isWeekly || a.name?.toLowerCase().includes("weekly") ? 1 : 0;
+      const isWeeklyB = b.isWeekly || b.name?.toLowerCase().includes("weekly") ? 1 : 0;
+      return isWeeklyA - isWeeklyB;
+    });
+  }, [familyRows]);
 
   // Paginate per-model rows only; family rollups stay pinned on every
   // page (#403). totalPages / Showing counts cover model rows alone.
