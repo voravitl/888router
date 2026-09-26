@@ -1,3 +1,19 @@
+# v0.15.120 (2026-09-26)
+
+## Fix: Sanitize OpenCode tool names to match ^[a-zA-Z0-9_.-]+$ and map roundtrip (#445)
+
+- **Root cause fix**: OpenCode Zen / Console enforces that tool and function names match `^[a-zA-Z0-9_.-]+$`. Tools from OpenCode CLI plugins, MCP servers, and custom extensions containing colons (e.g. `code-review:code-review`) triggered HTTP 400 `invalid_request_error: name must match ^[a-zA-Z0-9_.-]+$`.
+- **Bidirectional sanitizer & roundtrip mapper**:
+  - `open-sse/utils/opencodeToolSanitizer.js`: Sanitizes request tools, tool_choice, messages history turns, and Responses API input items by replacing invalid characters with `_` while avoiding name collisions with pre-registered valid tools (`foo_bar_2`).
+  - Restores original tool names across all streaming and non-streaming response formats (Claude `content_block_start` / `tool_use`, OpenAI `choices[].delta/message.tool_calls`, and Responses SSE item / output JSON).
+  - Preserves immutability and idempotency on retries/re-transformations via non-destructive shallow copies and Symbol metadata.
+  - Safe SSE stream line and JSON chunk restoration without corrupting assistant prose or generated code.
+- **Wire integrations**:
+  - `open-sse/executors/opencode.js`: Plugs sanitizer into `transformRequest` for both chat and responses paths.
+  - `open-sse/executors/base.js`: Strips `_toolNameMap` before outbound fetch and returns `toolNameMap` in `execute()` result.
+  - `open-sse/handlers/chatCore.js`, `streamingHandler.js`, `nonStreamingHandler.js`, `open-sse/translator/index.js`, and `open-sse/utils/stream.js`: Pass and restore tool names throughout streaming and non-streaming response pipelines.
+- **Tests**: Added comprehensive unit test suite `tests/unit/opencode-tool-sanitizer.test.js` (21 tests, 100% pass). Full regression suite (293 test files, 2952 tests) 100% green.
+
 # v0.15.119 (2026-09-25)
 
 ## Fix: Combo same-provider skip fires on re-wrapped "Resets in" text (PR #444)
