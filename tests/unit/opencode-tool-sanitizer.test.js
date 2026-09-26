@@ -164,6 +164,63 @@ describe("opencodeToolSanitizer — unit tests", () => {
       expect(body.input[1].name).toBe("plugin_check");
       expect(map.get("plugin_check")).toBe("plugin:check");
     });
+
+    it("does not mutate original tool objects in place (immutability)", () => {
+      const originalTool = {
+        type: "function",
+        function: { name: "my:special:tool", description: "testing" },
+      };
+      const body = {
+        tools: [originalTool],
+      };
+
+      const map = sanitizeOpencodeTools(body);
+      expect(originalTool.function.name).toBe("my:special:tool");
+      expect(body.tools[0].function.name).toBe("my_special_tool");
+      expect(body.tools[0]).not.toBe(originalTool);
+      expect(map.get("my_special_tool")).toBe("my:special:tool");
+    });
+
+    it("is idempotent across retries and re-transformations", () => {
+      const body = {
+        tools: [
+          {
+            type: "function",
+            function: { name: "code-review:code-review" },
+          },
+        ],
+      };
+
+      const map1 = sanitizeOpencodeTools(body);
+      expect(map1.get("code-review_code-review")).toBe("code-review:code-review");
+      expect(body.tools[0].function.name).toBe("code-review_code-review");
+
+      // Simulate retry or second transform pass on the already-sanitized body
+      const map2 = sanitizeOpencodeTools(body);
+      expect(map2.get("code-review_code-review")).toBe("code-review:code-review");
+      expect(body.tools[0].function.name).toBe("code-review_code-review");
+    });
+
+    it("prevents collision when an invalid name sanitizes into an existing valid name", () => {
+      const body = {
+        tools: [
+          {
+            type: "function",
+            function: { name: "foo:bar" }, // would sanitize to foo_bar
+          },
+          {
+            type: "function",
+            function: { name: "foo_bar" }, // already valid
+          },
+        ],
+      };
+
+      const map = sanitizeOpencodeTools(body);
+      const names = body.tools.map((t) => t.function.name);
+      expect(names).toEqual(["foo_bar_2", "foo_bar"]);
+      expect(map.get("foo_bar_2")).toBe("foo:bar");
+      expect(map.has("foo_bar")).toBe(false);
+    });
   });
 
   describe("restoreOpencodeToolNames", () => {
