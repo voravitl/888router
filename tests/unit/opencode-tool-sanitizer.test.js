@@ -96,10 +96,15 @@ describe("opencodeToolSanitizer — unit tests", () => {
       };
 
       const map = sanitizeOpencodeTools(body);
+      const sanitized = map.body;
 
-      expect(body.tools[0].function.name).toBe("code-review_code-review");
-      expect(body.tools[1].function.name).toBe("bash");
-      expect(body.tool_choice.function.name).toBe("code-review_code-review");
+      expect(sanitized.tools[0].function.name).toBe("code-review_code-review");
+      expect(sanitized.tools[1].function.name).toBe("bash");
+      expect(sanitized.tool_choice.function.name).toBe("code-review_code-review");
+
+      // Verify original body was not mutated
+      expect(body.tools[0].function.name).toBe("code-review:code-review");
+      expect(body.tool_choice.function.name).toBe("code-review:code-review");
 
       expect(map.size).toBe(1);
       expect(map.get("code-review_code-review")).toBe("code-review:code-review");
@@ -122,9 +127,9 @@ describe("opencodeToolSanitizer — unit tests", () => {
       };
 
       const map = sanitizeOpencodeTools(body);
-
-      expect(body.tools[0].name).toBe("code-review_code-review");
-      expect(body.tool_choice.name).toBe("code-review_code-review");
+      expect(map.body.tools[0].name).toBe("code-review_code-review");
+      expect(map.body.tool_choice.name).toBe("code-review_code-review");
+      expect(body.tools[0].name).toBe("code-review:code-review");
       expect(map.get("code-review_code-review")).toBe("code-review:code-review");
     });
 
@@ -157,15 +162,22 @@ describe("opencodeToolSanitizer — unit tests", () => {
 
       const map = sanitizeOpencodeTools(body);
 
-      expect(body.tools[0].function.name).toBe("plugin_check");
-      expect(body.messages[0].tool_calls[0].function.name).toBe("plugin_check");
-      expect(body.messages[1].name).toBe("plugin_check");
-      expect(body.input[0].name).toBe("plugin_check");
-      expect(body.input[1].name).toBe("plugin_check");
+      expect(map.body.tools[0].function.name).toBe("plugin_check");
+      expect(map.body.messages[0].tool_calls[0].function.name).toBe("plugin_check");
+      expect(map.body.messages[1].name).toBe("plugin_check");
+      expect(map.body.input[0].name).toBe("plugin_check");
+      expect(map.body.input[1].name).toBe("plugin_check");
+
+      // Verify original body was untouched
+      expect(body.tools[0].function.name).toBe("plugin:check");
+      expect(body.messages[0].tool_calls[0].function.name).toBe("plugin:check");
+      expect(body.messages[1].name).toBe("plugin:check");
+      expect(body.input[0].name).toBe("plugin:check");
+
       expect(map.get("plugin_check")).toBe("plugin:check");
     });
 
-    it("does not mutate original tool objects in place (immutability)", () => {
+    it("does not mutate original body or tool objects in place (immutability)", () => {
       const originalTool = {
         type: "function",
         function: { name: "my:special:tool", description: "testing" },
@@ -175,9 +187,10 @@ describe("opencodeToolSanitizer — unit tests", () => {
       };
 
       const map = sanitizeOpencodeTools(body);
+      expect(body.tools[0]).toBe(originalTool);
       expect(originalTool.function.name).toBe("my:special:tool");
-      expect(body.tools[0].function.name).toBe("my_special_tool");
-      expect(body.tools[0]).not.toBe(originalTool);
+      expect(map.body.tools[0].function.name).toBe("my_special_tool");
+      expect(map.body.tools[0]).not.toBe(originalTool);
       expect(map.get("my_special_tool")).toBe("my:special:tool");
     });
 
@@ -193,12 +206,12 @@ describe("opencodeToolSanitizer — unit tests", () => {
 
       const map1 = sanitizeOpencodeTools(body);
       expect(map1.get("code-review_code-review")).toBe("code-review:code-review");
-      expect(body.tools[0].function.name).toBe("code-review_code-review");
+      expect(map1.body.tools[0].function.name).toBe("code-review_code-review");
 
       // Simulate retry or second transform pass on the already-sanitized body
-      const map2 = sanitizeOpencodeTools(body);
+      const map2 = sanitizeOpencodeTools(map1.body);
       expect(map2.get("code-review_code-review")).toBe("code-review:code-review");
-      expect(body.tools[0].function.name).toBe("code-review_code-review");
+      expect(map2.body.tools[0].function.name).toBe("code-review_code-review");
     });
 
     it("prevents collision when an invalid name sanitizes into an existing valid name", () => {
@@ -216,7 +229,7 @@ describe("opencodeToolSanitizer — unit tests", () => {
       };
 
       const map = sanitizeOpencodeTools(body);
-      const names = body.tools.map((t) => t.function.name);
+      const names = map.body.tools.map((t) => t.function.name);
       expect(names).toEqual(["foo_bar_2", "foo_bar"]);
       expect(map.get("foo_bar_2")).toBe("foo:bar");
       expect(map.has("foo_bar")).toBe(false);
@@ -238,9 +251,14 @@ describe("opencodeToolSanitizer — unit tests", () => {
 
       const map = sanitizeOpencodeTools(body);
       expect(map.get("slash_command")).toBe("slash:command");
-      expect(body.tool_choice.function.name).toBe("slash_command");
-      expect(body.messages[0].tool_calls[0].function.name).toBe("slash_command");
-      expect(body.messages[1].name).toBe("slash_command");
+      expect(map.body.tool_choice.function.name).toBe("slash_command");
+      expect(map.body.messages[0].tool_calls[0].function.name).toBe("slash_command");
+      expect(map.body.messages[1].name).toBe("slash_command");
+
+      // Verify original body was untouched
+      expect(body.tool_choice.function.name).toBe("slash:command");
+      expect(body.messages[0].tool_calls[0].function.name).toBe("slash:command");
+      expect(body.messages[1].name).toBe("slash:command");
     });
   });
 
@@ -318,15 +336,20 @@ describe("opencodeToolSanitizer — unit tests", () => {
       expect(restoreOpencodeToolNames(jsonBody, map).output[0].name).toBe("code-review:code-review");
     });
 
-    it("restores tool name in raw JSON string chunks and plain text", () => {
+    it("restores tool name in raw JSON string chunks and SSE data without corrupting plain text", () => {
       const jsonStr = JSON.stringify({
         choices: [{ delta: { tool_calls: [{ function: { name: "code-review_code-review" } }] } }],
       });
       const restoredJson = restoreOpencodeToolNames(jsonStr, map);
       expect(JSON.parse(restoredJson).choices[0].delta.tool_calls[0].function.name).toBe("code-review:code-review");
 
+      const sseLine = `data: ${jsonStr}\n\n`;
+      const restoredSSE = restoreOpencodeToolNames(sseLine, map);
+      expect(restoredSSE).toContain("code-review:code-review");
+      expect(restoredSSE.startsWith("data: ")).toBe(true);
+
       const plainText = "Calling tool: code-review_code-review with args";
-      expect(restoreOpencodeToolNames(plainText, map)).toBe("Calling tool: code-review:code-review with args");
+      expect(restoreOpencodeToolNames(plainText, map)).toBe(plainText);
     });
   });
 

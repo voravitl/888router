@@ -62,6 +62,8 @@ export function sanitizeOpencodeTools(body) {
 
   const reverseMap = new Map(); // originalName -> sanitizedName
   const usedNames = new Set();
+  const nextBody = { ...body };
+  let bodyChanged = false;
 
   // Helper: get existing sanitized name or sanitize and register a new one
   const getOrCreateSanitized = (rawName) => {
@@ -145,7 +147,8 @@ export function sanitizeOpencodeTools(body) {
     });
 
     if (toolsChanged) {
-      body.tools = nextTools;
+      nextBody.tools = nextTools;
+      bodyChanged = true;
     }
   }
 
@@ -172,7 +175,8 @@ export function sanitizeOpencodeTools(body) {
       }
     }
     if (choiceChanged) {
-      body.tool_choice = nextChoice;
+      nextBody.tool_choice = nextChoice;
+      bodyChanged = true;
     }
   }
 
@@ -228,7 +232,8 @@ export function sanitizeOpencodeTools(body) {
     });
 
     if (messagesChanged) {
-      body.messages = nextMessages;
+      nextBody.messages = nextMessages;
+      bodyChanged = true;
     }
   }
 
@@ -253,10 +258,14 @@ export function sanitizeOpencodeTools(body) {
     });
 
     if (inputChanged) {
-      body.input = nextInput;
+      nextBody.input = nextInput;
+      bodyChanged = true;
     }
   }
 
+  const finalBody = bodyChanged ? nextBody : body;
+  map.body = finalBody;
+  map.map = map;
   return map;
 }
 
@@ -270,21 +279,24 @@ export function sanitizeOpencodeTools(body) {
 export function restoreOpencodeToolNames(payload, map) {
   if (!map?.size || !payload) return payload;
   if (typeof payload === "string") {
+    let str = payload.trim();
+    const isSSE = str.startsWith("data:");
+    if (isSSE) str = str.slice(5).trim();
+    if (str === "[DONE]") return payload;
     try {
-      const parsed = JSON.parse(payload);
+      const parsed = JSON.parse(str);
       if (parsed && typeof parsed === "object") {
         const restored = restoreOpencodeToolNames(parsed, map);
-        return JSON.stringify(restored);
+        const json = JSON.stringify(restored);
+        return isSSE ? `data: ${json}\n\n` : json;
       }
     } catch {
-      let out = payload;
-      for (const [sanitized, original] of map.entries()) {
-        if (out.includes(sanitized)) {
-          out = out.replaceAll(sanitized, original);
-        }
-      }
-      return out;
+      // Do not perform naive substring replacement on arbitrary text.
+      // Non-JSON strings (e.g. source code, user messages, prose) are preserved
+      // as-is to avoid corrupting identifiers.
+      return payload;
     }
+    return payload;
   }
   if (Array.isArray(payload)) return payload.map((item) => restoreOpencodeToolNames(item, map));
   if (typeof payload !== "object") return payload;

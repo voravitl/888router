@@ -380,9 +380,12 @@ export class OpenCodeExecutor extends BaseExecutor {
       clampResponsesMaxOutputTokens(body);
       normalizeOpencodeReasoning(model, body);
       if (freeGate) ensureResponsesFingerprintTools(body);
-      const injected = injectReasoningContent({ provider: this.provider, model, body });
+      let injected = injectReasoningContent({ provider: this.provider, model, body });
       const toolMap = sanitizeOpencodeTools(injected);
-      if (toolMap?.size > 0) injected._toolNameMap = toolMap;
+      if (toolMap?.size > 0) {
+        injected = toolMap.body || injected;
+        injected._toolNameMap = toolMap;
+      }
       return injected;
     }
 
@@ -398,7 +401,10 @@ export class OpenCodeExecutor extends BaseExecutor {
     }
     if (freeGate) ensureChatFingerprintTools(nextBody);
     const chatToolMap = sanitizeOpencodeTools(nextBody);
-    if (chatToolMap?.size > 0) nextBody._toolNameMap = chatToolMap;
+    if (chatToolMap?.size > 0) {
+      nextBody = chatToolMap.body || nextBody;
+      nextBody._toolNameMap = chatToolMap;
+    }
     return nextBody;
   }
 
