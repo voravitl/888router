@@ -27,8 +27,8 @@ export function _clearWeeklyCache() {
 
 // — Group-name to stable key mapping ——————————————————————
 const GROUP_MATCHERS = [
-  { pattern: /gemini/i, key: "gemini_weekly", displayName: "Gemini (Weekly)" },
-  { pattern: /claude|gpt/i, key: "claude_gpt_weekly", displayName: "Claude & GPT (Weekly)" },
+  { pattern: /gemini/i, key: "gemini_weekly", displayName: "Gemini (Weekly)", family: "gemini" },
+  { pattern: /claude|gpt/i, key: "claude_gpt_weekly", displayName: "Claude & GPT (Weekly)", family: "claude" },
 ];
 
 /**
@@ -84,6 +84,10 @@ export function parseWeeklyQuotaSummary(data) {
             remainingPercentage: remainingFraction * 100,
             unlimited: false,
             displayName: matcher.displayName,
+            family: matcher.family,
+            familyKey: matcher.family,
+            memberCount: 1,
+            isWeekly: true,
           };
           break; // first matching bucket per family wins
         }

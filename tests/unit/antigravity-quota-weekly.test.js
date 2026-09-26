@@ -164,4 +164,28 @@ describe("Antigravity weekly quota overlay", () => {
       resetAt: "2026-09-15T12:00:00.000Z",
     });
   });
+
+  it("forces family rollups to zero when weekly quota is exhausted and validates isFamilyRollup", async () => {
+    const { isFamilyRollup, parseQuotaData } = await import("@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js");
+    mockUsage({
+      models: {
+        "gemini-3.8-flash-high": {
+          quotaInfo: { remainingFraction: 0.9, resetTime: "2026-09-13T12:00:00Z" },
+        },
+      },
+      weekly: weeklySummary(0, "2026-09-25T00:00:00Z", 0, "2026-09-26T00:00:00Z"),
+    });
+
+    const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
+    const usage = await getAntigravityUsage("access-token", {});
+
+    expect(usage.quotas["Gemini (all models)"].remainingPercentage).toBe(0);
+    expect(usage.quotas["Gemini (all models)"].resetAt).toBe("2026-09-25T00:00:00.000Z");
+    expect(usage.quotas.gemini_weekly.remainingPercentage).toBe(0);
+
+    const parsed = parseQuotaData("antigravity", usage);
+    const weeklyItem = parsed.find((p) => p.name === "Gemini (Weekly)");
+    expect(weeklyItem).toBeDefined();
+    expect(isFamilyRollup(weeklyItem)).toBe(true);
+  });
 });

@@ -163,26 +163,40 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     // On free-tier, fetchAvailableModels returns misleading per-model quota info.
     const paidTierId = subscriptionInfo?.paidTier?.id;
     const tierId = String(paidTierId || "").toLowerCase();
+    const currentTierId = String(subscriptionInfo?.currentTier?.id || "").toLowerCase();
     const tierName = String(subscriptionInfo?.currentTier?.name || "").toLowerCase();
-    const isFreeTier = tierId.includes("free") || tierId.includes("starter") || (!tierId && (tierName.includes("free") || tierName.includes("starter") || !tierName));
+
+    const isFreeTier =
+      tierId.includes("free") ||
+      tierId.includes("starter") ||
+      (!paidTierId && (currentTierId.includes("free") || currentTierId.includes("starter") || tierName.includes("free") || tierName.includes("starter") || !tierName || tierName === "antigravity"));
 
     // Parse model quotas only for paid-tier accounts.
     if (!isFreeTier && data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
+        'gemini-2.5-pro',
+        'gemini-3.8-flash-tiered',
         'gemini-3.8-flash-high',
         'gemini-3.8-flash-medium',
         'gemini-3.8-flash-low',
+        'gemini-3.7-flash-tiered',
         'gemini-3.7-flash-high',
         'gemini-3.7-flash-medium',
         'gemini-3.7-flash-low',
+        'gemini-3.6-flash-tiered',
         'gemini-3.6-flash-high',
         'gemini-3.6-flash-medium',
         'gemini-3.6-flash-low',
+        'gemini-3-flash-agent',
+        'gemini-3-flash',
         'gemini-3.5-flash-low',
         'gemini-3.5-flash-extra-low',
+        'gemini-3.5-flash-lite',
         'gemini-pro-agent',
+        'gemini-3.1-pro-high',
         'gemini-3.1-pro-low',
+        'gemini-3.1-flash-lite',
         'claude-sonnet-4-6',
         'claude-opus-4-6-thinking',
         'gpt-oss-120b-medium',
@@ -302,6 +316,13 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           weeklyQuotas.gemini_weekly.used = weeklyQuotas.gemini_weekly.total;
           weeklyQuotas.gemini_weekly.remainingPercentage = 0;
           if (maxResetAt) weeklyQuotas.gemini_weekly.resetAt = maxResetAt;
+        } else if (weeklyQuotas.gemini_weekly.remainingPercentage === 0 && quotas["Gemini (all models)"]) {
+          // When weekly quota is exhausted, the 5h pool does not apply — user is blocked
+          quotas["Gemini (all models)"].used = quotas["Gemini (all models)"].total;
+          quotas["Gemini (all models)"].remainingPercentage = 0;
+          if (weeklyQuotas.gemini_weekly.resetAt) {
+            quotas["Gemini (all models)"].resetAt = weeklyQuotas.gemini_weekly.resetAt;
+          }
         }
       }
 
@@ -314,6 +335,13 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           weeklyQuotas.claude_gpt_weekly.used = weeklyQuotas.claude_gpt_weekly.total;
           weeklyQuotas.claude_gpt_weekly.remainingPercentage = 0;
           if (maxResetAt) weeklyQuotas.claude_gpt_weekly.resetAt = maxResetAt;
+        } else if (weeklyQuotas.claude_gpt_weekly.remainingPercentage === 0 && quotas["Claude (all models)"]) {
+          // When weekly quota is exhausted, the 5h pool does not apply — user is blocked
+          quotas["Claude (all models)"].used = quotas["Claude (all models)"].total;
+          quotas["Claude (all models)"].remainingPercentage = 0;
+          if (weeklyQuotas.claude_gpt_weekly.resetAt) {
+            quotas["Claude (all models)"].resetAt = weeklyQuotas.claude_gpt_weekly.resetAt;
+          }
         }
       }
 
