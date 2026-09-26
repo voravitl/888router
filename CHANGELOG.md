@@ -1,3 +1,17 @@
+# v0.15.121 (2026-09-26)
+
+## Fix: Antigravity Quota Tracker Accuracy — Weekly Limits & Exhaustion Sync (#446)
+
+- **Root cause & UI display fix**:
+  - `open-sse/services/usage/antigravity-weekly.js`: Assigned `family: "gemini"` and `family: "claude"`, `familyKey`, and `memberCount: 1` to weekly quota trackers (`gemini_weekly`, `claude_gpt_weekly`) so they qualify as family rollups and render properly in `QuotaTable`.
+  - `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js`: Updated family row sorting so that both 5-hour rolling session limits and weekly limits are cleanly grouped and displayed together without collapsing or disappearing.
+- **Accurate Free-tier classification**:
+  - `open-sse/services/usage/google.js`: Corrected `isFreeTier` logic to properly inspect `currentTier.id` and fallback patterns, ensuring free-tier individual accounts are not misclassified as paid accounts (which previously displayed misleading individual model 5h quotas).
+- **Bi-directional exhaustion & model coverage sync**:
+  - `open-sse/services/usage/google.js`: Added modern model IDs (`gemini-2.5-pro`, `gemini-3.8-flash-tiered`, `gemini-3.7-flash-tiered`, `gemini-3.6-flash-tiered`, `gemini-3-flash-agent`, `gemini-3-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro-high`, `gemini-3.1-flash-lite`).
+  - When weekly quota hits 0% (`gemini_weekly` or `claude_gpt_weekly`), family rollups (`Gemini (all models)` / `Claude (all models)`) and member models are zeroed out and assigned the weekly `resetAt` timestamp to prevent false availability display.
+- **Tests**: Comprehensive unit test suite `tests/unit/antigravity-quota-weekly.test.js` updated and passing (100% green). Full regression suite (293 test files, 2,953 tests) 100% green.
+
 # v0.15.120 (2026-09-26)
 
 ## Fix: Sanitize OpenCode tool names to match ^[a-zA-Z0-9_.-]+$ and map roundtrip (#445)
