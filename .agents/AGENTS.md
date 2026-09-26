@@ -24,20 +24,36 @@
 
 ---
 
-### 🟢 PHASE 2: AFTER MERGE (ทำเมื่อ Merge ลง master และรัน `./scripts/cicd-release.sh <version>`)
-4. **Step 4: Production & Docker Build Gate**
+### 🟢 PHASE 2: AFTER MERGE (ทำเมื่อ Merge ลง master)
+4. **Step 4: Production & Docker Build Gate (ทำก่อนแตะ K8s เสมอ!)**
    - รัน `npm run build` (Next.js production build) ยืนยันว่าไม่มี Build Error
-   - รัน `docker build -t voravitl/888router:v<version> -t voravitl/888router:latest .` ยืนยันว่า Container Image Build ผ่าน
+   - **MANDATORY: Build Docker Image เข้า Local OrbStack Daemon ก่อนเสมอ**:
+     `docker build -t voravitl/888router:<version> -t voravitl/888router:latest .`
+     *(🚨 กฎเหล็ก: Tag ของ Image ใน K8s ต้องเป็นตัวเลขล้วน **ไม่มี `v`** เช่น `0.15.120` ห้ามใส่ `v0.15.120` เด็ดขาด)*
+     *(💡 ทำไมต้อง build ก่อน: Deployment ใช้ `strategy: Recreate` หาก apply ก่อนมี image ในเครื่อง K8s จะไป pull จาก Docker Hub ซึ่งยัง build ไม่เสร็จ ทำให้เกิด `ImagePullBackOff` และเว็บดับ 503 ทันที โดยต้องแน่ใจว่า `k8s/base/888router.yaml` กำหนด `imagePullPolicy: IfNotPresent`)*
 
-5. **Step 5: Version Bumping, Release Tagging, Registry Push & Merge**
-   - **Bump Version**: เพิ่มเวอร์ชันใน `package.json` (เช่น `0.11.0` -> `0.11.1`) และบันทึกใน `CHANGELOG.md`
-   - **Merge**: Merge branch เข้า `master` และ push ขึ้น `origin/master`
-   - **Git Tagging**: สร้างและ push release tag: `git tag -a v<version> -m "Release v<version>"` && `git push origin v<version>`
-   - **Docker Registry Push**: Push ขึ้น Docker Hub Registry: `docker push voravitl/888router:v<version>` && `docker push voravitl/888router:latest`
+5. **Step 5: Version Bumping, Release Tagging, Push & Merge**
+   - **Bump Version 5 จุด**:
+     - `package.json` + `package-lock.json` (`npm install --package-lock-only`)
+     - `k8s/base/888router.yaml` (image tag)
+     - `k8s/overlays/local/kustomization.yaml` (`images[].newTag`)
+     - `k8s/overlays/prd/kustomization.yaml` (`images[].newTag`)
+     - บันทึกใน `CHANGELOG.md`
+   - **Merge & Push**: Merge branch เข้า `master` และ `git push origin master`
+   - **Git Tagging (มี `v`)**: สร้างและ push release tag: `git tag -a v<version> -m "Release v<version>"` && `git push origin v<version>`
+   - *(GitHub Actions จะทำการ build & push Image ขึ้น Docker Hub ใน cloud ให้โดยอัตโนมัติ)*
 
-6. **Step 6: Local Container Redeploy & Liveness Check**
-   - รัน `docker compose up -d --force-recreate` เพื่อบังคับ Recreate คอนเทนเนอร์ในเครื่องด้วย Image ใหม่ล่าสุดเสมอ
-   - รัน Health Check (`curl http://localhost:20128/api/version`) ยืนยันว่า `currentVersion` ตรงกับเวอร์ชันใหม่และบริการออนไลน์
+6. **Step 6: Local Kubernetes Redeploy & Liveness Check**
+   - **ห้ามใช้ `docker compose up` เด็ดขาด**: Production รันอยู่บน **Kubernetes (OrbStack) namespace `888router`**
+   - รัน Deploy Kustomize:
+     `kubectl apply -k k8s/overlays/local`
+   - รอ Rollout ให้ Pod ใหม่ Ready:
+     `kubectl rollout status deploy/888router -n 888router --timeout=120s`
+   - ตรวจสอบ Liveness Endpoint จริง:
+     `curl -s http://router.k8s.orb.local/api/version`
+     *(ต้องได้ HTTP 200 และ `currentVersion` ตรงกับเวอร์ชันใหม่)*
+   - **Emergency Rollback (หากเกิดเหตุเว็บ 503 หรือ Pod ไม่ Ready)**:
+     `kubectl rollout undo deploy/888router -n 888router`
 
 7. **Step 7: Durable Knowledge Capture**
-   - บันทึกบทเรียนลงวิกิ (`$HOME/wiki/<topic-date>.md`), อัปเดต `index.md`, และลงบันทึกความรู้ใน LYN
+   - บันทึกบทเรียนลงวิกิ (`$HOME/wiki/...`), อัปเดต `index.md`, และรัน 12-Gate Audit Check (100% Green)

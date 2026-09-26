@@ -31,14 +31,29 @@ the old logic. Every change ships through the pipeline below.
      - `k8s/base/888router.yaml` (image tag)
      - `k8s/overlays/local/kustomization.yaml` (`images[].newTag`)
      - `k8s/overlays/prd/kustomization.yaml` (`images[].newTag`)
-6. **Build image → redeploy (k8s) → verify.**
-   - Confirm the `v*` tag's GitHub Action "Build and Push Docker Image" completes.
-     The `:{{version}}` image tag builds ONLY on a `v*` tag event.
-   - Deploy with Kustomize:
-     `kubectl apply -k k8s/overlays/local` (or `k8s/` which defaults to local)
-   - Confirm via live endpoint:
-     `curl http://router.k8s.orb.local/api/version` (or `http://localhost:20129/api/version` / `http://localhost:20128/api/version`).
-     Must equal `package.json` and git tag. Pod in `Running` state alone is not enough.
+6. **Build image → redeploy (k8s) → verify (CRITICAL: ZERO-DOWNTIME FAST PATH).**
+   - **Tag naming convention (CRITICAL):**
+     Docker image tag in K8s is **WITHOUT `v`** (e.g. `voravitl/888router:0.15.120`), NEVER `v0.15.120`! Git tag has `v` (`v0.15.120`). A tag mismatch causes K8s to look for the wrong image and crash.
+   - **MANDATORY local build BEFORE `kubectl apply`:**
+     Because K8s deployment strategy is `Recreate` (due to SQLite single-writer PVC), K8s terminates the existing healthy pod FIRST before starting the new pod.
+     If you run `kubectl apply` before the image exists locally, K8s attempts to pull from Docker Hub. But GitHub Actions takes 5-10 minutes to build and push, so Docker Hub returns 404!
+     Result: New pod gets `ImagePullBackOff` / `ErrImagePull`, 0 replicas running, and Ingress returns **503 Service Unavailable** (OUTAGE!).
+     **RULE:** Always build into local OrbStack Docker daemon FIRST:
+     `docker build -t voravitl/888router:<version> -t voravitl/888router:latest .`
+     OrbStack shares its local Docker daemon with K8s (`imagePullPolicy: IfNotPresent`). This starts the new pod in ~2 seconds without any external network pull.
+   - **imagePullPolicy invariant:**
+     Ensure `imagePullPolicy: IfNotPresent` is maintained in `k8s/base/888router.yaml`. NEVER set it to `Always` (which forces external image pull even if built locally).
+   - **Deploy with Kustomize:**
+     `kubectl apply -k k8s/overlays/local`
+   - **Wait for rollout & verify live endpoint:**
+     `kubectl rollout status deploy/888router -n 888router --timeout=120s`
+     `curl http://router.k8s.orb.local/api/version`
+     Must equal `package.json` version with HTTP 200. Pod in `Running` state alone is not enough.
+   - **Emergency rollback (if pod fails):**
+     If the pod crashes or hangs in `ImagePullBackOff`, IMMEDIATELY rollback:
+     `kubectl rollout undo deploy/888router -n 888router`
+   - **NEVER use `docker compose up`:**
+     The active production service runs on **Kubernetes (`namespace: 888router`)**, NOT Docker Compose! Running docker compose does not deploy to K8s and breaks port mapping.
 7. **Capture.** Record the lesson in the wiki/skill so the next agent does not
    repeat the mistake.
 
