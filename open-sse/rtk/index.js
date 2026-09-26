@@ -1,5 +1,5 @@
 // RTK port: compress tool_result content in LLM request bodies
-// Injected at the top of translateRequest (before any format translation)
+// Injected in chatCore.js after format translation and pruneMessageHistory
 import { RAW_CAP, MIN_COMPRESS_SIZE, HARD_CAP_BYTES, FILTERS } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
@@ -169,14 +169,17 @@ function compressGeminiFormat(body, enabled) {
  * Guaranteed invariant: out.length <= capBytes && out.length < text.length && out.length > 0
  */
 export function applyHardCap(text, capBytes = HARD_CAP_BYTES) {
-  if (!text || text.length <= capBytes) return text;
+  if (!text) return text;
+  // Ensure capBytes is a positive integer; fallback to HARD_CAP_BYTES if non-positive or invalid
+  const safeCap = Number.isFinite(capBytes) && capBytes > 0 ? Math.floor(capBytes) : HARD_CAP_BYTES;
+  if (text.length <= safeCap) return text;
 
   const markerText = `\n\n[... truncated by 888router RTK Hard Cap ...]\n\n`;
-  if (capBytes <= markerText.length) {
-    return text.slice(0, capBytes);
+  if (safeCap <= markerText.length) {
+    return text.slice(0, safeCap);
   }
 
-  const budget = capBytes - markerText.length;
+  const budget = safeCap - markerText.length;
   const lines = text.split("\n");
 
   let result = "";
@@ -190,7 +193,7 @@ export function applyHardCap(text, capBytes = HARD_CAP_BYTES) {
     const headLines = lines.slice(0, 100).join("\n");
     const tailLines = lines.slice(-40).join("\n");
     const candidate = `${headLines}${markerText}${tailLines}`;
-    if (candidate.length <= capBytes) {
+    if (candidate.length <= safeCap) {
       result = candidate;
     } else {
       const headLen = Math.floor(budget * 0.65);
@@ -199,11 +202,11 @@ export function applyHardCap(text, capBytes = HARD_CAP_BYTES) {
     }
   }
 
-  // Strict invariant enforcement: ensure never longer than capBytes and shorter than text
-  if (result.length > capBytes) {
-    result = result.slice(0, capBytes);
+  // Strict invariant enforcement: ensure never longer than safeCap and shorter than text
+  if (result.length > safeCap) {
+    result = result.slice(0, safeCap);
   }
-  return result.length < text.length ? result : text.slice(0, capBytes);
+  return result.length < text.length ? result : text.slice(0, safeCap);
 }
 
 function compressText(text, stats, shape) {
