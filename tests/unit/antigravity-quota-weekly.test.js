@@ -181,6 +181,8 @@ describe("Antigravity weekly quota overlay", () => {
 
     expect(usage.quotas["Gemini (all models)"].remainingPercentage).toBe(0);
     expect(usage.quotas["Gemini (all models)"].resetAt).toBe("2026-09-25T00:00:00.000Z");
+    expect(usage.quotas["gemini-3.8-flash-high"].remainingPercentage).toBe(0);
+    expect(usage.quotas["gemini-3.8-flash-high"].resetAt).toBe("2026-09-25T00:00:00.000Z");
     expect(usage.quotas.gemini_weekly.remainingPercentage).toBe(0);
 
     const parsed = parseQuotaData("antigravity", usage);

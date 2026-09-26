@@ -169,7 +169,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     const isFreeTier =
       tierId.includes("free") ||
       tierId.includes("starter") ||
-      (!paidTierId && (currentTierId.includes("free") || currentTierId.includes("starter") || tierName.includes("free") || tierName.includes("starter") || !tierName || tierName === "antigravity"));
+      (!paidTierId && (currentTierId.includes("free") || currentTierId.includes("starter") || tierName.includes("free") || tierName.includes("starter") || !tierName));
 
     // Parse model quotas only for paid-tier accounts.
     if (!isFreeTier && data.models) {
@@ -316,12 +316,21 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           weeklyQuotas.gemini_weekly.used = weeklyQuotas.gemini_weekly.total;
           weeklyQuotas.gemini_weekly.remainingPercentage = 0;
           if (maxResetAt) weeklyQuotas.gemini_weekly.resetAt = maxResetAt;
-        } else if (weeklyQuotas.gemini_weekly.remainingPercentage === 0 && quotas["Gemini (all models)"]) {
+        } else if (weeklyQuotas.gemini_weekly?.remainingPercentage === 0) {
           // When weekly quota is exhausted, the 5h pool does not apply — user is blocked
-          quotas["Gemini (all models)"].used = quotas["Gemini (all models)"].total;
-          quotas["Gemini (all models)"].remainingPercentage = 0;
-          if (weeklyQuotas.gemini_weekly.resetAt) {
-            quotas["Gemini (all models)"].resetAt = weeklyQuotas.gemini_weekly.resetAt;
+          if (quotas["Gemini (all models)"]) {
+            quotas["Gemini (all models)"].used = quotas["Gemini (all models)"].total;
+            quotas["Gemini (all models)"].remainingPercentage = 0;
+            if (weeklyQuotas.gemini_weekly.resetAt) {
+              quotas["Gemini (all models)"].resetAt = weeklyQuotas.gemini_weekly.resetAt;
+            }
+          }
+          for (const [, quota] of geminiModels) {
+            quota.used = quota.total;
+            quota.remainingPercentage = 0;
+            if (weeklyQuotas.gemini_weekly.resetAt) {
+              quota.resetAt = weeklyQuotas.gemini_weekly.resetAt;
+            }
           }
         }
       }
@@ -335,12 +344,21 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           weeklyQuotas.claude_gpt_weekly.used = weeklyQuotas.claude_gpt_weekly.total;
           weeklyQuotas.claude_gpt_weekly.remainingPercentage = 0;
           if (maxResetAt) weeklyQuotas.claude_gpt_weekly.resetAt = maxResetAt;
-        } else if (weeklyQuotas.claude_gpt_weekly.remainingPercentage === 0 && quotas["Claude (all models)"]) {
+        } else if (weeklyQuotas.claude_gpt_weekly?.remainingPercentage === 0) {
           // When weekly quota is exhausted, the 5h pool does not apply — user is blocked
-          quotas["Claude (all models)"].used = quotas["Claude (all models)"].total;
-          quotas["Claude (all models)"].remainingPercentage = 0;
-          if (weeklyQuotas.claude_gpt_weekly.resetAt) {
-            quotas["Claude (all models)"].resetAt = weeklyQuotas.claude_gpt_weekly.resetAt;
+          if (quotas["Claude (all models)"]) {
+            quotas["Claude (all models)"].used = quotas["Claude (all models)"].total;
+            quotas["Claude (all models)"].remainingPercentage = 0;
+            if (weeklyQuotas.claude_gpt_weekly.resetAt) {
+              quotas["Claude (all models)"].resetAt = weeklyQuotas.claude_gpt_weekly.resetAt;
+            }
+          }
+          for (const [, quota] of claudeModels) {
+            quota.used = quota.total;
+            quota.remainingPercentage = 0;
+            if (weeklyQuotas.claude_gpt_weekly.resetAt) {
+              quota.resetAt = weeklyQuotas.claude_gpt_weekly.resetAt;
+            }
           }
         }
       }
