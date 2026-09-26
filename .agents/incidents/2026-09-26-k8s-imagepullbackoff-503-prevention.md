@@ -59,3 +59,4 @@ Every agent modifying or releasing 888router MUST follow this exact sequence:
 - **NEVER use `docker compose up`**: The active workload is managed by Kubernetes (`namespace: 888router`).
 - **NEVER apply K8s without building the image locally first**: Waiting for Docker Hub in K8s kills the healthy pod and guarantees a 5-10 minute 503 outage.
 - **Docker image tag has NO `v`**: Git tag has `v` (`v0.15.120`), Docker image tag has NO `v` (`0.15.120`).
+- **`imagePullPolicy: IfNotPresent` is MANDATORY**: Never change to `Always` in `k8s/base/888router.yaml`. `IfNotPresent` allows K8s to use the local OrbStack Docker daemon build instantly without hitting Docker Hub.

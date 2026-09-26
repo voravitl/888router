@@ -30,10 +30,10 @@
    - **MANDATORY: Build Docker Image เข้า Local OrbStack Daemon ก่อนเสมอ**:
      `docker build -t voravitl/888router:<version> -t voravitl/888router:latest .`
      *(🚨 กฎเหล็ก: Tag ของ Image ใน K8s ต้องเป็นตัวเลขล้วน **ไม่มี `v`** เช่น `0.15.120` ห้ามใส่ `v0.15.120` เด็ดขาด)*
-     *(💡 ทำไมต้อง build ก่อน: Deployment ใช้ `strategy: Recreate` หาก apply ก่อนมี image ในเครื่อง K8s จะไป pull จาก Docker Hub ซึ่งยัง build ไม่เสร็จ ทำให้เกิด `ImagePullBackOff` และเว็บดับ 503 ทันที)*
+     *(💡 ทำไมต้อง build ก่อน: Deployment ใช้ `strategy: Recreate` หาก apply ก่อนมี image ในเครื่อง K8s จะไป pull จาก Docker Hub ซึ่งยัง build ไม่เสร็จ ทำให้เกิด `ImagePullBackOff` และเว็บดับ 503 ทันที โดยต้องแน่ใจว่า `k8s/base/888router.yaml` กำหนด `imagePullPolicy: IfNotPresent`)*
 
 5. **Step 5: Version Bumping, Release Tagging, Push & Merge**
-   - **Bump Version 4 จุด**:
+   - **Bump Version 5 จุด**:
      - `package.json` + `package-lock.json` (`npm install --package-lock-only`)
      - `k8s/base/888router.yaml` (image tag)
      - `k8s/overlays/local/kustomization.yaml` (`images[].newTag`)

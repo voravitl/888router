@@ -41,6 +41,8 @@ the old logic. Every change ships through the pipeline below.
      **RULE:** Always build into local OrbStack Docker daemon FIRST:
      `docker build -t voravitl/888router:<version> -t voravitl/888router:latest .`
      OrbStack shares its local Docker daemon with K8s (`imagePullPolicy: IfNotPresent`). This starts the new pod in ~2 seconds without any external network pull.
+   - **imagePullPolicy invariant:**
+     Ensure `imagePullPolicy: IfNotPresent` is maintained in `k8s/base/888router.yaml`. NEVER set it to `Always` (which forces external image pull even if built locally).
    - **Deploy with Kustomize:**
      `kubectl apply -k k8s/overlays/local`
    - **Wait for rollout & verify live endpoint:**
