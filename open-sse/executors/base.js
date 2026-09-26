@@ -128,7 +128,7 @@ export class BaseExecutor {
       const skipForPool = (throughProxyPool || isCombo) && isServerError5xx;
       const { attempts, delayMs } = resolveRetryEntry(skipForPool ? undefined : retryConfig[statusKey]);
       if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
-      // Hook: subclass may derive delay from the response (headers/body). null → skip retry, use fallback.
+      // Hook: subclass may derive delay from the response (headers/body). false → veto retry, null/undefined → use default delay.
       let waitMs = delayMs;
       if (response && this.computeRetryDelay) {
         const dynamic = await this.computeRetryDelay(response, retryAttemptsByUrl[urlIndex] + 1, delayMs);

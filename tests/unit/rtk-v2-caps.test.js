@@ -76,4 +76,22 @@ describe("RTK v2 Hard Caps & Gemini Format Compression (Hardened)", () => {
     const stats = compressMessages(body, true);
     expect(stats).not.toBeNull();
   });
+
+  it("strictly protects invariant out.length > 0 when capBytes is non-positive or zero (#450)", () => {
+    const text = "hello world this is a test string";
+    // Non-positive capBytes safely falls back to HARD_CAP_BYTES rather than returning empty
+    const cappedZero = applyHardCap(text, 0);
+    expect(cappedZero.length).toBeGreaterThan(0);
+    expect(cappedZero).toBe(text); // text.length <= HARD_CAP_BYTES
+
+    const hugeText = "x".repeat(50000);
+    const cappedHuge = applyHardCap(hugeText, 0);
+    expect(cappedHuge.length).toBeLessThanOrEqual(HARD_CAP_BYTES);
+    expect(cappedHuge.length).toBeGreaterThan(0);
+
+    // Positive cap of 1 byte satisfies out.length <= capBytes && out.length > 0
+    const cappedOne = applyHardCap(text, 1);
+    expect(cappedOne.length).toBe(1);
+    expect(cappedOne).toBe("h");
+  });
 });

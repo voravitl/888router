@@ -815,7 +815,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                   if (retried.body) await safeCancelStream(retried.body);
                   cleanupRetryAbort();
                   lastError = `reasoning budget exhausted; streamed retry failed (${retried.status})`;
-                  if (!lastStatus) lastStatus = retried.status;
+                  if (!lastStatus) lastStatus = toHttpFailureStatus(retried.status) ?? 502;
                   continue;
                 }
                 log.info("COMBO", `Model ${modelStr} succeeded after streamed reasoning-budget retry`);
@@ -956,7 +956,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             candidateAbortCtrl.abort();
             if (retried.body) await safeCancelStream(retried.body);
             lastError = `reasoning-empty-content retry failed (${retried.status})`;
-            if (!lastStatus) lastStatus = retried.status;
+            if (!lastStatus) lastStatus = toHttpFailureStatus(retried.status) ?? 502;
             continue;
           }
         }

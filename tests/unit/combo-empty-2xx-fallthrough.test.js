@@ -320,4 +320,35 @@ describe("handleComboChat: 2xx that carries no usable answer falls through", () 
     expect(handleSingleModel.mock.calls[1][1]).toBe("kgw/kilo-auto/free");
     expect(await readAll(result)).toContain("answer after raise");
   });
+
+  it("coerces reasoning-budget retry status via toHttpFailureStatus (#447)", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const handleSingleModel = vi.fn(async (body, _model) => {
+      if (!body.max_tokens) {
+        // First attempt: trigger reasoning-budget retry
+        return sseResponse([
+          "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking hard\"}}]}\n\n",
+          "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n",
+          "data: [DONE]\n\n",
+        ]);
+      }
+      // Retried attempt fails with a 302 redirect / non-400-599 status
+      return new Response(JSON.stringify({ error: "redirect" }), {
+        status: 302,
+        headers: { "content-type": "application/json" }
+      });
+    });
+
+    const result = await handleComboChat({
+      body: { model: "9-free", messages: [{ role: "user", content: "hi" }] },
+      models: ["kgw/kilo-auto/free"],
+      handleSingleModel,
+      log,
+      comboName: "9-free",
+      comboStrategy: "fallback",
+    });
+
+    // Should coerce 302 to 502, never return 302 as combo failure status
+    expect(result.status).toBe(502);
+  });
 });
