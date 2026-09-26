@@ -221,6 +221,23 @@ export function sanitizeOpencodeTools(body) {
  */
 export function restoreOpencodeToolNames(payload, map) {
   if (!map?.size || !payload) return payload;
+  if (typeof payload === "string") {
+    try {
+      const parsed = JSON.parse(payload);
+      if (parsed && typeof parsed === "object") {
+        const restored = restoreOpencodeToolNames(parsed, map);
+        return JSON.stringify(restored);
+      }
+    } catch {
+      let out = payload;
+      for (const [sanitized, original] of map.entries()) {
+        if (out.includes(sanitized)) {
+          out = out.replaceAll(sanitized, original);
+        }
+      }
+      return out;
+    }
+  }
   if (Array.isArray(payload)) return payload.map((item) => restoreOpencodeToolNames(item, map));
   if (typeof payload !== "object") return payload;
 

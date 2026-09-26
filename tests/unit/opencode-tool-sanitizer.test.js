@@ -296,6 +296,17 @@ describe("opencodeToolSanitizer — unit tests", () => {
       };
       expect(restoreOpencodeToolNames(jsonBody, map).output[0].name).toBe("code-review:code-review");
     });
+
+    it("restores tool name in raw JSON string chunks and plain text", () => {
+      const jsonStr = JSON.stringify({
+        choices: [{ delta: { tool_calls: [{ function: { name: "code-review_code-review" } }] } }],
+      });
+      const restoredJson = restoreOpencodeToolNames(jsonStr, map);
+      expect(JSON.parse(restoredJson).choices[0].delta.tool_calls[0].function.name).toBe("code-review:code-review");
+
+      const plainText = "Calling tool: code-review_code-review with args";
+      expect(restoreOpencodeToolNames(plainText, map)).toBe("Calling tool: code-review:code-review with args");
+    });
   });
 
   describe("OpenCodeExecutor integration", () => {
