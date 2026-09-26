@@ -221,6 +221,27 @@ describe("opencodeToolSanitizer — unit tests", () => {
       expect(map.get("foo_bar_2")).toBe("foo:bar");
       expect(map.has("foo_bar")).toBe(false);
     });
+
+    it("sanitizes messages history and tool_choice even when tools array is absent", () => {
+      const body = {
+        tool_choice: { type: "function", function: { name: "slash:command" } },
+        messages: [
+          {
+            role: "assistant",
+            tool_calls: [
+              { id: "c_1", type: "function", function: { name: "slash:command" } },
+            ],
+          },
+          { role: "tool", name: "slash:command", content: "done" },
+        ],
+      };
+
+      const map = sanitizeOpencodeTools(body);
+      expect(map.get("slash_command")).toBe("slash:command");
+      expect(body.tool_choice.function.name).toBe("slash_command");
+      expect(body.messages[0].tool_calls[0].function.name).toBe("slash_command");
+      expect(body.messages[1].name).toBe("slash_command");
+    });
   });
 
   describe("restoreOpencodeToolNames", () => {

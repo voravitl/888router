@@ -63,8 +63,22 @@ export function sanitizeOpencodeTools(body) {
   const reverseMap = new Map(); // originalName -> sanitizedName
   const usedNames = new Set();
 
-  // Pre-pass: register all naturally valid tool names to prevent collision
-  // when an invalid tool name (e.g. foo:bar) is sanitized into foo_bar.
+  // Helper: get existing sanitized name or sanitize and register a new one
+  const getOrCreateSanitized = (rawName) => {
+    if (!rawName || typeof rawName !== "string") return rawName;
+    if (reverseMap.has(rawName)) return reverseMap.get(rawName);
+    if (OPENCODE_TOOL_NAME_PATTERN.test(rawName)) {
+      usedNames.add(rawName);
+      return rawName;
+    }
+    const sanitized = sanitizeToolName(rawName, usedNames);
+    map.set(sanitized, rawName);
+    reverseMap.set(rawName, sanitized);
+    return sanitized;
+  };
+
+  // Pre-pass: register all naturally valid tool names across tools, messages, and input
+  // to prevent collision when an invalid tool name (e.g. foo:bar) is sanitized into foo_bar.
   if (Array.isArray(body.tools)) {
     for (const tool of body.tools) {
       if (!tool || typeof tool !== "object" || Array.isArray(tool)) continue;
@@ -73,6 +87,30 @@ export function sanitizeOpencodeTools(body) {
       const rawName = originalName || (typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : ""));
       if (rawName && !originalName && OPENCODE_TOOL_NAME_PATTERN.test(rawName)) {
         usedNames.add(rawName);
+      }
+    }
+  }
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (!msg || typeof msg !== "object") continue;
+      if (typeof msg.name === "string" && !msg[ORIGINAL_TOOL_NAME] && OPENCODE_TOOL_NAME_PATTERN.test(msg.name)) {
+        usedNames.add(msg.name);
+      }
+      if (Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          const fnName = tc?.function?.name;
+          if (typeof fnName === "string" && !tc?.function?.[ORIGINAL_TOOL_NAME] && OPENCODE_TOOL_NAME_PATTERN.test(fnName)) {
+            usedNames.add(fnName);
+          }
+        }
+      }
+    }
+  }
+  if (Array.isArray(body.input)) {
+    for (const item of body.input) {
+      if (!item || typeof item !== "object") continue;
+      if (typeof item.name === "string" && !item[ORIGINAL_TOOL_NAME] && OPENCODE_TOOL_NAME_PATTERN.test(item.name)) {
+        usedNames.add(item.name);
       }
     }
   }
@@ -93,12 +131,7 @@ export function sanitizeOpencodeTools(body) {
         return tool;
       }
 
-      if (!reverseMap.has(rawName)) {
-        const sanitized = sanitizeToolName(rawName, usedNames);
-        map.set(sanitized, rawName);
-        reverseMap.set(rawName, sanitized);
-      }
-      const sanitizedName = reverseMap.get(rawName);
+      const sanitizedName = getOrCreateSanitized(rawName);
       toolsChanged = true;
 
       const nextTool = { ...tool, [ORIGINAL_TOOL_NAME]: rawName };
@@ -116,29 +149,35 @@ export function sanitizeOpencodeTools(body) {
     }
   }
 
-  // 2. Sanitize tool_choice if named (non-mutating)
-  if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice) && reverseMap.size > 0) {
+  // 2. Sanitize tool_choice if named (non-mutating, independent of tools array)
+  if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
     let choiceChanged = false;
     const nextChoice = { ...body.tool_choice };
     const fn = body.tool_choice.function;
     const fnOrig = fn?.[ORIGINAL_TOOL_NAME] || fn?.name;
-    if (fn && typeof fn === "object" && typeof fnOrig === "string" && reverseMap.has(fnOrig)) {
-      nextChoice.function = { ...fn, name: reverseMap.get(fnOrig), [ORIGINAL_TOOL_NAME]: fnOrig };
-      choiceChanged = true;
+    if (fn && typeof fn === "object" && typeof fnOrig === "string") {
+      const sanitized = getOrCreateSanitized(fnOrig);
+      if (sanitized !== fn.name || fnOrig !== sanitized) {
+        nextChoice.function = { ...fn, name: sanitized, [ORIGINAL_TOOL_NAME]: fnOrig };
+        choiceChanged = true;
+      }
     }
     const choiceOrig = body.tool_choice[ORIGINAL_TOOL_NAME] || body.tool_choice.name;
-    if (typeof choiceOrig === "string" && reverseMap.has(choiceOrig)) {
-      nextChoice.name = reverseMap.get(choiceOrig);
-      nextChoice[ORIGINAL_TOOL_NAME] = choiceOrig;
-      choiceChanged = true;
+    if (typeof choiceOrig === "string") {
+      const sanitized = getOrCreateSanitized(choiceOrig);
+      if (sanitized !== body.tool_choice.name || choiceOrig !== sanitized) {
+        nextChoice.name = sanitized;
+        nextChoice[ORIGINAL_TOOL_NAME] = choiceOrig;
+        choiceChanged = true;
+      }
     }
     if (choiceChanged) {
       body.tool_choice = nextChoice;
     }
   }
 
-  // 3. Sanitize tool calls in messages (history turns) - non-mutating
-  if (Array.isArray(body.messages) && reverseMap.size > 0) {
+  // 3. Sanitize tool calls in messages (history turns, independent of tools array)
+  if (Array.isArray(body.messages)) {
     let messagesChanged = false;
     const nextMessages = body.messages.map((msg) => {
       if (!msg || typeof msg !== "object") return msg;
@@ -146,25 +185,31 @@ export function sanitizeOpencodeTools(body) {
       let nextMsg = msg;
 
       const msgOrig = msg[ORIGINAL_TOOL_NAME] || msg.name;
-      if (typeof msgOrig === "string" && reverseMap.has(msgOrig)) {
-        nextMsg = { ...msg, name: reverseMap.get(msgOrig), [ORIGINAL_TOOL_NAME]: msgOrig };
-        msgChanged = true;
+      if (typeof msgOrig === "string") {
+        const sanitized = getOrCreateSanitized(msgOrig);
+        if (sanitized !== msg.name || msgOrig !== sanitized) {
+          nextMsg = { ...msg, name: sanitized, [ORIGINAL_TOOL_NAME]: msgOrig };
+          msgChanged = true;
+        }
       }
 
       if (Array.isArray(msg.tool_calls)) {
         let callsChanged = false;
         const nextCalls = msg.tool_calls.map((tc) => {
           const fnName = tc?.function?.[ORIGINAL_TOOL_NAME] || tc?.function?.name;
-          if (typeof fnName === "string" && reverseMap.has(fnName)) {
-            callsChanged = true;
-            return {
-              ...tc,
-              function: {
-                ...tc.function,
-                name: reverseMap.get(fnName),
-                [ORIGINAL_TOOL_NAME]: fnName,
-              },
-            };
+          if (typeof fnName === "string") {
+            const sanitized = getOrCreateSanitized(fnName);
+            if (sanitized !== tc?.function?.name || fnName !== sanitized) {
+              callsChanged = true;
+              return {
+                ...tc,
+                function: {
+                  ...tc.function,
+                  name: sanitized,
+                  [ORIGINAL_TOOL_NAME]: fnName,
+                },
+              };
+            }
           }
           return tc;
         });
@@ -187,19 +232,22 @@ export function sanitizeOpencodeTools(body) {
     }
   }
 
-  // 4. Sanitize input items (Responses API) - non-mutating
-  if (Array.isArray(body.input) && reverseMap.size > 0) {
+  // 4. Sanitize input items (Responses API, independent of tools array)
+  if (Array.isArray(body.input)) {
     let inputChanged = false;
     const nextInput = body.input.map((item) => {
       if (!item || typeof item !== "object") return item;
       const itemOrig = item[ORIGINAL_TOOL_NAME] || item.name;
-      if ((item.type === "function_call" || item.type === "function_call_output") && typeof itemOrig === "string" && reverseMap.has(itemOrig)) {
-        inputChanged = true;
-        return {
-          ...item,
-          name: reverseMap.get(itemOrig),
-          [ORIGINAL_TOOL_NAME]: itemOrig,
-        };
+      if ((item.type === "function_call" || item.type === "function_call_output") && typeof itemOrig === "string") {
+        const sanitized = getOrCreateSanitized(itemOrig);
+        if (sanitized !== item.name || itemOrig !== sanitized) {
+          inputChanged = true;
+          return {
+            ...item,
+            name: sanitized,
+            [ORIGINAL_TOOL_NAME]: itemOrig,
+          };
+        }
       }
       return item;
     });
