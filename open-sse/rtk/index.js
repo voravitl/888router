@@ -166,7 +166,8 @@ function compressGeminiFormat(body, enabled) {
 
 /**
  * Apply RTK Hard Cap truncation to text exceeding HARD_CAP_BYTES.
- * Guaranteed invariant: out.length <= capBytes && out.length < text.length && out.length > 0
+ * Guaranteed invariant (against safeCap = capBytes when positive, else HARD_CAP_BYTES):
+ * out.length <= safeCap && out.length < text.length && out.length > 0
  */
 export function applyHardCap(text, capBytes = HARD_CAP_BYTES) {
   if (!text) return text;
