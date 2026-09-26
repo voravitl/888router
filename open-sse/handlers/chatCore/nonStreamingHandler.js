@@ -9,6 +9,7 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { restoreOpencodeToolNames } from "../../utils/opencodeToolSanitizer.js";
 import { setCachedResponse } from "../../translator/concerns/responseCache.js";
 import { parseUniversalToolCalls, getDeclaredToolNames } from "../../translator/concerns/universalToolParser.js";
 
@@ -250,14 +251,20 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, toolNameMap);
+  if (toolNameMap?.size > 0) {
+    responseBody = restoreOpencodeToolNames(responseBody, toolNameMap);
+  }
 
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+  let translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
     : responseBody;
+  if (toolNameMap?.size > 0) {
+    translatedResponse = restoreOpencodeToolNames(translatedResponse, toolNameMap);
+  }
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
 
   // Universal Tool Engine non-streaming response parser — gated on mode so

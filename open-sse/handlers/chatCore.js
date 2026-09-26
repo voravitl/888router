@@ -364,6 +364,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     providerUrl = result.url;
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
+    if (result.toolNameMap || finalBody?._toolNameMap) {
+      const map = result.toolNameMap || finalBody._toolNameMap;
+      if (!toolNameMap) {
+        toolNameMap = new Map(map);
+      } else {
+        for (const [k, v] of map) toolNameMap.set(k, v);
+      }
+      if (finalBody?._toolNameMap) delete finalBody._toolNameMap;
+    }
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);

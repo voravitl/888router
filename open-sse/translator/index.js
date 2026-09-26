@@ -8,6 +8,7 @@ import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
+import { restoreOpencodeToolNames } from "../utils/opencodeToolSanitizer.js";
 
 // Registry for translators. Lazy-init guards against circular-import order:
 // translator modules call register() (side-effect) before this module's body runs.
@@ -150,8 +151,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
-  // If same format, return as-is
+  // If same format, return as-is (restoring tool names if map is present)
   if (sourceFormat === targetFormat) {
+    if (state?.toolNameMap?.size > 0 && chunk) {
+      return [restoreOpencodeToolNames(chunk, state.toolNameMap)];
+    }
     return [chunk];
   }
 
@@ -165,7 +169,11 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   const directFn = responseRegistry.get(`${targetFormat}:${sourceFormat}`);
   if (directFn) {
     const converted = directFn(chunk, state);
-    return converted ? (Array.isArray(converted) ? converted : [converted]) : [];
+    const convertedResults = converted ? (Array.isArray(converted) ? converted : [converted]) : [];
+    if (state?.toolNameMap?.size > 0 && convertedResults.length > 0) {
+      return convertedResults.map((r) => (r ? restoreOpencodeToolNames(r, state.toolNameMap) : r));
+    }
+    return convertedResults;
   }
 
   // Step 1: target -> openai (if target is not openai)
@@ -194,6 +202,10 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
       }
       results = finalResults;
     }
+  }
+
+  if (state?.toolNameMap?.size > 0 && Array.isArray(results)) {
+    results = results.map((r) => (r ? restoreOpencodeToolNames(r, state.toolNameMap) : r));
   }
 
   // Attach OpenAI intermediate results for logging

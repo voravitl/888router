@@ -145,6 +145,8 @@ export class BaseExecutor {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
       const headers = this.buildHeaders(credentials, stream, url, model);
+      const toolNameMap = transformedBody?._toolNameMap || null;
+      if (transformedBody?._toolNameMap) delete transformedBody._toolNameMap;
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
@@ -178,7 +180,7 @@ export class BaseExecutor {
           continue;
         }
 
-        return { response, url, headers, transformedBody };
+        return { response, url, headers, transformedBody, toolNameMap };
       } catch (error) {
         clearTimeout(connectTimer);
         lastError = error;
