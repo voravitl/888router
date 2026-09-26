@@ -8,6 +8,7 @@ import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { detectClientTool } from "../utils/clientDetector.js";
+import { sanitizeOpencodeTools } from "../utils/opencodeToolSanitizer.js";
 
 // Ported from upstream decolua/9router#4105: OpenCode Console validates the
 // free-tier client identity server-side. `Authorization: Bearer public`
@@ -379,7 +380,10 @@ export class OpenCodeExecutor extends BaseExecutor {
       clampResponsesMaxOutputTokens(body);
       normalizeOpencodeReasoning(model, body);
       if (freeGate) ensureResponsesFingerprintTools(body);
-      return injectReasoningContent({ provider: this.provider, model, body });
+      const injected = injectReasoningContent({ provider: this.provider, model, body });
+      const toolMap = sanitizeOpencodeTools(injected);
+      if (toolMap?.size > 0) injected._toolNameMap = toolMap;
+      return injected;
     }
 
     let nextBody = injectReasoningContent({ provider: this.provider, model, body });
@@ -393,6 +397,8 @@ export class OpenCodeExecutor extends BaseExecutor {
       nextBody = { ...nextBody, max_tokens: 2000 };
     }
     if (freeGate) ensureChatFingerprintTools(nextBody);
+    const chatToolMap = sanitizeOpencodeTools(nextBody);
+    if (chatToolMap?.size > 0) nextBody._toolNameMap = chatToolMap;
     return nextBody;
   }
 

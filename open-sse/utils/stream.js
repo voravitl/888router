@@ -4,6 +4,7 @@ import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure, stripResponsesLifecycleEcho } from "./responsesStreamHelpers.js";
+import { restoreOpencodeToolNames } from "./opencodeToolSanitizer.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -418,7 +419,8 @@ export function createSSEStream(options = {}) {
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
           stripResponsesLifecycleEcho(parsed);
-          const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
+          const chunkData = state?.toolNameMap?.size > 0 ? restoreOpencodeToolNames(parsed, state.toolNameMap) : parsed;
+          const output = formatSSE({ event: openAIResponsesEventName, data: chunkData }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
           currentOpenAIResponsesEvent = null;
