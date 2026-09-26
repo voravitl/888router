@@ -160,7 +160,7 @@ export function sanitizeOpencodeTools(body) {
     const fnOrig = fn?.[ORIGINAL_TOOL_NAME] || fn?.name;
     if (fn && typeof fn === "object" && typeof fnOrig === "string") {
       const sanitized = getOrCreateSanitized(fnOrig);
-      if (sanitized !== fn.name || fnOrig !== sanitized) {
+      if (sanitized !== fn.name) {
         nextChoice.function = { ...fn, name: sanitized, [ORIGINAL_TOOL_NAME]: fnOrig };
         choiceChanged = true;
       }
@@ -168,7 +168,7 @@ export function sanitizeOpencodeTools(body) {
     const choiceOrig = body.tool_choice[ORIGINAL_TOOL_NAME] || body.tool_choice.name;
     if (typeof choiceOrig === "string") {
       const sanitized = getOrCreateSanitized(choiceOrig);
-      if (sanitized !== body.tool_choice.name || choiceOrig !== sanitized) {
+      if (sanitized !== body.tool_choice.name) {
         nextChoice.name = sanitized;
         nextChoice[ORIGINAL_TOOL_NAME] = choiceOrig;
         choiceChanged = true;
@@ -191,7 +191,7 @@ export function sanitizeOpencodeTools(body) {
       const msgOrig = msg[ORIGINAL_TOOL_NAME] || msg.name;
       if (typeof msgOrig === "string") {
         const sanitized = getOrCreateSanitized(msgOrig);
-        if (sanitized !== msg.name || msgOrig !== sanitized) {
+        if (sanitized !== msg.name) {
           nextMsg = { ...msg, name: sanitized, [ORIGINAL_TOOL_NAME]: msgOrig };
           msgChanged = true;
         }
@@ -203,7 +203,7 @@ export function sanitizeOpencodeTools(body) {
           const fnName = tc?.function?.[ORIGINAL_TOOL_NAME] || tc?.function?.name;
           if (typeof fnName === "string") {
             const sanitized = getOrCreateSanitized(fnName);
-            if (sanitized !== tc?.function?.name || fnName !== sanitized) {
+            if (sanitized !== tc?.function?.name) {
               callsChanged = true;
               return {
                 ...tc,
@@ -245,7 +245,7 @@ export function sanitizeOpencodeTools(body) {
       const itemOrig = item[ORIGINAL_TOOL_NAME] || item.name;
       if ((item.type === "function_call" || item.type === "function_call_output") && typeof itemOrig === "string") {
         const sanitized = getOrCreateSanitized(itemOrig);
-        if (sanitized !== item.name || itemOrig !== sanitized) {
+        if (sanitized !== item.name) {
           inputChanged = true;
           return {
             ...item,
