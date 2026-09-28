@@ -63,7 +63,11 @@ export async function getOpenCodeGoUsage(apiKey = null, proxyOptions = null) {
     const quotas = {};
     for (const [windowKey, window] of Object.entries(windows)) {
       if (!window || typeof window !== "object") continue;
-      const used = Math.max(0, Math.min(100, toFiniteNumber(window.percent, 0)));
+      // A window without a finite `percent` carries no usable reading — skip it
+      // rather than defaulting to 0 used (which would render 100% remaining).
+      const percent = toFiniteNumber(window.percent, Number.NaN);
+      if (!Number.isFinite(percent)) continue;
+      const used = Math.max(0, Math.min(100, percent));
       quotas[WINDOW_LABELS[windowKey] || windowKey] = {
         used,
         total: 100,

@@ -132,6 +132,26 @@ describe("getUsageForProvider(opencode-go)", () => {
     expect(usage.quotas.legacy).toBeUndefined();
   });
 
+  it("skips windows without a finite percent instead of faking 0% used", async () => {
+    proxyAwareFetch.mockResolvedValueOnce(
+      jsonResponse({
+        usage: {
+          rolling: { status: "ok", percent: 7, resetsAt: "2026-09-28T15:55:55.994Z" },
+          weekly: { status: "ok", resetsAt: "2026-10-05T00:00:00.000Z" },
+          monthly: { status: "ok", percent: "soon", resetsAt: "2026-10-28T05:49:18.000Z" },
+        },
+      }),
+    );
+
+    const usage = await getUsageForProvider({
+      provider: "opencode-go",
+      apiKey: "ocg-test-key",
+    });
+
+    expect(Object.keys(usage.quotas)).toEqual(["Rolling (5h)"]);
+    expect(usage.quotas["Rolling (5h)"].used).toBe(7);
+  });
+
   it("returns message on missing key / 401 / malformed body", async () => {
     const missing = await getUsageForProvider({ provider: "opencode-go" });
     expect(missing.message).toMatch(/api key/i);
