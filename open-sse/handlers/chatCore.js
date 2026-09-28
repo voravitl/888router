@@ -119,7 +119,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // sourceFormat-matched transport if that format is declared (opencode-go models
   // differ — kimi/glm only do /chat/completions). Undeclared models keep the
   // upstream default (use the transport), preserving behavior for glm/deepseek/...
-  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
+  // When the declaration exists but excludes sourceFormat, pick the transport
+  // matching the model's FIRST declared format instead of null — falling back to
+  // the provider default can pair a /responses URL with chat-shaped body
+  // (paid muse-spark: claude client → body translated to {messages}, URL
+  // /zen/go/v1/responses → upstream 400 "unknown parameter `messages`").
+  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat))
+    ? runtimeTransport
+    : resolveTransport(provider, modelSupportedFormats[0]);
   const targetFormat = modelTargetFormat || useTransport?.format || getTargetFormat(provider, requestCredentials || credentials);
   if (useTransport && requestCredentials) requestCredentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
