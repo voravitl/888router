@@ -48,20 +48,46 @@ const opencode_goConfig = {
   // passthroughModels stays true (pre-existing contract: forward client id
   // untouched); the live catalog is discovery, not an allowlist.
   models: [
+    // supportedFormats follow the Go docs endpoint table
+    // (https://opencode.ai/v2/docs/console/go — "Endpoints"):
+    //   /chat/completions → openai · /messages → claude · /responses → openai-responses.
+    // Upstream enforces this: a wrong-endpoint request returns
+    // 400 ModelProtocolUnsupported.
+    { id: "glm-5.3-flash", name: "GLM 5.3 Flash", supportedFormats: ["openai"] },
+    { id: "glm-5.3", name: "GLM 5.3", supportedFormats: ["openai"] },
     { id: "glm-5.2", name: "GLM 5.2", supportedFormats: ["openai"] },
     { id: "glm-5.1", name: "GLM 5.1", supportedFormats: ["openai"] },
+    { id: "kimi-k3", name: "Kimi K3", supportedFormats: ["openai"] },
     { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", supportedFormats: ["openai"] },
     { id: "kimi-k2.6", name: "Kimi K2.6", supportedFormats: ["openai"] },
-    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai", "claude", "openai-responses"] },
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai", "claude", "openai-responses"] },
+    { id: "longcat-2.0", name: "LongCat 2.0", supportedFormats: ["openai"] },
+    { id: "longcat-2.5-preview-free", name: "LongCat 2.5 Preview Free", supportedFormats: ["openai"] },
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai"] },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai"] },
+    { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", supportedFormats: ["openai"] },
+    { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision Exp", supportedFormats: ["openai"] },
+    { id: "deepseek-flash", name: "DeepSeek Flash", supportedFormats: ["openai"] },
+    { id: "mimo-v2.6-flash", name: "MiMo V2.6 Flash", supportedFormats: ["openai"] },
+    { id: "mimo-v2.6-pro", name: "MiMo V2.6 Pro", supportedFormats: ["openai"] },
     { id: "mimo-v2.5", name: "MiMo V2.5", supportedFormats: ["openai"] },
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", supportedFormats: ["openai"] },
-    { id: "minimax-m3", name: "MiniMax M3", supportedFormats: ["openai", "claude"] },
-    { id: "minimax-m2.7", name: "MiniMax M2.7", supportedFormats: ["openai", "claude"] },
-    { id: "minimax-m2.5", name: "MiniMax M2.5", supportedFormats: ["openai", "claude"] },
-    { id: "qwen3.7-max", name: "Qwen 3.7 Max", supportedFormats: ["openai", "claude"] },
-    { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", supportedFormats: ["openai", "claude"] },
-    { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", supportedFormats: ["openai", "claude"] },
+    { id: "hy4-preview", name: "Hy4 Preview", supportedFormats: ["openai"] },
+    { id: "hy3", name: "Hy3", supportedFormats: ["openai"] },
+    { id: "space-bunny-free", name: "Space Bunny Free", supportedFormats: ["openai"] },
+    { id: "minimax-m3", name: "MiniMax M3", supportedFormats: ["claude"] },
+    { id: "minimax-m2.7", name: "MiniMax M2.7", supportedFormats: ["claude"] },
+    { id: "minimax-m2.5", name: "MiniMax M2.5", supportedFormats: ["claude"] },
+    { id: "qwen3.8-max", name: "Qwen 3.8 Max", supportedFormats: ["claude"] },
+    { id: "qwen3.8-flash", name: "Qwen 3.8 Flash", supportedFormats: ["claude"] },
+    { id: "qwen3.7-max", name: "Qwen 3.7 Max", supportedFormats: ["claude"] },
+    { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", supportedFormats: ["claude"] },
+    { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", supportedFormats: ["claude"] },
+    { id: "grok-4.7", name: "Grok 4.7", supportedFormats: ["openai-responses"] },
+    { id: "grok-4.6", name: "Grok 4.6", supportedFormats: ["openai-responses"] },
+    { id: "gpt-6-luna", name: "GPT 6 Luna", supportedFormats: ["openai-responses"] },
+    { id: "gpt-5.6-luna", name: "GPT 5.6 Luna", supportedFormats: ["openai-responses"] },
+    { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", supportedFormats: ["openai-responses"] },
+    { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", supportedFormats: ["openai-responses"] },
   ],
 };
 
