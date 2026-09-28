@@ -31,3 +31,27 @@ describe("OpenCode Go per-model capabilities", () => {
     });
   }
 });
+
+// buildUrl tier routing: paid muse-spark-contributor must hit /zen/go/v1/responses
+// (previously hardcoded to the FREE /zen/v1 base — upstream "Model is unavailable")
+import { OpenCodeExecutor } from "../../open-sse/executors/opencode.js";
+describe("OpenCode Go buildUrl /responses tier routing", () => {
+  it("paid muse-spark-contributor on opencode-go → /zen/go/v1/responses", () => {
+    const ex = new OpenCodeExecutor("opencode-go");
+    expect(ex.buildUrl("muse-spark-1.3-contributor", true, 0, { apiKey: "oc_sk_test" })).toBe(
+      "https://opencode.ai/zen/go/v1/responses",
+    );
+  });
+  it("free muse-spark-contributor-free on opencode-go stays on /zen/v1/responses", () => {
+    const ex = new OpenCodeExecutor("opencode-go");
+    expect(ex.buildUrl("muse-spark-1.3-contributor-free", true, 0, {})).toBe(
+      "https://opencode.ai/zen/v1/responses",
+    );
+  });
+  it("free tier provider (opencode) keeps /zen/v1/responses", () => {
+    const ex = new OpenCodeExecutor("opencode");
+    expect(ex.buildUrl("muse-spark-1.3-contributor-free", true, 0, {})).toBe(
+      "https://opencode.ai/zen/v1/responses",
+    );
+  });
+});

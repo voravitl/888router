@@ -422,7 +422,15 @@ export class OpenCodeExecutor extends BaseExecutor {
     const rtUrl = runtimeTransportUrl(credentials);
     if (rtUrl) return rtUrl;
     if (isResponsesModel(model)) {
-      const base = this.config?.baseUrl ? `${this.config.baseUrl}/zen/v1` : ZEN_FREE_BASE;
+      // Go tier serves /responses on /zen/go — paid muse-spark-contributor ids
+      // matched isMuseSparkModel() and were sent to the FREE /zen/v1/responses
+      // ("Model is unavailable"). Route by tier like the non-responses branch.
+      const rawKey = credentials?.apiKey || credentials?.accessToken;
+      const key = typeof rawKey === "string" ? rawKey.trim() : null;
+      const goResponses = key && this.provider === "opencode-go" && !isZenFreeModel(this.provider, model);
+      const base = goResponses
+        ? ZEN_GO_BASE
+        : (this.config?.baseUrl ? `${this.config.baseUrl}/zen/v1` : ZEN_FREE_BASE);
       return `${base}/responses`;
     }
     const rawKey = credentials?.apiKey || credentials?.accessToken;

@@ -1,3 +1,11 @@
+# v0.15.124 (2026-09-28)
+
+## Fix: opencode-go paid muse-spark hit the FREE /responses endpoint ("Model is unavailable")
+
+- **Root cause**: `OpenCodeExecutor.buildUrl`'s `isResponsesModel` branch hardcoded the base to `${config.baseUrl}/zen/v1` (FREE pool). Paid `muse-spark-1.3-contributor` ids match `isMuseSparkModel()`, so requests were routed to `/zen/v1/responses` and upstream answered 400 `Model is unavailable` — despite `/zen/go/v1/responses` returning 200 with the same key (probed live).
+- **Fix**: `buildUrl` now routes `/responses` by tier like the non-responses branch — when provider is `opencode-go` with a key and the model is not a Zen-free id, use `ZEN_GO_BASE`; free ids and the free-tier `opencode` provider stay on `/zen/v1`.
+- **Tests**: New tier-routing pins in `tests/unit/opencode-go-context-caps.test.js` (paid → /zen/go/v1/responses; free → /zen/v1/responses; free provider unchanged); 4 opencode suites green (35 tests).
+
 # v0.15.123 (2026-09-28)
 
 ## Fix: opencode-go endpoint-formats per Go docs table (ModelProtocolUnsupported)
