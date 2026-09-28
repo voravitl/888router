@@ -1,3 +1,12 @@
+# v0.15.132 (2026-09-29)
+
+## Release: ZCode (Z.ai start-plan) OAuth provider — free GLM-5.3-Flash
+
+- Version tag for the #472 provider merge (shipped code-wise as `sha-b2aa014` on merge; this bump restores the package/k8s version invariant). New OAuth PKCE provider `zcode` routing to the ZCode plan Anthropic endpoint (`zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages`, Bearer OAuth token) — unlocks the GLM-5.3-Flash free quota that is otherwise exclusive to the ZCode client.
+- Auth reverse-engineered from the public ZCode desktop bundle: authorize `chat.z.ai/api/oauth/authorize`, token `zcode.z.ai/api/v1/oauth/token`, public appId `client_P8X5CMWmlaRO9gyO-KSqtg` (PKCE S256, no secret). Refresh via `PROVIDER_OAUTH.zcode` + `proxyAwareFetch` (fail-loud on missing registry config).
+- Executor `ZcodeExecutor` (Bearer + anthropic-version headers), billing usage service (defensive parser for percent/limit rows), `parseQuotaData` case, `features.usage` for the Quota Tracker. OpenAI-format plan paths return 404 upstream — claude is the only transport; other client formats are translated.
+- Tests: `tests/unit/zcode-oauth.test.js` (12 pins). Note: the plan's OAuth server may restrict redirect URIs to the `zcode://` deep link — if the localhost callback is rejected at login, paste the `code` from the blocked deep-link URL via the manual-code path (first live connect will tell).
+
 # v0.15.131 (2026-09-28)
 
 ## Feature: OpenCode Go subscription quota tracker in the Quota Tracker dashboard
