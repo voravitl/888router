@@ -1,3 +1,10 @@
+# v0.15.130 (2026-09-28)
+
+## Chore: restore headroom with 4Gi memory (prompt compression experiment)
+
+- Reverts the #465 removal: headroom returns with limits raised 2Gi → 4Gi (requests 512Mi → 1Gi, cpu 1.5 → 2) after 62 OOM-style crashloops. Rationale: agent traffic now carries 170-390k inputs/call — the workload where compression may pay for its extra hop.
+- Plan: enable via dashboard token-saver toggle, A/B measure TTFT/total on real traffic, keep only if net faster. Still fail-open when off.
+
 # v0.15.129 (2026-09-28)
 
 ## Chore: remove unused headroom deployment from k8s
