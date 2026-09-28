@@ -397,6 +397,23 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "opencode-go":
+        // Rolling/Weekly/Monthly windows from /zen/go/v1/usage — percent-based
+        // (used/total are 0-100 points). Forward `remaining` (also 0-100)
+        // like codex; the UI treats absolute `remaining` as a percentage.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            normalizedQuotas.push({
+              name: quotaType,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remaining,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       case "kiro":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
