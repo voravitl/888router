@@ -7,7 +7,6 @@ resources:
   - searxng-configmap.yaml
   - configmap.yaml
   - pvc.yaml
-  - headroom.yaml
   - searxng.yaml
   - 888router.yaml
   - ingress.yaml

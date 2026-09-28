@@ -1,3 +1,9 @@
+# v0.15.129 (2026-09-28)
+
+## Chore: remove unused headroom deployment from k8s
+
+- Headroom (optional prompt-compression proxy, default off, never enabled here) crashlooped 62x on its ML load for zero benefit. Removed `k8s/base/headroom.yaml`, its kustomize resource entry, the NetworkPolicy headroom rules, and the dangling `HEADROOM_URL` env. Router is fail-open without it (verified: no `headroom` refs remain, kustomize build OK). Re-enable = re-add the manifest.
+
 # v0.15.128 (2026-09-28)
 
 ## Fix: Responses SSE without event: lines was silently dropped (non-stream still empty live)
