@@ -1,3 +1,11 @@
+# v0.15.128 (2026-09-28)
+
+## Fix: Responses SSE without event: lines was silently dropped (non-stream still empty live)
+
+- **Root cause**: `processSSEMessage` required an `event:` line. Opencode Go emits data-only SSE (payload `type` present, no `event:` field — the streaming translator already tolerates this via `chunk.type || chunk.event`), so the non-stream assembler captured zero events → `status: in_progress`, `output: []`, empty content live on 0.15.127.
+- **Fix**: `open-sse/transformer/streamToJsonConverter.js` — fall back to the payload's own `type` when `event:` is absent.
+- **Tests**: data-only variant pin in `tests/unit/ocg-responses-nonstream.test.js`; full suite green.
+
 # v0.15.127 (2026-09-28)
 
 ## Fix: streaming responses-only models went silent on compact streams (done-events without deltas)

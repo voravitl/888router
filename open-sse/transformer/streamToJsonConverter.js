@@ -12,11 +12,23 @@ function processSSEMessage(msg, state) {
 
   const eventMatch = msg.match(/^event:\s*(.+)$/m);
   const dataMatch = msg.match(/^data:\s*(.+)$/m);
-  if (!eventMatch || !dataMatch) return;
+  if (!dataMatch) return;
+  const dataStr0 = dataMatch[1].trim();
+  if (dataStr0 === "[DONE]") return;
 
-  const eventType = eventMatch[1].trim();
-  const dataStr = dataMatch[1].trim();
-  if (dataStr === "[DONE]") return;
+  // Some Responses servers (e.g. opencode Go) emit data-only SSE without
+  // `event:` lines. Fall back to the payload's own `type` field so those
+  // events are not silently dropped (empty output + status stuck at
+  // in_progress).
+  let eventType = eventMatch?.[1]?.trim() || "";
+  const dataStr = dataStr0;
+  if (!eventType) {
+    let probe;
+    try { probe = JSON.parse(dataStr); }
+    catch { return; }
+    if (typeof probe?.type !== "string") return;
+    eventType = probe.type;
+  }
 
   let parsed;
   try { parsed = JSON.parse(dataStr); }
