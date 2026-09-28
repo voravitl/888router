@@ -53,4 +53,18 @@ describe("non-streaming Responses SSE (opencode-go muse-spark)", () => {
     const parsed = parseSSEToOpenAIResponse(RESPONSES_SSE, "muse-spark-1.3-contributor");
     expect(parsed.choices[0].message.content).toBe("");
   });
+
+  it("assembles data-only SSE (no event: lines, e.g. opencode Go)", async () => {
+    const dataOnly = RESPONSES_SSE.split("\n")
+      .filter((line) => !line.startsWith("event:"))
+      .join("\n");
+    const assembled = await convertResponsesStreamToJson(
+      new Response(dataOnly, { headers: { "content-type": "text/event-stream" } }).body
+    );
+    expect(assembled.status).toBe("completed");
+    expect(assembled.output).toHaveLength(1);
+    expect(assembled.usage.output_tokens).toBe(5);
+    const chat = translateNonStreamingResponse(assembled, FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    expect(chat.choices[0].message.content).toBe("4");
+  });
 });
