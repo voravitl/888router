@@ -59,13 +59,6 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              app: headroom
-      ports:
-        - protocol: TCP
-          port: 8787
-    - to:
-        - podSelector:
-            matchLabels:
               app: searxng
       ports:
         - protocol: TCP
@@ -95,7 +88,7 @@ spec:
     matchExpressions:
       - key: app
         operator: In
-        values: [headroom, searxng]
+        values: [searxng]
   policyTypes:
     - Ingress
     - Egress
