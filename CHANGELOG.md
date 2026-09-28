@@ -1,10 +1,10 @@
-# v0.15.126 (2026-09-28)
+# v0.15.127 (2026-09-28)
 
-## Fix: non-streaming requests to responses-only models returned HTTP 200 with empty content
+## Fix: streaming responses-only models went silent on compact streams (done-events without deltas)
 
-- **Root cause**: `openaiToOpenAIResponsesRequest` hardcodes `stream: true`, so a client asking `stream: false` still gets Responses SSE back. `handleNonStreamingResponse` fed that SSE to the chat-only `parseSSEToOpenAIResponse` (looks for `choices[].delta.content` — Responses events have none) → content `""`.
-- **Fix**: `open-sse/handlers/chatCore/nonStreamingHandler.js` — when `targetFormat` is `openai-responses` and upstream returns SSE, assemble via `convertResponsesStreamToJson` first; the existing JSON-shape branch translates after. Chat-path behavior unchanged.
-- **Tests**: New suite `tests/unit/ocg-responses-nonstream.test.js` (3 pins incl. old-parser-drops-events doc); full suite 297 files / 2981 tests green.
+- **Root cause**: `openaiResponsesToOpenAIResponse` ignored `response.output_text.done` ("we handle via delta") and message `response.output_item.done`. Upstreams that send a compact stream (full text in terminal events, no per-token deltas — seen on opencode-go muse-spark) produced zero content chunks → client saw HTTP 200 with empty body and 0 tok/s.
+- **Fix**: emit terminal-event text when no delta was seen for that output index (per-index guard, no double-emit). Shared `extractResponsesMessageText` helper in `translator/concerns/message.js`; server-side accounting in `utils/stream.js` mirrors the guard with a closure-local flag (shared `state` would suppress the client chunk due to accumulate-first ordering).
+- **Tests**: New suite `tests/unit/ocg-responses-done-fallback.test.js` (4 pins: done-text emitted, item-text emitted, no double-emit with deltas, helper shapes); full suite green.
 
 # v0.15.125 (2026-09-28)
 
