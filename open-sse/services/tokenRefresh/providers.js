@@ -124,56 +124,6 @@ export async function refreshClaudeOAuthToken(refreshToken, log) {
   }, log);
 }
 
-// ZCode (Z.ai start-plan) — standard RFC 6749 refresh against the ZCode
-// OAuth token endpoint. PKCE public client: client_id only, no secret.
-// Single source: clientId/tokenUrl come from the registry via PROVIDER_OAUTH
-// (no hardcoded fallback — a rotated id must fail loudly, not silently reuse).
-export async function refreshZcodeToken(refreshToken, log, proxyOptions = null) {
-  if (!refreshToken) return null;
-  return dedupRefresh("zcode", refreshToken, async () => {
-  try {
-    const oauth = PROVIDER_OAUTH.zcode || {};
-    if (!oauth.tokenUrl || !oauth.clientId) {
-      log?.error?.("TOKEN_REFRESH", "Missing ZCode OAuth config in registry");
-      return null;
-    }
-    const response = await proxyAwareFetch(oauth.tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json",
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        client_id: oauth.clientId,
-      }),
-    }, proxyOptions);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      const failure = classifyOAuthRefreshError(errorText, response.status);
-      if (failure.permanent) {
-        log?.error?.("TOKEN_REFRESH", "ZCode refresh token invalid or reused. Re-auth required.", {
-          status: response.status,
-          code: failure.code,
-        });
-        return { error: "unrecoverable_refresh_error", code: failure.code };
-      }
-      log?.error?.("TOKEN_REFRESH", "Failed to refresh ZCode token", { status: response.status, error: errorText.slice(0, 200) });
-      return null;
-    }
-
-    const tokens = await response.json();
-    log?.info?.("TOKEN_REFRESH", "Successfully refreshed ZCode token", { hasNewAccessToken: !!tokens.access_token, expiresIn: tokens.expires_in });
-    return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
-  } catch (error) {
-    log?.error?.("TOKEN_REFRESH", `Network error refreshing ZCode token: ${error.message}`);
-    return null;
-  }
-  }, log);
-}
-
 export async function refreshGoogleToken(refreshToken, clientId, clientSecret, log) {
   if (!refreshToken) return null;
   return dedupRefresh(`google:${clientId}`, refreshToken, async () => {
