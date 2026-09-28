@@ -114,6 +114,26 @@ export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy-cn"] };
 // Kimchi OAuth Configuration (Browser token callback flow)
 export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 
+// ZCode (Z.ai start-plan) OAuth Configuration — reverse-engineered from the
+// ZCode desktop bundle (verified 2026-09-28): authorize at chat.z.ai, token
+// exchange at zcode.z.ai, plan chat API at /api/v1/zcode-plan/*.
+// appId `client_P8X5CMWmlaRO9gyO-KSqtg` is the public client embedded in the
+// ZCode desktop app (PKCE public client — no secret). The plan endpoint only
+// accepts tokens minted by this OAuth flow, which is what unlocks the free
+// GLM-5.3-Flash quota that is otherwise exclusive to the ZCode client.
+export const ZCODE_CONFIG = {
+  clientId: "client_P8X5CMWmlaRO9gyO-KSqtg",
+  authorizeUrl: "https://chat.z.ai/api/oauth/authorize",
+  tokenUrl: "https://zcode.z.ai/api/v1/oauth/token",
+  userinfoUrl: "https://chat.z.ai/api/oauth/userinfo",
+  planAnthropicBaseUrl: "https://zcode.z.ai/api/v1/zcode-plan/anthropic",
+  planBillingUrl: "https://zcode.z.ai/api/v1/zcode-plan/billing/current",
+  // The server whitelists the app's deep link for this client — using it and
+  // letting the user copy the `code` from the blocked deep-link URL keeps us
+  // independent of arbitrary redirect_uri registration.
+  nativeRedirectUri: "zcode://oauth/callback",
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 

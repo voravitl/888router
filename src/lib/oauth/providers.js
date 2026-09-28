@@ -27,6 +27,7 @@ import {
   GITLAB_CONFIG,
   CODEBUDDY_CONFIG,
   KIMCHI_CONFIG,
+  ZCODE_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
@@ -62,6 +63,76 @@ async function discoverXaiEndpoints() {
 
 // Provider configurations
 const PROVIDERS = {
+  zcode: {
+    config: ZCODE_CONFIG,
+    flowType: "authorization_code_pkce",
+    buildAuthUrl: (config, redirectUri, state, codeChallenge) => {
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: config.clientId,
+        redirect_uri: redirectUri,
+        code_challenge: codeChallenge,
+        code_challenge_method: "S256",
+        state: state,
+      });
+      return `${config.authorizeUrl}?${params.toString()}`;
+    },
+    exchangeToken: async (config, code, redirectUri, codeVerifier, state) => {
+      // Standard RFC 6749 form-encoded token exchange (PKCE public client —
+      // no client secret, matching the ZCode desktop client).
+      let authCode = code;
+      if (authCode.includes("#")) authCode = authCode.split("#")[0];
+
+      const response = await fetch(config.tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: authCode,
+          client_id: config.clientId,
+          redirect_uri: redirectUri,
+          code_verifier: codeVerifier,
+          state: state || "",
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`ZCode token exchange failed: ${error}`);
+      }
+
+      return await response.json();
+    },
+    postExchange: async (tokens) => {
+      // Best-effort identity (email/name) from the userinfo endpoint.
+      try {
+        const r = await fetch(ZCODE_CONFIG.userinfoUrl, {
+          headers: { Authorization: `Bearer ${tokens.access_token}` },
+        });
+        if (!r.ok) return null;
+        const u = await r.json();
+        return { email: u?.email || u?.sub || null, name: u?.name || u?.nickname || null };
+      } catch {
+        return null;
+      }
+    },
+    mapTokens: (tokens, extra) => ({
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      scope: tokens.scope,
+      email: extra?.email || undefined,
+      displayName: extra?.name || undefined,
+      providerSpecificData: {
+        authMethod: "oauth",
+        plan: "zai-start-plan",
+      },
+    }),
+  },
+
   claude: {
     config: CLAUDE_CONFIG,
     flowType: "authorization_code_pkce",

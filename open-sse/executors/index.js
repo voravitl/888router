@@ -26,6 +26,7 @@ import WindsurfExecutor from "./windsurf.js";
 import { DevinCliExecutor } from "./devin-cli.js";
 import { DefaultExecutor } from "./default.js";
 import { AipassExecutor } from "./aipass.js";
+import { ZcodeExecutor } from "./zcode.js";
 import { isRetiredProvider, retiredProviderMessage } from "../config/retiredProviders.js";
 
 const executors = {
@@ -46,6 +47,7 @@ const executors = {
   opencode: new OpenCodeExecutor(),
   "opencode-zen": new OpenCodeExecutor(),
   "opencode-go": new OpenCodeExecutor("opencode-go"),
+  zcode: new ZcodeExecutor(),
   "grok-web": new GrokWebExecutor(),
   "grok-cli": new GrokCliExecutor(),
   gcli: new GrokCliExecutor(), // Alias

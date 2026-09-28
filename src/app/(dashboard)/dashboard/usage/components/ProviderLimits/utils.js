@@ -414,6 +414,23 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "zcode":
+        // Billing rows are either percent windows (used/total 0-100 with
+        // `remaining` 0-100) or absolute used/limit — codex-style forwarding
+        // covers both (`remaining` is undefined for limit rows).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            normalizedQuotas.push({
+              name: quotaType,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remaining,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       case "kiro":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
