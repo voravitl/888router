@@ -8,6 +8,7 @@ import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId, accumulateToolName } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
+import { extractResponsesMessageText } from "../concerns/message.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 
 /**
@@ -418,15 +419,45 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     const delta = data.delta || "";
     if (!delta) return null;
 
+    state.respTextDeltaIdx = state.respTextDeltaIdx || {};
+    state.respTextDeltaIdx[data.output_index ?? 0] = true;
+
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
       { content: delta }
     );
   }
 
-  // Text content done (ignore, we handle via delta)
+  // Text content done — compact streams may carry the FULL text here with NO
+  // preceding per-token deltas. Emit it only when no delta was seen for this
+  // output index, otherwise the client would get the text twice.
   if (eventType === "response.output_text.done") {
-    return null;
+    const idx = data.output_index ?? 0;
+    if (state.respTextDeltaIdx?.[idx]) return null;
+    const text = typeof data.text === "string" && data.text.length > 0
+      ? data.text
+      : extractResponsesMessageText(data.part);
+    if (!text) return null;
+    state.respTextDeltaIdx = state.respTextDeltaIdx || {};
+    state.respTextDeltaIdx[idx] = true;
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { content: text }
+    );
+  }
+
+  // Message item done — same compact-stream fallback at item granularity.
+  if (eventType === "response.output_item.done" && data.item?.type === RESPONSES_ITEM.MESSAGE) {
+    const idx = data.output_index ?? 0;
+    if (state.respTextDeltaIdx?.[idx]) return null;
+    const text = extractResponsesMessageText(data.item);
+    if (!text) return null;
+    state.respTextDeltaIdx = state.respTextDeltaIdx || {};
+    state.respTextDeltaIdx[idx] = true;
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { content: text }
+    );
   }
 
   // Function call started (standard function_call or custom_tool_call)

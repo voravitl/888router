@@ -5,6 +5,7 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure, stripResponsesLifecycleEcho } from "./responsesStreamHelpers.js";
 import { restoreOpencodeToolNames } from "./opencodeToolSanitizer.js";
+import { extractResponsesMessageText } from "../translator/concerns/message.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -77,6 +78,10 @@ export function createSSEStream(options = {}) {
   let accumulatedToolCalls = null;
   // Map identifier (itemId or callId) -> canonical record { id, name }
   const toolAliasMap = new Map();
+  // Compact-stream fallback accounting: closure-local (NOT on shared `state` —
+  // the translator keeps its own emit guard on state, and sharing one flag
+  // would let the accumulate-first ordering suppress the client chunk).
+  const respTextDeltaSeen = {};
 
   function trackResponsesToolCall(itemId, callId, name) {
     if (accumulatedToolCalls === null) accumulatedToolCalls = [];
@@ -387,6 +392,28 @@ export function createSSEStream(options = {}) {
         if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
           totalContentLength += parsed.delta.length;
           accumulatedContent += parsed.delta;
+          respTextDeltaSeen[parsed.output_index ?? 0] = true;
+        }
+        // Compact-stream fallback: terminal events carrying full text with NO
+        // preceding deltas (mirrors the translator guard so server-side
+        // accounting matches what the client receives).
+        if (parsed.type === "response.output_text.done" && !respTextDeltaSeen[parsed.output_index ?? 0]) {
+          const doneText = typeof parsed.text === "string" && parsed.text.length > 0
+            ? parsed.text
+            : extractResponsesMessageText(parsed.part);
+          if (doneText) {
+            totalContentLength += doneText.length;
+            accumulatedContent += doneText;
+            respTextDeltaSeen[parsed.output_index ?? 0] = true;
+          }
+        }
+        if (parsed.type === "response.output_item.done" && parsed.item?.type === "message" && !respTextDeltaSeen[parsed.output_index ?? 0]) {
+          const itemText = extractResponsesMessageText(parsed.item);
+          if (itemText) {
+            totalContentLength += itemText.length;
+            accumulatedContent += itemText;
+            respTextDeltaSeen[parsed.output_index ?? 0] = true;
+          }
         }
         // OpenAI Responses format - reasoning
         if (parsed.type === "response.reasoning_summary_text.delta" && typeof parsed.delta === "string") {
