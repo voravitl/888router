@@ -9,6 +9,10 @@ on:
       - 'chore/**'
       - 'fix/**'
       - 'feat/**'
+    # Docs-only pushes skip CI (mirrors docker-publish.yml). PRs still always
+    # run via the pull_request trigger above.
+    paths-ignore:
+      - '**.md'
   workflow_dispatch:
 
 # Prevent wasted/racing builds: cancel superseded runs on the same ref.
