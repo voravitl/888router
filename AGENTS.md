@@ -31,7 +31,12 @@ the old logic. Every change ships through the pipeline below.
      - `k8s/base/888router.yaml` (image tag)
      - `k8s/overlays/local/kustomization.yaml` (`images[].newTag`)
      - `k8s/overlays/prd/kustomization.yaml` (`images[].newTag`)
-6. **Build image → redeploy (k8s) → verify (CRITICAL: ZERO-DOWNTIME FAST PATH).**
+6. **Deploy: CI OWNS IT — never `kubectl apply` by hand (2026-09-28 decision).**
+   - GitHub Actions (`docker-publish.yml` → `scripts/cicd-release.sh`) auto-deploys EVERY master push with `:sha-<short>` and its own version gate + rollback. A manual `kubectl apply` after merge RACES it: Recreate kills the healthy pod twice → double 503 window (incident 2026-09-28: manual `:0.15.129` deploy over-written by CI `:sha-22d657d` minutes later).
+   - **RULE:** after merge, do NOT build/apply locally. Wait for the `Build and Push Docker Image` run on master (`gh run list`), then verify only:
+      `kubectl rollout status deploy/888router -n 888router --timeout=300s`
+      `curl http://router.k8s.orb.local/api/version` (reads package.json version — tag-independent, `:sha-*` and `:0.15.x` of the same commit agree)
+   - Manual `kubectl apply -k` is EMERGENCY-ONLY (CI broken AND pod down): still build locally first (rule below), and expect CI to re-deploy on the next push.
    - **Tag naming convention (CRITICAL):**
      Docker image tag in K8s is **WITHOUT `v`** (e.g. `voravitl/888router:0.15.120`), NEVER `v0.15.120`! Git tag has `v` (`v0.15.120`). A tag mismatch causes K8s to look for the wrong image and crash.
    - **MANDATORY local build BEFORE `kubectl apply`:**
