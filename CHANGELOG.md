@@ -1,3 +1,11 @@
+# v0.15.125 (2026-09-28)
+
+## Fix: responses-only models paired a chat body with /responses ("unknown parameter `messages`")
+
+- **Root cause**: chatCore's per-model transport guard resolved `useTransport=null` when the model's declared `supportedFormats` excluded the client sourceFormat, then fell back to the provider default format. For paid `muse-spark-1.3-contributor` (declares `["openai-responses"]`) with a claude-format client: body translated to chat shape (`{messages}`) while `buildUrl` sent it to `/zen/go/v1/responses` — upstream 400 `unknown parameter 'messages'`.
+- **Fix**: `open-sse/handlers/chatCore.js` — when the declaration exists but excludes `sourceFormat`, pick the transport matching the model's FIRST declared format instead of null. Responses-only models now translate claude → openai-responses and hit the matching endpoint; undeclared models (glm/deepseek/...) keep the previous provider-default behavior.
+- **Tests**: New suite `tests/unit/ocg-responses-transport-pick.test.js` (3 pins: responses-only → /responses transport; chat-only + openai client → chat/completions; chat-only + claude client → openai transport); 49 tests green across 6 opencode suites.
+
 # v0.15.124 (2026-09-28)
 
 ## Fix: opencode-go paid muse-spark hit the FREE /responses endpoint ("Model is unavailable")
