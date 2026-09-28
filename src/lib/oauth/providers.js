@@ -77,9 +77,11 @@ const PROVIDERS = {
       });
       return `${config.authorizeUrl}?${params.toString()}`;
     },
-    exchangeToken: async (config, code, redirectUri, codeVerifier, state) => {
+    exchangeToken: async (config, code, redirectUri, codeVerifier) => {
       // Standard RFC 6749 form-encoded token exchange (PKCE public client —
-      // no client secret, matching the ZCode desktop client).
+      // no client secret, matching the ZCode desktop client). `state` is a
+      // client-side CSRF token (RID §4.1.1) — it is verified locally against
+      // the authorize-time value and never sent to the token endpoint (§4.1.3).
       let authCode = code;
       if (authCode.includes("#")) authCode = authCode.split("#")[0];
 
@@ -95,7 +97,6 @@ const PROVIDERS = {
           client_id: config.clientId,
           redirect_uri: redirectUri,
           code_verifier: codeVerifier,
-          state: state || "",
         }),
       });
 

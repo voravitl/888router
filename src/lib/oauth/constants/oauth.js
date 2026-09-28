@@ -128,10 +128,11 @@ export const ZCODE_CONFIG = {
   userinfoUrl: "https://chat.z.ai/api/oauth/userinfo",
   planAnthropicBaseUrl: "https://zcode.z.ai/api/v1/zcode-plan/anthropic",
   planBillingUrl: "https://zcode.z.ai/api/v1/zcode-plan/billing/current",
-  // The server whitelists the app's deep link for this client — using it and
-  // letting the user copy the `code` from the blocked deep-link URL keeps us
-  // independent of arbitrary redirect_uri registration.
-  nativeRedirectUri: "zcode://oauth/callback",
+  // Shipped flow uses the generic localhost callback
+  // (http://localhost:<port>/callback, same as other PKCE providers via
+  // OAuthModal) — authorize and exchange must send the same redirect_uri.
+  // If the server rejects localhost registration, paste the code manually
+  // via the modal's manual-paste step instead.
 };
 
 // OAuth timeout (5 minutes)
