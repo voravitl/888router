@@ -1,10 +1,11 @@
 # v0.15.122 (2026-09-28)
 
-## Fix: opencode-go 401 "Missing API key" — prototype-inherited credentials dropped by spread
+## Fix: opencode-go 401 "Missing API key" + missing per-model context caps
 
-- **Root cause**: `open-sse/handlers/chatCore.js` builds `requestCredentials` via `Object.create(credentials)`, putting `apiKey` on the prototype. `OpenCodeExecutor.prepareRequestCredentials` returned a bare object spread `{...sourceCredentials}`, which copies own-enumerable properties only — the inherited `apiKey` was dropped, so `buildHeaders` fell back to `Authorization: Bearer public` and every `opencode-go` request hit upstream 401 `AuthError: Missing API key` (free-tier `opencode` connections were unaffected because Zen public models intentionally use `Bearer public`).
-- **Fix**: `open-sse/executors/opencode.js` `prepareRequestCredentials` now materializes the prototype chain (`Object.assign({}, ...chain, credentials)`) before spreading, with own-property precedence preserved and null credentials safe.
-- **Tests**: New regression suite `tests/unit/opencode-go-key-prototype.test.js` (4 tests) pins prototype-chain carry, own-shadow precedence, and the Go `Bearer <apiKey>` header; existing opencode suites (executor, models, runtime-transport, live-resolver, muse-spark-thinking) all green (49 tests).
+- **Root cause (401)**: `open-sse/handlers/chatCore.js` builds `requestCredentials` via `Object.create(credentials)`, putting `apiKey` on the prototype. `OpenCodeExecutor.prepareRequestCredentials` returned a bare object spread `{...sourceCredentials}`, which copies own-enumerable properties only — the inherited `apiKey` was dropped, so `buildHeaders` fell back to `Authorization: Bearer public` and every `opencode-go` request hit upstream 401 `AuthError: Missing API key` (free-tier `opencode` connections were unaffected because Zen public models intentionally use `Bearer public`).
+- **Fix (401)**: `open-sse/executors/opencode.js` `prepareRequestCredentials` now materializes the prototype chain (`Object.assign({}, ...chain, credentials)`) before spreading, with own-property precedence preserved and null credentials safe.
+- **Fix (context caps)**: `open-sse/providers/capabilities.js` had no `opencode-go` entries beyond 5 legacy free models, so Go-tier models advertised the generic 200k default or unrelated family patterns. Added per-model capabilities for the Go catalog (25 entries) with contexts from each model's public spec and the Go context-tiered pricing bands (GPT Luna ≤272K, Grok ≤200K, Qwen Plus ≤256K): GLM 1M, Kimi K3 1M/K2.x 256K, DeepSeek V4 1M, MiniMax M3 512K, Grok 200K, GPT Luna 272K, LongCat 200K, Hy 256K.
+- **Tests**: New regression suites `tests/unit/opencode-go-key-prototype.test.js` (4) and `tests/unit/opencode-go-context-caps.test.js` (12); existing opencode suites (executor, models, runtime-transport, live-resolver, muse-spark-thinking) all green (61 tests total).
 
 # v0.15.121 (2026-09-26)
 
