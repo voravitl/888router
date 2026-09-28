@@ -14,6 +14,7 @@ import { getCodeBuddyCnUsage } from "./usage/codebuddy-cn.js";
 import { getGrokCliUsage } from "./usage/grok-cli.js";
 import { getKimiUsage } from "./usage/kimi.js";
 import { getDeepseekUsage } from "./usage/deepseek.js";
+import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getAipassUsage } from "./usage/aipass.js";
 import {
   getQwenUsage,
@@ -54,6 +55,7 @@ const USAGE_HANDLERS = {
   xai: (c) => getGrokCliUsage(c.accessToken || c.apiKey, c.providerSpecificData, c.proxyOptions),
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
+  "opencode-go": (c) => getOpenCodeGoUsage(c.apiKey, c.proxyOptions),
   aipass: (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   "aipass-th": (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   "aipass-bridge": (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),

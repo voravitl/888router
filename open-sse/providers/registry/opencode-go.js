@@ -18,6 +18,11 @@ const opencode_goConfig = {
     },
   },
   category: "apikey",
+  features: {
+    usage: true,
+    // apikey connections hit GET /zen/go/v1/usage (Bearer key) for the quota tracker
+    usageApikey: true,
+  },
   // Live catalog: GET https://opencode.ai/zen/go/v1/models (Bearer public)
   // returns the current paid-catalog ids. /v1/models + dashboard use this via
   // a dedicated opencode-go resolver (not the generic openai one — that one
