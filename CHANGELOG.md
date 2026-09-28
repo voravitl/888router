@@ -1,3 +1,12 @@
+# v0.15.123 (2026-09-28)
+
+## Fix: opencode-go endpoint-formats per Go docs table (ModelProtocolUnsupported)
+
+- **Root cause**: Live Go catalog ids (from `modelsFetcher`) carry no `supportedFormats`, so chatCore's per-model transport guard fell through to the sourceFormat-matched transport — a claude-format client routed `longcat-2.5-preview-free` to `/messages` and upstream answered 400 `ModelProtocolUnsupported` (observed on the live router after the 0.15.122 deploy).
+- **Fix**: `open-sse/providers/registry/opencode-go.js` static seed expanded 14 → 36 ids covering the full Go docs endpoint table (https://opencode.ai/v2/docs/console/go — Endpoints): `/chat/completions` → openai, `/messages` → claude, `/responses` → openai-responses. The chatCore guard now picks a compatible endpoint for every catalog id.
+- **Verified live**: longcat rejects /messages AND /responses (chat-only); kimi accepts /messages (200); minimax accepts /chat/completions (200); gpt-6-luna needs /responses (200); deepseek-v4-pro is region-gated upstream (console Privacy setting), not protocol-blocked. Seed pins the conservative docs-canonical contract.
+- **Tests**: `tests/unit/opencode-go-models.test.js` updated to the docs-canonical contract + new /responses routing pins; 8 opencode suites green (66 tests).
+
 # v0.15.122 (2026-09-28)
 
 ## Fix: opencode-go 401 "Missing API key" + missing per-model context caps
