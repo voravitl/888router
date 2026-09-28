@@ -1,3 +1,11 @@
+# v0.15.122 (2026-09-28)
+
+## Fix: opencode-go 401 "Missing API key" — prototype-inherited credentials dropped by spread
+
+- **Root cause**: `open-sse/handlers/chatCore.js` builds `requestCredentials` via `Object.create(credentials)`, putting `apiKey` on the prototype. `OpenCodeExecutor.prepareRequestCredentials` returned a bare object spread `{...sourceCredentials}`, which copies own-enumerable properties only — the inherited `apiKey` was dropped, so `buildHeaders` fell back to `Authorization: Bearer public` and every `opencode-go` request hit upstream 401 `AuthError: Missing API key` (free-tier `opencode` connections were unaffected because Zen public models intentionally use `Bearer public`).
+- **Fix**: `open-sse/executors/opencode.js` `prepareRequestCredentials` now materializes the prototype chain (`Object.assign({}, ...chain, credentials)`) before spreading, with own-property precedence preserved and null credentials safe.
+- **Tests**: New regression suite `tests/unit/opencode-go-key-prototype.test.js` (4 tests) pins prototype-chain carry, own-shadow precedence, and the Go `Bearer <apiKey>` header; existing opencode suites (executor, models, runtime-transport, live-resolver, muse-spark-thinking) all green (49 tests).
+
 # v0.15.121 (2026-09-26)
 
 ## Fix: Antigravity Quota Tracker Accuracy — Weekly Limits & Exhaustion Sync (#446)

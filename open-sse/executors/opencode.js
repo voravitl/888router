@@ -320,7 +320,13 @@ export class OpenCodeExecutor extends BaseExecutor {
   // Request-local session (no shared instance state): resolved per execute()
   // call so concurrent requests cannot leak sessions into each other.
   prepareRequestCredentials({ body, credentials, providerSessionId, clientTool } = {}) {
-    const sourceCredentials = credentials || {};
+    // chatCore builds requestCredentials via Object.create(credentials) — fields
+    // like apiKey live on the prototype. A bare spread drops them (own-enumerable
+    // only), so buildHeaders fell back to Bearer public and opencode-go got 401
+    // "Missing API key". Materialize the prototype chain into the spread.
+    const chain = [];
+    for (let o = credentials; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) chain.unshift(o);
+    const sourceCredentials = Object.assign({}, ...chain, credentials);
     const rawHeaders = sourceCredentials?.rawHeaders || {};
     const tool = clientTool || detectClientTool(rawHeaders, body || {});
     const resolved = resolveOpencodeSession(body, sourceCredentials, providerSessionId, tool);
