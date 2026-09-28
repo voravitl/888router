@@ -1,3 +1,13 @@
+# v0.15.131 (2026-09-28)
+
+## Feature: OpenCode Go subscription quota tracker in the Quota Tracker dashboard
+
+- New usage service `open-sse/services/usage/opencode-go.js` — GET `https://opencode.ai/zen/go/v1/usage` (Bearer apiKey, undocumented endpoint; `/api/usage*` is Cloudflare-blocked). Upstream `percent` is USED percent per window; mapped to codex-style percent quotas: `Rolling (5h)` / `Weekly` / `Monthly` with `{used, total: 100, remaining: 100-used, resetAt}`. Windows without a finite `percent` are skipped instead of faking 0% used (review finding).
+- Registry `opencode-go`: `features: { usage, usageApikey }` — apikey connections now appear in the Quota Tracker (`/api/providers/client` filter + `/api/usage/[connectionId]` gate).
+- UI `parseQuotaData` case `opencode-go` forwards `remaining` (0-100) like codex.
+- Tests: `tests/unit/opencode-go-usage.test.js` (8 pins: registry flags, Bearer header, window mapping vs live fixture, clamping, unknown-key labels, malformed-window skip, 401/missing-key messages, parser). Full suite green (2993 passed); service verified live against the real endpoint (rolling 0 / weekly 24 / monthly 12).
+- Review: grok (402 quota) → 9-opus combo degraded to glm-5.3-flash → agy (429) → kr/claude-opus-4-8-thinking (402 monthly limit) → reviewed by **codex CLI** (rank 5); one MEDIUM finding resolved in-commit.
+
 # v0.15.130 (2026-09-28)
 
 ## Chore: restore headroom with 4Gi memory (prompt compression experiment)
