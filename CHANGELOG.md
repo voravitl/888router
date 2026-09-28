@@ -1,3 +1,11 @@
+# v0.15.126 (2026-09-28)
+
+## Fix: non-streaming requests to responses-only models returned HTTP 200 with empty content
+
+- **Root cause**: `openaiToOpenAIResponsesRequest` hardcodes `stream: true`, so a client asking `stream: false` still gets Responses SSE back. `handleNonStreamingResponse` fed that SSE to the chat-only `parseSSEToOpenAIResponse` (looks for `choices[].delta.content` — Responses events have none) → content `""`.
+- **Fix**: `open-sse/handlers/chatCore/nonStreamingHandler.js` — when `targetFormat` is `openai-responses` and upstream returns SSE, assemble via `convertResponsesStreamToJson` first; the existing JSON-shape branch translates after. Chat-path behavior unchanged.
+- **Tests**: New suite `tests/unit/ocg-responses-nonstream.test.js` (3 pins incl. old-parser-drops-events doc); full suite 297 files / 2981 tests green.
+
 # v0.15.125 (2026-09-28)
 
 ## Fix: responses-only models paired a chat body with /responses ("unknown parameter `messages`")
