@@ -130,8 +130,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         // breaker is cache-blocked at the ACCOUNT level for its window even
         // when its DB park has lapsed — without this the pool is re-selected
         // immediately and the breaker never engages (review F1, probe-proven).
+        // The chat handler reports strikes with whatever connectionId it was
+        // given. Auto-rotate pools mint `noauth:<poolId>` connection ids, but
+        // the legacy specific-pool strategy returns bare `noauth` — so BOTH
+        // keys must be consulted or the block is written under one key and
+        // read under another (seen live: 7 429s on the same pool inside 13s,
+        // every 3rd one recording but never blocking).
         const strikeBlock = isQuotaTrackedProvider(providerId) && model
-          ? isPairBlocked(providerId, `noauth:${pid}`, model)
+          ? (isPairBlocked(providerId, `noauth:${pid}`, model)
+            ?? isPairBlocked(providerId, "noauth", model))
           : null;
         if (strikeBlock && strikeBlock > now) {
           log.debug("AUTH", `Skipping pool ${pid}: strike-blocked until ${new Date(strikeBlock).toISOString()}`);
@@ -215,9 +222,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       let earliestPoolError = null;
       for (const pool of pools) {
         // A strike-blocked pool carries a real window even with no DB park.
+        // Both key shapes — see the skip branch above for why.
         if (isQuotaTrackedProvider(providerId) && model) {
-          const strikeBlock = isPairBlocked(providerId, `noauth:${pool?.id}`, model);
-          if (strikeBlock > now && (!earliestReset || strikeBlock < earliestReset)) {
+          const strikeBlock = isPairBlocked(providerId, `noauth:${pool?.id}`, model)
+            ?? isPairBlocked(providerId, "noauth", model);
+          if (strikeBlock && strikeBlock > now && (!earliestReset || strikeBlock < earliestReset)) {
             earliestReset = strikeBlock;
             earliestPoolError = pool.lastError || null;
           }
