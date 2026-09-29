@@ -2,7 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { getProviderQuotaCache, isQuotaTrackedProvider } from "./providerQuota.js";
+import { isPairBlocked, isQuotaTrackedProvider } from "./providerQuota.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 import { isRetiredProvider } from "open-sse/config/retiredProviders.js";
@@ -126,6 +126,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         const pid = pool?.id;
         if (!pid || exclude.has(`noauth:${pid}`)) continue;
         const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
+        // Strike breaker (providerQuota): a pool that tripped the quota
+        // breaker is cache-blocked at the ACCOUNT level for its window even
+        // when its DB park has lapsed — without this the pool is re-selected
+        // immediately and the breaker never engages (review F1, probe-proven).
+        const strikeBlock = isQuotaTrackedProvider(providerId) && model
+          ? isPairBlocked(providerId, `noauth:${pid}`, model)
+          : null;
+        if (strikeBlock && strikeBlock > now) {
+          log.debug("AUTH", `Skipping pool ${pid}: strike-blocked until ${new Date(strikeBlock).toISOString()}`);
+          continue;
+        }
         if (pool.testStatus === "unavailable") {
           if (parkedUntil > now) {
             log.debug("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
@@ -203,6 +214,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       let earliestReset = null;
       let earliestPoolError = null;
       for (const pool of pools) {
+        // A strike-blocked pool carries a real window even with no DB park.
+        if (isQuotaTrackedProvider(providerId) && model) {
+          const strikeBlock = isPairBlocked(providerId, `noauth:${pool?.id}`, model);
+          if (strikeBlock > now && (!earliestReset || strikeBlock < earliestReset)) {
+            earliestReset = strikeBlock;
+            earliestPoolError = pool.lastError || null;
+          }
+        }
         if (!pool.unavailableUntil) continue;
         const until = new Date(pool.unavailableUntil).getTime();
         if (until > now) {
@@ -278,22 +297,23 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     // Filter out model-locked and excluded connections
-    // Quota cache is lazy: only populated after that account returned 409/429.
-    const quotaCache = isQuotaTrackedProvider(providerId) && model ? getProviderQuotaCache() : null;
+    // Quota tracking is lazy: only populated after that account returned 409/429.
+    const quotaTracked = isQuotaTrackedProvider(providerId) && model;
 
     // Filter out model-locked, excluded, and quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
-      // Quota-tracked: skip if the live quota cache has this pair exhausted.
-      // The cache entry carries the TRUE resetAt (e.g. an 80h antigravity
-      // account window, or a strike-block deadline), which the persisted
-      // modelLock_* cannot hold — MAX_RATE_LIMIT_COOLDOWN_MS caps it at 30m.
-      if (quotaCache) {
-        const quota = quotaCache.get(c.id)?.[model];
-        if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
+      // Quota-tracked: skip if the cache/breaker has this pair blocked. The
+      // entry carries the TRUE resetAt (an 80h antigravity account window, or
+      // a strike-block deadline), which the persisted modelLock_* cannot hold
+      // — MAX_RATE_LIMIT_COOLDOWN_MS caps it at 30m. Strike-only providers
+      // block at the ACCOUNT level, so every model on that connection skips.
+      if (quotaTracked) {
+        const blockedUntil = isPairBlocked(providerId, c.id, model);
+        if (blockedUntil) {
           const account = c.id?.slice(0, 8) || "unknown";
-          log.info("AUTH", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
+          log.info("AUTH", `${account} | CACHE_BLOCK ${model} — skip upstream until ${new Date(blockedUntil).toISOString()}`);
           return false;
         }
       }
@@ -316,10 +336,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // reports its REAL window, not the 30-minute capped modelLock.
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c) || c.rateLimitedUntil || c.unavailableUntil).filter(Boolean);
-      if (quotaCache) {
+      if (quotaTracked) {
         connections.forEach((c) => {
-          const resetAt = quotaCache.get(c.id)?.[model]?.resetAt;
-          if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
+          const blockedUntil = isPairBlocked(providerId, c.id, model);
+          if (blockedUntil) expiries.push(new Date(blockedUntil).toISOString());
         });
       }
       const earliest = expiries.sort()[0] || null;

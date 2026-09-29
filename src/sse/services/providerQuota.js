@@ -46,8 +46,25 @@ const MIN_REFRESH_INTERVAL_MS = 30_000; // 30s between refreshes per connection
 const STRIKE_WINDOW_MS = 60_000; // strikes older than this reset the count
 const STRIKE_THRESHOLD = 3;
 const STRIKE_BLOCK_MS = 15 * 60_000;
-const strikeCounts = new Map(); // "connectionId|model" → { count, windowStart (anchored at first strike) }
-const strikeBlocks = new Map(); // "connectionId|model" → blockedUntil ms
+// Strike-only providers park for a SHORTER window: their limit is a rolling
+// per-account wall (ollama cloud RPM, opencode free tier), not a scheduled
+// reset — a 15m block would idle a working model ~15x past its real
+// recovery. (review F3)
+const STRIKE_ONLY_BLOCK_MS = 5 * 60_000;
+// Strike keying PER PROVIDER CLASS. Antigravity's quota is genuinely
+// per-model, so its key includes the model. Ollama/opencode free tiers meter
+// the ACCOUNT — ollama's own 429 names the user ("you (lvoravit) have reached
+// your monthly usage limit", no reset hint), so keying per model fragments the
+// count across a multi-model combo: three different models on one connection
+// would each be at strike 1 and nothing ever blocks. Key strike-only
+// providers per connection (account-level). (review F2, seen live)
+function strikeKey(providerId, connectionId, model) {
+  return STRIKE_ONLY_PROVIDERS.has(providerId)
+    ? `${connectionId}|*`           // account-level
+    : `${connectionId}|${model}`;  // model-level (antigravity)
+}
+const strikeCounts = new Map(); // strikeKey → { count, windowStart (anchored at first strike) }
+const strikeBlocks = new Map(); // strikeKey → blockedUntil ms
 
 /** Providers whose 409/429s should be recorded here. Others use combo.js's text fallback. */
 export function isQuotaTrackedProvider(providerId) {
@@ -56,7 +73,12 @@ export function isQuotaTrackedProvider(providerId) {
 
 // Ollama Cloud and the opencode free tier both 429 with a plain "Rate limit
 // exceeded" and no reset hint; the generic seconds/minutes backoff parks the
-// account and the combo comes right back to it. Strike-only: no quota API.
+// account for a few seconds and the combo comes right back to it. Strike-only
+// class: no quota API to consult — see STRIKE_ONLY_BLOCK_MS / strikeKey below
+// for how they are handled. ("opencode-free" is defensive: the registry id is
+// "opencode" — alias oc/zen resolve to it — so that entry can never match;
+// kept for a future free-tier id split. review F5)
+const STRIKE_KEY_SEP = "|";
 const STRIKE_ONLY_PROVIDERS = new Set(["ollama", "opencode", "opencode-free"]);
 
 function assertTracked(providerId) {
@@ -82,7 +104,7 @@ export function __resetProviderQuotaCache() {
 function applyActiveStrikeBlocks(connectionId, quotas) {
   const now = Date.now();
   for (const [key, until] of strikeBlocks) {
-    if (!key.startsWith(`${connectionId}|`)) continue;
+    if (!key.startsWith(`${connectionId}${STRIKE_KEY_SEP}`)) continue;
     if (until <= now) {
       strikeBlocks.delete(key);
       continue;
@@ -100,8 +122,8 @@ function applyActiveStrikeBlocks(connectionId, quotas) {
  * "consecutive" strikes means consecutive. Only removes a synthesized cache
  * entry (resetAt == our block deadline); a real upstream 0% reading stays.
  */
-export function clearProviderStrikes(connectionId, model) {
-  const key = `${connectionId}|${model}`;
+export function clearProviderStrikes(providerId, connectionId, model) {
+  const key = strikeKey(providerId, connectionId, model);
   strikeCounts.delete(key);
   const until = strikeBlocks.get(key);
   if (until) {
@@ -118,6 +140,29 @@ export function clearProviderStrikes(connectionId, model) {
 
 export function getProviderQuotaCache() {
   return quotaCache;
+}
+
+/**
+ * Is this connection+model pair currently blocked by the quota cache or the
+ * strike breaker? Returns the blocked-until epoch ms, or null. This is the
+ * single lookup the auth pre-filter should use:
+ *   - strike-only providers block at the ACCOUNT level (key `conn|*`), so
+ *     every model on that connection is blocked once the account trips;
+ *   - quota-API providers block per model (key `conn|model`), plus the cache's
+ *     own exhausted-0% entry with its upstream resetAt.
+ */
+export function isPairBlocked(providerId, connectionId, model) {
+  const now = Date.now();
+  const key = strikeKey(providerId, connectionId, model);
+  const blockedUntil = strikeBlocks.get(key);
+  if (blockedUntil && blockedUntil > now) return blockedUntil;
+
+  const quota = quotaCache.get(connectionId)?.[model];
+  if (quota && quota.remainingPercentage <= 0 && quota.resetAt) {
+    const resetMs = new Date(quota.resetAt).getTime();
+    if (resetMs > now) return resetMs;
+  }
+  return null;
 }
 
 async function _doRefresh(connectionId, accessToken, providerSpecificData, now) {
@@ -196,7 +241,7 @@ export async function handleProviderQuotaError(providerId, connectionId, status,
   // 409 counts too by design: antigravity signals pool exhaustion with 409 as
   // well, and poisoning by transient 409s requires 3 inside 60s on one pair.
   if (!quota || quota.remainingPercentage > 0) {
-    const key = `${connectionId}|${model}`;
+    const key = strikeKey(providerId, connectionId, model);
     const now = Date.now();
     const strike = strikeCounts.get(key);
     // Fixed window anchored at the FIRST qualifying strike: three 429s must
@@ -206,9 +251,10 @@ export async function handleProviderQuotaError(providerId, connectionId, status,
     strikeCounts.set(key, { count, windowStart });
     if (count >= STRIKE_THRESHOLD) {
       strikeCounts.delete(key);
-      const blockedUntil = now + STRIKE_BLOCK_MS;
+      const blockMs = hasQuotaApi ? STRIKE_BLOCK_MS : STRIKE_ONLY_BLOCK_MS;
+      const blockedUntil = now + blockMs;
       const reading = quota ? `${Math.round(quota.remainingPercentage)}%` : "none";
-      log.warn("PQ", `${String(connectionId).slice(0, 8)} | STRIKE_${status} ${providerId} ${model} — ${count}x (quota ${reading}); CACHE_BLOCK 15m`);
+      log.warn("PQ", `${String(connectionId).slice(0, 8)} | STRIKE_${status} ${providerId} ${model} — ${count}x (quota ${reading}); CACHE_BLOCK ${Math.round(blockMs / 60000)}m`);
       // Synthesize a 0% entry in the shared cache so the auth pre-filter skips
       // this pair on subsequent requests too — the chat handler does not
       // persist a modelLock_* for this path.
@@ -222,7 +268,10 @@ export async function handleProviderQuotaError(providerId, connectionId, status,
   }
 
   // Healthy-but-exhausted reading: clear strikes and use the exact resetAt.
-  strikeCounts.delete(`${connectionId}|${model}`);
+  // Via strikeKey(), not a hand-built key: this branch is only reachable for
+  // quota-API providers today, but a hand-built model key would silently miss
+  // the account key if a strike-only provider ever gained an API.
+  strikeCounts.delete(strikeKey(providerId, connectionId, model));
   if (!quota.resetAt) return null;
 
   const resetMs = new Date(quota.resetAt).getTime();
