@@ -1,3 +1,19 @@
+# v0.15.139 (2026-09-29)
+
+## Fix: combo stops flapping back to quota-exhausted providers (PR #490, issue #487)
+
+A combo 429 parked the account for the generic seconds/minutes backoff and the next combo candidate went straight back to the exhausted provider — antigravity ("Resets in 80h"), ollama ("you (lvoravit) have reached your monthly usage limit", no reset hint), opencode-free ("Rate limit exceeded. Please try again later."). Ported upstream's `src/sse/services/antigravityQuota.js` as `src/sse/services/providerQuota.js`, generalized to two signal classes:
+
+- **antigravity** (has a quota API): refresh the cache, trust an authoritative 0% reading, and route on the REAL window (80h) instead of the 30-min `modelLock` cap.
+- **ollama / opencode** (no quota API, no reset hint): strike-only, keyed per **account** (ollama's own 429 names the user, and per-model keying let a multi-model combo keep the breaker below threshold), parking **5m** for a rolling wall vs antigravity's **15m** for an API-vs-endpoint contradiction. Three 409/429s on one connection inside 60s → cache-block; a success clears the strikes.
+
+chat.js consults the cache BEFORE locking and does not persist a 30m-capped `modelLock` for a cache-blocked pair; auth.js pre-filter skips blocked pairs via a single `isPairBlocked()` lookup and reports the real window in the all-rate-limited response; antigravity gained `parseError` so `RetryInfo`/`ErrorInfo`/message text reach `resetsAtMs`; combo's text fallback now also matches "reset after …".
+
+**Fixed in review (2 rounds, first verdict BLOCK):** the strike breaker was dead code for opencode's anonymous-pool routing (HIGH — the pool loop never consulted it and the short-circuit dropped even the 5s park); account-level metering; a 5m/15m split by signal class; and — after the repo owner confirmed antigravity has **no free tier** — the free-tier detection in `getAntigravityUsage` could misclassify a paid account as free when the API omitted `paidTierId`/tier name, silently discarding every per-model quota and degrading the cache to strike-only blocking. Aligned with upstream's narrower detection (tier id must say free/starter itself); missing `paidTierId` now parses as paid.
+
+- Tests: `provider-quota-routing` (13) + `provider-quota-auth-prefilter` (10) — both signal classes, account metering across models, per-model isolation for antigravity, the 5m/15m split, 30s refresh throttle, and the chat→pre-filter path end to end. `antigravity-quota-weekly` gains the missing-`paidTierId` anti-misfire guard.
+- Full suite: **3039 pass / 0 fail / 1 expected fail / 80 skipped**, gate `No regression`. Golden-url-header snapshots refreshed for 0.15.139 (version string only).
+
 # v0.15.138 (2026-09-29)
 
 ## Infra: `888route` — a compose clone of the k8s 888router deployment (PR #488)
