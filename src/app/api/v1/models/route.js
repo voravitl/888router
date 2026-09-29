@@ -22,8 +22,43 @@ import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials, refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
 import { PROVIDERS } from "open-sse/config/providers.js";
-import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
+import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow, resolveKnownLimits } from "open-sse/providers/capabilities.js";
+import { MODELS_LIVE_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { toClaudeCodeModelId } from "@/shared/utils/claudeCodeModelId";
+
+/**
+ * Bound one live-catalog fetch so a single slow upstream cannot hold the whole
+ * /v1/models response. Most resolvers have no timeout of their own, and the
+ * provider loop is concurrent, so without this the endpoint's latency is the
+ * MAX over upstreams rather than a ceiling we control. A provider that misses
+ * the budget falls back to its static list — a slightly stale catalogue beats
+ * an endpoint that hangs.
+ *
+ * The timer is cleared on settle and the loser's rejection is swallowed, so a
+ * late failure from an abandoned fetch never surfaces as an unhandled rejection.
+ */
+function withLiveFetchTimeout(promise, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} live model fetch timed out after ${MODELS_LIVE_FETCH_TIMEOUT_MS}ms`)),
+      MODELS_LIVE_FETCH_TIMEOUT_MS,
+    );
+  });
+  // Hand the original promise a no-op catch so an abandoned fetch that later
+  // rejects is not an unhandled rejection. This is a side branch; the value
+  // still handed to Promise.race is `promise` itself.
+  promise.catch(() => {});
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** First finite, positive number among the candidates — else undefined. */
+function firstKnownNumber(...candidates) {
+  for (const value of candidates) {
+    if (Number.isFinite(value) && value > 0) return value;
+  }
+  return undefined;
+}
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -152,6 +187,10 @@ const LIVE_MODEL_RESOLVERS = {
     try {
       const res = await fetch(fetcher.url, {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        // Abort the socket, not just the race — without this a half-open
+        // upstream keeps the connection (and its socket) alive long after the
+        // route has already fallen back to the static list.
+        signal: AbortSignal.timeout(MODELS_LIVE_FETCH_TIMEOUT_MS),
       });
       if (!res.ok) return null;
       const json = await res.json();
@@ -636,15 +675,104 @@ export async function buildModelsList(kindFilter) {
       registerDynamicCapabilitiesScoped(providerId, baseId, caps);
     }
 
-    for (const [providerId, conn] of activeConnectionByProvider.entries()) {
-      if (!providerMatchesKinds(providerId, kindFilter)) continue;
+    // Provider fan-out is CONCURRENT. The loop body used to `await` each
+    // provider's live-catalog fetch one after another, so /v1/models latency was
+    // the SUM of every upstream round-trip across ~20 active connections
+    // (measured 15s+, and >60s once a provider's OAuth token exchange stalled).
+    // Each provider touches only its own locals, so building a per-provider
+    // array and flattening in iteration order keeps the emitted order stable
+    // while making wall time the MAX over upstreams instead. Every fetch is
+    // additionally capped by withLiveFetchTimeout, so one dead upstream cannot
+    // set even that MAX.
+    const perProviderEntries = await Promise.allSettled(
+      Array.from(activeConnectionByProvider.entries()).map(([providerId, conn]) =>
+        providerMatchesKinds(providerId, kindFilter)
+          ? buildProviderEntries({
+              providerId,
+              conn,
+              kindFilter,
+              customModels,
+              modelAliases,
+              isDisabled,
+              clientModelId,
+              syncedCapabilitiesById,
+            })
+          : Promise.resolve([]),
+      ),
+    );
+    // allSettled rather than all: a throw from one provider's builder must
+    // degrade to that provider missing from the list, not reject the whole
+    // endpoint into a 500 that loses every provider. (The old sequential loop
+    // propagated the same throw, so this is strictly better isolation.)
+    for (const settled of perProviderEntries) {
+      if (settled.status === "fulfilled") models.push(...settled.value);
+      else console.log("Provider model list failed:", settled.reason?.message || settled.reason);
+    }
+  }
 
-      const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
-      const outputAlias = (
-        conn?.providerSpecificData?.prefix
-        || getProviderAlias(providerId)
-        || staticAlias
-      ).trim();
+  // Inject zero-config virtual combos (auto/best-coding, auto/best-free, …)
+  // AFTER the if/else so both the static-fallback path (no connections) and
+  // the dynamic provider path emit them. PR #315 surfaces UI side; this is
+  // the OpenAI /v1/models side. Review #320: never lose virtual combos to early return.
+  const shouldIncludeLlm = !kindFilter || kindFilter.includes("all") || kindFilter.includes("llm");
+  if (shouldIncludeLlm) {
+    for (const tpl of AUTO_COMBO_TEMPLATES) {
+      if (models.some((m) => m.id === tpl.name)) continue;
+      const virtual = resolveVirtualAutoCombo(tpl.name);
+      const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
+      if (memberIds.length === 0) continue; // Skip ghost combos with no usable members
+      const entry = {
+        id: tpl.name,
+        object: "model",
+        owned_by: "auto-combo",
+        isCombo: true,
+        comboCategory: tpl.categories?.[0] || null,
+        comboTier: tpl.tiers?.[0] || null,
+        comboStrategy: tpl.strategy || null,
+        comboMembers: memberIds.slice(0, 8),
+        comboMemberCount: memberIds.length,
+      };
+      applyComboContextFields(entry, { models: memberIds });
+      models.push(entry);
+    }
+  }
+
+  const dedupedModels = [];
+  const seenModelIds = new Set();
+  for (const model of models) {
+    if (!model?.id || seenModelIds.has(model.id)) continue;
+    seenModelIds.add(model.id);
+    dedupedModels.push(model);
+  }
+
+  return dedupedModels;
+}
+
+/**
+ * Build the /v1/models entries for one provider connection.
+ *
+ * Extracted from what used to be an inline loop body so the caller can run it
+ * concurrently (see the Promise.all in buildModelsList). Everything it reads
+ * from the caller is passed in and everything it produces is returned, so it
+ * holds no cross-provider state.
+ */
+async function buildProviderEntries({
+  providerId,
+  conn,
+  kindFilter,
+  customModels,
+  modelAliases,
+  isDisabled,
+  clientModelId,
+  syncedCapabilitiesById,
+}) {
+  const out = [];
+  const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+  const outputAlias = (
+    conn?.providerSpecificData?.prefix
+    || getProviderAlias(providerId)
+    || staticAlias
+  ).trim();
       const providerModels = PROVIDER_MODELS[staticAlias] || [];
       const enabledModels = conn?.providerSpecificData?.enabledModels;
       const hasExplicitEnabledModels =
@@ -674,12 +802,12 @@ export async function buildModelsList(kindFilter) {
       }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
-      // -thinking/-agentic variants per account). On failure, fall back to
-      // whatever rawModelIds already holds.
+      // -thinking/-agentic variants per account). On failure or timeout, fall
+      // back to whatever rawModelIds already holds.
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
-          const live = await liveResolver(conn);
+          const live = await withLiveFetchTimeout(liveResolver(conn), providerId);
           if (live?.models?.length) {
             rawModelIds = live.models.map((m) => m.id);
             liveModelKindById = new Map(
@@ -705,7 +833,10 @@ export async function buildModelsList(kindFilter) {
       // models that aren't in the static `models: []` seed.
       if (!liveResolver && !hasExplicitEnabledModels && rawModelIds.length === 0) {
         try {
-          const generic = await LIVE_MODEL_RESOLVERS["__openai-generic__"](conn, providerId);
+          const generic = await withLiveFetchTimeout(
+            LIVE_MODEL_RESOLVERS["__openai-generic__"](conn, providerId),
+            `${providerId} (openai-generic)`,
+          );
           if (generic?.models?.length) {
             rawModelIds = generic.models.map((m) => m.id);
           }
@@ -803,40 +934,64 @@ export async function buildModelsList(kindFilter) {
           || syncedCapabilitiesById.get(bareId)
           || (baseWithoutReview ? syncedCapabilitiesById.get(baseWithoutReview) : null)
           || syncedCapabilitiesById.get(modelId);
+        const liveCaps = liveCapabilitiesById.get(modelId) || null;
         const caps = {
           ...staticCaps,
           ...(syncedCaps || {}),
-          ...(liveCapabilitiesById.get(modelId) || {}),
+          ...(liveCaps || {}),
         };
-        model.capabilities = caps;
         if (kind === LLM_KIND || allowAsLlm) {
-          let contextWindow = caps?.contextWindow;
-          let maxOutput = caps?.maxOutput;
-          // Live-catalog and service-kind capabilities are usually partial
-          // (often just { tools: true }), so fill the gaps from the static
-          // table rather than emitting null and leaving clients to guess.
-          if (!Number.isFinite(contextWindow) || !Number.isFinite(maxOutput)) {
-            const fallback = getCapabilitiesForModel(providerId, modelId);
-            if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
-            if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
-          }
-          if (Number.isFinite(contextWindow)) {
+          // Resolve the real limits from a source that actually knows this model.
+          // `getCapabilitiesForModel` merges DEFAULT_CAPABILITIES (contextWindow
+          // 200000, maxOutput 64000) unconditionally, so for a model absent from
+          // the PROVIDER / MODEL / PATTERN tables it hands back that floor as if
+          // it were fact — clients then size their budget to a number that is
+          // both unverifiable and, in both directions, harmful (over-long prompts
+          // fail with context_overflow; under-long ones waste the real window).
+          // `resolveKnownLimits` (the strict resolver) returns
+          // undefined for a genuinely unknown model, which is what lets us omit
+          // the field instead of inventing it. Same contract the combo path
+          // already uses in applyComboContextFields.
+          //
+          // Precedence matches the caps spread above: live > synced > catalogue.
+          // One catalogue walk, not two — resolveKnownLimits resolves context
+          // and output together (and is memoized), where calling the two
+          // single-field resolvers walked PATTERN_CAPABILITIES twice per model.
+          const known = resolveKnownLimits(providerId, modelId);
+          const contextWindow = firstKnownNumber(
+            liveCaps?.contextWindow,
+            syncedCaps?.contextWindow,
+            known.contextWindow,
+          );
+          const maxOutput = firstKnownNumber(
+            liveCaps?.maxOutput,
+            syncedCaps?.maxOutput,
+            known.maxOutput,
+          );
+          if (contextWindow) {
             model.context_length = contextWindow;
             model.context_window = contextWindow;
             model.contextWindow = contextWindow;
           }
-          if (Number.isFinite(maxOutput)) {
+          if (maxOutput) {
             model.max_tokens = maxOutput;
             model.max_completion_tokens = maxOutput;
           }
+          // Keep `capabilities` consistent with the top-level fields: drop the
+          // default floor when no source knew a real value, rather than
+          // publishing capabilities.contextWindow: 200000 next to an absent
+          // context_length.
+          if (!contextWindow) delete caps.contextWindow;
+          if (!maxOutput) delete caps.maxOutput;
         }
-        models.push(model);
+        model.capabilities = caps;
+        out.push(model);
       }
 
       // Web search/fetch — provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
       const providerInfo = AI_PROVIDERS[providerId];
       if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
-        models.push({
+        out.push({
           id: `${outputAlias}/search`,
           object: "model",
           kind: "webSearch",
@@ -844,53 +999,17 @@ export async function buildModelsList(kindFilter) {
         });
       }
       if (kindFilter.includes("webFetch") && providerInfo?.fetchConfig) {
-        models.push({
+        out.push({
           id: `${outputAlias}/fetch`,
           object: "model",
           kind: "webFetch",
           owned_by: outputAlias,
         });
       }
-    }
-  }
 
-  // Inject zero-config virtual combos (auto/best-coding, auto/best-free, …)
-  // AFTER the if/else so both the static-fallback path (no connections) and
-  // the dynamic provider path emit them. PR #315 surfaces UI side; this is
-  // the OpenAI /v1/models side. Review #320: never lose virtual combos to early return.
-  const shouldIncludeLlm = !kindFilter || kindFilter.includes("all") || kindFilter.includes("llm");
-  if (shouldIncludeLlm) {
-    for (const tpl of AUTO_COMBO_TEMPLATES) {
-      if (models.some((m) => m.id === tpl.name)) continue;
-      const virtual = resolveVirtualAutoCombo(tpl.name);
-      const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
-      if (memberIds.length === 0) continue; // Skip ghost combos with no usable members
-      const entry = {
-        id: tpl.name,
-        object: "model",
-        owned_by: "auto-combo",
-        isCombo: true,
-        comboCategory: tpl.categories?.[0] || null,
-        comboTier: tpl.tiers?.[0] || null,
-        comboStrategy: tpl.strategy || null,
-        comboMembers: memberIds.slice(0, 8),
-        comboMemberCount: memberIds.length,
-      };
-      applyComboContextFields(entry, { models: memberIds });
-      models.push(entry);
-    }
-  }
-
-  const dedupedModels = [];
-  const seenModelIds = new Set();
-  for (const model of models) {
-    if (!model?.id || seenModelIds.has(model.id)) continue;
-    seenModelIds.add(model.id);
-    dedupedModels.push(model);
-  }
-
-  return dedupedModels;
+  return out;
 }
+
 
 /**
  * Handle CORS preflight

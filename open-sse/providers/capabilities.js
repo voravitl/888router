@@ -208,6 +208,9 @@ export function registerDynamicCapabilitiesScoped(providerId, modelId, caps) {
   for (const alias of keys.aliases) {
     DYNAMIC_CAPABILITIES_CACHE_SCOPED.set(alias, stored);
   }
+  // resolveKnownLimits() memoizes the strict answer, which reads this cache.
+  // A write here changes the answer for this model, so drop the memo.
+  invalidateKnownLimits(providerId, modelId);
   return true;
 }
 
@@ -237,6 +240,7 @@ export function hasDynamicCapabilitiesSnapshot() {
 export function __resetScopedDynamicCache() {
   DYNAMIC_CAPABILITIES_CACHE_SCOPED.clear();
   _loggedRejections.clear();
+  KNOWN_LIMITS_CACHE.clear();
 }
 
 // OpenCode Ox Alpha Free — image input + always-thinking reasoning
@@ -653,6 +657,9 @@ export function registerDynamicCapabilities(modelId, caps) {
     }
   }
   DYNAMIC_CAPABILITIES_CACHE.set(baseId, clean);
+  // See registerDynamicCapabilitiesScoped: the strict resolver memoizes a walk
+  // that reads this cache.
+  invalidateKnownLimits(undefined, modelId);
 }
 
 /**
@@ -893,27 +900,66 @@ export function getCapabilitiesForModel(provider, model) {
 }
 
 /**
- * Strict contextWindow resolver — returns undefined ONLY when the model is
- * genuinely unknown (would hit the step-4 DEFAULT floor). Returns the real
- * contextWindow (including a legitimate 200000) for any matched entry in
- * PROVIDER / MODEL / PATTERN. Used by callers that must distinguish "unknown"
- * from "known but small" — e.g. a combo MIN must not fabricate a floor value
- * for an unknown member, but must honour a real 200k member.
+ * Strict limit resolver — the single walk behind resolveKnownContextWindow and
+ * resolveKnownMaxOutput. Returns `{ contextWindow, maxOutput }` where each
+ * field is undefined ONLY when the model is genuinely unknown (i.e. it would
+ * hit the step-4 DEFAULT_CAPABILITIES floor), so an HTTP surface can omit the
+ * field instead of publishing 200000 / 64000 as if it were fact.
+ *
+ * Resolution is a PER-FIELD merge over the same sources the loose
+ * getCapabilitiesForModel layers, so the two agree on any field the loose
+ * resolver took from a source — provider override > dynamic (scoped then bare)
+ * > MODEL exact > GPT family > PATTERN. The one case they differ is a source
+ * that matches the model but omits the field: loose floors that to DEFAULT
+ * (200000 / 64000), strict returns undefined, which is the entire point of a
+ * strict resolver.
+ *
+ * Results are memoized per `provider\u0000model`. The static tables are frozen at
+ * import; the only mutable input is the dynamic cache, and every writer
+ * (registerDynamicCapabilitiesScoped / registerDynamicCapabilities /
+ * __resetScopedDynamicCache) drops the affected memo. /v1/models resolves
+ * limits for every entry in a ~2,700-model list, and each miss walks
+ * PATTERN_CAPABILITIES; without the memo the walk dominates the endpoint's
+ * CPU budget.
  */
-export function resolveKnownContextWindow(provider, model) {
-  if (!model) return undefined;
+// NUL separator: cannot occur in a provider id or a model id, so two different
+// pairs can never collide into one key. Written as an escape on purpose — a raw
+// NUL byte in source is invisible and silently breaks any code that re-derives
+// the key from it (the invalidator below does exactly that).
+const KNOWN_LIMITS_KEY_SEP = "\u0000";
+const KNOWN_LIMITS_CACHE = new Map();
+// Bounded: keys are `provider model` pairs, which is bounded in practice by the
+// catalogue size, but a runaway provider id (or a test loop) must not turn the
+// memo into a leak. Overflow drops the whole memo — resolution is pure, so the
+// only cost of a miss is the walk we were trying to avoid.
+const KNOWN_LIMITS_CACHE_MAX = 20000;
+
+function computeKnownLimits(provider, model) {
+  if (!model) return { contextWindow: undefined, maxOutput: undefined };
   const normalizedModel = stripThinkingSuffix(model);
   const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
   const baseWithoutReview = baseModel.endsWith("-review") ? baseModel.slice(0, -7) : null;
 
-  const providerEntry = provider && (
+  // Sources in exactly the order getCapabilitiesForModel layers them, and a
+  // PER-FIELD merge — not a chain that returns on the first source that knows
+  // the model at all. The distinction matters: a provider entry that only sets
+  // modalities (e.g. `muse-spark-*`, which carries vision/pdf but no limits)
+  // must not shadow the PATTERN entry that does carry 1048576/131072, and a
+  // dynamic row that only sets contextWindow must not hide the catalogue's
+  // maxOutput. A short-circuit chain publishes DEFAULT_CAPABILITIES' floor for
+  // the shadowed field — the same fabrication this strict resolver exists to
+  // prevent, one layer down.
+  //
+  // Layer order mirrors the loose resolver's `{...DEFAULT, ...catalogue,
+  // ...dynamic, ...provider}`: provider wins on the fields it carries, dynamic
+  // over catalogue. So for every field, the strict answer is the loose answer
+  // whenever loose took it from a source rather than the floor — and undefined
+  // only when no source carried it (the one case where loose floors).
+  const providerCaps = (provider && (
     PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
     || PROVIDER_CAPABILITIES[provider]?.[baseModel]
     || (baseWithoutReview ? PROVIDER_CAPABILITIES[provider]?.[baseWithoutReview] : null)
-  );
-  if (providerEntry) {
-    return providerEntry.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
-  }
+  )) || null;
 
   // Scoped dynamic runtime/DB caps take precedence over bare-key legacy so
   // cross-provider bleed is impossible.
@@ -925,28 +971,129 @@ export function resolveKnownContextWindow(provider, model) {
   const bareDyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
     ?? (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE.get(baseWithoutReview) : null)
     ?? DYNAMIC_CAPABILITIES_CACHE.get(normalizedModel);
-  const dyn = (scopedDyn || bareDyn)
+  const dynamicCaps = (scopedDyn || bareDyn)
     ? { ...(bareDyn || {}), ...(scopedDyn || {}) }
     : null;
-  if (dyn && dyn.contextWindow != null) {
-    const cw = coerceContextWindow(dyn.contextWindow);
-    if (Number.isFinite(cw) && cw > 0 && cw <= MAX_CONTEXT_WINDOW) {
-      return cw;
+
+  // A dynamic contextWindow outside the sanity bound is rejected at write time;
+  // re-checking here keeps a hand-corrupted cache from leaking into the answer.
+  const knownCw = dynamicCaps && dynamicCaps.contextWindow != null
+    ? coerceContextWindow(dynamicCaps.contextWindow)
+    : undefined;
+  const validCw = Number.isFinite(knownCw) && knownCw > 0 && knownCw <= MAX_CONTEXT_WINDOW
+    ? knownCw
+    : undefined;
+
+  const catalogueCaps = catalogueCapabilitiesFor(normalizedModel, baseModel);
+
+  // Layer: catalogue < dynamic < provider, so the loop walks HIGHEST priority
+  // first. A source carrying a valid field wins that field; a missing or
+  // invalid field falls through to the next layer, and only when NO layer
+  // carries it does it stay undefined. (Walking lowest-first would let the
+  // catalogue shadow a dynamic row that overrides it — the loose resolver
+  // spreads dynamic after catalogue for exactly the opposite effect.)
+  let contextWindow;
+  let maxOutput;
+  for (const source of [providerCaps, dynamicCaps, catalogueCaps]) {
+    if (!source) continue;
+    if (contextWindow === undefined) {
+      const cw = source.contextWindow != null ? coerceContextWindow(source.contextWindow) : undefined;
+      if (Number.isFinite(cw) && cw > 0 && cw <= MAX_CONTEXT_WINDOW) contextWindow = cw;
+    }
+    if (maxOutput === undefined) {
+      const mo = source.maxOutput;
+      if (Number.isFinite(mo) && mo > 0) maxOutput = mo;
+    }
+    if (contextWindow !== undefined && maxOutput !== undefined) break;
+  }
+
+  // GPT-family resolution lives outside catalogueCapabilitiesFor's return value
+  // in the loose resolver (it checks gpt before pattern but after exact), so it
+  // must be applied the same way here or the two resolvers drift apart.
+  if (contextWindow === undefined || maxOutput === undefined) {
+    const gptCaps = resolveGptFamilyCapabilities(baseModel) || resolveGptFamilyCapabilities(normalizedModel);
+    if (gptCaps) {
+      if (contextWindow === undefined && Number.isFinite(gptCaps.contextWindow) && gptCaps.contextWindow > 0) {
+        contextWindow = gptCaps.contextWindow;
+      }
+      if (maxOutput === undefined && Number.isFinite(gptCaps.maxOutput) && gptCaps.maxOutput > 0) {
+        maxOutput = gptCaps.maxOutput;
+      }
     }
   }
 
-  const exact = MODEL_CAPABILITIES[baseModel]
-    || MODEL_CAPABILITIES[normalizedModel]
-    || (baseWithoutReview ? MODEL_CAPABILITIES[baseWithoutReview] : null);
-  if (exact) return exact.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
+  return { contextWindow, maxOutput }; // both undefined → genuinely unknown
+}
 
-  const gptCaps = resolveGptFamilyCapabilities(baseModel) || resolveGptFamilyCapabilities(normalizedModel);
-  if (gptCaps?.contextWindow) return gptCaps.contextWindow;
+const UNKNOWN_LIMITS = Object.freeze({ contextWindow: undefined, maxOutput: undefined });
 
-  for (const { pattern, caps } of PATTERN_CAPABILITIES) {
-    if (matchPattern(pattern, baseModel) || matchPattern(pattern, normalizedModel)) {
-      return caps.contextWindow ?? DEFAULT_CAPABILITIES.contextWindow;
-    }
+/** Memoized strict limit lookup. Returns a frozen object — treat as read-only. */
+export function resolveKnownLimits(provider, model) {
+  if (!model) return UNKNOWN_LIMITS;
+  const key = `${provider ?? ""}${KNOWN_LIMITS_KEY_SEP}${model}`;
+  let hit = KNOWN_LIMITS_CACHE.get(key);
+  if (hit === undefined) {
+    hit = Object.freeze(computeKnownLimits(provider, model));
+    if (KNOWN_LIMITS_CACHE.size >= KNOWN_LIMITS_CACHE_MAX) KNOWN_LIMITS_CACHE.clear();
+    KNOWN_LIMITS_CACHE.set(key, hit);
   }
-  return undefined; // step-4 floor → genuinely unknown
+  return hit;
+}
+
+/** Drop memoized limits for a model whose dynamic caps just changed. */
+function invalidateKnownLimits(providerId, modelId) {
+  if (!modelId) {
+    KNOWN_LIMITS_CACHE.clear();
+    return;
+  }
+  // Compare on the RESOLVED base id, not the raw string: resolution strips a
+  // thinking suffix and a trailing `-review`, so a write under `claude-x` also
+  // changes the answer for the memoized `claude-x-review` key. Matching on the
+  // raw string would leave that variant serving its pre-write value forever.
+  const target = resolvedBaseId(modelId);
+  for (const key of KNOWN_LIMITS_CACHE.keys()) {
+    const sep = key.indexOf(KNOWN_LIMITS_KEY_SEP);
+    if (sep < 0) continue;
+    if (resolvedBaseId(key.slice(sep + 1)) === target) KNOWN_LIMITS_CACHE.delete(key);
+  }
+}
+
+/** The id a lookup actually keys on: thinking suffix and `-review` stripped. */
+function resolvedBaseId(model) {
+  const normalized = stripThinkingSuffix(String(model));
+  const base = normalized.includes("/") ? normalized.split("/").pop() : normalized;
+  return base.endsWith("-review") ? base.slice(0, -7) : base;
+}
+
+/** Test-only: clear the limits memo alongside the dynamic caches. */
+export function __resetKnownLimitsCache() {
+  KNOWN_LIMITS_CACHE.clear();
+}
+
+/**
+ * Strict contextWindow resolver — returns undefined ONLY when the model is
+ * genuinely unknown (would hit the step-4 DEFAULT floor). Returns the real
+ * contextWindow (including a legitimate 200000) for any matched entry in
+ * PROVIDER / MODEL / PATTERN. Used by callers that must distinguish "unknown"
+ * from "known but small" — e.g. a combo MIN must not fabricate a floor value
+ * for an unknown member, but must honour a real 200k member.
+ */
+export function resolveKnownContextWindow(provider, model) {
+  return resolveKnownLimits(provider, model).contextWindow;
+}
+
+/**
+ * Strict maxOutput resolver — same contract as resolveKnownContextWindow:
+ * returns undefined ONLY for a genuinely unknown model, never the
+ * DEFAULT_CAPABILITIES.maxOutput floor. Callers on the HTTP surface must be
+ * able to distinguish "we do not know this model's output cap" from "this model
+ * outputs 64k", otherwise a fabricated number ships as fact.
+ *
+ * Resolution order mirrors getCapabilitiesForModel exactly, so the two
+ * functions can never disagree about a model that IS known:
+ *   provider override > dynamic (scoped then bare) > MODEL exact > GPT family
+ *   > PATTERN
+ */
+export function resolveKnownMaxOutput(provider, model) {
+  return resolveKnownLimits(provider, model).maxOutput;
 }
