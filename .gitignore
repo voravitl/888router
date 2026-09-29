@@ -91,3 +91,4 @@ docker-compose.override.yml
 # see docker-compose.override.yml for example). Never commit.
 docker-compose.override.yml
 
+.omc/stash-archive/
