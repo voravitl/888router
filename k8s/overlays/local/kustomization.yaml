@@ -7,7 +7,7 @@ resources:
 
 images:
   - name: voravitl/888router
-    newTag: 0.15.139
+    newTag: 0.15.140
 
 labels:
   - pairs:

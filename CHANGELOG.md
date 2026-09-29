@@ -1,3 +1,18 @@
+# v0.15.140 (2026-09-29)
+
+## Fix: the noAuth pool picker must read the strike block under both key shapes (PR #492)
+
+Live follow-up to the quota-routing fix (#490): the combo was **still** not stable — the pod log showed **seven opencode-free 429s on the same proxy pool inside 13 seconds**, every third one recording a strike but nothing ever blocking, the pool re-selected immediately each turn.
+
+**Root cause: key written under one shape, read under another.** The chat handler records strikes under the connectionId it was *given*; the legacy specific-pool strategy mints bare `noauth`, so the strike landed under key `noauth|*`. The pool picker added in #490 consulted `isPairBlocked(providerId, "noauth:<poolId>", model)` — key `noauth:<poolId>|*` — which never matched the bare key.
+
+- The pool picker and the all-parked earliest-reset computation now consult **both** key shapes.
+- The **specific-pool strategy branch** (the exact path the live storm ran on) also reads the breaker before minting, returning `allRateLimited` + `Retry-After` instead of handing back a blocked relay (found by the round-2 review — round-1 had fixed the picker loop only).
+- `unavailableResponse` no longer appends the same parenthetical twice: the round-trip through `lastError` is what produced the client-visible `(reset after 5s) (reset after 5s)`.
+- `isFreeTier` in `getAntigravityUsage` aligned with upstream (tier id must say free/starter itself) after the repo owner confirmed antigravity has no free tier — the previous `missing paidTierId → free` fallback could misclassify a paid account and silently discard every per-model quota, degrading the cache to strike-only blocking.
+
+Tests: `provider-quota-noauth-pool` (2 — the pinned-pool storm replay + the picker skip discriminated by a real relay URL), `antigravity-quota-weekly` gains the missing-`paidTierId` guard. Full suite **3041 pass / 0 fail / 1 expected fail / 80 skipped**, gate `No regression`.
+
 # v0.15.139 (2026-09-29)
 
 ## Fix: combo stops flapping back to quota-exhausted providers (PR #490, issue #487)
