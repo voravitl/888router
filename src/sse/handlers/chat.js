@@ -7,6 +7,11 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import {
+  clearProviderStrikes,
+  handleProviderQuotaError,
+  isQuotaTrackedProvider,
+} from "../services/providerQuota.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings, updateProviderConnection } from "@/lib/localDb";
 import { isAccountQualityFailure, updateHealthEma } from "open-sse/services/accountScoring.js";
@@ -308,6 +313,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+        // "Consecutive" strikes: a success clears the breaker for this pair,
+        // so three 429s spread over hours do NOT cache-block the account.
+        clearProviderStrikes(provider, credentials.connectionId, model);
       }
     });
 
@@ -322,8 +330,26 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return result.response;
     }
 
-    // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    // 409/429 on quota-tracked providers: consult/refresh the live quota cache
+    // (antigravity) or record a strike (ollama, opencode-free) BEFORE locking,
+    // so a long window reaches the pre-filter through the cache instead of
+    // being capped by the persisted modelLock_* (30min vs a real 80h window).
+    let quotaResetMs = null;
+    if (isQuotaTrackedProvider(provider) && (result.status === 409 || result.status === 429)) {
+      quotaResetMs = await handleProviderQuotaError(
+        provider,
+        credentials.connectionId, result.status, model,
+        credentials.accessToken, credentials.providerSpecificData,
+      );
+    }
+    // Exhausted model blocked by the RAM cache is not persisted as a
+    // modelLock_*: the persisted lock is capped at 30 minutes, which would
+    // advertise a window far shorter than the real one. The cache carries the
+    // true resetAt and the auth pre-filter reads it.
+    const cacheBlocked = quotaResetMs != null;
+    const { shouldFallback } = cacheBlocked
+      ? { shouldFallback: true }
+      : await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
     if (isAccountQualityFailure(result.status, result.error)) {
       const latencyMs = Date.now() - dispatchStartedAt;

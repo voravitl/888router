@@ -2,6 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { getProviderQuotaCache, isQuotaTrackedProvider } from "./providerQuota.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 import { isRetiredProvider } from "open-sse/config/retiredProviders.js";
@@ -277,9 +278,25 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     // Filter out model-locked and excluded connections
+    // Quota cache is lazy: only populated after that account returned 409/429.
+    const quotaCache = isQuotaTrackedProvider(providerId) && model ? getProviderQuotaCache() : null;
+
+    // Filter out model-locked, excluded, and quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      // Quota-tracked: skip if the live quota cache has this pair exhausted.
+      // The cache entry carries the TRUE resetAt (e.g. an 80h antigravity
+      // account window, or a strike-block deadline), which the persisted
+      // modelLock_* cannot hold — MAX_RATE_LIMIT_COOLDOWN_MS caps it at 30m.
+      if (quotaCache) {
+        const quota = quotaCache.get(c.id)?.[model];
+        if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
+          const account = c.id?.slice(0, 8) || "unknown";
+          log.info("AUTH", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
+          return false;
+        }
+      }
       return true;
     });
 
@@ -294,9 +311,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
-      // Find earliest lock expiry across all connections for retry timing
+      // Find earliest lock expiry across all connections for retry timing.
+      // Include the quota cache's own resetAt so an all-exhausted provider
+      // reports its REAL window, not the 30-minute capped modelLock.
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c) || c.rateLimitedUntil || c.unavailableUntil).filter(Boolean);
+      if (quotaCache) {
+        connections.forEach((c) => {
+          const resetAt = quotaCache.get(c.id)?.[model]?.resetAt;
+          if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
+        });
+      }
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];
