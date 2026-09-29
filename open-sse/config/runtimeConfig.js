@@ -53,6 +53,13 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
+// Per-provider live-catalog fetch budget for /v1/models. The provider loop runs
+// concurrently, so this is the ceiling on the slowest single upstream, not the
+// sum of all of them. A provider that misses it falls back to its static model
+// list — /v1/models must answer promptly rather than block on one slow
+// provider's OAuth/token exchange. Env: MODELS_LIVE_FETCH_TIMEOUT_MS.
+export const MODELS_LIVE_FETCH_TIMEOUT_MS = envMs("MODELS_LIVE_FETCH_TIMEOUT_MS", 5 * 1000);
+
 // Default token limits
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
