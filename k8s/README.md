@@ -20,7 +20,7 @@ k8s/
 │   ├── searxng.yaml
 │   └── 888router.yaml
 └── overlays/
-    ├── local/                 # Local machine / OrbStack (Port 20129, LoadBalancer)
+    ├── local/                 # Local machine / OrbStack (Ingress, no NodePort/LoadBalancer)
     │   └── kustomization.yaml
     └── prd/                   # Production cluster (Ingress + TLS + router.tcbank.local)
         ├── kustomization.yaml
@@ -54,7 +54,7 @@ Run the helper script to create/update Kubernetes secrets without committing sen
 
 ### 2. Deploy via Kustomize
 
-**Local / OrbStack (รันคู่ขนานกับ Docker บนพอร์ต 20129):**
+**Local / OrbStack (เข้าผ่าน Ingress `888router.k8s.orb.local`):**
 ```bash
 kubectl apply -k k8s/
 # หรือระบุ overlay ตรงๆ:
@@ -111,6 +111,21 @@ docker compose up -d 888route
 curl http://localhost:20129/api/version
 ```
 
+### Bring-up requirements
+
+The clone's env comes from `.env.route`, so a whole-project
+`docker compose up -d` fails until that file exists (fresh clone, second
+machine). Either run the two steps above first, or scope the bring-up to the
+services you have:
+
+```bash
+docker compose up -d 888router headroom searxng watchtower   # without the clone
+docker compose up -d 888route                                # with it
+```
+
+`888route-data` is declared `external`, so compose never creates it — run the
+seed script first. `docker compose down` also never deletes it.
+
 ### Re-seeding an existing clone
 
 Re-running the seed script **discards everything written to the clone**, so it
@@ -133,9 +148,10 @@ pull the k8s state across again.
 
 `jwt-secret`, `machine-id` and the `auth/` CLI secret are copied along with the
 database, so the same dashboard password and API keys as the k8s instance work on
-both. Only `db/backups/` (~200MB of historical upgrade snapshots) and `bin/`
-(lazily downloaded `cloudflared` / `tailscale` helpers) are skipped — the clone
-re-downloads those on first use.
+both. `db/backups/` (~200MB of historical upgrade snapshots), `bin/` (lazily
+downloaded `cloudflared` / `tailscale` helpers) and `logs/` (per-instance
+request logs) are skipped — the clone re-downloads or regenerates those on
+first use.
 
 ---
 

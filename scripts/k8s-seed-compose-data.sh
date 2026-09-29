@@ -53,7 +53,7 @@ while [ $# -gt 0 ]; do
     --volume) VOLUME="${2:?--volume needs a name}"; shift ;;
     --volume=*) VOLUME="${1#--volume=}" ;;
     -h | --help)
-      sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -66,6 +66,10 @@ done
 
 KUBE_CONTEXT="${KUBE_CONTEXT:-orbstack}"
 HELPER_IMAGE="alpine:3.21"
+# The gateway image itself: has the node build the app runs (node:sqlite) and
+# runs as the uid the data is chowned to, so the post-write integrity check can
+# read the volume. Pinned to the same release the compose clone pins.
+APP_IMAGE="${APP_IMAGE:-voravitl/888router:0.15.137}"
 # uid/gid of the `node` user inside the 888router image. The compose entrypoint
 # runs as root and chowns /app/data, but pre-chowning here means the volume is
 # correct even for a `docker run --user 1000` style invocation.
@@ -85,13 +89,32 @@ fi
 
 # Checked up front, before the ~30s snapshot work: `rm -rf /data/*` under a live
 # SQLite writer is exactly the corruption this script exists to prevent, and
-# --force must not be able to talk a user into it.
-in_use=$(docker ps --filter "volume=$VOLUME" --format '{{.Names}}' | tr '\n' ' ')
-if [ -n "${in_use// /}" ]; then
-  echo "volume $VOLUME is still mounted by a running container: $in_use" >&2
-  echo "stop it first:  docker compose stop 888route" >&2
+# --force must not be able to talk a user into it. Re-checked immediately before
+# the destructive write too — a compose bring-up during the snapshot window
+# would otherwise meet an already-stale check. (assert_volume_free)
+assert_volume_free() {
+  in_use=$(docker ps --filter "volume=$VOLUME" --format '{{.Names}}' | tr '\n' ' ')
+  if [ -n "${in_use// /}" ]; then
+    echo "volume $VOLUME is still mounted by a running container: $in_use" >&2
+    echo "stop it first:  docker compose stop 888route" >&2
+    exit 1
+  fi
+}
+assert_volume_free
+
+# Single-writer lock: the pod-side staging paths are fixed, so two concurrent
+# runs race the same /tmp/seed-stage. mkdir is the atomic primitive available on
+# every macOS/Linux shell; a stale lock is hand-cleared with the printed path.
+LOCKDIR="${TMPDIR:-/tmp}/k8s-seed-compose-data.lock"
+if ! mkdir "$LOCKDIR" 2>/dev/null; then
+  echo "another seed run holds the lock: $LOCKDIR" >&2
+  echo "if a previous run died, remove it:  rmdir $LOCKDIR" >&2
   exit 1
 fi
+cleanup_lock() {
+  rmdir "$LOCKDIR" 2>/dev/null || true
+  cleanup
+}
 
 POD=$(kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" get pod \
   -l "$POD_SELECTOR" \
@@ -108,35 +131,49 @@ cleanup() {
     rm -rf /tmp/seed-stage /tmp/seed-aux.tgz >/dev/null 2>&1 || true
   rm -rf "$STAGEDIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup_lock EXIT INT TERM
 mkdir -p "$STAGEDIR/db"
 
-echo "==> Snapshotting SQLite from $NAMESPACE/$POD (deployment stays online)..."
+# Snapshot EVERY db/*.sqlite, mirroring k8s-migrate-data.sh, so a second
+# database appearing in db/ cannot be silently missed — silent divergence is
+# the failure class this script documents against.
 kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" exec "$POD" -- \
-  sh -ceu 'rm -rf /tmp/seed-stage && mkdir -p /tmp/seed-stage'
-# The node program is passed with -e, never on stdin: `kubectl exec` only
-# forwards stdin when -i is passed, so a heredoc script would reach node as an
-# empty program and exit 0 without writing anything. The result is checked below
-# rather than trusted from the exit code.
-kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" exec "$POD" -- \
-  node -e '
+  sh -ceu 'ls -1 /app/data/db/*.sqlite'
+DBS=$(kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" exec "$POD" -- \
+  sh -ceu 'ls -1 /app/data/db/*.sqlite' | tr '\n' ' ')
+[ -n "${DBS// /}" ] || {
+  echo "no SQLite databases found under /app/data/db in $POD" >&2
+  exit 1
+}
+for db in $DBS; do
+  base=$(basename "$db")
+  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" exec "$POD" -- \
+    sh -ceu 'rm -rf /tmp/seed-stage && mkdir -p /tmp/seed-stage'
+  # The node program is passed with -e, never on stdin: `kubectl exec` only
+  # forwards stdin when -i is passed, so a heredoc script would reach node as an
+  # empty program and exit 0 without writing anything. The result is checked
+  # below rather than trusted from the exit code.
+  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" exec "$POD" -- \
+    node -e '
 const { DatabaseSync, backup } = require("node:sqlite");
 const db = new DatabaseSync(process.argv[1], { readOnly: true });
 backup(db, process.argv[2]).then(() => db.close()).catch((err) => {
   console.error(err);
   process.exit(1);
 });
-' /app/data/db/data.sqlite /tmp/seed-stage/data.sqlite
-# `kubectl cp` exits 0 even when the source is missing (the underlying tar
-# failure does not reach its exit code), so assert on the file itself.
-kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" exec "$POD" -- \
-  test -s /tmp/seed-stage/data.sqlite
-kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" cp "$POD":/tmp/seed-stage/data.sqlite \
-  "$STAGEDIR/db/data.sqlite" >/dev/null
-[ -s "$STAGEDIR/db/data.sqlite" ] || {
-  echo "kubectl cp did not produce a snapshot at $STAGEDIR/db/data.sqlite" >&2
-  exit 1
-}
+' "$db" /tmp/seed-stage/data.sqlite
+  # `kubectl cp` exits 0 even when the source is missing (the underlying tar
+  # failure does not reach its exit code), so assert on the file itself.
+  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" exec "$POD" -- \
+    test -s /tmp/seed-stage/data.sqlite
+  kubectl --context "$KUBE_CONTEXT" -n "$NAMESPACE" cp "$POD":/tmp/seed-stage/data.sqlite \
+    "$STAGEDIR/db/$base" >/dev/null
+  [ -s "$STAGEDIR/db/$base" ] || {
+    echo "kubectl cp did not produce a snapshot at $STAGEDIR/db/$base" >&2
+    exit 1
+  }
+done
+echo "    snapshot: $DBS"
 
 echo "==> Copying identity + auth state..."
 # auth/, mitm/, jwt-secret and machine-id are the state that makes the clone a
@@ -170,25 +207,37 @@ for required in jwt-secret machine-id; do
 done
 
 echo "==> Validating snapshot..."
-result=$(node - "$STAGEDIR/db/data.sqlite" <<'NODE'
+for db in "$STAGEDIR"/db/*.sqlite; do
+  result=$(node - "$db" <<'NODE'
 const { DatabaseSync } = require('node:sqlite');
 const db = new DatabaseSync(process.argv[2], { readOnly: true });
-console.log(db.prepare('PRAGMA integrity_check').get().integrity_check);
+// integrity_check THROWS on a corrupted header ("file is not a database")
+// rather than returning a row — mirror the post-write check and name the file
+// instead of dying on an unhandled stack trace.
+try {
+  console.log(db.prepare('PRAGMA integrity_check').get().integrity_check);
+} catch (err) {
+  console.log(err.message);
+}
 db.close();
 NODE
 )
-if [ "$result" != "ok" ]; then
-  echo "integrity_check failed for the snapshot: $result" >&2
-  exit 1
-fi
+  if [ "$result" != "ok" ]; then
+    echo "integrity_check failed for $(basename "$db"): $result" >&2
+    exit 1
+  fi
+done
 
 echo "==> Preparing target volume $VOLUME..."
 if ! docker volume inspect "$VOLUME" >/dev/null 2>&1; then
   docker volume create "$VOLUME" >/dev/null
   echo "    created empty volume $VOLUME"
 else
+  # No `|| true`: a probe failure (image pull rate-limit, daemon hiccup) must
+  # abort rather than masquerade as "the volume is empty", which would let the
+  # write step clobber a volume the guard meant to protect.
   existing=$(docker run --rm -v "$VOLUME":/target "$HELPER_IMAGE" \
-    sh -c 'find /target -mindepth 1 -maxdepth 1 | head -n 1' || true)
+    sh -c 'find /target -mindepth 1 -maxdepth 1 | head -n 1')
   if [ -n "$existing" ] && [ "$FORCE" -ne 1 ]; then
     echo "volume $VOLUME already contains data; re-seeding would discard it." >&2
     echo "re-run with --force if that is intended." >&2
@@ -196,6 +245,11 @@ else
   fi
   [ -n "$existing" ] && echo "    --force: overwriting existing contents of $VOLUME"
 fi
+
+# Re-check immediately before the destructive write. The up-front check ran
+# before the ~30s snapshot; `docker compose up -d 888route` started in between
+# would otherwise meet an already-stale guard.
+assert_volume_free
 
 echo "==> Writing snapshot into $VOLUME..."
 docker run --rm \
@@ -219,6 +273,58 @@ docker run --rm \
     done
   '
 
+# The write is NOT atomic (rm -> cp in one container), so a mid-copy failure
+# could leave a volume holding a partial database that boots and looks healthy
+# until the first login. Verify what actually LANDED in the volume — running
+# against $STAGEDIR would just re-check the pre-write snapshot, which was
+# already validated. Two layers: (a) file-set comparison inside the helper
+# image, (b) PRAGMA integrity_check inside the real app image, which has the
+# node build the app itself uses and can read the chowned files.
+echo "==> Verifying written volume..."
+docker run --rm \
+  -v "$VOLUME":/data \
+  -v "$STAGEDIR":/stage:ro \
+  "$HELPER_IMAGE" sh -ceu '
+    for db in /data/db/*.sqlite; do
+      [ -f "$db" ] || { echo "no database landed in the volume"; exit 1; }
+      [ -f /stage/db/"$(basename "$db")" ] || { echo "unexpected extra file in volume: $(basename "$db")"; exit 1; }
+    done
+    for db in /stage/db/*.sqlite; do
+      [ -f /data/db/"$(basename "$db")" ] || { echo "missing from volume: $(basename "$db")"; exit 1; }
+    done
+    [ -f /data/jwt-secret ] || { echo "jwt-secret did not land"; exit 1; }
+    [ -f /data/machine-id ] || { echo "machine-id did not land"; exit 1; }
+  '
+verify=$(docker run --rm \
+  -v "$VOLUME":/app/data \
+  --entrypoint node "$APP_IMAGE" -e '
+const { DatabaseSync } = require("node:sqlite");
+const fs = require("node:fs");
+let ok = true;
+for (const f of fs.readdirSync("/app/data/db").filter((f) => f.endsWith(".sqlite"))) {
+  // integrity_check THROWS on a corrupted header ("file is not a database")
+  // rather than returning a row, so a broken file must be caught per-file or
+  // the whole verification collapses into an unhandled stack trace instead of
+  // naming the file that is bad.
+  try {
+    const db = new DatabaseSync(`/app/data/db/${f}`, { readOnly: true });
+    const r = db.prepare("PRAGMA integrity_check").get().integrity_check;
+    if (r !== "ok") { console.log(`${f}: ${r}`); ok = false; }
+    db.close();
+  } catch (err) {
+    console.log(`${f}: ${err.message}`);
+    ok = false;
+  }
+}
+console.log(ok ? "ok" : "FAILED");
+')
+if [ "$verify" != "ok" ]; then
+  echo "post-write verification FAILED: $verify" >&2
+  echo "the volume may hold a partial seed — remove it and re-seed:" >&2
+  echo "  docker volume rm $VOLUME && docker volume create $VOLUME" >&2
+  exit 1
+fi
+
 docker run --rm -v "$VOLUME":/data "$HELPER_IMAGE" \
   sh -c 'du -sh /data | sed "s/^/    /"'
 
@@ -235,5 +341,8 @@ cat <<EOF
    two instances diverge from here. Re-run this script with --force to pull the
    k8s state across again (discarding changes made on the clone).
 EOF
-trap - EXIT INT TERM
+# No `trap - ...` here: the EXIT trap (cleanup_lock) must run so the lock
+# directory is released on the happy path too. Clearing the trap by hand skipped
+# cleanup_lock entirely, leaving the lock dir behind after every successful seed
+# and breaking the next run.
 cleanup
