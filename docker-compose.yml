@@ -58,6 +58,63 @@ services:
       retries: 3
       start_period: 20s
 
+  # Second gateway instance under compose (host port 20129), running side by
+  # side with the Kubernetes deployment in namespace 888router.
+  #
+  # Its data volume holds a *copy* of the k8s PVC, never a shared mount:
+  # SQLite is single-writer, so two live writers on one database file corrupt
+  # it. Seed a fresh volume with scripts/k8s-seed-compose-data.sh, which
+  # snapshots the live k8s database with node:sqlite backup() and validates it
+  # with PRAGMA integrity_check before writing.
+  #
+  # Deliberately NOT labelled com.centurylinklabs.watchtower.enable: this
+  # instance is pinned to a specific release so a silent :latest bump cannot
+  # drift it away from the k8s build it was cloned from.
+  888route:
+    image: voravitl/888router:0.15.137
+    container_name: 888route
+    restart: "no"
+    ports:
+      - "20129:20128"
+    labels:
+      # The label value is the port INSIDE the container, not the published host
+      # port — OrbStack dials container-IP:<label> to build its HTTP proxy. The
+      # app listens on 20128; the host port is 20129. Getting this backwards
+      # yields "proxy error: dial tcp 10.x.x.x:20129: connection refused" while
+      # curl on the host still works.
+      - "dev.orbstack.http-port=20128"
+    volumes:
+      - 888route-data:/app/data
+    # Generated from the live k8s secret + configmap by
+    # scripts/k8s-sync-secret.sh --pull. gitignored, never committed.
+    env_file:
+      - .env.route
+    environment:
+      # Container-internal invariants and compose-network service names. The
+      # public origin (BASE_URL / NINEROUTER_PUBLIC_URL) comes from .env.route
+      # and points at http://localhost:20129, not the k8s ingress host.
+      DATA_DIR: /app/data
+      PORT: "20128"
+      HOSTNAME: "0.0.0.0"
+      NODE_ENV: production
+      RTK_HARD_CAP_BYTES: "65536"
+      HEADROOM_URL: http://headroom:8787
+      SEARXNG_BASE_URL: http://searxng:8080/search
+    depends_on:
+      - headroom
+      - searxng
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:20128/api/version').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
   headroom:
     image: ghcr.io/headroomlabs-ai/headroom:latest
     container_name: headroom
@@ -157,3 +214,10 @@ services:
 volumes:
   888router-data:
     name: 888router-data
+  # external: the volume is seeded from the k8s PVC by
+  # scripts/k8s-seed-compose-data.sh, which owns its creation. Compose must not
+  # create or delete it — an empty auto-created volume would start the gateway
+  # on a blank database that looks healthy until the first login.
+  888route-data:
+    name: 888route-data
+    external: true
