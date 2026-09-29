@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { matchesModelSearch, contextKeywordMin } from "../../src/shared/utils/modelSearch.js";
+import { matchesModelSearch, contextKeywordMin, splitContextQuery } from "../../src/shared/utils/modelSearch.js";
 
 describe("contextKeywordMin — shorthand typed into search", () => {
   it("recognises the common context shorthands", () => {
@@ -21,6 +21,35 @@ describe("contextKeywordMin — shorthand typed into search", () => {
     expect(contextKeywordMin("minimax flash")).toBeNull();
     expect(contextKeywordMin("longcat")).toBeNull();
     expect(contextKeywordMin("")).toBeNull();
+  });
+});
+
+describe("splitContextQuery — compound queries", () => {
+  it("pure keyword: empty text + the context predicate", () => {
+    expect(splitContextQuery("1m")).toEqual({ text: "", ctxMin: 1_000_000 });
+    expect(splitContextQuery("500k")).toEqual({ text: "", ctxMin: 500_000 });
+  });
+
+  it("compound: keyword token becomes the predicate, rest stays text", () => {
+    expect(splitContextQuery("flash 1m")).toEqual({ text: "flash", ctxMin: 1_000_000 });
+    expect(splitContextQuery("1m flash")).toEqual({ text: "flash", ctxMin: 1_000_000 });
+    expect(splitContextQuery("grok 500k")).toEqual({ text: "grok", ctxMin: 500_000 });
+  });
+
+  it("anchored regex: near-miss tokens stay text, no leak", () => {
+    expect(splitContextQuery("m200")).toEqual({ text: "m200", ctxMin: null });
+    expect(splitContextQuery("1m2")).toEqual({ text: "1m2", ctxMin: null });
+    expect(splitContextQuery("500")).toEqual({ text: "500", ctxMin: null });
+  });
+
+  it("first keyword wins when two keywords are typed (documented semantics)", () => {
+    expect(splitContextQuery("1m 500k")).toEqual({ text: "500k", ctxMin: 1_000_000 });
+    expect(splitContextQuery("500k 1m")).toEqual({ text: "1m", ctxMin: 500_000 });
+  });
+
+  it("ordinary text: null predicate, text preserved verbatim (hyphen-normalised)", () => {
+    expect(splitContextQuery("longcat")).toEqual({ text: "longcat", ctxMin: null });
+    expect(splitContextQuery("sonnet-flash")).toEqual({ text: "sonnet flash", ctxMin: null });
   });
 });
 

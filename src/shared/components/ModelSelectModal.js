@@ -8,7 +8,7 @@ import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { formatContextWindow, CONTEXT_FILTER_OPTIONS } from "@/shared/utils/contextWindow";
-import { matchesModelSearch, contextKeywordMin } from "@/shared/utils/modelSearch";
+import { matchesModelSearch, contextKeywordMin, splitContextQuery } from "@/shared/utils/modelSearch";
 import {
   OAUTH_PROVIDERS,
   APIKEY_PROVIDERS,
@@ -20,7 +20,7 @@ import {
   getProviderAlias,
 } from "@/shared/constants/providers";
 
-export { formatContextWindow, CONTEXT_FILTER_OPTIONS, matchesModelSearch, contextKeywordMin };
+export { formatContextWindow, CONTEXT_FILTER_OPTIONS, matchesModelSearch, contextKeywordMin, splitContextQuery };
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -495,7 +495,7 @@ export default function ModelSelectModal({
     const query = searchQuery.trim().toLowerCase();
     // "1m" / "200k" / "500k" typed straight into search acts as a context
     // filter — same shorthand as the context dropdown.
-    const ctxFromQuery = contextKeywordMin(query);
+    const { text: textQuery, ctxMin: ctxFromQuery } = splitContextQuery(query);
 
     // Sort models with O(1) Set membership: added models floated to top, then alphabetically
     const sortModels = (models) => {
@@ -530,14 +530,14 @@ export default function ModelSelectModal({
       }
 
       // Filter by search query (match provider name or model name/id/value).
-      // A pure context keyword ("1m") has already been consumed as a filter —
-      // don't also use it as text, or every group would filter to zero.
-      if (query && ctxFromQuery == null) {
+      // Context keyword tokens were consumed as a filter above — the remaining
+      // text (possibly empty for a pure keyword) is what text-matches.
+      if (textQuery) {
         const providerNameMatches =
           group.name.toLowerCase().includes(query) || providerId.toLowerCase().includes(query);
 
         if (!providerNameMatches) {
-          models = models.filter((m) => matchesModelSearch(m, query, group.name, providerId));
+          models = models.filter((m) => matchesModelSearch(m, textQuery, group.name, providerId));
           if (models.length === 0) return;
         }
       }

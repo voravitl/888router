@@ -16,7 +16,7 @@ describe("OpenCode Go per-model capabilities", () => {
     ["minimax-m3",    512000, 48000, "openai", true],
     ["qwen3.8-max",   256000, 65536, "qwen", true],
     // grok-4.6/4.7 natively 500k (x.ai official); the 200k was a stale floor.
-    ["grok-4.7",      500000, 64000, "openai", true],
+    ["grok-4.7",      500000, 500000, "openai", true],
     ["gpt-6-luna",    272000, 64000, "openai", true],
     ["gpt-5.6-luna",  272000, 64000, "openai", true],
     // LongCat-2.0 natively 1M (models.dev opencode-go/longcat-2.0 = 1,000,000 /

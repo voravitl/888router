@@ -7,7 +7,7 @@
 // same shorthand the context filter dropdown uses (≥ 128K / ≥ 200K / ≥ 1M).
 const CONTEXT_KEYWORDS = [
   { re: /^(1m|1000k|1048k|1048756|1048576)$/, min: 1_000_000 },
-  { re: /^500k?$/, min: 500_000 },
+  { re: /^500k$/, min: 500_000 },
   { re: /^(272k|256k|262k)$/, min: 256_000 },
   { re: /^(200k|204800|196608)$/, min: 200_000 },
   { re: /^(128k|131k|131072|132k)$/, min: 128_000 },
@@ -24,6 +24,28 @@ export function contextKeywordMin(query) {
     if (re.test(q)) return min;
   }
   return null;
+}
+
+/**
+ * Split a query into (textTokens, ctxMin): a context keyword token acts as a
+ * predicate, the remaining tokens stay text. "flash 1m" → text ["flash"],
+ * ctx ≥ 1,000,000 — so compound queries find 1M-context flash models instead
+ * of returning an empty list (the pure-keyword case is handled by
+ * contextKeywordMin on the whole query).
+ */
+export function splitContextQuery(query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return { text: "", ctxMin: null };
+  if (contextKeywordMin(q) != null) return { text: "", ctxMin: contextKeywordMin(q) };
+  const tokens = q.split(/[\s\-_/]+/).filter(Boolean);
+  let ctxMin = null;
+  const text = [];
+  for (const t of tokens) {
+    const kw = contextKeywordMin(t);
+    if (kw != null && ctxMin == null) ctxMin = kw;
+    else text.push(t);
+  }
+  return { text: text.join(" "), ctxMin };
 }
 
 export function matchesModelSearch(model, query, providerName = "", providerId = "") {
