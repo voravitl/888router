@@ -428,12 +428,18 @@ export const PROVIDER_CAPABILITIES = {
     "qwen3.8-max":       { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 65536 },
     "qwen3.8-flash":     { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 65536 },
     "qwen3.7-max":       { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 65536 },
-    "grok-4.7":          { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 200000, maxOutput: 64000 },
-    "grok-4.6":          { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 200000, maxOutput: 64000 },
+    // grok-4.6/4.7 are natively 500k (x.ai official; models.dev xai/grok-4.6+4.7
+    // = 500,000). The 200k here was another stale DEFAULT-floor copy.
+    "grok-4.7":          { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 500000, maxOutput: 64000 },
+    "grok-4.6":          { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 500000, maxOutput: 64000 },
     "gpt-6-luna":        { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 272000, maxOutput: 64000 },
     "gpt-5.6-luna":      { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 272000, maxOutput: 64000 },
-    "longcat-2.0":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 200000, maxOutput: 64000 },
-    "longcat-2.5-preview-free": { reasoning: false, thinkingFormat: null, thinkingCanDisable: true, contextWindow: 200000, maxOutput: 64000 },
+    // LongCat-2.0 is natively 1M (models.dev: opencode-go/longcat-2.0 = 1,000,000 /
+    // 131,072; kilo+openrouter free = 1,048,756 / 262,144; vercel 2.5 = 1,048,576).
+    // The 200k here was a stale copy of the DEFAULT floor — the add-combo picker
+    // showed 200k while the live model accepted 1M (owner report, 2026-09-29).
+    "longcat-2.0":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
+    "longcat-2.5-preview-free": { reasoning: false, thinkingFormat: null, thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
     "hy4-preview":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
     "hy3":               { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
   },

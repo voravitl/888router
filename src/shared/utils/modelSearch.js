@@ -2,6 +2,30 @@
  * Pure helper for model matching in search queries
  * Supports tokenized matching and space/hyphen normalization
  */
+// Recognise context-size keywords typed straight into search ("1m", "200k",
+// "500k", "128k") so users can find a 1M-context model by typing 1m — the
+// same shorthand the context filter dropdown uses (≥ 128K / ≥ 200K / ≥ 1M).
+const CONTEXT_KEYWORDS = [
+  { re: /^(1m|1000k|1048k|1048756|1048576)$/, min: 1_000_000 },
+  { re: /^500k?$/, min: 500_000 },
+  { re: /^(272k|256k|262k)$/, min: 256_000 },
+  { re: /^(200k|204800|196608)$/, min: 200_000 },
+  { re: /^(128k|131k|131072|132k)$/, min: 128_000 },
+];
+
+/**
+ * Returns the minimum context window implied by a context-size keyword in the
+ * query, or null when the query is not a context keyword.
+ */
+export function contextKeywordMin(query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return null;
+  for (const { re, min } of CONTEXT_KEYWORDS) {
+    if (re.test(q)) return min;
+  }
+  return null;
+}
+
 export function matchesModelSearch(model, query, providerName = "", providerId = "") {
   if (!query) return true;
   const q = String(query).trim().toLowerCase();
