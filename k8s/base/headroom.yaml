@@ -75,12 +75,14 @@ spec:
             # supported knob (click option, envvar=, defaults to cpu_count).
             - name: HEADROOM_COMPRESSION_MAX_WORKERS
               value: "2"
-            # Bounds ONE compression. The router abandons /v1/compress after
-            # HEADROOM_TIMEOUT_MS (2s, default) but Python cannot preempt the
-            # executor thread — it runs to completion regardless. Left at the
-            # 30s default that is up to 28s of orphaned CPU per abandoned
-            # request. Measured throughput is ~0.2ms/KB, so 3s still covers
-            # ~15MB while capping the waste at ~1s.
+            # Bounds how long headroom WAITS for one compression before falling
+            # back (request-wait timeout, not a CPU cap). The router abandons
+            # /v1/compress after HEADROOM_TIMEOUT_MS (2s, default), and Python
+            # cannot preempt an already-running executor thread — it runs to
+            # completion regardless. So this knob bounds request latency, not
+            # background CPU: at ~0.2ms/KB measured, 3s still covers ~15MB
+            # payloads, while larger/slower ones fail fast to fallback instead
+            # of holding the request slot.
             - name: HEADROOM_COMPRESSION_TIMEOUT_SECONDS
               value: "3"
           livenessProbe:
