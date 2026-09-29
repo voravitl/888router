@@ -104,7 +104,7 @@ Optional / commonly used:
 | Service | Image | Purpose |
 |---------|-------|---------|
 | `888router` | `voravitl/888router:latest` | The gateway (port `20128`) |
-| `headroom` | `ghcr.io/chopratejas/headroom:latest` | Optional token-saver `/v1/compress` proxy (port `8787`, internal) |
+| `headroom` | `ghcr.io/headroomlabs-ai/headroom:latest` | Optional token-saver `/v1/compress` proxy (port `8787`, internal) |
 | `searxng` | `searxng/searxng:latest` | Search proxy (internal only, port `8080`) |
 
 - `headroom` and `searxng` are reached **by service name** from the gateway
