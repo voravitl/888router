@@ -13,8 +13,9 @@ Repo maintenance scripts: provider-registry migration, capability validation, re
 | `injectDisplayToRegistry.mjs` | Injects display metadata into registry |
 | `validate-capabilities.mjs` | Validates capability tables |
 | `cicd-release.sh` | Release automation |
-| `k8s-migrate-data.sh` | K8s data migration |
-| `k8s-sync-secret.sh` | K8s secret sync |
+| `k8s-migrate-data.sh` | K8s data migration (Docker → K8s PVC) |
+| `k8s-sync-secret.sh` | K8s secret sync (`.env` → Secret; `--pull` → `.env.route` for the compose clone) |
+| `k8s-seed-compose-data.sh` | Seed the `888route` compose volume from the live K8s PVC (K8s → Docker volume) |
 | `copy-standalone-assets.mjs` | Standalone build assets |
 | `docker-cleanup.sh` | Docker prune helper |
 | `generate_provider_logos.py` | Provider logo generation |

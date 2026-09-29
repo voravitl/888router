@@ -33,7 +33,7 @@ Kubernetes manifests (Kustomize): base resources plus `local` and `prd` overlays
 ### Working In This Directory
 - Version bump touches 3 files: `base/888router.yaml` (image tag, WITHOUT `v`) plus `newTag` in BOTH overlays. Git tag has `v`; image tag never does.
 - Strategy is `Recreate` (SQLite single-writer PVC) — always `docker build` locally BEFORE `kubectl apply -k`, or the pod hits `ImagePullBackOff` and Ingress returns 503.
-- Never `docker compose up` — production runs on K8s, not compose.
+- Never `docker compose up` for the k8s workload — production runs on K8s, not compose. The one carve-out is the `888route` compose clone (see `README.md`): it runs under compose by design and must not be treated as a deploy target for the k8s manifests.
 - Never commit real secrets; copy `secrets.example.yaml` pattern only.
 
 ### Testing Requirements
