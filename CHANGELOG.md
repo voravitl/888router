@@ -1,3 +1,12 @@
+# v0.15.141 (2026-09-29)
+
+## Fix: longcat/grok caps correction deployed; context shorthand search (PR #495)
+
+Merge-time version step for the caps-mismatch fix (#495): LongCat 2.0 / 2.5-preview now advertise 1,000,000 / 131,072 (was 200k — the owner caught the picker showing 200k while the live model takes 1M), grok-4.6/4.7 → 500,000 / 500,000 (x.ai official; models.dev ×2 entries). The add-combo picker also accepts context shorthand in search ("1m", "500k", "flash 1m" — keyword tokens become a context predicate, remaining tokens stay text).
+
+- Fixed in review: `splitContextQuery` gained direct unit tests (5 cases) in the same commit per the round-2 review's F1; grok `maxOutput` verified against two independent sources (models.dev `.xai` + `.opencode-go` both `limit.output=500000`, x.ai "no text output limit").
+- Full suite: **3051 pass / 0 fail / 1 expected fail / 80 skipped**, gate `No regression`. Snapshot refreshed for 0.15.141 (version string only).
+
 # v0.15.140 (2026-09-29)
 
 ## Fix: the noAuth pool picker must read the strike block under both key shapes (PR #492)
