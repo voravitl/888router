@@ -636,7 +636,7 @@ export default function TokenSaverClient() {
               <p className="font-medium">
                 Compress context{" "}
                 <a
-                  href="https://github.com/chopratejas/headroom"
+                  href="https://github.com/headroomlabs-ai/headroom"
                   target="_blank"
                   rel="noreferrer"
                   className="text-xs font-normal text-primary underline hover:opacity-80"

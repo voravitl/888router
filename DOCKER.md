@@ -83,7 +83,7 @@ services:
       - headroom
 
   headroom:
-    image: ghcr.io/chopratejas/headroom:latest
+    image: ghcr.io/headroomlabs-ai/headroom:latest
     ports:
       - "8787:8787"
 ```
