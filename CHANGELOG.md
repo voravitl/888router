@@ -1,3 +1,9 @@
+# v0.15.133 (2026-09-29)
+
+## Revert: remove blocked ZCode start-plan provider
+
+- Reverts PR #472. The live ZCode OAuth flow completed token exchange, but the plan chat endpoint rejects calls with HTTP 400 code 3007 `captcha verify failed` (Aliyun Captcha). The provider is unusable and has no connection, so the implementation, wiring, tests, and goldens are removed. Release history is preserved; OpenCode Go quota tracker is untouched.
+
 # v0.15.132 (2026-09-29)
 
 ## Release: ZCode (Z.ai start-plan) OAuth provider — free GLM-5.3-Flash
