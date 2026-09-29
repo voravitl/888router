@@ -70,8 +70,16 @@ export const POOL_SUSPEND_PARK_MS = 30 * 60 * 1000;
 export const ACCOUNT_QUOTA_PARK_MS = 60 * 60 * 1000;
 
 // 402 is a broad billing class — only texts matching a quota-exhaustion
-// marker earn the long park. Other 402s (entitlement, payment method) may
-// resolve quickly and keep the short rule cooldown instead.
+// marker earn the long park. Other 402s (entitlement, subscription-not-active)
+// keep the short rule cooldown instead.
+//
+// The markers are deliberately broad, which means a 402 whose text merely
+// MENTIONS a balance ("credit card required", "Insufficient Balance") also
+// earns the park. That is intended, not an oversight: every one of those is a
+// billing dead end that only clears when a human acts, so holding the account
+// out of selection is correct — the alternative is re-paying a full upstream
+// round-trip every 2min to re-learn the same thing. Narrow these markers only
+// together with a test proving the dropped wording is still parked.
 export const QUOTA_PARK_MARKERS_RE =
   /monthly|quota|exhaust|allowance|insufficient|credit|balance|usage|reached the limit|limit reached/i;
 
