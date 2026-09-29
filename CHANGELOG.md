@@ -1,3 +1,15 @@
+# v0.15.138 (2026-09-29)
+
+## Infra: `888route` — a compose clone of the k8s 888router deployment (PR #488)
+
+Second gateway instance under compose on host port `20129`, sharing the compose `headroom`/`searxng` services, with a **copy** of the k8s PVC in its own volume — never a shared mount (SQLite is single-writer).
+
+- `scripts/k8s-seed-compose-data.sh` — snapshots every `db/*.sqlite` with `node:sqlite backup()` while k8s stays online, validates with `PRAGMA integrity_check`, re-checks the in-use guard immediately before the destructive write, and verifies what landed in the volume afterwards (file-set + integrity inside the app image, since `integrity_check` throws on a corrupted header). Refuses while the clone container is up, on a stale probe, or while another run holds the lock; `db/backups/`, `bin/`, `logs/` are skipped and regenerated on first use.
+- `scripts/k8s-sync-secret.sh --pull` — materializes the live K8s Secret + ConfigMap into `.env.route` (mode 600, gitignored) with the public origin rewritten to `http://localhost:20129` and `AUTH_COOKIE_SECURE=false`; the trap covers the secret-bearing temp sidecars.
+- Sync is one-way and documented in `k8s/README.md`; re-seeding discards the clone's writes and needs `--force`.
+- Reviewed independently (2 rounds): first pass APPROVE with 4 MEDIUM + 6 LOW, all addressed in `b9a9104b`; second pass re-verified each with live commands (TOCTOU re-check, broken-volume integrity, trap-leak shim, compose failure mode) and approved. One MEDIUM the fix itself introduced (lock leaked after every successful run) was caught and fixed before merge.
+- No `src/` or `open-sse/` change: the shipped image is unchanged apart from the version string, so this bump is the merge-time version step for a `feat`-typed infra merge.
+
 # v0.15.137 (2026-09-29)
 
 ## Fix: `/v1/models` — stop publishing a fabricated 200k context window, and stop serialising every provider's catalogue fetch
