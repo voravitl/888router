@@ -115,7 +115,14 @@ export function createErrorResult(statusCode, message, resetsAtMs) {
  */
 export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
-  const msg = `${message} (${retryAfterHuman})`;
+  // A message that already ends with the same parenthetical (the combo error
+  // text carries it verbatim once the upstream hint made it into message) must
+  // not get it appended again — clients saw "(reset after 5s) (reset after 5s)".
+  const suffix = `(${retryAfterHuman})`;
+  const alreadyHas =
+    typeof message === "string" &&
+    (message.endsWith(suffix) || message.endsWith(`(${retryAfterHuman.replace(/^reset /i, "")})`));
+  const msg = alreadyHas ? message : `${message} ${suffix}`;
   return new Response(
     JSON.stringify({ error: { message: msg } }),
     {
