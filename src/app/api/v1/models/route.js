@@ -684,7 +684,7 @@ export async function buildModelsList(kindFilter) {
     // while making wall time the MAX over upstreams instead. Every fetch is
     // additionally capped by withLiveFetchTimeout, so one dead upstream cannot
     // set even that MAX.
-    const perProviderEntries = await Promise.all(
+    const perProviderEntries = await Promise.allSettled(
       Array.from(activeConnectionByProvider.entries()).map(([providerId, conn]) =>
         providerMatchesKinds(providerId, kindFilter)
           ? buildProviderEntries({
@@ -700,7 +700,14 @@ export async function buildModelsList(kindFilter) {
           : Promise.resolve([]),
       ),
     );
-    for (const entries of perProviderEntries) models.push(...entries);
+    // allSettled rather than all: a throw from one provider's builder must
+    // degrade to that provider missing from the list, not reject the whole
+    // endpoint into a 500 that loses every provider. (The old sequential loop
+    // propagated the same throw, so this is strictly better isolation.)
+    for (const settled of perProviderEntries) {
+      if (settled.status === "fulfilled") models.push(...settled.value);
+      else console.log("Provider model list failed:", settled.reason?.message || settled.reason);
+    }
   }
 
   // Inject zero-config virtual combos (auto/best-coding, auto/best-free, …)

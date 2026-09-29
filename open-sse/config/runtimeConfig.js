@@ -58,6 +58,15 @@ export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH
 // sum of all of them. A provider that misses it falls back to its static model
 // list — /v1/models must answer promptly rather than block on one slow
 // provider's OAuth/token exchange. Env: MODELS_LIVE_FETCH_TIMEOUT_MS.
+//
+// Deliberately SHORTER than some resolvers' own internal budget (kiro 30s,
+// kimchi 20s, qoder 15s, copilot 10s) so a single provider can never dominate
+// the endpoint. Trade-off: a resolver whose internal 401 → refresh-token →
+// retry sequence runs past this cap is abandoned for THAT request and serves
+// its static list; the refresh still completes and persists when it finishes,
+// and the next request retries, so the effect is a one-request static list,
+// never a permanent loss. Raise this if a provider's refresh chain is
+// routinely slower than 5s and you would rather wait than fall back.
 export const MODELS_LIVE_FETCH_TIMEOUT_MS = envMs("MODELS_LIVE_FETCH_TIMEOUT_MS", 5 * 1000);
 
 // Default token limits

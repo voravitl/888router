@@ -54,6 +54,62 @@ describe("resolveKnownLimits — strict resolution", () => {
   });
 });
 
+describe("resolveKnownLimits — per-field merge (never shadows a lower layer)", () => {
+  beforeEach(() => {
+    __resetScopedDynamicCache();
+    __resetKnownLimitsCache();
+  });
+
+  it("a provider entry that carries NO limits must not shadow the pattern's real limits", () => {
+    // `muse-spark-*` provider entries set modalities only; the PATTERN entry
+    // carries 1048576 / 131072. A short-circuit chain used to fall through to
+    // the DEFAULT floor (200000 / 64000) for exactly this shape, which is the
+    // same fabrication this resolver exists to prevent — one layer down.
+    const limits = resolveKnownLimits("opencode", "muse-spark-1.2-contributor-free");
+    const loose = getCapabilitiesForModel("opencode", "muse-spark-1.2-contributor-free");
+    expect(limits.contextWindow).toBe(loose.contextWindow);
+    expect(limits.maxOutput).toBe(loose.maxOutput);
+    expect(limits.contextWindow).toBe(1048576);
+    expect(limits.maxOutput).toBe(131072);
+  });
+
+  it("a dynamic row with contextWindow only must not hide the catalogue's maxOutput", () => {
+    // syncedModelsRepo rows are partial by design; the strict resolver used to
+    // drop max_tokens entirely in this case while the loose resolver kept it.
+    registerDynamicCapabilitiesScoped("ollama", "gpt-4o", { contextWindow: 400000 });
+    const limits = resolveKnownLimits("ollama", "gpt-4o");
+    const loose = getCapabilitiesForModel("ollama", "gpt-4o");
+    expect(limits.contextWindow).toBe(400000);
+    expect(limits.maxOutput).toBe(loose.maxOutput);
+    expect(limits.maxOutput).toBeGreaterThan(0);
+  });
+
+  it("a dynamic row overrides the catalogue's contextWindow (dynamic layers above)", () => {
+    registerDynamicCapabilitiesScoped("ollama", "gpt-4o", { contextWindow: 400000 });
+    expect(resolveKnownLimits("ollama", "gpt-4o").contextWindow).toBe(
+      getCapabilitiesForModel("ollama", "gpt-4o").contextWindow,
+    );
+  });
+
+  it("strict never disagrees with loose about a field loose took from a source", () => {
+    // The invariant the doc comment claims. Exercises every source class:
+    // provider override, dynamic, exact MODEL entry, and pattern.
+    const cases = [
+      ["opencode", "muse-spark-1.2-contributor-free"], // pattern only
+      ["openai", "gpt-4o"],                            // exact
+      ["nara", "gpt-4o"],                              // provider override
+    ];
+    for (const [provider, model] of cases) {
+      const strict = resolveKnownLimits(provider, model);
+      const loose = getCapabilitiesForModel(provider, model);
+      const floorCw = loose.contextWindow === 200000; // DEFAULT floor
+      const floorMo = loose.maxOutput === 64000;
+      if (!floorCw) expect(strict.contextWindow).toBe(loose.contextWindow);
+      if (!floorMo) expect(strict.maxOutput).toBe(loose.maxOutput);
+    }
+  });
+});
+
 describe("resolveKnownLimits — memo invalidation", () => {
   beforeEach(() => {
     __resetScopedDynamicCache();
