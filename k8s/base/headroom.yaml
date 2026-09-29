@@ -93,6 +93,16 @@ spec:
             # keeps this internal-only; /livez etc. stay auth-exempt upstream.
             - name: HEADROOM_HOST
               value: "0.0.0.0"
+            # v0.39.1 guards /v1/compress (+/v1/usage) with loopback-only access
+            # (peer IP + Host header must be loopback, else 404). The router
+            # calls via the Service name from its own pod IP, so without this
+            # every compress 404s and the toggle silently no-ops (fail-open).
+            # Upstream escape hatch for exactly this topology (server.py:5648):
+            # drops ONLY the compress-route guard. Safe: NetworkPolicy already
+            # restricts 8787 to the router pod; all other loopback routes keep
+            # their guard; /livez etc. are unaffected.
+            - name: HEADROOM_COMPRESS_ALLOW_REMOTE
+              value: "1"
           livenessProbe:
             httpGet:
               path: /livez
