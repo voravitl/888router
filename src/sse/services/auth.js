@@ -2,7 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { ACCOUNT_QUOTA_PARK_MS, MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 import { isRetiredProvider } from "open-sse/config/retiredProviders.js";
 import { partitionByQuotaHealth, QUOTA_AVOID_THRESHOLD_PCT, QUOTA_SNAPSHOT_MAX_AGE_MS } from "open-sse/services/quotaSnapshot.js";
@@ -526,7 +526,19 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const isAccountLevel = status === 402 || status === 403 ||
     (status === 429 && /quota|limit|credit|balance|allowance|capacity/i.test(errorText || ""));
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs, isAccountLevel);
+  // Billing-cycle dead ends (402 = monthly request count exhausted, e.g. Kiro
+  // "MONTHLY_REQUEST_COUNT") recur on every pick until the provider's own
+  // window resets — the 2min cooldown lock from the rule is re-hit every few
+  // minutes, and each hit costs a full upstream round-trip (observed 3.5–4.7s
+  // per dead hop). 402 specifically gets ACCOUNT_QUOTA_PARK_MS as the lock
+  // window so the account stays out of the selection pool for an hour.
+  // 401/403/429 keep the rule cooldown: those can be transient (expired token
+  // refresh, rate-limit window) and a long park would strand a recoverable
+  // account. resetsAtMs overrides everything anyway (codex resets_at).
+  const lockMs = status === 402 && !resetsAtMs
+    ? Math.max(ACCOUNT_QUOTA_PARK_MS, cooldownMs)
+    : cooldownMs;
+  const lockUpdate = buildModelLockUpdate(model, lockMs, isAccountLevel);
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
@@ -539,7 +551,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(lockMs / 1000)}s [${status}]`);
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);

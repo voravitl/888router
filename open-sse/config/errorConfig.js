@@ -61,6 +61,28 @@ const COOLDOWN = {
 //     to it indefinitely.
 export const POOL_SUSPEND_PARK_MS = 30 * 60 * 1000;
 
+// How long an ACCOUNT (provider connection) is held out of selection after an
+// account-level quota exhaustion (402 billing / monthly request count). These
+// are billing-cycle dead ends — the account stays 402 until the provider's own
+// monthly window resets (Kiro: "MONTHLY_REQUEST_COUNT", reset after hours).
+//
+// The account path in markAccountUnavailable (src/sse/services/auth.js) is
+// SEPARATE from the proxy-pool path: pools honor rule.parkMs, but accounts
+// previously fell back to cooldownMs (2min for 402). A parked-2min account is
+// re-picked on the very next request a couple of minutes later — every
+// combo member selection pays the upstream round-trip (observed 3.5–4.7s per
+// dead hop) before learning the account is still dead. Parking for
+// ACCOUNT_QUOTA_PARK_MS keeps the account out of the selection pool for the
+// remainder of the billing window instead.
+//
+// Chosen as 1h rather than the 30min pool park: kiro's monthly counter resets
+// on a provider schedule (reported "reset after 2m" is per-request throttle;
+// the monthly wall is hours away), and a full-cycle 402 recurs on every pick
+// until reset. An hour bounds the wasted round-trips to at most ~1 per hour
+// per dead account while still re-admitting well before a genuine reset
+// would matter.
+export const ACCOUNT_QUOTA_PARK_MS = 60 * 60 * 1000;
+
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
@@ -139,6 +161,11 @@ export const ERROR_RULES = [
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
+  // 402 = account-level billing exhaustion (e.g. Kiro MONTHLY_REQUEST_COUNT).
+  // cooldownMs stays SHORT (2min) on purpose — it paces the hop to the next
+  // account within one request. The long quarantine that keeps a billing-dead
+  // account out of LATER requests is ACCOUNT_QUOTA_PARK_MS, applied by the
+  // account path of markAccountUnavailable for 402 (see that file).
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   // 404 = model not found → don't cycle accounts, let combo skip to next model
