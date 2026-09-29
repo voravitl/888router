@@ -90,6 +90,27 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           log.warn("AUTH", `Provider ${providerId} specific proxy pool ${specificPoolId} has no proxy/relay URL`);
           return null;
         }
+        // This branch mints bare `noauth` on EVERY call without rotation, so a
+        // pool whose quota breaker has tripped must not be handed back — the
+        // strike was recorded under the connectionId chat actually used (see
+        // the picker loop below for the key-shape explanation), and skipping
+        // the read here meant the 429-storm path stayed unguarded (PR #492
+        // review F1, HIGH). Same downstream shape as the all-parked case:
+        // chat.js turns allRateLimited into 429 + Retry-After.
+        const strikeBlock = isQuotaTrackedProvider(providerId) && model
+          ? (isPairBlocked(providerId, `noauth:${specificPoolId}`, model)
+            ?? isPairBlocked(providerId, "noauth", model))
+          : null;
+        if (strikeBlock && strikeBlock > Date.now()) {
+          log.warn("AUTH", `${providerId} | pinned pool ${specificPoolId} strike-blocked until ${new Date(strikeBlock).toISOString()}`);
+          return {
+            allRateLimited: true,
+            retryAfter: new Date(strikeBlock).toISOString(),
+            retryAfterHuman: formatRetryAfter(strikeBlock),
+            lastError: null,
+            lastErrorCode: 429,
+          };
+        }
         return {
           id: "noauth",
           connectionId: "noauth",

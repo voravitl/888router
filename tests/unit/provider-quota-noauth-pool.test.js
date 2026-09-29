@@ -15,8 +15,11 @@ const mocks = vi.hoisted(() => ({
   updateProxyPool: vi.fn(async () => {}),
   getProxyPoolById: vi.fn(async () => null),
   resolveConnectionProxyConfig: vi.fn(async (d) => ({
-    connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "",
-    vercelRelayUrl: "", strictProxy: false,
+    connectionProxyEnabled: false,
+    connectionProxyUrl: "http://relay-a:8080",
+    connectionNoProxy: "",
+    vercelRelayUrl: "",
+    strictProxy: false,
   })),
 }));
 
@@ -62,5 +65,26 @@ describe("noAuth pool picker honors the strike breaker", () => {
     const creds = await getProviderCredentials("opencode", null, MODEL);
     expect(creds?.allRateLimited).toBe(true);
     expect(creds?.retryAfter).toBe(new Date(block).toISOString());
+  });
+
+  it("the PINNED-pool strategy (bare noauth) reports allRateLimited instead of minting again", async () => {
+    // The live 429-storm shape: providerStrategies pins opencode to pool-a,
+    // auth.js mints bare `noauth` on EVERY call with no rotation, and (before
+    // this PR) never consulted the breaker — 7 429s in 13s, every 3rd one
+    // recording but nothing blocking.
+    mocks.getSettings.mockResolvedValue({
+      providerStrategies: { opencode: { proxyPoolId: "pool-a" } },
+      fallbackStrategy: "fill-first",
+    });
+
+    await handleProviderQuotaError("opencode", "noauth", 429, MODEL, "public", {});
+    await handleProviderQuotaError("opencode", "noauth", 429, MODEL, "public", {});
+    await handleProviderQuotaError("opencode", "noauth", 429, MODEL, "public", {});
+
+    const creds = await getProviderCredentials("opencode", null, MODEL);
+    expect(creds?.allRateLimited).toBe(true);
+    expect(creds?.retryAfter).toBeTruthy();
+    // The break must be the 5m strike-only window, not the generic 5s park.
+    expect(new Date(creds.retryAfter).getTime() - Date.now()).toBeGreaterThan(4 * 60_000);
   });
 });
