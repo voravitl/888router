@@ -71,7 +71,7 @@ services:
   # instance is pinned to a specific release so a silent :latest bump cannot
   # drift it away from the k8s build it was cloned from.
   888route:
-    image: voravitl/888router:0.15.140
+    image: voravitl/888router:0.15.141
     container_name: 888route
     restart: "no"
     ports:
