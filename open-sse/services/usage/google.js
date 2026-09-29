@@ -159,17 +159,23 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     const data = await response.json();
     const quotas = {};
 
-    // Detect tier: free-tier accounts only have weekly quotas (no separate 5h window).
-    // On free-tier, fetchAvailableModels returns misleading per-model quota info.
+    // Detect tier: free/starter-tier accounts only have weekly quotas (no
+    // separate 5h window), and fetchAvailableModels returns misleading
+    // per-model quota info for them.
+    //
+    // Antigravity has NO free tier (repo owner, 2026-09-29) — paidTierId is
+    // always present for a real account. So free/starter is only ever claimed
+    // when the tier id ITSELF says so; the previous tierName-substring and
+    // missing-paidTierId fallbacks could misclassify a paid account as free
+    // when the API shape omitted those fields, which silently discarded the
+    // per-model quotas and degraded the quota cache to strike-only blocking
+    // (15m) instead of the real window (e.g. 80h).
     const paidTierId = subscriptionInfo?.paidTier?.id;
     const tierId = String(paidTierId || "").toLowerCase();
-    const currentTierId = String(subscriptionInfo?.currentTier?.id || "").toLowerCase();
-    const tierName = String(subscriptionInfo?.currentTier?.name || "").toLowerCase();
 
     const isFreeTier =
       tierId.includes("free") ||
-      tierId.includes("starter") ||
-      (!paidTierId && (currentTierId.includes("free") || currentTierId.includes("starter") || tierName.includes("free") || tierName.includes("starter") || !tierName));
+      tierId.includes("starter");
 
     // Parse model quotas only for paid-tier accounts.
     if (!isFreeTier && data.models) {

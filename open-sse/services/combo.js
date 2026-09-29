@@ -1080,8 +1080,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         // Hours/minutes/seconds groups are independently optional so bare
         // "Resets in 2h" / "Resets in 5m" also match; the /h/ discriminator on
         // m[0] routes hours text to the h-branch, minutes text to the m-branch.
+        // "reset after" is the antigravity executor's own spelling for the
+        // same hint ("Your quota will reset after 2h7m23s"); a combo error
+        // string can carry either spelling depending on which layer surfaced
+        // the failure first.
         const m = text.match(/Resets? in (\d+)h(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?/i)
-          || text.match(/Resets? in (\d+)m(?:\s*(\d+(?:\.\d+)?)s)?/i);
+          || text.match(/Resets? in (\d+)m(?:\s*(\d+(?:\.\d+)?)s)?/i)
+          || text.match(/resets? after (\d+)h(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?/i)
+          || text.match(/resets? after (\d+)m(?:\s*(\d+(?:\.\d+)?)s)?/i);
         if (m) {
           const isHours = /h/i.test(m[0]);
           const ms = isHours

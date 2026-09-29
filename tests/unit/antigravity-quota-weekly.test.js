@@ -105,6 +105,42 @@ describe("Antigravity weekly quota overlay", () => {
     });
   });
 
+  it("parses per-model quotas when the API omits paidTierId and tier name (no free tier exists)", async () => {
+    // Antigravity has no free tier (repo owner, 2026-09-29), so a missing
+    // paidTierId means the API shape changed — it must be treated as PAID and
+    // the per-model quotas parsed. The previous detection added
+    // `(!paidTierId && ... || !tierName)`, which misclassified exactly this
+    // shape as free and silently discarded every per-model row, degrading the
+    // quota cache to strike-only blocking instead of the real reset window.
+    proxyAwareFetch.mockImplementation(async (url) => {
+      if (url.includes(":loadCodeAssist")) {
+        return {
+          ok: true, status: 200,
+          json: async () => ({ cloudaicompanionProject: "project-1" }),
+        };
+      }
+      if (url.includes(":fetchAvailableModels")) {
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            models: {
+              "gemini-3.8-flash-high": {
+                quotaInfo: { remainingFraction: 1, resetTime: "2026-09-10T00:00:00Z" },
+              },
+            },
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+
+    const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
+    const usage = await getAntigravityUsage("access-token", {});
+
+    expect(usage.quotas["gemini-3.8-flash-high"]).toBeDefined();
+    expect(usage.quotas["Gemini (all models)"]).toBeDefined();
+  });
+
   it("adds weekly quota rows without changing paid-tier family rollups", async () => {
     mockUsage({
       models: {

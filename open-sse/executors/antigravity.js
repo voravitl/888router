@@ -372,6 +372,42 @@ export class AntigravityExecutor extends BaseExecutor {
     return null;
   }
 
+  // Executor-level error parse so the reset hint survives parseUpstreamError
+  // (which reads only { status, message, resetsAtMs } — a bare retryAfter or
+  // the details[] array would be dropped, and chatCore's re-wrap then leaves
+  // the combo nothing but message text to regex). RetryInfo.retryDelay is a
+  // duration ("289539.38s"); ErrorInfo.quotaResetTimeStamp is an ISO instant;
+  // the message text is the last-resort hint. Any of them becomes resetsAtMs
+  // so markAccountUnavailable parks the account for the REAL window.
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    if (response.status !== 429 && response.status !== 409) return base;
+
+    let errorJson = null;
+    try { errorJson = bodyText ? JSON.parse(bodyText) : null; } catch { /* text-only body */ }
+    const errorMessage = this.extractErrorMessage(errorJson, bodyText);
+    if (!Array.isArray(errorJson?.error?.details)) {
+      const ms = this.parseRetryFromErrorMessage(errorMessage);
+      if (ms) base.resetsAtMs = Date.now() + ms;
+      return base;
+    }
+
+    for (const d of errorJson.error.details) {
+      const type = d?.["@type"] || "";
+      if (type.includes("RetryInfo") && d.retryDelay) {
+        const secs = parseFloat(d.retryDelay);
+        if (Number.isFinite(secs) && secs > 0) { base.resetsAtMs = Date.now() + secs * 1000; return base; }
+      }
+      if (type.includes("ErrorInfo") && d.metadata?.quotaResetTimeStamp) {
+        const ts = Date.parse(d.metadata.quotaResetTimeStamp);
+        if (!Number.isNaN(ts) && ts > Date.now()) { base.resetsAtMs = ts; return base; }
+      }
+    }
+    const ms = this.parseRetryFromErrorMessage(errorMessage);
+    if (ms) base.resetsAtMs = Date.now() + ms;
+    return base;
+  }
+
   // Parse retry time from Antigravity error message body.
   // Covers both observed spellings of the quota-reset hint:
   //   "Your quota will reset after 2h7m23s" / "1h30m" / "45m" / "30s"
