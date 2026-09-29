@@ -1,3 +1,9 @@
+# v0.15.136 (2026-09-29)
+
+## Fix: allow router to reach headroom /v1/compress (ALLOW_REMOTE=1)
+
+- v0.39.1 loopback-guards /v1/compress (peer IP + Host header), so the router's Service-name calls 404'd and the dashboard toggle silently no-op'd (fail-open, 0 requests). Setting HEADROOM_COMPRESS_ALLOW_REMOTE=1 drops only the compress-route guard per upstream design; NetworkPolicy already scopes 8787 to the router pod.
+
 # v0.15.135 (2026-09-29)
 
 ## Fix: headroom v0.39.1 bind 0.0.0.0 — pod never passed startup probe
