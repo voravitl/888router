@@ -15,11 +15,15 @@ describe("OpenCode Go per-model capabilities", () => {
     ["deepseek-v4-pro", 1000000, 384000, "deepseek", true],
     ["minimax-m3",    512000, 48000, "openai", true],
     ["qwen3.8-max",   256000, 65536, "qwen", true],
-    ["grok-4.7",      200000, 64000, "openai", true],
+    // grok-4.6/4.7 natively 500k (x.ai official); the 200k was a stale floor.
+    ["grok-4.7",      500000, 500000, "openai", true],
     ["gpt-6-luna",    272000, 64000, "openai", true],
     ["gpt-5.6-luna",  272000, 64000, "openai", true],
-    ["longcat-2.0",   200000, 64000, "openai", true],
-    ["longcat-2.5-preview-free", 200000, 64000, null, true],
+    // LongCat-2.0 natively 1M (models.dev opencode-go/longcat-2.0 = 1,000,000 /
+    // 131,072; kilo+openrouter free = 1,048,756). The 200k was a stale floor the
+    // owner caught: add-combo showed 200k while the live model took 1M.
+    ["longcat-2.0",   1000000, 131072, "openai", true],
+    ["longcat-2.5-preview-free", 1000000, 131072, null, true],
   ];
   for (const [model, ctx, maxOut, tf, canDisable] of cases) {
     it(`${model}: ctx=${ctx} maxOut=${maxOut} tf=${tf}`, () => {
