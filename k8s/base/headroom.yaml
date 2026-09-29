@@ -85,6 +85,14 @@ spec:
             # of holding the request slot.
             - name: HEADROOM_COMPRESSION_TIMEOUT_SECONDS
               value: "3"
+            # v0.39.1 binds 127.0.0.1 by default (upstream security hardening;
+            # server.py: --host default + HEADROOM_HOST default 127.0.0.1).
+            # Kubelet probes hit the POD IP, not loopback, so without this the
+            # pod fails startup probe and CrashLoops (observed 2026-09-29:
+            # connection refused on 192.168.194.14:8787, exit 0). ClusterIP
+            # keeps this internal-only; /livez etc. stay auth-exempt upstream.
+            - name: HEADROOM_HOST
+              value: "0.0.0.0"
           livenessProbe:
             httpGet:
               path: /livez

@@ -1,3 +1,9 @@
+# v0.15.135 (2026-09-29)
+
+## Fix: headroom v0.39.1 bind 0.0.0.0 — pod never passed startup probe
+
+- v0.39.1 defaults to loopback bind (127.0.0.1); kubelet probes the pod IP, so the #480 rollout CrashLooped (connection refused, exit 0) and was rolled back. Setting HEADROOM_HOST=0.0.0.0 restores the pre-0.28 bind behavior; ClusterIP keeps it internal-only. Compression executor fix from #480 still applies once the pod is reachable.
+
 # v0.15.134 (2026-09-29)
 
 ## Fix: headroom v0.27.0 → v0.39.1 — stops the SIGKILL crashloop that looked like high CPU
