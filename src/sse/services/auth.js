@@ -2,7 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS, ACCOUNT_QUOTA_PARK_MS, QUOTA_PARK_MARKERS_RE } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 import { isRetiredProvider } from "open-sse/config/retiredProviders.js";
 import { partitionByQuotaHealth, QUOTA_AVOID_THRESHOLD_PCT, QUOTA_SNAPSHOT_MAX_AGE_MS } from "open-sse/services/quotaSnapshot.js";
@@ -526,7 +526,21 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const isAccountLevel = status === 402 || status === 403 ||
     (status === 429 && /quota|limit|credit|balance|allowance|capacity/i.test(errorText || ""));
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs, isAccountLevel);
+  // Billing-cycle dead ends (e.g. Kiro 402 "MONTHLY_REQUEST_COUNT") recur on
+  // every pick until the provider's own window resets — the 2min rule cooldown
+  // is re-hit every few minutes, each hit costing a full upstream round-trip.
+  // Those get ACCOUNT_QUOTA_PARK_MS so the account stays out of the selection
+  // pool for an hour. Gated on a quota marker: a bare 402 (entitlement,
+  // payment method) may resolve quickly and keeps the short rule cooldown.
+  // 401/403/429 keep the rule cooldown: transient (expired token refresh,
+  // rate-limit window) and a long park would strand a recoverable account.
+  // resetsAtMs overrides everything (codex resets_at). The return value stays
+  // the short rule cooldownMs — it only paces the hop to the next account
+  // inside THIS request; making it long would stall the request.
+  const isQuotaPark = status === 402 && !(resetsAtMs && resetsAtMs > Date.now()) &&
+    QUOTA_PARK_MARKERS_RE.test(typeof errorText === "string" ? errorText : "");
+  const lockMs = isQuotaPark ? Math.max(ACCOUNT_QUOTA_PARK_MS, cooldownMs) : cooldownMs;
+  const lockUpdate = buildModelLockUpdate(model, lockMs, isAccountLevel);
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
@@ -539,7 +553,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(lockMs / 1000)}s [${status}]`);
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);
@@ -588,10 +602,18 @@ export async function clearAccountError(connectionId, currentConnection, model =
 
   if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
 
-  // Keys to clear: current model's lock + all expired locks
+  // Keys to clear: current model's lock + all expired locks. An account-level
+  // lock (modelLock___all) is cleared by a success only when EXPIRED — a
+  // still-active park (e.g. the 1h 402 quota quarantine) means other models on
+  // this account are provably dead, and one model's success must not
+  // re-admit the whole account. The per-model lock clears unconditionally:
+  // the model that just succeeded is provably alive.
   const keysToClear = allLockKeys.filter(k => {
     if (model && k === `modelLock_${model}`) return true; // succeeded model
-    if (model && k === "modelLock___all") return true;    // account-level lock
+    if (model && k === "modelLock___all") {               // account-level lock
+      const expiry = conn[k];
+      return expiry && new Date(expiry).getTime() <= now; // only when expired
+    }
     const expiry = conn[k];
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
@@ -604,6 +626,10 @@ export async function clearAccountError(connectionId, currentConnection, model =
     const expiry = conn[k];
     return expiry && new Date(expiry).getTime() > now;
   });
+
+  // Nothing to clear and locks still active (e.g. success through one model
+  // while the account-level park holds) — skip the write entirely.
+  if (keysToClear.length === 0 && remainingActiveLocks.length > 0) return;
 
   const clearObj = Object.fromEntries(keysToClear.map(k => [k, null]));
 
