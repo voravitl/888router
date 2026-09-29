@@ -1,3 +1,11 @@
+# v0.15.135 (2026-09-29)
+
+## Fix: quota-aware 402 account quarantine (1h park, marker-gated)
+
+- A 402 whose error text matches a quota-exhaustion marker (`monthly|quota|exhaust|allowance|insufficient|credit|balance|usage|reached the limit|limit reached`, e.g. Kiro `MONTHLY_REQUEST_COUNT`) parks the account out of selection for 1h (`ACCOUNT_QUOTA_PARK_MS`) instead of the 2min rule cooldown — stops re-picking a billing-dead account every few minutes at ~4s per dead hop. Bare 402s without a quota marker (entitlement, payment method) keep the short cooldown. `resetsAtMs` still overrides the park; the in-request return value stays the short hop cooldown.
+- `clearAccountError` no longer clears a still-active account-level lock on success — one model's success cannot re-admit an account whose other models are provably dead; expired parks still clear normally (recovery path).
+- Tests: `tests/unit/account-quota-park.test.js` (9 pins: marker-gated park, bare-402 fail-open, resetsAtMs override, 401/403/429 short windows, park survives success, expiry recovery). Full suite green (3003 passed).
+
 # v0.15.134 (2026-09-29)
 
 ## Fix: headroom v0.27.0 → v0.39.1 — stops the SIGKILL crashloop that looked like high CPU

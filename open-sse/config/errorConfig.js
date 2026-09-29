@@ -61,6 +61,20 @@ const COOLDOWN = {
 //     to it indefinitely.
 export const POOL_SUSPEND_PARK_MS = 30 * 60 * 1000;
 
+// How long an ACCOUNT (provider connection) is held out of selection after a
+// quota-exhaustion 402 (billing-cycle dead end, e.g. Kiro
+// "MONTHLY_REQUEST_COUNT"). Separate from the 402 rule cooldownMs (2min),
+// which only paces the hop to the next account inside one request. Without a
+// park, the dead account is re-picked minutes later and every pick costs a
+// full upstream round-trip before re-learning it is still dead.
+export const ACCOUNT_QUOTA_PARK_MS = 60 * 60 * 1000;
+
+// 402 is a broad billing class — only texts matching a quota-exhaustion
+// marker earn the long park. Other 402s (entitlement, payment method) may
+// resolve quickly and keep the short rule cooldown instead.
+export const QUOTA_PARK_MARKERS_RE =
+  /monthly|quota|exhaust|allowance|insufficient|credit|balance|usage|reached the limit|limit reached/i;
+
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
@@ -168,6 +182,14 @@ for (const rule of ERROR_RULES) {
       `errorConfig: rule ${rule.text ? `text:"${rule.text}"` : `status:${rule.status}`} has parkMs (${rule.parkMs}) <= cooldownMs (${rule.cooldownMs}) — park must exceed cooldown`,
     );
   }
+}
+
+// Invariant: the account quota park must EXCEED the longest hop cooldown so a
+// parked account is never handed back the moment the in-request hop wait ends.
+if (ACCOUNT_QUOTA_PARK_MS <= COOLDOWN.long) {
+  throw new Error(
+    `errorConfig: ACCOUNT_QUOTA_PARK_MS (${ACCOUNT_QUOTA_PARK_MS}) <= COOLDOWN.long (${COOLDOWN.long}) — park must exceed cooldown`,
+  );
 }
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
