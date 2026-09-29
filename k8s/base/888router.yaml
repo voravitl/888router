@@ -29,11 +29,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: 888router
-<<<<<<< Updated upstream
           image: voravitl/888router:0.15.139
-=======
-          image: voravitl/888router:0.15.124
->>>>>>> Stashed changes
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

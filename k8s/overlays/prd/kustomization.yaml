@@ -7,11 +7,7 @@ resources:
 
 images:
   - name: voravitl/888router
-<<<<<<< Updated upstream
     newTag: 0.15.139
-=======
-    newTag: 0.15.124
->>>>>>> Stashed changes
 
 # PRD is declarative-only in this repo: no automated apply exists yet.
 # Production needs its own BASE_URL/NINEROUTER_PUBLIC_URL, TLS ingress, and
