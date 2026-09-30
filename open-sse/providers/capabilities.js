@@ -265,6 +265,21 @@ const OX_ALPHA_CAPABILITIES = {
   maxOutput: 131072,
 };
 
+// Permanently-thinking: these two muse-spark SKUs reject `none` outright —
+// "reasoning_effort 'none' is not supported for model
+// 'muse-spark-1.3-contributor'. Supported values: [minimal, low, medium,
+// high, xhigh, max]" (probed live 2026-09-30 on
+// opencode-go/muse-spark-1.3-contributor and
+// opencode/muse-spark-1.3-contributor-free). The flag engages the pre-existing
+// clamp in applyFormat (none → minimal, which the model accepts) and drops
+// `none` from the UI level picker.
+//
+// Exact-SKU on purpose: the *muse-spark* PATTERN is global, so declaring this
+// there would also disable thinking for the nara SKUs and the 1.2/1.4/2.0
+// variants, none of which have been probed. Add a SKU here only once its own
+// upstream enum has been checked.
+const MUSE_SPARK_NO_DISABLE = { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false };
+
 /**
  * Canonical exact-id overrides — used for exceptions that patterns would
  * otherwise mis-match. Only declare deltas vs DEFAULT.
@@ -395,20 +410,23 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": MUSE_SPARK_NO_DISABLE,
   },
   "oc": {
     "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": MUSE_SPARK_NO_DISABLE,
   },
   "opencode-go": {
     "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": MUSE_SPARK_NO_DISABLE,
+    // The other probed SKU — the paid Go-tier one, which the 1.3-free entry
+    // above does not cover.
+    "muse-spark-1.3-contributor": MUSE_SPARK_NO_DISABLE,
     // Go-tier catalog (docs: https://opencode.ai/v2/docs/console/go). Contexts follow
     // each model's public spec; Go tiers priced by context ranges (GPT Luna ≤272K,
     // Grok ≤200K, Qwen Plus ≤256K) confirm these ceilings. thinkingFormat mirrors
@@ -637,16 +655,14 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*hermes-4*",      caps: { reasoning: true, vision: false, thinkingFormat: "openai", contextWindow: 131072 } },
   { pattern: "*deephermes-4*",  caps: { reasoning: true, vision: false, thinkingFormat: "openai", contextWindow: 131072 } },
   { pattern: "*laguna-s*",      caps: { reasoning: true, vision: false, contextWindow: 1048576, maxOutput: 32768 } },
-  // muse-spark is permanently-thinking: the upstream enum is
-  // minimal|low|medium|high|xhigh|max and rejects `none` outright —
-  // "reasoning_effort 'none' is not supported for model
-  // 'muse-spark-1.3-contributor'. Supported values: [minimal, low, medium,
-  // high, xhigh, max]" (probed live 2026-09-30 on both
-  // opencode-go/muse-spark-1.3-contributor and
-  // opencode/muse-spark-1.3-contributor-free). `thinkingCanDisable: false`
-  // engages the existing clamp in applyFormat (none → minimal, which the
-  // model accepts) and drops `none` from the UI level picker.
-  { pattern: "*muse-spark*",    caps: { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, vision: false, pdf: false, audioInput: false, videoInput: false, contextWindow: 1048576, maxOutput: 131072 } },
+  // muse-spark family shape only. `thinkingCanDisable` is deliberately NOT
+  // set here: this pattern is GLOBAL, so a flag here would also reach the
+  // SKUs nobody probed — registry/nara.js serves muse-spark-1.2 /
+  // muse-spark-1.3 / muse-spark-1.3-contributor on a different upstream, and
+  // a family-wide edit for this field is exactly the mistake ruled out for
+  // the vision flags in PR #300/#301. The two SKUs that WERE probed carry
+  // `thinkingCanDisable: false` in PROVIDER_CAPABILITIES instead.
+  { pattern: "*muse-spark*",    caps: { reasoning: true, thinkingFormat: "openai", vision: false, pdf: false, audioInput: false, videoInput: false, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*big-pickle*",    caps: { contextWindow: 128000 } },
 ];
 

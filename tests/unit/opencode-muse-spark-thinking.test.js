@@ -10,6 +10,10 @@ import { translateRequest } from "../../open-sse/translator/index.js";
 const MODEL = "muse-spark-1.2-contributor-free";
 const PROVIDER = "opencode";
 
+// The only muse-spark SKUs whose upstream enum was probed live (2026-09-30).
+// thinkingCanDisable:false is declared for these two and nothing else.
+const PROBED_NO_DISABLE = ["muse-spark-1.3-contributor-free", "muse-spark-1.3-contributor"];
+
 const input = [{
   type: "message",
   role: "user",
@@ -34,20 +38,42 @@ describe("OpenCode Free Muse Spark thinking", () => {
       });
       // muse-spark rejects `reasoning_effort: "none"` outright — "not supported
       // for model 'muse-spark-1.3-contributor'. Supported values: [minimal,
-      // low, medium, high, xhigh, max]" (probed live 2026-09-30). So it is a
-      // permanently-thinking model: the flag drops `none` from the level
-      // picker and makes applyFormat clamp none → minimal instead of 400ing.
-      expect(getCapabilitiesForModel(PROVIDER, m).thinkingCanDisable).toBe(false);
-      expect(getThinkingLevels(PROVIDER, m)).toEqual([
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-      ]);
+      // low, medium, high, xhigh, max]" (probed live 2026-09-30). So the two
+      // PROBED SKUs are permanently-thinking: the flag drops `none` from the
+      // level picker and makes applyFormat clamp none → minimal instead of
+      // 400ing. Scoped per-SKU in PROVIDER_CAPABILITIES, never on the global
+      // *muse-spark* pattern — see the unprobed-SKU control below.
+      if (PROBED_NO_DISABLE.includes(m)) {
+        expect(getCapabilitiesForModel(PROVIDER, m).thinkingCanDisable).toBe(false);
+        expect(getThinkingLevels(PROVIDER, m)).toEqual([
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+        ]);
+      }
       expect(getModelTargetFormat("oc", m)).toBe(FORMATS.OPENAI_RESPONSES);
       expect(getModelTargetFormat("opencode", m)).toBe(FORMATS.OPENAI_RESPONSES);
       expect(getModelTargetFormat("openrouter", m)).toBeNull();
+    }
+  });
+
+  it("does NOT disable thinking for unprobed muse-spark SKUs", () => {
+    // The regression guard for the blast radius. Declaring
+    // thinkingCanDisable:false on the *muse-spark* PATTERN_CAPABILITIES entry
+    // would reach every provider serving a muse-spark model — including nara,
+    // which serves 1.2 / 1.3 / 1.3-contributor on a different upstream that
+    // was never probed. If that upstream DOES accept `none`, setting the flag
+    // family-wide silently removes a working capability. PR #300/#301 made the
+    // same mistake for the vision flags; this pins that it is not repeated.
+    for (const unprobed of [MODEL, "muse-spark-1.4-contributor-free", "muse-spark-2.0-contributor-free"]) {
+      expect(getCapabilitiesForModel(PROVIDER, unprobed).thinkingCanDisable).not.toBe(false);
+      expect(getThinkingLevels(PROVIDER, unprobed)).toContain("none");
+    }
+    for (const naraSku of ["muse-spark-1.2", "muse-spark-1.3", "muse-spark-1.3-contributor"]) {
+      expect(getCapabilitiesForModel("nara", naraSku).thinkingCanDisable).not.toBe(false);
+      expect(getThinkingLevels("nara", naraSku)).toContain("none");
     }
   });
 

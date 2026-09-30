@@ -238,8 +238,11 @@ describe("applyThinking per provider format", () => {
 // openai/step cases used to forward that verbatim — a guaranteed 400 on any
 // strict reasoning_effort enum. Seen live on
 // opencode-go/muse-spark-1.3-contributor:
-//   `reasoning.effort`: unknown variant `auto`,
-//   expected one of `none`, `minimal`, `low`, `medium`, `high`
+//   `reasoning.effort`: unknown variant `auto`, expected one of
+//   `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`
+// (That enum is the `auto` error's own list, which still contains `none`. The
+// *separate* probe for `none` on the same model is the one that proved `none`
+// is rejected — do not read the two as one enum.)
 describe("mode:auto is never forwarded as a literal effort value", () => {
   const cases = [
     ["openai", "muse-spark-1.3-contributor", "opencode-go"],
