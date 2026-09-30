@@ -215,15 +215,18 @@ function applyFormat(fmt, body, cfg, caps) {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
       // mode "auto" means "let the upstream pick" — no provider wire format
-      // spells that as a literal "auto" level, and the OpenAI-style enum is
-      // minimal|low|medium|high. Forwarding it verbatim is a guaranteed 400 on
-      // strict gateways, e.g. opencode-go/muse-spark-1.3-contributor:
-      //   `reasoning.effort`: unknown variant `auto`,
-      //   expected one of `none`, `minimal`, `low`, `medium`, `high`
+      // spells that as a literal "auto" level. Forwarding it verbatim is a
+      // guaranteed 400 on any strict gateway, e.g. opencode-go/muse-spark:
+      //   `reasoning.effort`: unknown variant `auto`, expected one of
+      //   `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`
       // (seen live 2026-09-30: every 9-opus request burned 2.5s on that
       // candidate before falling through.) Omit the field so the upstream
       // applies its own default — the same handling openai-low-high-max,
       // kimi and the budget formats already give "auto".
+      //
+      // `none` only reaches here for models whose caps declare
+      // thinkingCanDisable; the openai enum does not universally contain it
+      // (muse-spark rejects it with 400) — that flag is the gate.
       if (level && level !== "auto") body.reasoning_effort = level;
       break;
     }

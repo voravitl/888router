@@ -32,8 +32,13 @@ describe("OpenCode Free Muse Spark thinking", () => {
         contextWindow: 1048576,
         maxOutput: 131072,
       });
+      // muse-spark rejects `reasoning_effort: "none"` outright — "not supported
+      // for model 'muse-spark-1.3-contributor'. Supported values: [minimal,
+      // low, medium, high, xhigh, max]" (probed live 2026-09-30). So it is a
+      // permanently-thinking model: the flag drops `none` from the level
+      // picker and makes applyFormat clamp none → minimal instead of 400ing.
+      expect(getCapabilitiesForModel(PROVIDER, m).thinkingCanDisable).toBe(false);
       expect(getThinkingLevels(PROVIDER, m)).toEqual([
-        "none",
         "minimal",
         "low",
         "medium",

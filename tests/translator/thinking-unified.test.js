@@ -272,14 +272,33 @@ describe("mode:auto is never forwarded as a literal effort value", () => {
       .toBe("high");
   });
 
-  it("none still disables (must not be swallowed by the auto guard)", () => {
+  it("none → minimal when the model cannot disable thinking (muse-spark 400s on none)", () => {
+    // muse-spark's upstream enum is minimal|low|medium|high|xhigh|max and
+    // rejects `none` outright — probed live 2026-09-30 on both
+    // opencode-go/muse-spark-1.3-contributor and
+    // opencode/muse-spark-1.3-contributor-free. Its caps therefore declare
+    // thinkingCanDisable: false, which engages the pre-existing clamp so the
+    // wire value is `minimal` (verified 200) instead of a guaranteed 400.
     const out = apply("openai", "muse-spark-1.3-contributor", { reasoning_effort: "none" }, "opencode-go");
+    expect(out.reasoning_effort).toBe("minimal");
+  });
+
+  it("Claude Code's disable spelling also clamps (thinking.type=disabled)", () => {
+    const out = apply("openai", "muse-spark-1.3-contributor", { thinking: { type: "disabled" } }, "opencode-go");
+    expect(out.reasoning_effort).toBe("minimal");
+  });
+
+  it("none still disables on a model that CAN disable thinking", () => {
+    // Control: the clamp is cap-driven, not a blanket rewrite. A model with
+    // thinkingCanDisable unset must still receive the literal `none`.
+    const out = apply("openai", "kimi-k3", { reasoning_effort: "none" }, "ollama");
     expect(out.reasoning_effort).toBe("none");
   });
 
   it("budget mode still converts to a level (auto guard is mode-scoped)", () => {
-    const out = apply("openai", "muse-spark-1.3-contributor", { reasoning_effort: "high" }, "opencode-go");
-    expect(out.reasoning_effort).toBe("high");
+    // budget_tokens 8192 → budgetToLevel() = "medium", not "auto".
+    const out = apply("openai", "muse-spark-1.3-contributor", { thinking: { type: "enabled", budget_tokens: 8192 } }, "opencode-go");
+    expect(out.reasoning_effort).toBe("medium");
   });
 });
 
