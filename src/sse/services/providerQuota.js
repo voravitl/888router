@@ -10,8 +10,9 @@
  *                 counted as a strike instead.
  *   ollama /      no quota API → strikes only. Three 429/409s on the same
  *   opencode-free connection+model inside the window block the pair for
- *   STRIKE_BLOCK_MS, because the free tier's real window (hourly+) is much
- *   longer than the seconds/minutes backoff the generic path parks.
+ *                 STRIKE_ONLY_BLOCK_MS, because the free tier's real window
+ *                 (hourly+) is much longer than the seconds/minutes backoff
+ *                 the generic path parks.
  *
  * Modeled on upstream decolua/9router src/sse/services/antigravityQuota.js,
  * generalized so a provider registers rather than being special-cased here.
@@ -43,6 +44,15 @@ const MIN_REFRESH_INTERVAL_MS = 30_000; // 30s between refreshes per connection
 // straight back. After STRIKE_THRESHOLD 429s within the window for the same
 // connection+model, treat optimistic-or-absent readings as untrusted and
 // cache-block that pair instead of retry-storming upstream.
+//
+// Arming precondition (worth knowing before trusting a quiet breaker): the
+// window is anchored at the FIRST strike, so a given connection+model must be
+// retried at least once per STRIKE_WINDOW_MS / (STRIKE_THRESHOLD - 1) = 30s
+// for the count to reach the threshold. Below that rate a provider whose quota
+// is genuinely account-wide (ollama's monthly limit) would stay at strike 1
+// and never arm. The per-model keying in strikeKey() is what buys sensitivity
+// back in the shape that actually failed: one dead model immediately after a
+// live sibling, where an account-level key never armed at all.
 const STRIKE_WINDOW_MS = 60_000; // strikes older than this reset the count
 const STRIKE_THRESHOLD = 3;
 const STRIKE_BLOCK_MS = 15 * 60_000;
@@ -291,8 +301,8 @@ export async function handleProviderQuotaError(providerId, connectionId, status,
 
   // Healthy-but-exhausted reading: clear strikes and use the exact resetAt.
   // Via strikeKey(), not a hand-built key: this branch is only reachable for
-  // quota-API providers today, but a hand-built model key would silently miss
-  // the account key if a strike-only provider ever gained an API.
+  // quota-API providers today, but hand-inlining the separator is how a key
+  // shape drift would slip in if a strike-only provider ever gained an API.
   strikeCounts.delete(strikeKey(providerId, connectionId, model));
   if (!quota.resetAt) return null;
 

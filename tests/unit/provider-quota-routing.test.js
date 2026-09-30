@@ -9,9 +9,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 //                 PER MODEL, so strikes are keyed per model.
 //   ollama / opencode — NO quota API; their 429 ("Rate limit exceeded", or
 //                 ollama's "you (lvoravit) have reached your monthly usage
-//                 limit") names the ACCOUNT with no reset hint, so strikes
-//                 are keyed per ACCOUNT and a multi-model combo cannot keep
-//                 the breaker below threshold by rotating models.
+//                 limit") carries no reset hint, so only the strike breaker
+//                 stands between a dead model and a per-request walk of it.
+//                 Keyed PER MODEL like the quota-API class: production showed
+//                 the 429 is per model (muse-spark rate-limited on an account
+//                 whose space-bunny-free sibling serves fine), and a per-model
+//                 key is what lets a sibling's success stop masking the dead
+//                 model's strikes. See strikeKey() for the full rationale.
 
 const mocks = vi.hoisted(() => ({
   resolveConnectionProxyConfig: vi.fn(async () => ({
