@@ -206,11 +206,10 @@ function stripAll(body) {
 
 // Models whose claude-adaptive output_config enum includes "max".
 // Effort docs (https://platform.claude.com/docs/en/build-with-claude/effort)
-// list max on Fable 5/5.1, Mythos, Opus 4.6/4.7/4.8/5/5.5 and Sonnet 4.6/5/5.5
-// — but review found Sonnet 4.6 / Opus 4.6 top out at high, so 4.6 is
-// deliberately excluded per reviewer-authority: an unsupported max risks an
-// upstream 400, while high is always accepted. Dash and dot spellings,
-// case-insensitive.
+// list max broadly, but live 400s show Sonnet 4.6 / Opus 4.6 top out at high,
+// so 4.6 is deliberately excluded: an unsupported max risks an upstream 400,
+// while high is always accepted. Re-verify against the effort page before
+// extending this list. Dash and dot spellings, case-insensitive.
 const MAX_EFFORT_SUPPORTED = [/opus[-.]4[-.]7/i, /opus[-.]4[-.]8/i, /opus[-.]5/i, /sonnet[-.]5/i, /fable/i, /mythos/i];
 
 function supportsMaxEffort(modelId) {
