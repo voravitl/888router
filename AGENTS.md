@@ -41,23 +41,26 @@ inert reference, not a deploy target.
      precisely because it raced manual deploys: a manual `kubectl apply` after
      merge was overwritten by CI minutes later (double 503, incident
      2026-09-28). Do not reintroduce a CI deploy job.
-   - **Update path (normal case).** The `888router` service carries
-     `com.centurylinklabs.watchtower.enable=true`, so a new `:latest` is pulled
-     and recreated on the host within `WATCHTOWER_POLL_INTERVAL`. Wait for
-     `Build and Push Docker Image` on master, then verify only:
+   - **Update path (normal case).** The `888route` service (host port 20129 —
+     the live gateway) carries `com.centurylinklabs.watchtower.enable=true`
+     and the watchtower name filter tracks it, so a new `:latest` is pulled
+     and recreated on the host within `WATCHTOWER_POLL_INTERVAL` (300s).
+     Wait for `Build and Push Docker Image` on master, then verify only:
       `gh run list --workflow docker-publish.yml --limit 1`
-      `curl http://localhost:20128/api/version` (must equal `package.json` version)
-      `docker compose ps 888router`
+      `curl http://localhost:20129/api/version` (must equal `package.json` version)
+      `docker compose ps 888route`
    - **Manual update path (when you need it now).** Watchtower is a safety net,
      not the thing to wait on:
-      `docker compose pull 888router && docker compose up -d 888router`
+      `docker compose pull 888route && docker compose up -d 888route`
    - **NEVER `kubectl apply`.** It deploys nothing compose serves, and `k8s/`
      drifting away from the running image is a silent trap.
-   - **Rollback:** repoint `888router.image` at the previous release tag (or drop
-     the local `docker-compose.override.yml` pin and pull the wanted tag), then
-     `docker compose up -d 888router`.
-   - **SQLite is single-writer.** `888router-data` is the only writable DB
-     volume. Never run two gateway containers against it.
+   - **Rollback:** repoint `888route.image` at the previous release tag (or pin
+     via the local `docker-compose.override.yml`), then
+     `docker compose up -d 888route`.
+   - **SQLite is single-writer per volume.** `888route-data` is the live DB —
+     never mount it into a second gateway container. The `888router` service
+     entry in compose is defined but NOT run; if it is ever started it must
+     keep its own `888router-data` volume.
 7. **Capture.** Record the lesson in the wiki/skill so the next agent does not
    repeat the mistake.
 
@@ -140,14 +143,14 @@ and the deploy target still pinned the poisoned tag, so the next deploy re-pulle
 
 - A code fix is **not shipped** until `package.json` / `package-lock.json` / `CHANGELOG`
   move to the new tag together, and the running container actually reports it
-  (`curl http://localhost:20128/api/version`). Grep `grep -rn 0.15.<old> package.json`
+  (`curl http://localhost:20129/api/version`). Grep `grep -rn 0.15.<old> package.json`
   before calling it done.
 - Treat a known-bad published tag as **burned**: supersede it with a new version, never try
   to "reuse"/overwrite it.
 - Verify a privilege / securityContext change locally before deploying:
   `docker run --user 1000 --cap-drop ALL --security-opt no-new-privileges … <image>` must
   reach Ready, and the root path must end with PID 1 at uid 1000 (`cat /proc/1/status`).
-- Fast incident mitigation is `docker compose up -d 888router` on the previous
+- Fast incident mitigation is `docker compose up -d 888route` on the previous
   release tag (`docker compose pull` that tag first).
 
 ## graphify

@@ -1179,15 +1179,16 @@ cp .env.example .env
 docker compose up -d
 ```
 
-→ Open `http://localhost:20128`
+→ Open `http://localhost:20129` (live `888route` gateway; the `888router`
+service entry on 20128 is defined but not run)
 
-**Updating:** the `888router` service carries a watchtower label, so a newly
+**Updating:** the `888route` service carries a watchtower label, so a newly
 published `:latest` is pulled and recreated on the host automatically. To update
 immediately instead of waiting for the poll:
 
 ```bash
-docker compose pull 888router && docker compose up -d 888router
-curl http://localhost:20128/api/version   # must equal package.json version
+docker compose pull 888route && docker compose up -d 888route
+curl http://localhost:20129/api/version   # must equal package.json version
 ```
 
 > The `k8s/` manifests in this repo are **not deployed** (retired 2026-09-30,

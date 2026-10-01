@@ -40,14 +40,14 @@
 
 6. **Step 6: Docker Compose Redeploy & Liveness Check**
    - **ห้ามใช้ `kubectl apply` เด็ดขาด**: k8s ถูกถอดออกจาก deploy path แล้ว (issue #501) — `k8s/` เหลือแค่เป็น reference
-   - ปกติ: รอ CI publish เสร็จ แล้ว watchtower จะ pull `:latest` ให้เอง (ดู label `com.centurylinklabs.watchtower.enable`)
+   - ปกติ: รอ CI publish เสร็จ แล้ว watchtower จะ pull `:latest` ให้ `888route` (พอร์ต 20129 — ตัวที่รันจริง) เอง
    - ถ้าอยากอัปเดตทันที (ไม่ต้องรอ watchtower):
-     `docker compose pull 888router && docker compose up -d 888router`
+     `docker compose pull 888route && docker compose up -d 888route`
    - ตรวจสอบ Liveness Endpoint จริง:
-     `curl -s http://localhost:20128/api/version`
+     `curl -s http://localhost:20129/api/version`
      *(ต้องได้ HTTP 200 และ `currentVersion` ตรงกับเวอร์ชันใหม่)*
    - **Emergency Rollback (หากเว็บ 503 หรือ container ไม่ Ready)**:
-     เปลี่ยน `888router.image` กลับไปเป็น release ก่อนหน้า แล้ว `docker compose up -d 888router`
+     เปลี่ยน `888route.image` กลับไปเป็น release ก่อนหน้า แล้ว `docker compose up -d 888route`
 
 7. **Step 7: Durable Knowledge Capture**
    - บันทึกบทเรียนลงวิกิ (`$HOME/wiki/...`), อัปเดต `index.md`, และรัน 12-Gate Audit Check (100% Green)
