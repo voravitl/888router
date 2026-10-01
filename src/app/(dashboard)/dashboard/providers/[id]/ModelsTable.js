@@ -173,10 +173,10 @@ export default function ModelsTable({
               const isCustom = !!isCustomMap[model.id];
               const caps = capsMap[model.id];
               const slash = typeof fullModel === "string" ? fullModel.indexOf("/") : -1;
-              const baseCopyText = slash > 0
-                ? fullModelWithSuffix(fullModel.slice(0, slash), fullModel.slice(slash + 1), getContextWindow ? getContextWindow(fullModel) : undefined)
-                : fullModel;
-              const copyText = model.thinkingSuffix ? `${baseCopyText}(${model.thinkingSuffix})` : baseCopyText;
+              const baseCopyText = model.thinkingSuffix ? `${fullModel}(${model.thinkingSuffix})` : fullModel;
+              const copyText = slash > 0
+                ? fullModelWithSuffix(fullModel.slice(0, slash), baseCopyText.slice(slash + 1), getContextWindow ? getContextWindow(fullModel) : undefined)
+                : baseCopyText;
 
               const iconColor = testStatus === "ok"
                 ? "#22c55e"

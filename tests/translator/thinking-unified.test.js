@@ -90,7 +90,44 @@ describe("applyThinking per provider format", () => {
     expect(out).not.toHaveProperty("reasoning_effort");
     expect(out).not.toHaveProperty("reasoning");
     expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "max" });
+  });
+  it.each([
+    "claude-sonnet-4-6", "claude-sonnet-4.6",
+    "claude-opus-4-6", "claude-opus-4.6",
+  ])("claude-adaptive %s falls back max to high (no max support)", (model) => {
+    const out = apply("claude", model, { reasoning_effort: "max" }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
     expect(out.output_config).toEqual({ effort: "high" });
+  });
+  it.each([
+    "claude-sonnet-4-6(max)", "claude-opus-4.6(max)",
+  ])("claude-adaptive suffix %s falls back max to high", (model) => {
+    const out = apply("claude", model, { messages: [] }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "high" });
+  });
+  it.each([
+    "claude-sonnet-5", "claude-sonnet-5-5",
+    "claude-opus-5", "claude-opus-5-5",
+    "claude-opus-4-7", "claude-opus-4.8",
+  ])("claude-adaptive %s keeps max", (model) => {
+    const out = apply("claude", model, { reasoning_effort: "max" }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "max" });
+  });
+  it.each([
+    "claude-fable-5-1", "claude-fable-5.1",
+  ])("claude-adaptive %s keeps max without a redundant thinking switch", (model) => {
+    const out = apply("claude", model, { reasoning_effort: "max" }, "claude");
+    expect(out.thinking).toBeUndefined();
+    expect(out.output_config).toEqual({ effort: "max" });
+  });
+  it("claude haiku max stays on the output-capped budget path", () => {
+    const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "max" }, "claude");
+    expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 64000 - 1024 });
+    expect(out.output_config).toBeUndefined();
+    expect(out.reasoning_effort).toBeUndefined();
   });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");

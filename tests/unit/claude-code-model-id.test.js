@@ -5,6 +5,9 @@ import {
   withClaudeCodeSuffix,
   fullModelWithSuffix,
 } from "../../src/shared/utils/claudeCodeModelId.js";
+import { stripModelContextMarker } from "../../open-sse/utils/modelMarkers.js";
+import { parseModel } from "../../open-sse/services/model.js";
+import { parseSuffix, stripThinkingSuffix } from "../../open-sse/translator/concerns/thinkingUnified.js";
 
 // The copy-to-clipboard value must include the "[1m]" suffix IFF the model's
 // resolved context window is ≥ 1M. Pure helpers — the context window comes
@@ -92,19 +95,30 @@ describe("fullModelWithSuffix", () => {
   });
 });
 
-// Combined suffix behavior from the upstream v0.5.20 merge (ModelRow.js /
-// ModelsTable.js copy-string construction): a model that is BOTH a 1M-context
-// model AND has a forced thinking level must chain ours' "[1m]" context
-// suffix THEN theirs' "(level)" thinking suffix, in that order, so the copied
-// string is unambiguous about both properties at once.
+// The context marker must stay last so routing strips it before parsing the
+// thinking suffix. Mirrors ModelRow.js / ModelsTable.js copy construction.
 function buildCopyText(alias, modelId, contextWindow, thinkingSuffix) {
-  const baseCopyText = fullModelWithSuffix(alias, modelId, contextWindow);
-  return thinkingSuffix ? `${baseCopyText}(${thinkingSuffix})` : baseCopyText;
+  const modelWithThinking = thinkingSuffix ? `${modelId}(${thinkingSuffix})` : modelId;
+  return fullModelWithSuffix(alias, modelWithThinking, contextWindow);
 }
 
 describe("combined [1m] + thinking-level copy suffix", () => {
-  it("chains [1m] then (level) when a model is both 1M-context and has a forced thinking level", () => {
-    expect(buildCopyText("glm", "glm-5.2", 1_000_000, "high")).toBe("glm/glm-5.2[1m](high)");
+  it("chains (level) then [1m] when a model is both 1M-context and has a forced thinking level", () => {
+    expect(buildCopyText("glm", "glm-5.2", 1_000_000, "high")).toBe("glm/glm-5.2(high)[1m]");
+  });
+
+  it.each(["max", "high"])("routes a copied (%s)[1m] id with its effort intact and a clean upstream id", (level) => {
+    const copied = buildCopyText("cc", "claude-opus-5-5", 1_000_000, level);
+    expect(copied).toBe(`cc/claude-opus-5-5(${level})[1m]`);
+    const stripped = stripModelContextMarker(copied);
+    expect(stripped).toEqual({ model: `cc/claude-opus-5-5(${level})`, contextMarker: "1m" });
+    const parsed = parseModel(stripped.model);
+    expect(parsed.provider).toBe("claude");
+    expect(parsed.model).toBe(`claude-opus-5-5(${level})`);
+    const thinking = parseSuffix(parsed.model);
+    expect(thinking).toEqual({ cleanModel: "claude-opus-5-5", override: { mode: "level", level } });
+    expect(stripThinkingSuffix(parsed.model)).toBe("claude-opus-5-5");
+    expect(stripThinkingSuffix(thinking.cleanModel)).toBe("claude-opus-5-5");
   });
 
   it("applies only [1m] when there is no forced thinking level", () => {
@@ -121,7 +135,7 @@ describe("combined [1m] + thinking-level copy suffix", () => {
 
   it("dashifies Claude family before chaining suffixes", () => {
     expect(buildCopyText("kr", "claude-opus-4.8", 1_000_000, "high")).toBe(
-      "kr/claude-opus-4-8[1m](high)",
+      "kr/claude-opus-4-8(high)[1m]",
     );
   });
 });
