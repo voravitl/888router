@@ -1,3 +1,13 @@
+# v0.15.142 (2026-10-01)
+
+## Fix: never forward mode:auto as a literal reasoning_effort value (PR #503, closes #499)
+
+`mode: "auto"` ("let the upstream pick") leaked onto the wire as the literal string `"auto"` in `reasoning_effort` → HTTP 400 on openai-format (opencode-go, nvidia, ollama, codebuddy) and stepfun providers. Every 9-opus request burned its first candidate (~2.5s) before falling through. Fix: omit the field on auto; other formats keep their own defaults (kimi/gemini-level → high, budget → enabled).
+
+Also clamps `none` → `minimal` on the 3 muse-spark SKUs probed (2026-09-30) to reject `none` outright (opencode-go 1.3/1.3-free, opencode/oc/opencode-zen/zen 1.3-free share the upstream) — scoped per-SKU, not a family pattern, so unprobed siblings (nara/*, 1.2/1.4/2.0) keep `none`. The executor's `normalizeOpencodeReasoning` now consults the runtime provider id instead of hardcoded `"opencode"`.
+
+Process note: this bump ships #503 (merged without its stamp per the old lane); from 0.15.142 on every code-fix MR carries its own bump (AGENTS.md hard rule).
+
 # v0.15.141 (2026-09-29)
 
 ## Fix: longcat/grok caps correction deployed; context shorthand search (PR #495)

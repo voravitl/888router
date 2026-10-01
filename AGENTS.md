@@ -31,6 +31,12 @@ inert reference, not a deploy target.
    (regenerate via `npm install`, do not hand-edit the version strings) and add
    a `CHANGELOG.md` entry **before** tagging. Keep the changelog claim no
    broader than the diff actually is.
+   - **HARD RULE (2026-10-01): every code-fix MR carries its own bump.** The
+     version bump commit lives INSIDE the same PR as the fix (fix commit(s)
+     first, bump commit last), never as a follow-up after merge. A merged fix
+     without a bump publishes an image whose code moved but whose
+     `/api/version` did not — undeployable and unverifiable (lesson from
+     #503, merged at 0.15.141 with new code). `closes #N` + bump in one MR.
    - `package.json` + `CHANGELOG.md` are the only version-bearing files. The
      `k8s/` image references (`k8s/base/888router.yaml` + `overlays/local` +
      `overlays/prd`) are **not** part of the ship path any more — k8s is not
