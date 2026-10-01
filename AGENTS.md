@@ -6,10 +6,14 @@ because your tool makes one convenient.
 
 ### Never hotfix a running container
 
-The deployed workload runs a published image (`voravitl/888router:*`) on Kubernetes
-(namespace `888router`) and does **not** mount this source tree. Editing files here
-changes nothing — the bundled code in `/app/.next` inside running pods still holds
-the old logic. Every change ships through the pipeline below.
+The deployed workload runs a published image (`voravitl/888router:*`) under
+**docker compose** and does **not** mount this source tree. Editing files here
+changes nothing — the bundled code in `/app/.next` inside the running container
+still holds the old logic. Every change ships through the pipeline below.
+
+The `k8s/` manifests remain in the repo but are **not deployed** (2026-09-30,
+issue #501). Nothing in the delivery pipeline applies them; treat them as
+inert reference, not a deploy target.
 
 ### Pipeline (do not skip steps)
 
@@ -27,42 +31,37 @@ the old logic. Every change ships through the pipeline below.
    (regenerate via `npm install`, do not hand-edit the version strings) and add
    a `CHANGELOG.md` entry **before** tagging. Keep the changelog claim no
    broader than the diff actually is.
-   - **Crucial:** Version bump touches **3 Kubernetes files** alongside `package.json`:
-     - `k8s/base/888router.yaml` (image tag)
-     - `k8s/overlays/local/kustomization.yaml` (`images[].newTag`)
-     - `k8s/overlays/prd/kustomization.yaml` (`images[].newTag`)
-6. **Deploy: CI OWNS IT — never `kubectl apply` by hand (2026-09-28 decision).**
-   - GitHub Actions (`docker-publish.yml` → `scripts/cicd-release.sh`) auto-deploys EVERY master push with `:sha-<short>` and its own version gate + rollback. A manual `kubectl apply` after merge RACES it: Recreate kills the healthy pod twice → double 503 window (incident 2026-09-28: manual `:0.15.129` deploy over-written by CI `:sha-22d657d` minutes later).
-   - **RULE:** after merge, do NOT build/apply locally. Wait for the `Build and Push Docker Image` run on master (`gh run list`), then verify only:
-      `kubectl rollout status deploy/888router -n 888router --timeout=300s`
-      `curl http://router.k8s.orb.local/api/version` (reads package.json version — tag-independent, `:sha-*` and `:0.15.x` of the same commit agree)
-   - Manual `kubectl apply -k` is EMERGENCY-ONLY (CI broken AND pod down): still build locally first (rule below), and expect CI to re-deploy on the next push.
-   - **Tag naming convention (CRITICAL):**
-     Docker image tag in K8s is **WITHOUT `v`** (e.g. `voravitl/888router:0.15.120`), NEVER `v0.15.120`! Git tag has `v` (`v0.15.120`). A tag mismatch causes K8s to look for the wrong image and crash.
-   - **MANDATORY local build BEFORE `kubectl apply`:**
-     Because K8s deployment strategy is `Recreate` (due to SQLite single-writer PVC), K8s terminates the existing healthy pod FIRST before starting the new pod.
-     If you run `kubectl apply` before the image exists locally, K8s attempts to pull from Docker Hub. But GitHub Actions takes 5-10 minutes to build and push, so Docker Hub returns 404!
-     Result: New pod gets `ImagePullBackOff` / `ErrImagePull`, 0 replicas running, and Ingress returns **503 Service Unavailable** (OUTAGE!).
-     **RULE:** Always build into local OrbStack Docker daemon FIRST:
-     `docker build -t voravitl/888router:<version> -t voravitl/888router:latest .`
-     OrbStack shares its local Docker daemon with K8s (`imagePullPolicy: IfNotPresent`). This starts the new pod in ~2 seconds without any external network pull.
-   - **imagePullPolicy invariant:**
-     Ensure `imagePullPolicy: IfNotPresent` is maintained in `k8s/base/888router.yaml`. NEVER set it to `Always` (which forces external image pull even if built locally).
-   - **Deploy with Kustomize:**
-     `kubectl apply -k k8s/overlays/local`
-   - **Wait for rollout & verify live endpoint:**
-     `kubectl rollout status deploy/888router -n 888router --timeout=120s`
-     `curl http://router.k8s.orb.local/api/version`
-     Must equal `package.json` version with HTTP 200. Pod in `Running` state alone is not enough.
-   - **Emergency rollback (if pod fails):**
-     If the pod crashes or hangs in `ImagePullBackOff`, IMMEDIATELY rollback:
-     `kubectl rollout undo deploy/888router -n 888router`
-   - **NEVER use `docker compose up`:**
-     The active production service runs on **Kubernetes (`namespace: 888router`)**, NOT Docker Compose! Running docker compose does not deploy to K8s and breaks port mapping.
+   - `package.json` + `CHANGELOG.md` are the only version-bearing files. The
+     `k8s/` image references (`k8s/base/888router.yaml` + `overlays/local` +
+     `overlays/prd`) are **not** part of the ship path any more — k8s is not
+     deployed (issue #501). Leave them alone; do not bump them.
+6. **Deploy: docker compose, and nothing else.**
+   - CI (`docker-publish.yml`) **publishes the image only** — it has no deploy
+     job. The `deploy-local-kubernetes` job was removed 2026-09-30 (issue #501)
+     precisely because it raced manual deploys: a manual `kubectl apply` after
+     merge was overwritten by CI minutes later (double 503, incident
+     2026-09-28). Do not reintroduce a CI deploy job.
+   - **Update path (normal case).** The `888router` service carries
+     `com.centurylinklabs.watchtower.enable=true`, so a new `:latest` is pulled
+     and recreated on the host within `WATCHTOWER_POLL_INTERVAL`. Wait for
+     `Build and Push Docker Image` on master, then verify only:
+      `gh run list --workflow docker-publish.yml --limit 1`
+      `curl http://localhost:20128/api/version` (must equal `package.json` version)
+      `docker compose ps 888router`
+   - **Manual update path (when you need it now).** Watchtower is a safety net,
+     not the thing to wait on:
+      `docker compose pull 888router && docker compose up -d 888router`
+   - **NEVER `kubectl apply`.** It deploys nothing compose serves, and `k8s/`
+     drifting away from the running image is a silent trap.
+   - **Rollback:** repoint `888router.image` at the previous release tag (or drop
+     the local `docker-compose.override.yml` pin and pull the wanted tag), then
+     `docker compose up -d 888router`.
+   - **SQLite is single-writer.** `888router-data` is the only writable DB
+     volume. Never run two gateway containers against it.
 7. **Capture.** Record the lesson in the wiki/skill so the next agent does not
    repeat the mistake.
 
-Nothing is "done" until `git log`, `/api/version` and the live Kubernetes deployment
+Nothing is "done" until `git log`, `/api/version` and the live compose container
 all agree.
 
 ### Review is mandatory — the reviewer is not
@@ -112,6 +111,9 @@ Fallback ladder (top preferred; descend until one returns real findings):
 
 ### Docker entrypoint vs. hardened k8s securityContext (v0.15.99 → v0.15.100)
 
+**Historical (k8s era, no longer the deploy path).** Kept because the
+entrypoint lesson still applies to compose and to any hardened runtime.
+
 Symptom seen in prod: pod `CrashLoopBackOff`, container logs show only
 `su-exec: setgroups: Operation not permitted`, and the ingress serves **503** because
 0/1 backends are Ready.
@@ -133,22 +135,20 @@ exec "$@"   # already non-root (k8s): NEVER touch su-exec/setgroups here
 
 The deployment landmine that turned a fixed bug back into an outage: the Dockerfile was
 fixed on `master` but the release was **not versioned** (`package.json` stayed `0.15.99`)
-and `k8s/base` + both overlays still pinned `newTag: 0.15.99`. A later `kubectl apply -k`
-re-pulled the poisoned `0.15.99` image and re-broke prod. Therefore:
+and the deploy target still pinned the poisoned tag, so the next deploy re-pulled
+`0.15.99` and re-broke prod. Therefore:
 
-- A code fix is **not shipped** until `package.json`/`package-lock.json`/`CHANGELOG` AND
-  every k8s image reference (`k8s/base/888router.yaml` + `overlays/local` + `overlays/prd`)
-  move to the new tag together. Grep `grep -rn 0.15.<old> k8s/ package.json` before calling
-  it done.
+- A code fix is **not shipped** until `package.json` / `package-lock.json` / `CHANGELOG`
+  move to the new tag together, and the running container actually reports it
+  (`curl http://localhost:20128/api/version`). Grep `grep -rn 0.15.<old> package.json`
+  before calling it done.
 - Treat a known-bad published tag as **burned**: supersede it with a new version, never try
   to "reuse"/overwrite it.
 - Verify a privilege / securityContext change locally before deploying:
   `docker run --user 1000 --cap-drop ALL --security-opt no-new-privileges … <image>` must
   reach Ready, and the root path must end with PID 1 at uid 1000 (`cat /proc/1/status`).
-- Fast incident mitigation is `kubectl rollout undo deploy -n 888router 888router
-  --to-revision=<last-good>` (confirm the revision→image map first with
-  `kubectl get rs -n 888router -o jsonpath` on the `deployment.kubernetes.io/revision`
-  annotation).
+- Fast incident mitigation is `docker compose up -d 888router` on the previous
+  release tag (`docker compose pull` that tag first).
 
 ## graphify
 

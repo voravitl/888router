@@ -1175,16 +1175,23 @@ cp .env.example .env
 # JWT_SECRET, INITIAL_PASSWORD, and SEARXNG_SECRET
 # (SearXNG secret required: openssl rand -hex 32)
 
-# 3. Deploy to Kubernetes (Local / OrbStack)
-kubectl apply -k k8s/overlays/local
-
-# Or with Docker Compose (legacy):
-# docker compose up -d
+# 3. Start the stack
+docker compose up -d
 ```
 
-→ Open `http://router.k8s.orb.local` (or `http://localhost:20129` / `http://localhost:20128`)
+→ Open `http://localhost:20128`
 
-See [`k8s/README.md`](k8s/README.md) for complete Kubernetes deployment guides, ingress setup, and secret management.
+**Updating:** the `888router` service carries a watchtower label, so a newly
+published `:latest` is pulled and recreated on the host automatically. To update
+immediately instead of waiting for the poll:
+
+```bash
+docker compose pull 888router && docker compose up -d 888router
+curl http://localhost:20128/api/version   # must equal package.json version
+```
+
+> The `k8s/` manifests in this repo are **not deployed** (retired 2026-09-30,
+> issue #501). They remain as reference only — do not `kubectl apply` them.
 
 **Standalone Docker Run:**
 
