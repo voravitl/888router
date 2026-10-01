@@ -233,6 +233,75 @@ describe("applyThinking per provider format", () => {
   });
 });
 
+// Regression: "auto" is a gateway-side MODE ("let the upstream pick"), not a
+// wire value. toLevel() returns the literal string "auto" for it, and the
+// openai/step cases used to forward that verbatim — a guaranteed 400 on any
+// strict reasoning_effort enum. Seen live on
+// opencode-go/muse-spark-1.3-contributor:
+//   `reasoning.effort`: unknown variant `auto`,
+//   expected one of `none`, `minimal`, `low`, `medium`, `high`
+describe("mode:auto is never forwarded as a literal effort value", () => {
+  const cases = [
+    ["openai", "muse-spark-1.3-contributor", "opencode-go"],
+    ["openai", "kimi-k3", "opencode-go"],
+    ["openai", "glm-5.2", "nvidia"],
+    ["openai", "minimaxai/minimax-m2.7", "nvidia"],
+    ["openai", "kimi-k3", "ollama"],
+    ["step", "stepfun-step-3.7-flash", "stepfun"],
+  ];
+  for (const [fmt, model, provider] of cases) {
+    it(`${provider}/${model} (${fmt}) omits the field instead of sending "auto"`, () => {
+      const out = apply(fmt, model, { reasoning_effort: "auto" }, provider);
+      expect(out.reasoning_effort).not.toBe("auto");
+      expect(out.reasoning_effort).toBeUndefined();
+    });
+  }
+
+  it("Claude Code's adaptive shape (thinking.type=adaptive, no budget) → omitted", () => {
+    // This is the exact request that produced the production 400: Claude Code
+    // sends `thinking: { type: "adaptive" }`, which extractThinking() reads as
+    // mode "auto", and the first candidate of every 9-opus request died on it.
+    const out = apply("openai", "muse-spark-1.3-contributor", { thinking: { type: "adaptive" } }, "opencode-go");
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("explicit levels still reach the wire unchanged (no over-filtering)", () => {
+    expect(apply("openai", "muse-spark-1.3-contributor", { reasoning_effort: "medium" }, "opencode-go").reasoning_effort)
+      .toBe("medium");
+    expect(apply("openai", "muse-spark-1.3-contributor", { reasoning_effort: "high" }, "opencode-go").reasoning_effort)
+      .toBe("high");
+  });
+
+  it("none → minimal when the model cannot disable thinking (muse-spark 400s on none)", () => {
+    // muse-spark's upstream enum is minimal|low|medium|high|xhigh|max and
+    // rejects `none` outright — probed live 2026-09-30 on both
+    // opencode-go/muse-spark-1.3-contributor and
+    // opencode/muse-spark-1.3-contributor-free. Its caps therefore declare
+    // thinkingCanDisable: false, which engages the pre-existing clamp so the
+    // wire value is `minimal` (verified 200) instead of a guaranteed 400.
+    const out = apply("openai", "muse-spark-1.3-contributor", { reasoning_effort: "none" }, "opencode-go");
+    expect(out.reasoning_effort).toBe("minimal");
+  });
+
+  it("Claude Code's disable spelling also clamps (thinking.type=disabled)", () => {
+    const out = apply("openai", "muse-spark-1.3-contributor", { thinking: { type: "disabled" } }, "opencode-go");
+    expect(out.reasoning_effort).toBe("minimal");
+  });
+
+  it("none still disables on a model that CAN disable thinking", () => {
+    // Control: the clamp is cap-driven, not a blanket rewrite. A model with
+    // thinkingCanDisable unset must still receive the literal `none`.
+    const out = apply("openai", "kimi-k3", { reasoning_effort: "none" }, "ollama");
+    expect(out.reasoning_effort).toBe("none");
+  });
+
+  it("budget mode still converts to a level (auto guard is mode-scoped)", () => {
+    // budget_tokens 8192 → budgetToLevel() = "medium", not "auto".
+    const out = apply("openai", "muse-spark-1.3-contributor", { thinking: { type: "enabled", budget_tokens: 8192 } }, "opencode-go");
+    expect(out.reasoning_effort).toBe("medium");
+  });
+});
+
 describe("extractReasoningText (response shapes)", () => {
   it("reasoning_content (GLM/Qwen/DeepSeek)", () => {
     expect(extractReasoningText({ reasoning_content: "abc" })).toBe("abc");

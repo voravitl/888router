@@ -214,7 +214,21 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level;
+      // mode "auto" means "let the upstream pick" — no provider wire format
+      // spells that as a literal "auto" level. Forwarding it verbatim is a
+      // guaranteed 400 on any strict gateway, e.g. opencode-go/muse-spark:
+      //   `reasoning.effort`: unknown variant `auto`, expected one of
+      //   `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`
+      // (seen live 2026-09-30: every 9-opus request burned 2.5s on that
+      // candidate before falling through.) Omit the field so the upstream
+      // applies its own default. (Other formats map auto to their own default
+      // instead of omitting: kimi/gemini-level → high, budget formats →
+      // enabled/-1 — only the openai-family null-returning mappers omit.)
+      //
+      // `none` only reaches here for models whose caps declare
+      // thinkingCanDisable; the openai enum does not universally contain it
+      // (muse-spark rejects it with 400) — that flag is the gate.
+      if (level && level !== "auto") body.reasoning_effort = level;
       break;
     }
     case "openai-low-high-max": {
@@ -293,7 +307,9 @@ function applyFormat(fmt, body, cfg, caps) {
     case "step": {
       if (none && canDisable) break;
       const level = toLevel(eff);
-      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
+      // Same reason as "openai": "auto" is a gateway-side mode, not a wire
+      // value — StepFun's reasoning_effort enum has no such variant.
+      if (level && level !== "auto") body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
       break;
     }
     case "kiro":
