@@ -1,3 +1,12 @@
+# v0.15.143 (2026-10-01)
+
+## Fix: strip reasoning_effort from claude passthrough wire (closes #506)
+
+Passthrough requests (Claude Code → `claude` provider) copied the body verbatim, so the server-injected `reasoning_effort` from `providerThinking` reached `api.anthropic.com` → HTTP 400 `Extra inputs are not permitted` on `cc/claude-sonnet-5`, `cc/claude-sonnet-5-5`, `cc/claude-opus-4-8`. Fix runs the same `applyThinking` normalizer on the passthrough branch (injected effort → `output_config.effort`, max maps to high like the translated path) and strips OpenAI-style fields in `normalizeClaudePassthrough`. `extractThinking` now gives explicit effort priority over budgetless adaptive/enabled thinking.
+
+- Independent review: 9-opus round 1 CHANGES_REQUESTED (3 MEDIUM, coverage only) → round 2 APPROVED.
+- Full suite: **3073 pass / 0 fail / 1 expected fail / 80 skipped**. Snapshot refreshed for 0.15.143 (version string only).
+
 # v0.15.142 (2026-10-01)
 
 ## Fix: never forward mode:auto as a literal reasoning_effort value (PR #503, closes #499)
