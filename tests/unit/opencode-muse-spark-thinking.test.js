@@ -32,19 +32,21 @@ describe("OpenCode Free Muse Spark thinking", () => {
         contextWindow: 1048576,
         maxOutput: 131072,
       });
-      // muse-spark rejects `reasoning_effort: "none"` outright — "not supported
-      // for model 'muse-spark-1.3-contributor'. Supported values: [minimal,
-      // low, medium, high, xhigh, max]" (probed live 2026-09-30). So it is a
-      // permanently-thinking model: the flag drops `none` from the level
-      // picker and makes applyFormat clamp none → minimal instead of 400ing.
-      expect(getCapabilitiesForModel(PROVIDER, m).thinkingCanDisable).toBe(false);
-      expect(getThinkingLevels(PROVIDER, m)).toEqual([
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-      ]);
+      // Only the probed SKU (1.3-contributor-free, live 2026-09-30) clamps:
+      // its upstream rejects `reasoning_effort: "none"` outright ("not
+      // supported for model 'muse-spark-1.3-contributor'. Supported values:
+      // [minimal, low, medium, high, xhigh, max]"). The flag drops `none`
+      // from the level picker and makes applyFormat clamp none → minimal.
+      // Unprobed siblings (1.2/1.4/2.0, nara/*) keep `none` until their own
+      // upstream is probed.
+      const probed = m === "muse-spark-1.3-contributor-free";
+      // Unprobed siblings fall through to the family default (can disable).
+      expect(getCapabilitiesForModel(PROVIDER, m).thinkingCanDisable).toBe(probed ? false : true);
+      expect(getThinkingLevels(PROVIDER, m)).toEqual(
+        probed
+          ? ["minimal", "low", "medium", "high", "xhigh"]
+          : ["none", "minimal", "low", "medium", "high", "xhigh"],
+      );
       expect(getModelTargetFormat("oc", m)).toBe(FORMATS.OPENAI_RESPONSES);
       expect(getModelTargetFormat("opencode", m)).toBe(FORMATS.OPENAI_RESPONSES);
       expect(getModelTargetFormat("openrouter", m)).toBeNull();

@@ -320,6 +320,10 @@ export const MODEL_CAPABILITIES = {
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // NOTE: MUSE_SPARK_NO_DISABLE is declared AFTER this literal (const, TDZ) —
+  // the three probed-SKU entries below inline `{ thinkingCanDisable: false }`
+  // as a literal spread instead of referencing it. Do not "clean up" by
+  // referencing the const from inside this literal: it throws at import.
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
@@ -395,7 +399,7 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
   },
   "oc": {
     "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
@@ -408,7 +412,9 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
+    "muse-spark-1.2-contributor": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
     // Go-tier catalog (docs: https://opencode.ai/v2/docs/console/go). Contexts follow
     // each model's public spec; Go tiers priced by context ranges (GPT Luna ≤272K,
     // Grok ≤200K, Qwen Plus ≤256K) confirm these ceilings. thinkingFormat mirrors
@@ -637,18 +643,30 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*hermes-4*",      caps: { reasoning: true, vision: false, thinkingFormat: "openai", contextWindow: 131072 } },
   { pattern: "*deephermes-4*",  caps: { reasoning: true, vision: false, thinkingFormat: "openai", contextWindow: 131072 } },
   { pattern: "*laguna-s*",      caps: { reasoning: true, vision: false, contextWindow: 1048576, maxOutput: 32768 } },
-  // muse-spark is permanently-thinking: the upstream enum is
-  // minimal|low|medium|high|xhigh|max and rejects `none` outright —
-  // "reasoning_effort 'none' is not supported for model
-  // 'muse-spark-1.3-contributor'. Supported values: [minimal, low, medium,
-  // high, xhigh, max]" (probed live 2026-09-30 on both
-  // opencode-go/muse-spark-1.3-contributor and
-  // opencode/muse-spark-1.3-contributor-free). `thinkingCanDisable: false`
+  // Probed SKUs only (2026-09-30): opencode-go/muse-spark-1.3-contributor,
+  // opencode-go/muse-spark-1.3-contributor-free (same upstream) and
+  // opencode/muse-spark-1.3-contributor-free. `thinkingCanDisable: false`
   // engages the existing clamp in applyFormat (none → minimal, which the
   // model accepts) and drops `none` from the UI level picker.
-  { pattern: "*muse-spark*",    caps: { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, vision: false, pdf: false, audioInput: false, videoInput: false, contextWindow: 1048576, maxOutput: 131072 } },
+  //
+  // Deliberately NOT a "*muse-spark*" family pattern: sibling SKUs on other
+  // upstreams (nara/*, opencode-zen/*, unprobed 1.2/1.4/2.0) were never probed
+  // and may still accept `none` — a global pattern would silently take a
+  // working capability away from them (same mistake as PR #300/#301's vision
+  // flags on this family). Probe a SKU's own upstream before adding it here.
+  { pattern: "*muse-spark*",    caps: { reasoning: true, thinkingFormat: "openai", vision: false, pdf: false, audioInput: false, videoInput: false, contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*big-pickle*",    caps: { contextWindow: 128000 } },
 ];
+
+// Probed-SKU list for the muse-spark `none` clamp (2026-09-30):
+// opencode-go/muse-spark-1.3-contributor(-free) and
+// opencode/muse-spark-1.3-contributor-free reject `reasoning_effort: "none"`
+// outright (upstream enum minimal|low|medium|high|xhigh|max). Their entries
+// in PROVIDER_CAPABILITIES above carry `thinkingCanDisable: false` inline
+// (literal — the const cannot be referenced from inside that literal, TDZ).
+// Provider-specific overrides win over the family pattern, so only these
+// SKUs clamp (none → minimal). Add a SKU here only after probing its own
+// upstream.
 
 /**
  * Dynamic Capabilities Store (In-Memory Cache)
