@@ -37,6 +37,16 @@ describe("extractThinking", () => {
   it("claude disabled", () => {
     expect(extractThinking({ thinking: { type: "disabled" } })).toEqual({ mode: "none" });
   });
+  it.each(["adaptive", "enabled"])("claude %s without a budget honors explicit effort", (type) => {
+    expect(extractThinking({ thinking: { type }, reasoning_effort: "max" })).toEqual({ mode: "level", level: "max" });
+    expect(extractThinking({ thinking: { type }, reasoning: { effort: "medium" } })).toEqual({ mode: "level", level: "medium" });
+    expect(extractThinking({ thinking: { type } })).toEqual({ mode: "auto" });
+  });
+  it("claude explicit output_config, disabled thinking, and budget retain precedence", () => {
+    expect(extractThinking({ output_config: { effort: "low" }, thinking: { type: "disabled" }, reasoning_effort: "max" })).toEqual({ mode: "level", level: "low" });
+    expect(extractThinking({ thinking: { type: "disabled" }, reasoning_effort: "max" })).toEqual({ mode: "none" });
+    expect(extractThinking({ thinking: { type: "enabled", budget_tokens: 4096 }, reasoning_effort: "max" })).toEqual({ mode: "budget", budget: 4096 });
+  });
   it("openai reasoning_effort", () => {
     expect(extractThinking({ reasoning_effort: "high" })).toEqual({ mode: "level", level: "high" });
   });
@@ -59,6 +69,16 @@ describe("applyThinking per provider format", () => {
     const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "high" }, "claude");
     expect(out.output_config).toEqual({ effort: "high" });
     expect(out.thinking).toEqual({ type: "adaptive" });
+  });
+  it("claude passthrough normalizes injected max effort alongside adaptive thinking", () => {
+    const out = apply("claude", "claude-sonnet-5", {
+      thinking: { type: "adaptive" },
+      reasoning_effort: "max",
+    }, "claude");
+    expect(out).not.toHaveProperty("reasoning_effort");
+    expect(out).not.toHaveProperty("reasoning");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "high" });
   });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
