@@ -221,8 +221,9 @@ function applyFormat(fmt, body, cfg, caps) {
       //   `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`
       // (seen live 2026-09-30: every 9-opus request burned 2.5s on that
       // candidate before falling through.) Omit the field so the upstream
-      // applies its own default — the same handling openai-low-high-max,
-      // kimi and the budget formats already give "auto".
+      // applies its own default. (Other formats map auto to their own default
+      // instead of omitting: kimi/gemini-level → high, budget formats →
+      // enabled/-1 — only the openai-family null-returning mappers omit.)
       //
       // `none` only reaches here for models whose caps declare
       // thinkingCanDisable; the openai enum does not universally contain it
