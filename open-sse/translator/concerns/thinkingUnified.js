@@ -204,8 +204,21 @@ function stripAll(body) {
   if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
 }
 
+// Models whose claude-adaptive output_config enum includes "max".
+// Effort docs (https://platform.claude.com/docs/en/build-with-claude/effort)
+// list max on Fable 5/5.1, Mythos, Opus 4.6/4.7/4.8/5/5.5 and Sonnet 4.6/5/5.5
+// — but review found Sonnet 4.6 / Opus 4.6 top out at high, so 4.6 is
+// deliberately excluded per reviewer-authority: an unsupported max risks an
+// upstream 400, while high is always accepted. Dash and dot spellings,
+// case-insensitive.
+const MAX_EFFORT_SUPPORTED = [/opus[-.]4[-.]7/i, /opus[-.]4[-.]8/i, /opus[-.]5/i, /sonnet[-.]5/i, /fable/i, /mythos/i];
+
+function supportsMaxEffort(modelId) {
+  return typeof modelId === "string" && MAX_EFFORT_SUPPORTED.some((re) => re.test(modelId));
+}
+
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps) {
+function applyFormat(fmt, body, cfg, caps, modelId = "") {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -245,7 +258,10 @@ function applyFormat(fmt, body, cfg, caps) {
       else delete body.thinking;
       const level = toLevel(eff);
       if (level && level !== "auto") {
-        const effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "high", max: "high", ultra: "high" }[level];
+        let effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "high", max: "max", ultra: "high" }[level];
+        // Gate "max": only models whose enum includes it keep it; the rest
+        // fall back to high (previous behavior) instead of risking a 400.
+        if (effort === "max" && !supportsMaxEffort(modelId)) effort = "high";
         if (effort) body.output_config = { effort };
       }
       break;
@@ -341,6 +357,6 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps);
+  applyFormat(fmt, body, cfg, caps, cleanModel);
   return body;
 }

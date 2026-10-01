@@ -92,7 +92,44 @@ describe("handleChatCore claude passthrough thinking", () => {
     expect(sentBody).not.toHaveProperty("reasoning_effort");
     expect(sentBody).not.toHaveProperty("reasoning");
     expect(sentBody.thinking).toEqual({ type: "adaptive" });
+    expect(sentBody.output_config).toEqual({ effort: "max" });
+  });
+
+  it.each([
+    "claude-sonnet-4-6",
+    "claude-sonnet-4.6",
+    "claude-opus-4-6",
+    "claude-opus-4.6",
+  ])("passthrough %s falls back injected max effort to high (no max support)", async (model) => {
+    const { sentBody } = await runPassthrough(model);
+    expect(sentBody.thinking).toEqual({ type: "adaptive" });
     expect(sentBody.output_config).toEqual({ effort: "high" });
+  });
+
+  it.each([
+    "claude-sonnet-4-6(max)",
+    "claude-opus-4.6(max)",
+  ])("passthrough suffix %s falls back max to high", async (model) => {
+    const { sentBody } = await runPassthrough(model, { providerThinking: null, thinking: null });
+    expect(sentBody.thinking).toEqual({ type: "adaptive" });
+    expect(sentBody.output_config).toEqual({ effort: "high" });
+  });
+
+  it.each([
+    "claude-sonnet-5",
+    "claude-opus-5-5",
+  ])("passthrough %s keeps injected max effort", async (model) => {
+    const { sentBody } = await runPassthrough(model);
+    expect(sentBody.thinking).toEqual({ type: "adaptive" });
+    expect(sentBody.output_config).toEqual({ effort: "max" });
+  });
+
+  it("passthrough claude-fable-5-1 keeps max effort without a redundant thinking switch", async () => {
+    // Fable is permanently adaptive (thinkingCanDisable: false): no thinking
+    // switch on the wire, effort travels in output_config only.
+    const { sentBody } = await runPassthrough("claude-fable-5-1");
+    expect(sentBody.thinking).toBeUndefined();
+    expect(sentBody.output_config).toEqual({ effort: "max" });
   });
 
   it("haiku downgrades adaptive to enabled+budget, no reasoning keys", async () => {
