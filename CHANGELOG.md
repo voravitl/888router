@@ -1,3 +1,26 @@
+# v0.15.144 (2026-10-01)
+
+## Complete the claude registry, deliver effort `max`, and repair copy-button suffix order (closes #508)
+
+Three changes on top of the passthrough fix in 0.15.143:
+
+- **Registry completed** — the `claude` OAuth catalog lists 7 models the static registry lacked
+  (opus-4-6, opus-4-5-20251101, opus-5, opus-5-5, sonnet-4-6, sonnet-5-5, fable-5-1); all were
+  seen in a live `api.anthropic.com` sync, so they are added with their capabilities. Mythos and
+  Kiro's synthetic `-thinking`/`-agentic` variants are deliberately not added — no catalog evidence.
+- **Effort `max` delivered as `max`** — the adaptive mapping collapsed `max` to `high`. Gated per
+  model: Opus 4.7/4.8/5, Sonnet 5, Fable and Mythos keep `max`; 4.6 keeps `high` (its enum tops out
+  there, and an unsupported value is an upstream 400).
+- **Copy button suffix order** — emitted `[1m](level)`, but the marker strippers
+  (`modelMarkers.js`, `services/model.js`) only match a trailing marker, so `[1m]` leaked into the
+  upstream model id. Now `alias/id(level)[1m]`; `toClaudeCodeModelId` accepts a `(` boundary so
+  dot-to-dash normalization survives. A `(level)` on the model id also now survives passthrough
+  instead of being stripped before thinking normalization reads it.
+
+- Independent review: 9-opus round 1 CHANGES_REQUESTED (1 HIGH — `max` ungated) → gated →
+  round 2 APPROVED.
+- Full suite: **3111 pass / 0 fail / 1 expected fail / 80 skipped**, `verify-no-regression` green.
+
 # v0.15.143 (2026-10-01)
 
 ## Fix: strip reasoning_effort from claude passthrough wire (closes #506)
