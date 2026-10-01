@@ -25,7 +25,7 @@ export function toClaudeCodeModelId(modelId) {
   if (typeof modelId !== "string" || !modelId) return modelId ?? "";
   // Anchored + family-scoped; minor part 1–2 digits so date-suffixed ids stay put.
   return modelId.replace(
-    /^(claude-(?:opus|sonnet|haiku))-(\d+)\.(\d{1,2})(?=-|$)/,
+    /^(claude-(?:opus|sonnet|haiku))-(\d+)\.(\d{1,2})(?=-|\(|$)/,
     "$1-$2-$3",
   );
 }

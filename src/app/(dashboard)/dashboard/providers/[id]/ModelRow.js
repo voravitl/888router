@@ -4,11 +4,10 @@ import { fullModelWithSuffix } from "@/shared/utils/claudeCodeModelId";
 
 export default function ModelRow({ model, fullModel, alias, copied, onCopy, getContextWindow, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix }) {
   const slash = typeof fullModel === "string" ? fullModel.indexOf("/") : -1;
-  const baseCopyText = slash > 0
-    ? fullModelWithSuffix(fullModel.slice(0, slash), fullModel.slice(slash + 1), getContextWindow?.(fullModel))
-    : fullModel;
-  const copyText = thinkingSuffix ? `${baseCopyText}(${thinkingSuffix})` : baseCopyText;
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
+  const copyText = slash > 0
+    ? fullModelWithSuffix(fullModel.slice(0, slash), displayModel.slice(slash + 1), getContextWindow?.(fullModel))
+    : displayModel;
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
