@@ -77,7 +77,7 @@ function runtimeTransportUrl(credentials) {
   return rt.urlSuffix ? `${rt.baseUrl}${rt.urlSuffix}` : rt.baseUrl;
 }
 
-function normalizeOpencodeReasoning(model, body) {
+function normalizeOpencodeReasoning(model, body, provider) {
   const current = body.reasoning;
   const currentReasoning = current && typeof current === "object" && !Array.isArray(current)
     ? current
@@ -88,7 +88,11 @@ function normalizeOpencodeReasoning(model, body) {
   if (typeof requestedEffort !== "string") return;
 
   const cleanModel = baseModelId(model || body.model);
-  const supportedLevels = getThinkingLevels("opencode", cleanModel);
+  // Per-SKU caps differ by provider id (e.g. opencode-go has the non-free
+  // 1.3-contributor clamp; opencode does not) — consult the runtime provider,
+  // not a hardcoded one, or the max/ultra remap diverges from the caps the
+  // translator used for the same request.
+  const supportedLevels = getThinkingLevels(provider || "opencode", cleanModel);
   let effort = requestedEffort.toLowerCase().trim();
   if ((effort === "max" || effort === "ultra") && supportedLevels?.length && !supportedLevels.includes(effort)) {
     if (effort === "ultra" && supportedLevels.includes("max")) effort = "max";
@@ -384,7 +388,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       // OpenAI Responses / OpenCode Console: max_output_tokens must be >= 16.
       // Claude Code `/model` probes send max_tokens: 1, which Anthropic accepts.
       clampResponsesMaxOutputTokens(body);
-      normalizeOpencodeReasoning(model, body);
+      normalizeOpencodeReasoning(model, body, this.provider);
       if (freeGate) ensureResponsesFingerprintTools(body);
       let injected = injectReasoningContent({ provider: this.provider, model, body });
       const toolMap = sanitizeOpencodeTools(injected);

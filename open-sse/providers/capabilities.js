@@ -320,10 +320,9 @@ export const MODEL_CAPABILITIES = {
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
-  // NOTE: MUSE_SPARK_NO_DISABLE is declared AFTER this literal (const, TDZ) —
-  // the three probed-SKU entries below inline `{ thinkingCanDisable: false }`
-  // as a literal spread instead of referencing it. Do not "clean up" by
-  // referencing the const from inside this literal: it throws at import.
+  // NOTE: the probed-SKU entries below inline `{ thinkingCanDisable: false }`
+  // directly (a shared const cannot be referenced from inside this literal —
+  // const TDZ throws at import). Do not "clean up" by extracting one.
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
@@ -405,7 +404,7 @@ export const PROVIDER_CAPABILITIES = {
     "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
   },
   "opencode-go": {
     "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
@@ -455,7 +454,21 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    // Same free upstream as opencode/oc (registry aliases oc/opencode/
+    // opencode-zen/zen to one implementation) — the live 2026-09-30 probe on
+    // the shared upstream showed `none` 400s, so the clamp applies here too.
+    // If zen-free ever splits to its own upstream, re-probe before trusting.
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
+  },
+  // "zen" is a bare alias of the same free upstream (registry aliases
+  // oc/opencode/opencode-zen/zen to one implementation; there is no separate
+  // "zen" executor key — but caps lookups use the raw provider id, so the
+  // alias needs its own block or the clamp silently misses it).
+  "zen": {
+    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
+    "x-preview-f-free": OX_ALPHA_CAPABILITIES,
+    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
+    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
   },
   "openrouter": {
     "stealth/ox-alpha": OX_ALPHA_CAPABILITIES,
@@ -658,15 +671,12 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*big-pickle*",    caps: { contextWindow: 128000 } },
 ];
 
-// Probed-SKU list for the muse-spark `none` clamp (2026-09-30):
-// opencode-go/muse-spark-1.3-contributor(-free) and
-// opencode/muse-spark-1.3-contributor-free reject `reasoning_effort: "none"`
-// outright (upstream enum minimal|low|medium|high|xhigh|max). Their entries
-// in PROVIDER_CAPABILITIES above carry `thinkingCanDisable: false` inline
-// (literal — the const cannot be referenced from inside that literal, TDZ).
-// Provider-specific overrides win over the family pattern, so only these
-// SKUs clamp (none → minimal). Add a SKU here only after probing its own
-// upstream.
+// Which SKUs clamp `none` → `minimal` (probed 2026-09-30 — see the comment on
+// the family pattern above): opencode-go/muse-spark-1.3-contributor(-free),
+// opencode + oc + opencode-zen / muse-spark-1.3-contributor-free. Their
+// PROVIDER_CAPABILITIES entries carry `thinkingCanDisable: false` inline;
+// provider-specific overrides win over the family pattern. Add a SKU only
+// after probing its own upstream.
 
 /**
  * Dynamic Capabilities Store (In-Memory Cache)

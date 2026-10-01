@@ -190,4 +190,16 @@ describe("OpenCode Free Muse Spark thinking", () => {
     expect(out.max_output_tokens).toBe(16);
     expect(out.max_tokens).toBeUndefined();
   });
+
+  it("alias parity: oc and opencode-zen agree with opencode on the probed SKU", () => {
+    // oc / opencode-zen alias the same free upstream (registry aliases
+    // oc/opencode/opencode-zen/zen to one implementation). The clamp flag must
+    // not diverge across the alias — otherwise one provider id offers `none`
+    // and 400s on the probed SKU.
+    for (const p of ["opencode", "oc", "opencode-zen", "zen", "opencode-go"]) {
+      expect(getCapabilitiesForModel(p, "muse-spark-1.3-contributor-free").thinkingCanDisable).toBe(false);
+    }
+    // Unprobed upstreams keep `none`.
+    expect(getCapabilitiesForModel("nara", "muse-spark-1.3-contributor").thinkingCanDisable).toBe(true);
+  });
 });
