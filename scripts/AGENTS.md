@@ -12,7 +12,7 @@ Repo maintenance scripts: provider-registry migration, capability validation, re
 | `migrate-registry.mjs` | Regenerates `open-sse/providers/registry/index.js` (never hand-edit it) |
 | `injectDisplayToRegistry.mjs` | Injects display metadata into registry |
 | `validate-capabilities.mjs` | Validates capability tables |
-| `cicd-release.sh` | Release automation |
+| `cicd-release.sh` | **RETIRED 2026-09-30 (issue #501)** — was the manual half of the removed CI `deploy-local-kubernetes` job; kept for reference only, do not run (it gates on the dead k8s ingress) |
 | `k8s-migrate-data.sh` | K8s data migration (Docker → K8s PVC) |
 | `k8s-sync-secret.sh` | K8s secret sync (`.env` → Secret; `--pull` → `.env.route` for the compose clone) |
 | `k8s-seed-compose-data.sh` | Seed the `888route` compose volume from the live K8s PVC (K8s → Docker volume) |

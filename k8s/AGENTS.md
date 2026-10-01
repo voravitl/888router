@@ -41,7 +41,11 @@ for anyone reviving it, not for routine delivery.
 ### Working In This Directory (historical)
 - Version bump used to touch 3 files: `base/888router.yaml` (image tag, WITHOUT `v`) plus `newTag` in BOTH overlays. Git tag has `v`; image tag never does.
 - Strategy is `Recreate` (SQLite single-writer PVC) — always `docker build` locally BEFORE `kubectl apply -k`, or the pod hits `ImagePullBackOff` and Ingress returns 503.
-- The `888route` compose clone (see `README.md`) has been removed from `docker-compose.yml` along with this retirement; its seed/sync scripts still exist but serve nothing.
+- The `888route` compose clone (host port 20129) still runs from `docker-compose.yml`
+  alongside the main `888router` service; the k8s→compose seed/sync scripts
+  (`k8s-seed-compose-data.sh`, `k8s-sync-secret.sh --pull`) still describe how it
+  was created, but one-way sync is no longer performed — the two DBs are
+  independent.
 - Never commit real secrets; copy `secrets.example.yaml` pattern only.
 
 ### Testing Requirements
