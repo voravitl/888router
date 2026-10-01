@@ -1,5 +1,9 @@
 # 888router Kubernetes Deployment Guide (Kustomize)
 
+> **NOT DEPLOYED — retired 2026-09-30 (issue #501).** Deployment moved back to
+> **docker compose**; the CI `deploy-local-kubernetes` job was removed. Do not
+> `kubectl apply -k` these manifests. Kept as inert reference only.
+
 This directory contains the production-ready Kubernetes manifests structured with **Kustomize (Base + Overlays)** for deploying the full **888router Stack** (`888router`, `headroom`, and `searxng`) with persistent SQLite storage and zero-downtime migration capabilities.
 
 ---

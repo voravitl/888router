@@ -1,9 +1,9 @@
 # Project-Scoped AGENTS.md Rules for 888router
 
 > **See the repo-root [`../AGENTS.md`](../AGENTS.md) for the canonical tool-agnostic delivery
-> rules and operational lessons** (e.g. the Docker `su-exec`/`setgroups` vs. hardened k8s
+> rules and operational lessons** (e.g. the Docker `su-exec`/`setgroups` vs. hardened
 > `securityContext` regression, v0.15.99 → v0.15.100, and "a fix isn't shipped until the
-> version + every k8s image tag move together"). Incident write-ups: `.agents/incidents/`.
+> version moves and the live container reports it"). Incident write-ups: `.agents/incidents/`.
 > This file adds the project-scoped CI/CD pipeline detail on top of those shared rules.
 
 ## 🚀 Standard 7-Step End-to-End CI/CD Delivery Pipeline Rule (SSOT)
@@ -25,35 +25,29 @@
 ---
 
 ### 🟢 PHASE 2: AFTER MERGE (ทำเมื่อ Merge ลง master)
-4. **Step 4: Production & Docker Build Gate (ทำก่อนแตะ K8s เสมอ!)**
+4. **Step 4: Production & Docker Build Gate**
    - รัน `npm run build` (Next.js production build) ยืนยันว่าไม่มี Build Error
-   - **MANDATORY: Build Docker Image เข้า Local OrbStack Daemon ก่อนเสมอ**:
-     `docker build -t voravitl/888router:<version> -t voravitl/888router:latest .`
-     *(🚨 กฎเหล็ก: Tag ของ Image ใน K8s ต้องเป็นตัวเลขล้วน **ไม่มี `v`** เช่น `0.15.120` ห้ามใส่ `v0.15.120` เด็ดขาด)*
-     *(💡 ทำไมต้อง build ก่อน: Deployment ใช้ `strategy: Recreate` หาก apply ก่อนมี image ในเครื่อง K8s จะไป pull จาก Docker Hub ซึ่งยัง build ไม่เสร็จ ทำให้เกิด `ImagePullBackOff` และเว็บดับ 503 ทันที โดยต้องแน่ใจว่า `k8s/base/888router.yaml` กำหนด `imagePullPolicy: IfNotPresent`)*
+   - *(ยกเลิกการ build image เข้า local daemon แล้ว 2026-09-30 — deploy เป็น docker compose, image มาจาก Docker Hub โดย CI publish)*
 
 5. **Step 5: Version Bumping, Release Tagging, Push & Merge**
-   - **Bump Version 5 จุด**:
+   - **Bump Version 2 จุด**:
      - `package.json` + `package-lock.json` (`npm install --package-lock-only`)
-     - `k8s/base/888router.yaml` (image tag)
-     - `k8s/overlays/local/kustomization.yaml` (`images[].newTag`)
-     - `k8s/overlays/prd/kustomization.yaml` (`images[].newTag`)
      - บันทึกใน `CHANGELOG.md`
+     - *(k8s image tag ไม่ต้อง bump อีกต่อไป — k8s ไม่ถูก deploy แล้ว, issue #501)*
    - **Merge & Push**: Merge branch เข้า `master` และ `git push origin master`
    - **Git Tagging (มี `v`)**: สร้างและ push release tag: `git tag -a v<version> -m "Release v<version>"` && `git push origin v<version>`
    - *(GitHub Actions จะทำการ build & push Image ขึ้น Docker Hub ใน cloud ให้โดยอัตโนมัติ)*
 
-6. **Step 6: Local Kubernetes Redeploy & Liveness Check**
-   - **ห้ามใช้ `docker compose up` เด็ดขาด**: Production รันอยู่บน **Kubernetes (OrbStack) namespace `888router`**
-   - รัน Deploy Kustomize:
-     `kubectl apply -k k8s/overlays/local`
-   - รอ Rollout ให้ Pod ใหม่ Ready:
-     `kubectl rollout status deploy/888router -n 888router --timeout=120s`
+6. **Step 6: Docker Compose Redeploy & Liveness Check**
+   - **ห้ามใช้ `kubectl apply` เด็ดขาด**: k8s ถูกถอดออกจาก deploy path แล้ว (issue #501) — `k8s/` เหลือแค่เป็น reference
+   - ปกติ: รอ CI publish เสร็จ แล้ว watchtower จะ pull `:latest` ให้ `888route` (พอร์ต 20129 — ตัวที่รันจริง) เอง
+   - ถ้าอยากอัปเดตทันที (ไม่ต้องรอ watchtower):
+     `docker compose pull 888route && docker compose up -d 888route`
    - ตรวจสอบ Liveness Endpoint จริง:
-     `curl -s http://router.k8s.orb.local/api/version`
+     `curl -s http://localhost:20129/api/version`
      *(ต้องได้ HTTP 200 และ `currentVersion` ตรงกับเวอร์ชันใหม่)*
-   - **Emergency Rollback (หากเกิดเหตุเว็บ 503 หรือ Pod ไม่ Ready)**:
-     `kubectl rollout undo deploy/888router -n 888router`
+   - **Emergency Rollback (หากเว็บ 503 หรือ container ไม่ Ready)**:
+     เปลี่ยน `888route.image` กลับไปเป็น release ก่อนหน้า แล้ว `docker compose up -d 888route`
 
 7. **Step 7: Durable Knowledge Capture**
    - บันทึกบทเรียนลงวิกิ (`$HOME/wiki/...`), อัปเดต `index.md`, และรัน 12-Gate Audit Check (100% Green)

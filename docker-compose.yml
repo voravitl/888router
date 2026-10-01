@@ -4,6 +4,11 @@ services:
     # builds :latest, releases tag semver (v0.14.11 → 0.14.11), plus sha-<hash>.
     # The image is multi-arch (linux/amd64 + linux/arm64).
     #
+    # DEFINED BUT NOT RUN — the live gateway is the `888route` service below
+    # (host port 20129). This entry stays so its port/volume mapping is
+    # documented, but do not `up` it next to 888route without thinking:
+    # each gateway needs its own volume (SQLite is single-writer).
+    #
     # To build from this repo instead of pulling the published image (e.g. a
     # fork or a local change), uncomment `build:` — compose then builds from
     # ./Dockerfile and tags it locally. If both image: and build: are set,
@@ -58,20 +63,15 @@ services:
       retries: 3
       start_period: 20s
 
-  # Second gateway instance under compose (host port 20129), running side by
-  # side with the Kubernetes deployment in namespace 888router.
+  # Live gateway (host port 20129). Holds its own volume (`888route-data`,
+  # seeded once from the retired k8s PVC — no sync since; the two DBs are
+  # independent). SQLite is single-writer per volume, so each gateway service
+  # keeps its own.
   #
-  # Its data volume holds a *copy* of the k8s PVC, never a shared mount:
-  # SQLite is single-writer, so two live writers on one database file corrupt
-  # it. Seed a fresh volume with scripts/k8s-seed-compose-data.sh, which
-  # snapshots the live k8s database with node:sqlite backup() and validates it
-  # with PRAGMA integrity_check before writing.
-  #
-  # Deliberately NOT labelled com.centurylinklabs.watchtower.enable: this
-  # instance is pinned to a specific release so a silent :latest bump cannot
-  # drift it away from the k8s build it was cloned from.
+  # Watchtower tracks THIS service (label below + `888route` name filter), so a
+  # new published :latest is pulled and recreated automatically.
   888route:
-    image: voravitl/888router:0.15.141
+    image: voravitl/888router:latest
     container_name: 888route
     restart: "no"
     ports:
@@ -83,6 +83,10 @@ services:
       # yields "proxy error: dial tcp 10.x.x.x:20129: connection refused" while
       # curl on the host still works.
       - "dev.orbstack.http-port=20128"
+      # Watchtower re-pulls this container when the published image changes.
+      # Only 888route opts in — headroom/searxng stay pinned to avoid
+      # third-party breaking changes dropping in unannounced.
+      - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - 888route-data:/app/data
     # Generated from the live k8s secret + configmap by
@@ -181,11 +185,11 @@ services:
 
   # Auto-updater: re-pulls and recreates containers carrying the
   # com.centurylinklabs.watchtower.enable=true label AND matching the name
-  # filter (the 888router service above). Everything else — headroom, searxng —
+  # filter (the 888route service above). Everything else — headroom, searxng —
   # is deliberately left out. A name filter plus the label is belt-and-braces:
   # the label is how we opt in, the name is how we scope to exactly one
   # container on a host that may run other compose projects.
-  # Polls Docker Hub every 1h (WATCHTOWER_POLL_INTERVAL).
+  # Polls Docker Hub every 5m (WATCHTOWER_POLL_INTERVAL=300).
   #
   # The upstream containrrr/watchtower repo was archived 2025-12-17 (no more
   # fixes). The image is pinned by DIGEST so a floating :latest cannot silently
@@ -197,7 +201,7 @@ services:
     container_name: watchtower
     restart: "no"
     command:
-      - 888router
+      - 888route
     environment:
       WATCHTOWER_POLL_INTERVAL: "300"
       WATCHTOWER_LABEL_ENABLE: "true"
@@ -214,10 +218,9 @@ services:
 volumes:
   888router-data:
     name: 888router-data
-  # external: the volume is seeded from the k8s PVC by
-  # scripts/k8s-seed-compose-data.sh, which owns its creation. Compose must not
-  # create or delete it — an empty auto-created volume would start the gateway
-  # on a blank database that looks healthy until the first login.
+  # `888route-data` holds the live gateway DB (owns its creation via normal
+  # compose volume lifecycle). `888router-data` belongs to the not-run
+  # `888router` service entry above — kept defined so its mapping is
+  # documented, but nothing is mounted from it while that service stays down.
   888route-data:
     name: 888route-data
-    external: true

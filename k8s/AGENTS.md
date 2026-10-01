@@ -30,10 +30,22 @@ Kubernetes manifests (Kustomize): base resources plus `local` and `prd` overlays
 
 ## For AI Agents
 
-### Working In This Directory
-- Version bump touches 3 files: `base/888router.yaml` (image tag, WITHOUT `v`) plus `newTag` in BOTH overlays. Git tag has `v`; image tag never does.
+### NOT DEPLOYED (retired 2026-09-30, issue #501)
+These manifests are **inert reference**. The CI deploy job
+(`deploy-local-kubernetes`) was removed and deployment moved back to
+**docker compose**. Do not `kubectl apply -k` anything here, do not bump the
+image tags as part of a version bump, and do not treat this directory as a
+deploy target. The rules below describe how the k8s path used to work — kept
+for anyone reviving it, not for routine delivery.
+
+### Working In This Directory (historical)
+- Version bump used to touch 3 files: `base/888router.yaml` (image tag, WITHOUT `v`) plus `newTag` in BOTH overlays. Git tag has `v`; image tag never does.
 - Strategy is `Recreate` (SQLite single-writer PVC) — always `docker build` locally BEFORE `kubectl apply -k`, or the pod hits `ImagePullBackOff` and Ingress returns 503.
-- Never `docker compose up` for the k8s workload — production runs on K8s, not compose. The one carve-out is the `888route` compose clone (see `README.md`): it runs under compose by design and must not be treated as a deploy target for the k8s manifests.
+- The `888route` compose clone (host port 20129) still runs from `docker-compose.yml`
+  alongside the main `888router` service; the k8s→compose seed/sync scripts
+  (`k8s-seed-compose-data.sh`, `k8s-sync-secret.sh --pull`) still describe how it
+  was created, but one-way sync is no longer performed — the two DBs are
+  independent.
 - Never commit real secrets; copy `secrets.example.yaml` pattern only.
 
 ### Testing Requirements
