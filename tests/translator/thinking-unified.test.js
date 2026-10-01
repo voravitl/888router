@@ -42,6 +42,18 @@ describe("extractThinking", () => {
     expect(extractThinking({ thinking: { type }, reasoning: { effort: "medium" } })).toEqual({ mode: "level", level: "medium" });
     expect(extractThinking({ thinking: { type } })).toEqual({ mode: "auto" });
   });
+  it.each([
+    { reasoning_effort: "none" },
+    { reasoning_effort: "off" },
+    { reasoning: { effort: "none" } },
+  ])("claude adaptive thinking honors explicit disable intent: %j", (effort) => {
+    const body = { thinking: { type: "adaptive" }, ...effort };
+    expect(extractThinking(body)).toEqual({ mode: "none" });
+    const out = apply("claude", "claude-sonnet-5", body, "claude");
+    expect(out.thinking).toEqual({ type: "disabled" });
+    expect(out).not.toHaveProperty("reasoning_effort");
+    expect(out).not.toHaveProperty("reasoning");
+  });
   it("claude explicit output_config, disabled thinking, and budget retain precedence", () => {
     expect(extractThinking({ output_config: { effort: "low" }, thinking: { type: "disabled" }, reasoning_effort: "max" })).toEqual({ mode: "level", level: "low" });
     expect(extractThinking({ thinking: { type: "disabled" }, reasoning_effort: "max" })).toEqual({ mode: "none" });
