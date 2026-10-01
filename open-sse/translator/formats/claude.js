@@ -141,6 +141,9 @@ function hasForeignServerToolUseId(block) {
 export function normalizeClaudePassthrough(body, model = "") {
   if (!body || typeof body !== "object") return body;
 
+  delete body.reasoning_effort;
+  delete body.reasoning;
+
   // 1. Downgrade adaptive thinking for models that don't support it
   if (body.thinking?.type === "adaptive" && ADAPTIVE_THINKING_UNSUPPORTED.test(model)) {
     body.thinking = { type: "enabled", budget_tokens: 10000 };

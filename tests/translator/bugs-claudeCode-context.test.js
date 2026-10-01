@@ -53,6 +53,19 @@ describe("Claude Code CLI context → OpenAI", () => {
     expect(JSON.stringify(out)).toContain("ENCRYPTED_BLOB");
   });
 
+  // thinkingUnified passthrough: adaptive thinking + explicit disable effort
+  // must resolve to thinking.disabled with no OpenAI reasoning keys on the wire.
+  it("adaptive thinking with explicit disable effort leaves no reasoning_effort", () => {
+    const out = translateRequest(FORMATS.CLAUDE, FORMATS.CLAUDE, "claude-sonnet-5", {
+      thinking: { type: "adaptive" },
+      reasoning_effort: "none",
+      messages: [{ role: "user", content: "hi" }],
+    }, true, null, "claude");
+    expect(out).not.toHaveProperty("reasoning_effort");
+    expect(out).not.toHaveProperty("reasoning");
+    expect(out.thinking).toEqual({ type: "disabled" });
+  });
+
   // claude-to-openai.js:155-173 — tool_result image block stringified into raw JSON
   it("tool_result image block is preserved", () => {
     const out = T(FORMATS.CLAUDE, FORMATS.OPENAI, {

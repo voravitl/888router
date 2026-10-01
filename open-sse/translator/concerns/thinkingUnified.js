@@ -56,6 +56,7 @@ export function extractThinking(body) {
     return { mode: "level", level: e };
   }
 
+  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
   // Claude shape
   const t = body.thinking;
   if (t && typeof t === "object") {
@@ -63,12 +64,12 @@ export function extractThinking(body) {
     if (t.type === "adaptive" || t.type === "enabled") {
       const budget = Number(t.budget_tokens);
       if (Number.isFinite(budget) && budget > 0) return { mode: "budget", budget };
-      return { mode: "auto" };
+      // chatCore.js providerThinking injects explicit effort alongside passthrough adaptive thinking.
+      if (typeof effort !== "string" || !effort) return { mode: "auto" };
     }
   }
 
   // OpenAI chat / Responses shape
-  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
   if (typeof effort === "string" && effort) {
     const e = effort.toLowerCase().trim();
     if (e === "none" || e === "off") return { mode: "none" };
