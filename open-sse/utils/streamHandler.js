@@ -1,6 +1,7 @@
 // Stream handler with disconnect detection - shared for all providers
 import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { isClientAbort } from "./abort.js";
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -79,7 +80,10 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
         abortTimeout = null;
       }
 
-      if (error.name === "AbortError") {
+      // Next aborts with ResponseAborted, not AbortError (#517): without this a
+      // client abort was logged as "error: " and ran onError a second time.
+      // Same inputs chatCore classifies with: the error and the client's signal.
+      if (isClientAbort(error, signal)) {
         logStream("aborted");
         return;
       }

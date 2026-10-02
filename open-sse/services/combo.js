@@ -620,6 +620,36 @@ export function clearComboHeadTimeoutCooldown(modelStr) {
   else comboHeadTimeoutCooldowns.clear();
 }
 
+/**
+ * Retry-After for an all-failed verdict. A failed candidate that is known to be
+ * unavailable until a given time (the AUTH layer's "pool parked / accounts
+ * locked, reset after Ns" verdicts) says so in a Retry-After HEADER —
+ * unavailableResponse() never puts it in the body — and the combo used to drop
+ * it, so a client retried every ~3s against a combo that could not answer yet
+ * (#517). A body `retryAfter` already routes to the 429 quota verdict.
+ */
+const COMBO_ALL_FAILED_RETRY_AFTER_CAP_S = 60; // the horizon clients honour
+
+/** Epoch ms from a delta-seconds Retry-After header, or null when absent/unusable. */
+export function retryAfterHeaderMs(headers, now = Date.now()) {
+  const raw = headers?.get?.("retry-after");
+  if (raw == null || raw === "") return null;
+  const secs = Number(raw);
+  return Number.isFinite(secs) && secs > 0 ? now + secs * 1000 : null;
+}
+
+/**
+ * Seconds to put in the all-failed verdict's Retry-After, or null when it cannot
+ * be stated honestly: EVERY processed candidate must have said when it recovers,
+ * otherwise an immediate retry might still land on one that did not. Floored at
+ * 1s, capped at COMBO_ALL_FAILED_RETRY_AFTER_CAP_S.
+ */
+export function allFailedRetryAfterSeconds(resetHints, processedCount, now = Date.now()) {
+  if (!processedCount || resetHints.size !== processedCount) return null;
+  const earliest = Math.min(...resetHints.values());
+  return Math.min(Math.max(Math.ceil((earliest - now) / 1000), 1), COMBO_ALL_FAILED_RETRY_AFTER_CAP_S);
+}
+
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null }) {
   // Apply rotation strategy if enabled (supports round-robin, cache-optimized)
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit, body);
@@ -653,6 +683,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  // Per processed candidate: when it says it can serve again (see allFailedRetryAfterSeconds).
+  let processedCandidates = 0;
+  const resetHints = new Map();
 
   for (let i = 0; i < rotatedModels.length; i++) {
     if (signal && signal.aborted) {
@@ -664,11 +697,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     }
 
     const modelStr = rotatedModels[i];
+    processedCandidates++;
 
     // Skip candidates parked by a recent stream-head timeout — retrying the
     // same slow model first is a guaranteed repeat of the same stall.
     const parkedUntil = getComboHeadTimeoutCooldown(modelStr);
     if (parkedUntil > Date.now()) {
+      resetHints.set(i, parkedUntil);
       log.info("COMBO", `Skipping model ${i + 1}/${rotatedModels.length}: ${modelStr} (stream-head timeout cooldown, ${Math.ceil((parkedUntil - Date.now()) / 1000)}s left)`);
       lastError = lastError ? `${lastError}; ${modelStr} in stream-head timeout cooldown` : `${modelStr} in stream-head timeout cooldown`;
       continue;
@@ -1124,6 +1159,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         }
       }
 
+      // A candidate that says when it recovers (Retry-After from unavailableResponse)
+      // feeds the all-failed verdict's Retry-After.
+      const resetMs = retryAfterHeaderMs(result.headers);
+      if (resetMs != null) resetHints.set(i, resetMs);
+
       if (signal?.aborted) {
         log.warn("COMBO", `Client aborted request during error parsing (${comboName || ""})`);
         candidateAbortCtrl.abort();
@@ -1301,10 +1341,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);
+  const retryAfterSec = allFailedRetryAfterSeconds(resetHints, processedCandidates);
   return attachRouterDecisionHeader(
     new Response(
       JSON.stringify({ error: { message: msg } }),
-      { status, headers: { "Content-Type": "application/json" } }
+      {
+        status,
+        headers: {
+          "Content-Type": "application/json",
+          ...(retryAfterSec ? { "Retry-After": String(retryAfterSec) } : {}),
+        },
+      }
     ),
     failureMeta,
   );
