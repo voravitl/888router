@@ -12,6 +12,12 @@ on:
   push:
     branches:
       - master
+    # Docs-only pushes (markdown) skip build+deploy: no runtime change, and
+    # every master push otherwise triggers a Recreate rollout (brief 503).
+    # Mixed pushes (code + docs) still run. v* tags unaffected (release
+    # commits always touch package.json).
+    paths-ignore:
+      - '**.md'
     tags:
       - "v*"
   workflow_dispatch:
