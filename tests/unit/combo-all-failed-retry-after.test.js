@@ -138,3 +138,40 @@ describe("combo all-failed verdict carries the earliest known recovery time as R
     expect(retryAfter).toBeLessThanOrEqual(20);
   });
 });
+
+// Independent review of #517: the fixtures above are plain objects with no
+// body, so the combo's real error-body read (result.body.getReader()) never ran
+// in front of the Retry-After capture. These use real Response objects, the way
+// unavailableResponse() and the executors hand them over.
+function realFailure(status, message, retryAfterSeconds) {
+  const headers = { "Content-Type": "application/json" };
+  if (retryAfterSeconds != null) headers["Retry-After"] = String(retryAfterSeconds);
+  return new Response(JSON.stringify({ error: { message } }), { status, headers });
+}
+
+describe("combo all-failed Retry-After with real Response objects (#517)", () => {
+  beforeEach(() => clearComboHeadTimeoutCooldown());
+  afterEach(() => clearComboHeadTimeoutCooldown());
+
+  it("reads the error body AND the Retry-After header of each candidate → earliest wins", async () => {
+    const waits = { "a/one": 29, "b/two": 9 };
+    const { result, handleSingleModel } = await runCombo(Object.keys(waits), (m) =>
+      realFailure(502, `[${m}] [502]: Unknown error (reset after ${waits[m]}s)`, waits[m]),
+    );
+
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe(502);
+    expect(result.headers.get("Retry-After")).toBe("9");
+    const body = await result.json();
+    expect(body.error.message).toContain("reset after 9s"); // last candidate's message still surfaces
+  });
+
+  it("a real failure without Retry-After keeps the verdict header-less", async () => {
+    const { result } = await runCombo(["a/one", "b/two"], (m) =>
+      m === "a/one" ? realFailure(502, "parked", 20) : realFailure(502, "boom", null),
+    );
+
+    expect(result.status).toBe(502);
+    expect(result.headers.get("Retry-After")).toBeNull();
+  });
+});

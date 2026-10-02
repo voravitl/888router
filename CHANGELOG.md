@@ -18,8 +18,11 @@ recognised: the executor retried it as a network error, `chatCore` logged it as 
   `markAccountUnavailable`, no pool parking, no further accounts. This also covers
   a proper 499: `checkFallbackError` has no 499 rule and would cool the account down.
 - **`base.js`** rethrows a client abort instead of retrying it as a 502 network
-  error; **`chatCore.js`** classifies it 499 in the request log/detail;
-  **`streamHandler.handleError`** treats it as an abort (no second `onError`).
+  error; **`chatCore.js`** classifies it 499 in the request log/detail, and so do
+  the non-streaming and SSE→JSON body-read catches (a client that disconnects
+  after the provider's headers is no longer logged as `FAILED 502` / "Invalid
+  JSON response"); **`streamHandler.handleError`** treats it as an abort (no
+  second `onError`).
 - **Combo all-failed verdict carries `Retry-After`**: the earliest known recovery
   (floor 1s, cap 60s) when *every* processed candidate reported a `Retry-After`
   header (what `unavailableResponse()` emits — the combo only read a body field
@@ -30,8 +33,8 @@ recognised: the executor retried it as a network error, `chatCore` logged it as 
 - `tests/translator/golden-url-header` snapshots refreshed (they still held
   `9Router/0.15.145` after #514's bumps).
 
-Not changed: the same account loop exists in the fetch / search / image / tts /
-video handlers (they forward `request.signal` too) — follow-up.
+Not changed: the same account loop exists in the video handler (confirmed by the
+independent review) and probably in fetch / search / image / tts — tracked in #518.
 
 # v0.15.147 (2026-10-02)
 

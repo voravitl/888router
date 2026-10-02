@@ -4,6 +4,7 @@ import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
+import { isClientAbort } from "../../utils/abort.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
@@ -215,6 +216,13 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   return openAIFormatted;
 }
 
+// The client went away while the provider body was being read: a 499, not a
+// provider 502 "Invalid … response" (#517).
+function clientAbortedResult(appendLog) {
+  appendLog({ status: "FAILED 499" });
+  return createErrorResult(499, "Request aborted");
+}
+
 /**
  * Handle non-streaming response from provider.
  */
@@ -233,6 +241,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       try {
         responseBody = await convertResponsesStreamToJson(providerResponse.body);
       } catch (err) {
+        if (isClientAbort(err)) return clientAbortedResult(appendLog);
         appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
         console.error(`[ChatCore] Failed to convert Responses SSE from ${provider}:`, err.message);
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid Responses SSE from ${provider}`);
@@ -250,6 +259,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     try {
       responseBody = await providerResponse.json();
     } catch (err) {
+      if (isClientAbort(err)) return clientAbortedResult(appendLog);
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
