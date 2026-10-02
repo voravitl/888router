@@ -55,8 +55,8 @@ describe("noAuth pool picker honors the strike breaker", () => {
     // auto-rotate path mints `noauth:<poolId>`; the legacy direct path mints
     // bare `noauth`. Both must be consulted. Record 3 strikes as the chat
     // handler would (bare "noauth", the Direct Connection shape), then ask the
-    // picker — pool-a must be skipped because the ACCOUNT is blocked, and the
-    // result must report allRateLimited with a real retryAfter.
+    // picker — pool-a must be skipped because that connection+model pair is
+    // blocked, and the result must report allRateLimited with a real retryAfter.
     await handleProviderQuotaError("opencode", "noauth", 429, MODEL, "public", {});
     await handleProviderQuotaError("opencode", "noauth", 429, MODEL, "public", {});
     const block = await handleProviderQuotaError("opencode", "noauth", 429, MODEL, "public", {});

@@ -148,9 +148,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         if (!pid || exclude.has(`noauth:${pid}`)) continue;
         const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
         // Strike breaker (providerQuota): a pool that tripped the quota
-        // breaker is cache-blocked at the ACCOUNT level for its window even
-        // when its DB park has lapsed — without this the pool is re-selected
-        // immediately and the breaker never engages (review F1, probe-proven).
+        // breaker is cache-blocked for the requested MODEL for its window
+        // even when its DB park has lapsed — without this the pool is
+        // re-selected immediately and the breaker never engages (review F1,
+        // probe-proven).
         // The chat handler reports strikes with whatever connectionId it was
         // given. Auto-rotate pools mint `noauth:<poolId>` connection ids, but
         // the legacy specific-pool strategy returns bare `noauth` — so BOTH
@@ -337,8 +338,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // Quota-tracked: skip if the cache/breaker has this pair blocked. The
       // entry carries the TRUE resetAt (an 80h antigravity account window, or
       // a strike-block deadline), which the persisted modelLock_* cannot hold
-      // — MAX_RATE_LIMIT_COOLDOWN_MS caps it at 30m. Strike-only providers
-      // block at the ACCOUNT level, so every model on that connection skips.
+      // — MAX_RATE_LIMIT_COOLDOWN_MS caps it at 30m. Both the strike breaker
+      // and the quota cache key on connection+MODEL, so only this pair skips
+      // and sibling models on the same account keep serving.
       if (quotaTracked) {
         const blockedUntil = isPairBlocked(providerId, c.id, model);
         if (blockedUntil) {
