@@ -1,3 +1,21 @@
+# v0.15.145 (2026-10-02)
+
+## Fix: bump the Claude CLI fingerprint past the Anthropic model-serving floor (closes #510)
+
+Anthropic gates the newest models (opus-5-5, fable-5-1, sonnet-5-5, opus-4-6, sonnet-4-6)
+behind a minimum Claude Code client version (>= 2.1.280). The gateway advertised
+`claude-cli/2.1.92` (registry) and `2.1.258` (shared constant) and received a live 400
+`claude_code_version_too_old` on every new model — the same root cause as upstream
+OpenClaw #157250 (their stale `ANTHROPIC_CLAUDE_CODE_VERSION`, third recurrence there).
+
+- `CLAUDE_CLI_VERSION` is now the single source (`2.1.287`, verified live via `claude --version`);
+  the registry User-Agent derives from it so the two can never drift again.
+- New structural-guard test pins the `2.1.280` floor: adding a model without a sufficient
+  fingerprint fails CI instead of failing silently in production.
+
+- Independent review: 9-opus APPROVED.
+- Full suite: **3111 pass / 0 fail / 1 expected fail / 80 skipped**, `verify-no-regression` green.
+
 # v0.15.144 (2026-10-01)
 
 ## Complete the claude registry, deliver effort `max`, and repair copy-button suffix order (closes #508)

@@ -4,7 +4,7 @@ import { CLAUDE_CLI_VERSION } from "../providers/shared.js";
 
 const CC_ENTRYPOINT = "sdk-cli";
 
-// Generate billing header matching real Claude Code 2.1.258+ format:
+// Generate billing header matching real Claude Code 2.1.287+ format:
 // x-anthropic-billing-header: cc_version=<ver>.<build>; cc_entrypoint=sdk-cli; cch=<hash>;
 function generateBillingHeader(payload) {
   const content = JSON.stringify(payload);
