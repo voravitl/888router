@@ -1,3 +1,71 @@
+# v0.15.147 (2026-10-02)
+
+## Feat: OpenAI GPT-6.1 Sol + missing GPT-5.x/5.6/o-series registry (closes #513)
+
+`models.dev` (2026-10-02) lists `gpt-6.1-sol` (released 2026-09-29, context
+1.05M, vision+pdf input, reasoning effort low–max) plus the 5.5/5.6 lines and
+`o1-pro`, but the static registry had only `gpt-6-astra` in the GPT-6 family
+and the `/gpt-6/` merge regex in `models/route.js` could only surface ids the
+registry already carried — so every other new model stayed invisible in the
+dashboard sync list until a hand-edit.
+
+- **Registry**: +18 models in `open-sse/providers/registry/openai.js` with
+  capabilities from models.dev (context windows, vision, reasoning):
+  `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6*` (4), `gpt-5.5`,
+  `gpt-5.5-pro`, `gpt-5.4-pro`, `gpt-5.3-codex*` (2), `gpt-5.2-pro`,
+  `gpt-5-pro`, `o1-pro`; existing GPT-5.x entries gained verified caps.
+- **Merge rule**: dropped the per-release `/gpt-6/` regex — the models endpoint
+  now merges EVERY static model the upstream list omits (upstream ordering
+  stays authoritative; deduped). Future releases need only a registry row.
+- Tests: `openai-models-sync.test.js` (+46 lines) asserts the dotted ids and
+  the 5.6/5.5 line merge; `capabilities` + `gpt6-capabilities` suites green.
+
+# v0.15.146 (2026-10-02)
+
+## Fix: combo failover observability + strategy honesty (closes #512)
+
+Live-gateway evidence (container `888route` v0.15.145, 2026-10-02): clients saw
+`API error · Retrying N/10` + `504 stream head TTFT timeout` with no gateway
+trace — `log.warn` was commented out in `src/sse/utils/logger.js`, so every
+`COMBO` warn (stream-head timeout, all-models-failed, quota-limited) was
+discarded. The dominant recorded failure was `fetch connect timeout` 502 on
+`opencode`/`opencode-go` pools (31 of the last 60 error rows in `requestDetails`),
+not TTFT.
+
+- **Restored `log.warn` output** (`src/sse/utils/logger.js`). Combo failover is
+  visible in the gateway log again.
+- **Stream-head timeout cooldown**: a model that hits TTFT/stall timeout is
+  parked 30s (in-memory; helpers `markComboHeadTimeout` /
+  `getComboHeadTimeoutCooldown` / `clearComboHeadTimeoutCooldown`) and skipped
+  at the top of the next request's loop instead of being retried first.
+- **Combo-wide time budget**: new `COMBO_TOTAL_BUDGET_MS` env (default 180s,
+  clamp 10s–600s). The loop breaks out to the all-models-failed path with a
+  504 verdict once exhausted, instead of stacking N × 30s waits.
+- **`X-Router-Decision` on failure verdicts too** (previously success-only),
+  so client retries can be correlated with the gateway reason.
+- **Unknown strategies warn once** instead of silently degrading
+  (`COMBO_ROTATION_STRATEGIES` export; `clearComboUnknownStrategyWarnings`
+  test seam).
+- **Strategy honesty**: `cost-optimized`, `headroom`, `least-used`, `random`
+  had no backend branch — the UI offered 10 strategies while the engine ran 6.
+  The combos select now offers only the 6 implemented ones (derived from
+  `ACTIVE_STRATEGY_IDS`); the help modal marks the other 4 `planned` and
+  disables their select buttons. `p2c`/`reset-aware` copy now describes what
+  the code actually does (list-head-biased sample; fixed 5-minute wall-clock
+  rotation — no load, latency, or quota-header reading).
+- Strategy metadata moved to `src/shared/constants/comboStrategies.js` so UI ↔
+  backend parity is testable without React.
+- Tests: `combo-routing.test.js` (unknown-strategy warn-once, cooldown
+  helpers), new `combo-strategy-ui-parity.test.js` (selectable ↔ implemented,
+  planned labelling, active count).
+- Full suite: **3120 pass / 0 fail / 1 expected fail / 80 skipped**,
+  `verify-no-regression` green.
+
+> `9-opus`, `9-sonnet`, `9-haiku` are still configured with
+> `fallbackStrategy: "headroom"` in the live DB — they now run explicit
+> fallback (with a one-time log warning) instead of an unnamed one. A
+> follow-up should migrate them to `fallback` in settings.
+
 # v0.15.145 (2026-10-02)
 
 ## Fix: bump the Claude CLI fingerprint past the Anthropic model-serving floor (closes #510)

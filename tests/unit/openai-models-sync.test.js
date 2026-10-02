@@ -77,4 +77,50 @@ describe("OpenAI Provider Model Sync (GPT-6 Support)", () => {
       ])
     );
   });
+
+  it("merges GPT-6.1 Sol and the 5.6/5.5 line, not just gpt-6-* ids", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-openai-1",
+      provider: "openai",
+      apiKey: "sk-openai-test-key",
+      isActive: true,
+    });
+
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        object: "list",
+        data: [{ id: "gpt-4o", object: "model", created: 1715368132, owned_by: "system" }],
+      }),
+    });
+
+    const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
+    const res = await GET(new Request("http://localhost/api/providers/conn-openai-1/models"), {
+      params: Promise.resolve({ id: "conn-openai-1" }),
+    });
+
+    const body = await res.json();
+    const modelIds = body.models.map((m) => m.id);
+
+    // The regression: the old merge was gated on /gpt-6/i, so a dotted id like
+    // "gpt-6.1-sol" and the whole gpt-5.6 line never reached the sync list.
+    for (const id of [
+      "gpt-6.1-sol",
+      "gpt-5.6",
+      "gpt-5.6-sol",
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.5",
+      "gpt-5.5-pro",
+      "gpt-5.4-pro",
+      "o1-pro",
+    ]) {
+      expect(modelIds).toContain(id);
+    }
+
+    // Media-only / kind-specific registry entries still merge (they are static
+    // catalogue rows the upstream list omits), but never as duplicates.
+    expect(new Set(modelIds).size).toBe(modelIds.length);
+  });
 });

@@ -1,6 +1,14 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 
-import { getRotatedModels, resetComboRotation } from "../../open-sse/services/combo.js";
+import {
+  COMBO_ROTATION_STRATEGIES,
+  clearComboHeadTimeoutCooldown,
+  clearComboUnknownStrategyWarnings,
+  getComboHeadTimeoutCooldown,
+  getRotatedModels,
+  markComboHeadTimeout,
+  resetComboRotation,
+} from "../../open-sse/services/combo.js";
 
 describe("combo round-robin routing", () => {
   beforeEach(() => {
@@ -54,6 +62,85 @@ describe("combo round-robin routing", () => {
 
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
+  });
+
+  it("returns input order untouched for strategies with no backend implementation", () => {
+    clearComboUnknownStrategyWarnings();
+    const models = ["provider/model-a", "provider/model-b"];
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      // Every strategy the UI offers but the engine never implemented degrades
+      // to plain list order — the combo behaves as fallback.
+      for (const strategy of ["headroom", "cost-optimized", "least-used", "random"]) {
+        expect(COMBO_ROTATION_STRATEGIES.has(strategy)).toBe(false);
+        expect(getRotatedModels(models, "code-xhigh", strategy, 2)).toEqual(models);
+      }
+      // Known strategies stay implemented (round-robin rotates the start
+      // across calls with sticky 1; p2c/reset-aware reorder by construction).
+      resetComboRotation();
+      const first = getRotatedModels(models, "code-rr-check", "round-robin", 1)[0];
+      const second = getRotatedModels(models, "code-rr-check", "round-robin", 1)[0];
+      expect([first, second].sort()).toEqual(["provider/model-a", "provider/model-b"]);
+      expect(first).not.toBe(second);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("warns exactly once per process for an unknown strategy", () => {
+    clearComboUnknownStrategyWarnings();
+    const models = ["provider/model-a", "provider/model-b"];
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      getRotatedModels(models, "combo-a", "headroom");
+      getRotatedModels(models, "combo-b", "headroom");
+      getRotatedModels(models, "combo-a", "cost-optimized");
+      const headroomWarns = warnSpy.mock.calls.filter(([msg]) => String(msg).includes('"headroom"'));
+      const costWarns = warnSpy.mock.calls.filter(([msg]) => String(msg).includes('"cost-optimized"'));
+      expect(headroomWarns).toHaveLength(1);
+      expect(costWarns).toHaveLength(1);
+      expect(String(headroomWarns[0][0])).toContain("using list order (fallback)");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("does not warn for implemented strategies", () => {
+    const models = ["provider/model-a", "provider/model-b"];
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      for (const strategy of ["fallback", "round-robin", "cache-optimized", "p2c", "reset-aware", "reset-window"]) {
+        getRotatedModels(models, "code-xhigh", strategy, 1, strategy === "cache-optimized" ? { messages: [] } : null);
+      }
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+describe("combo stream-head timeout cooldown", () => {
+  afterEach(() => {
+    clearComboHeadTimeoutCooldown();
+  });
+
+  it("parks a model for 30s after markComboHeadTimeout", () => {
+    const before = Date.now();
+    markComboHeadTimeout("provider/model-a");
+    const until = getComboHeadTimeoutCooldown("provider/model-a");
+    expect(until).toBeGreaterThan(before);
+    expect(until - before).toBeLessThanOrEqual(30 * 1000);
+    expect(getComboHeadTimeoutCooldown("provider/model-b")).toBe(0);
+  });
+
+  it("clearComboHeadTimeoutCooldown clears one model or all", () => {
+    markComboHeadTimeout("provider/model-a");
+    markComboHeadTimeout("provider/model-b");
+    clearComboHeadTimeoutCooldown("provider/model-a");
+    expect(getComboHeadTimeoutCooldown("provider/model-a")).toBe(0);
+    expect(getComboHeadTimeoutCooldown("provider/model-b")).toBeGreaterThan(0);
+    clearComboHeadTimeoutCooldown();
+    expect(getComboHeadTimeoutCooldown("provider/model-b")).toBe(0);
   });
 });
 
