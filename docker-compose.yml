@@ -123,8 +123,12 @@ services:
     image: ghcr.io/headroomlabs-ai/headroom:latest
     container_name: headroom
     restart: "no"
+    # Loopback-only on the host: headroom now listens on 0.0.0.0 inside the
+    # container (HEADROOM_HOST below) and /v1/compress is unauthenticated, so a
+    # bare "8787:8787" would put it on the LAN. The gateway reaches it over the
+    # compose network (http://headroom:8787), not through this mapping.
     ports:
-      - "8787:8787"
+      - "127.0.0.1:8787:8787"
     deploy:
       resources:
         limits:
@@ -136,6 +140,21 @@ services:
       MKL_NUM_THREADS: "2"
       VECLIB_MAXIMUM_THREADS: "2"
       NUMEXPR_NUM_THREADS: "2"
+      # v0.39.1 binds 127.0.0.1 by default, so the gateway container got
+      # ECONNREFUSED on http://headroom:8787 while the in-container healthcheck
+      # (127.0.0.1) stayed green: compression was silently skipped on every
+      # request ("[HEADROOM] skipped: request failed: ECONNREFUSED", #515).
+      # Same four settings the k8s manifest carries (k8s/base/headroom.yaml).
+      HEADROOM_HOST: "0.0.0.0"
+      # v0.39.1 also restricts /v1/compress to loopback peers (peer IP + Host
+      # header). The gateway calls it from another container, so without this
+      # every compress is refused and the toggle silently no-ops.
+      HEADROOM_COMPRESS_ALLOW_REMOTE: "1"
+      # Default pool size is os.cpu_count() = the host's cores, not the 1.5 CPU
+      # limit above; bound it, and bound how long one compression may hold a
+      # request (the gateway abandons /v1/compress after HEADROOM_TIMEOUT_MS).
+      HEADROOM_COMPRESSION_MAX_WORKERS: "2"
+      HEADROOM_COMPRESSION_TIMEOUT_SECONDS: "3"
     logging:
       driver: "json-file"
       options:
