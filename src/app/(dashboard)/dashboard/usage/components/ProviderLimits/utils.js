@@ -21,6 +21,54 @@ export const QUOTA_SORT_OPTIONS = [
   { value: "remaining-desc", label: "% quota: high to low" },
 ];
 
+export const QUOTA_FETCH_CONCURRENCY = 3;
+
+// Fast providers prioritized first in progressive quota loading
+export const PROVIDER_SPEED_RANK = {
+  claude: 1,
+  codex: 1,
+  grok: 1,
+  "grok-cli": 1,
+  xai: 1,
+  github: 2,
+  ollama: 2,
+  deepseek: 2,
+  qwen: 2,
+  qoder: 2,
+  glm: 2,
+  minimax: 2,
+  kiro: 4,
+  antigravity: 5,
+  "gemini-cli": 5,
+};
+
+export function getProviderSpeedRank(provider) {
+  return PROVIDER_SPEED_RANK[provider?.toLowerCase()] || 3;
+}
+
+export async function mapConcurrent(items, limit, asyncFn) {
+  if (!items || !items.length) return [];
+  const results = new Array(items.length);
+  let index = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await asyncFn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+export function sortConnectionsForFetch(connections) {
+  return [...connections].sort((a, b) => {
+    const rankA = getProviderSpeedRank(a.provider);
+    const rankB = getProviderSpeedRank(b.provider);
+    if (rankA !== rankB) return rankA - rankB;
+    return (a.priority ?? 0) - (b.priority ?? 0);
+  });
+}
+
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 export function getConnectionLabel(connection) {
   return connection.name?.trim()

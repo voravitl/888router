@@ -9,12 +9,8 @@ import {
   parseQuotaData,
   calculatePercentage,
   getConnectionLabel,
-  getConnectionQuotaRemaining,
   sortVisibleConnections,
-  buildLoadingState,
-  filterQuotaStateByConnections,
   getConnectionsEmptyMessage,
-  getPageSizeLabel,
   getConnectionsPaginationSummary,
   getSafePagination,
   getSafeTotals,
@@ -25,6 +21,9 @@ import {
   getQuotaCache,
   setQuotaCache,
   QUOTA_CACHE_KEY,
+  QUOTA_FETCH_CONCURRENCY,
+  mapConcurrent,
+  sortConnectionsForFetch,
   REFRESH_INTERVAL_MS,
   CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
@@ -221,7 +220,16 @@ export default function ProviderLimits() {
         `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
       );
       const url = `/api/usage/${connectionId}${force ? "?force=1" : ""}`;
-      const response = await fetch(url);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+      let response;
+      try {
+        response = await fetch(url, { signal: controller.signal });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -276,13 +284,18 @@ export default function ProviderLimits() {
       }));
       setQuotaCache(connectionId, quotaEntry);
     } catch (error) {
+      const isTimeout = error.name === "AbortError";
+      const errorMsg = isTimeout
+        ? "Quota fetch timed out (12s)"
+        : (error.message || "Failed to fetch quota");
+
       console.error(
         `[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`,
         error,
       );
       setErrors((prev) => ({
         ...prev,
-        [connectionId]: error.message || "Failed to fetch quota",
+        [connectionId]: errorMsg,
       }));
     } finally {
       setLoading((prev) => ({ ...prev, [connectionId]: false }));
@@ -473,19 +486,20 @@ export default function ProviderLimits() {
 
     try {
       const visibleConnections = await fetchConnections(page);
+      const toFetch = sortConnectionsForFetch(visibleConnections.filter(shouldFetch));
 
-      setLoading(buildLoadingState(visibleConnections));
-      setErrors((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
-      setQuotaData((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
+      // SWR: Only mark loading for connections without quota data
+      setLoading((prev) => {
+        const next = { ...prev };
+        toFetch.forEach((c) => {
+          if (!quotaData[c.id]) next[c.id] = true;
+        });
+        return next;
+      });
 
-      await Promise.all(
-        visibleConnections
-          .filter(shouldFetch)
-          .map((conn) => fetchQuota(conn.id, conn.provider)),
+      // Progressive fetching with concurrency limit
+      await mapConcurrent(toFetch, QUOTA_FETCH_CONCURRENCY, (conn) =>
+        fetchQuota(conn.id, conn.provider)
       );
 
       setLastUpdated(new Date());
@@ -494,7 +508,7 @@ export default function ProviderLimits() {
     } finally {
       setRefreshingAll(false);
     }
-  }, [refreshingAll, fetchConnections, fetchQuota, page]);
+  }, [refreshingAll, fetchConnections, fetchQuota, page, quotaData]);
 
   useEffect(() => {
     const initializeData = async () => {
@@ -502,18 +516,29 @@ export default function ProviderLimits() {
       const visibleConnections = await fetchConnections(page);
       setConnectionsLoading(false);
 
-      // Always fetch fresh quota on mount, no cache display
-      setLoading(buildLoadingState(visibleConnections));
-      setErrors((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
-      setQuotaData((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
+      // SWR Hydration: Hydrate initial UI immediately from localStorage cache
+      const cache = getQuotaCache();
+      const initialQuotaData = {};
+      const initialLoadingState = {};
+
+      visibleConnections.forEach((conn) => {
+        if (cache[conn.id]) {
+          initialQuotaData[conn.id] = cache[conn.id];
+          initialLoadingState[conn.id] = false;
+        } else {
+          initialLoadingState[conn.id] = true;
+        }
+      });
+
+      setQuotaData(initialQuotaData);
+      setLoading(initialLoadingState);
+
+      // Progressive background fetch: fast providers first, concurrency limited
+      const sorted = sortConnectionsForFetch(visibleConnections);
+      await mapConcurrent(sorted, QUOTA_FETCH_CONCURRENCY, (conn) =>
+        fetchQuota(conn.id, conn.provider)
       );
 
-      await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
       setLastUpdated(new Date());
     };
 
@@ -697,7 +722,6 @@ export default function ProviderLimits() {
   );
   const connectionsPageSummary = getConnectionsPaginationSummary(pagination);
   const isCustomPageSize = !ACCOUNT_PAGE_SIZE_OPTIONS.includes(pageSize);
-  const pageSizeLabel = getPageSizeLabel(pageSize, isCustomPageSize);
 
   if (!connectionsLoading && !hasEligibleConnections) {
     return (
@@ -943,7 +967,7 @@ export default function ProviderLimits() {
             onClick={() => refreshAll(true)}
             disabled={refreshingAll}
             className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-black/10 px-2 text-xs text-text-primary transition-colors hover:bg-black/5 dark:border-white/10 dark:hover:bg-white/5 disabled:opacity-50"
-            title="Refresh all"
+            title={lastUpdated ? `Refreshed ${lastUpdated.toLocaleTimeString()}` : "Refresh all"}
           >
             <span
               className={`material-symbols-outlined text-[14px] ${refreshingAll ? "animate-spin" : ""}`}
