@@ -10,6 +10,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelContextWindows, resolveContextWindow } from "@/shared/hooks/useModelContextWindows";
 import { withClaudeCodeSuffix } from "@/shared/utils/claudeCodeModelId";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { ACTIVE_STRATEGY_IDS } from "@/shared/constants/comboStrategies";
 
 import AutoComboCatalog from "./AutoComboCatalog.jsx";
 
@@ -329,18 +330,17 @@ export default function CombosPage() {
   );
 }
 
+// Only strategies the gateway actually implements (see STRATEGY_DETAILS for the
+// full list, including `planned` entries that are documented but not selectable).
+// Derived from the shared constants so the select can never drift from the backend.
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Priority Fallback — try in order 🥇" },
   { value: "round-robin", label: "Round Robin — cycle evenly 🔄" },
   { value: "cache-optimized", label: "Cache-Optimized — pin prompt prefix for 90% cache hits 🎯" },
-  { value: "p2c", label: "P2C — Power-of-Two-Choices latency minimization ⚡" },
-  { value: "reset-aware", label: "Reset-Aware — prioritize expiring quota windows 📊" },
-  { value: "cost-optimized", label: "Cost-Optimized — lowest token cost first 💰" },
-  { value: "headroom", label: "Headroom — highest remaining quota first 🔋" },
-  { value: "least-used", label: "Least-Used — lowest active load ⚖️" },
-  { value: "random", label: "Random — uniform load balancing 🎲" },
+  { value: "p2c", label: "P2C — Power-of-Two-Choices ⚡" },
+  { value: "reset-aware", label: "Reset-Aware — 5-minute rotation 📊" },
   { value: "fusion", label: "Fusion — fan-out panel + AI Judge synthesis 🧬" },
-];
+].filter((o) => ACTIVE_STRATEGY_IDS.includes(o.value));
 
 function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], modelAliases = {}, copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, onOpenStrategyHelp }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);

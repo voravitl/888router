@@ -291,6 +291,29 @@ export function computePrefixHash(body) {
 }
 
 /**
+ * Strategy names getRotatedModels() actually implements. Anything else falls
+ * through to plain list order — see the unknown-strategy warning below.
+ * `fusion` is handled by handleFusionChat (never reaches here).
+ */
+export const COMBO_ROTATION_STRATEGIES = new Set([
+  "fallback",
+  "round-robin",
+  "cache-optimized",
+  "p2c",
+  "reset-aware",
+  "reset-window",
+]);
+
+// Names already warned about, so a misconfigured combo logs once per process
+// instead of once per request.
+const warnedUnknownStrategies = new Set();
+
+/** Clear the unknown-strategy warn-once state. Test seam only. */
+export function clearComboUnknownStrategyWarnings() {
+  warnedUnknownStrategies.clear();
+}
+
+/**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
  * @param {string} comboName - Name of the combo
@@ -302,6 +325,17 @@ export function computePrefixHash(body) {
 export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, body = null) {
   if (!models || models.length <= 1) {
     return models;
+  }
+
+  // A strategy the UI offers but the engine never implemented (e.g.
+  // "headroom", "cost-optimized") used to degrade silently, so a combo
+  // configured with one looked healthy in the dashboard while running plain
+  // fallback. Warn once so the mismatch is visible in the gateway log.
+  if (strategy && strategy !== "fallback" && !COMBO_ROTATION_STRATEGIES.has(strategy)) {
+    if (!warnedUnknownStrategies.has(strategy)) {
+      warnedUnknownStrategies.add(strategy);
+      console.warn(`[combo] unknown strategy "${strategy}" on combo "${comboName || ""}" — using list order (fallback)`);
+    }
   }
 
   // Cache-optimized: pins the same prompt prefix/instructions to the same model index
@@ -558,9 +592,51 @@ export function wrapSelectedBody(response, cleanup, onCancel) {
   });
 }
 
+/**
+ * In-memory cooldown for models whose stream head timed out. A TTFT/stall
+ * timeout means the upstream is slow, not dead — but retrying it first on the
+ * NEXT request is a guaranteed repeat of the same 30s stall. Parking the model
+ * briefly lets the next request start from a healthy candidate. Pure
+ * process-local state (no cross-module coupling); exported helpers exist for
+ * tests. Upgrade path: move to healthStore when cross-provider cooldown
+ * coordination is needed.
+ */
+const comboHeadTimeoutCooldowns = new Map();
+const COMBO_HEAD_TIMEOUT_COOLDOWN_MS = 30 * 1000;
+
+/** Epoch ms until which `modelStr` is parked after a stream-head timeout, or 0. */
+export function getComboHeadTimeoutCooldown(modelStr) {
+  return comboHeadTimeoutCooldowns.get(modelStr) || 0;
+}
+
+/** Park `modelStr` for `ms` (default 30s). Exported for tests. */
+export function markComboHeadTimeout(modelStr, ms = COMBO_HEAD_TIMEOUT_COOLDOWN_MS) {
+  comboHeadTimeoutCooldowns.set(modelStr, Date.now() + ms);
+}
+
+/** Clear one or all head-timeout cooldowns. Exported for tests. */
+export function clearComboHeadTimeoutCooldown(modelStr) {
+  if (modelStr) comboHeadTimeoutCooldowns.delete(modelStr);
+  else comboHeadTimeoutCooldowns.clear();
+}
+
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null }) {
   // Apply rotation strategy if enabled (supports round-robin, cache-optimized)
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit, body);
+
+  // Combo-wide time budget: per-candidate deadlines (TTFT/stall/head) stack, so
+  // N slow models × 30s each can hold one request for minutes before a 504 —
+  // and the client then retries the whole combo 10 more times. The budget caps
+  // total combo time; the loop breaks out to the all-models-failed path once
+  // exhausted. COMBO_TOTAL_BUDGET_MS env, default 180s.
+  const parseTotalBudgetMs = (val, def = 180000, min = 10000, max = 600000) => {
+    if (val == null || val === "") return def;
+    const n = Number(val);
+    if (!Number.isFinite(n) || n <= 0) return def;
+    return Math.min(Math.max(Math.round(n), min), max);
+  };
+  const COMBO_TOTAL_BUDGET_MS = parseTotalBudgetMs(process.env.COMBO_TOTAL_BUDGET_MS);
+  const comboStartMs = Date.now();
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -588,6 +664,25 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     }
 
     const modelStr = rotatedModels[i];
+
+    // Skip candidates parked by a recent stream-head timeout — retrying the
+    // same slow model first is a guaranteed repeat of the same stall.
+    const parkedUntil = getComboHeadTimeoutCooldown(modelStr);
+    if (parkedUntil > Date.now()) {
+      log.info("COMBO", `Skipping model ${i + 1}/${rotatedModels.length}: ${modelStr} (stream-head timeout cooldown, ${Math.ceil((parkedUntil - Date.now()) / 1000)}s left)`);
+      lastError = lastError ? `${lastError}; ${modelStr} in stream-head timeout cooldown` : `${modelStr} in stream-head timeout cooldown`;
+      continue;
+    }
+
+    // Combo-wide time budget: stop starting new candidates once exhausted so
+    // one request cannot stack N × TTFT waits before returning a verdict.
+    if (Date.now() - comboStartMs >= COMBO_TOTAL_BUDGET_MS) {
+      log.warn("COMBO", `Combo "${comboName || ""}" exceeded total time budget (${COMBO_TOTAL_BUDGET_MS}ms) after ${i}/${rotatedModels.length} candidates`);
+      lastError = lastError ? `${lastError}; combo total time budget exceeded (${COMBO_TOTAL_BUDGET_MS}ms)` : `combo total time budget exceeded (${COMBO_TOTAL_BUDGET_MS}ms)`;
+      if (!lastStatus) lastStatus = 504;
+      break;
+    }
+
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     const candidateAbortCtrl = new AbortController();
@@ -741,6 +836,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             if (streamHeadTimedOut) {
               await safeCancelReader(reader);
               if (signal?.aborted) break;
+              // Park the slow model so the next request starts from a healthy
+              // candidate instead of repeating the same stall.
+              markComboHeadTimeout(modelStr);
               lastError = `stream head ${timeoutType} timeout (${timedOutDurationMs}ms)`;
               if (!lastStatus) lastStatus = 504;
               continue;
@@ -1183,6 +1281,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   const status = allDisabled ? 503 : (lastStatus || 503);
   const msg = lastError || "All combo models unavailable";
 
+  // Attach the router decision to failure verdicts too, not just successes:
+  // without it a client retry ("API error · Retrying N/10" with no detail) can
+  // never be correlated with the gateway reason that caused it.
+  const failureMeta = { strategy: comboStrategy, model: "none", fallbackCount: rotatedModels.length, status: "error" };
+
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);
     log.warn("COMBO", `All models quota-limited, returning 429 retry-after (${retryHuman}) | ${msg}`);
@@ -1191,13 +1294,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     // retries after the reset window rather than combo switching to a model
     // that shares the same exhausted quota/pool. The layer below (chat.js +
     // auth.js) has already tried every eligible proxy pool before this 429.
-    return unavailableResponse(HTTP_STATUS.RATE_LIMITED, msg, earliestRetryAfter, retryHuman);
+    return attachRouterDecisionHeader(
+      unavailableResponse(HTTP_STATUS.RATE_LIMITED, msg, earliestRetryAfter, retryHuman),
+      failureMeta,
+    );
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);
-  return new Response(
-    JSON.stringify({ error: { message: msg } }),
-    { status, headers: { "Content-Type": "application/json" } }
+  return attachRouterDecisionHeader(
+    new Response(
+      JSON.stringify({ error: { message: msg } }),
+      { status, headers: { "Content-Type": "application/json" } }
+    ),
+    failureMeta,
   );
 }
 
