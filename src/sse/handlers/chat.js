@@ -20,6 +20,7 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { resolveUniversalToolsMode } from "open-sse/translator/concerns/universalToolPrompt.js";
 import { DEFAULT_HEADROOM_URL, resolveHeadroomUrl } from "@/lib/headroom/detect";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { isClientAbort } from "open-sse/utils/abort.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -328,6 +329,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       }
       return result.response;
+    }
+
+    // The client is gone. That is not an account failure: marking it parked the
+    // proxy pool (30s) and the loop then walked every remaining account, each
+    // failing instantly on the same aborted signal — one cancelled request took
+    // the whole provider out of rotation (#517). Next aborts with ResponseAborted
+    // (not AbortError), so trust the signal itself, not the failure's shape.
+    if (isClientAbort(null, request?.signal || options?.signal)) {
+      return result.response ?? errorResponse(499, "Request aborted");
     }
 
     // 409/429 on quota-tracked providers: consult/refresh the live quota cache

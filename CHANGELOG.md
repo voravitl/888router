@@ -1,3 +1,41 @@
+# v0.15.148 (2026-10-02)
+
+## Fix: a client abort no longer parks accounts/pools (closes #517)
+
+Live-gateway evidence (container `888route` v0.15.147, 16:03 +07): one client
+abort (`Client aborted request during combo execution (9-free)`) was followed in
+the same second by `pool … parked 30s [502]` for all three opencode relay pools
+(two of them failing with no network time) and three `All models failed`
+verdicts, until the parks expired. Next.js 16.3 aborts `request.signal` with
+`ResponseAborted` (empty message, name ≠ `AbortError`), which no abort check
+recognised: the executor retried it as a network error, `chatCore` logged it as a
+502 "Unknown error", and the account loop in `src/sse/handlers/chat.js` called
+`markAccountUnavailable` and walked every remaining pool.
+
+- **`isClientAbort(error, signal)`** (`open-sse/utils/abort.js`): aborted signal,
+  or `AbortError` / `ResponseAborted`.
+- **`chat.js`**: after a failed attempt on an aborted client signal, return — no
+  `markAccountUnavailable`, no pool parking, no further accounts. This also covers
+  a proper 499: `checkFallbackError` has no 499 rule and would cool the account down.
+- **`base.js`** rethrows a client abort instead of retrying it as a 502 network
+  error; **`chatCore.js`** classifies it 499 in the request log/detail, and so do
+  the non-streaming and SSE→JSON body-read catches (a client that disconnects
+  after the provider's headers is no longer logged as `FAILED 502` / "Invalid
+  JSON response"); **`streamHandler.handleError`** treats it as an abort (no
+  second `onError`).
+- **Combo all-failed verdict carries `Retry-After`**: the earliest known recovery
+  (floor 1s, cap 60s) when *every* processed candidate reported a `Retry-After`
+  header (what `unavailableResponse()` emits — the combo only read a body field
+  and dropped it) or was skipped by the head-timeout cooldown. Status code
+  unchanged; with any hint-less candidate no header is added.
+- **`formatProviderError`** names the error class when the message is empty
+  instead of printing `Unknown error`.
+- `tests/translator/golden-url-header` snapshots refreshed (they still held
+  `9Router/0.15.145` after #514's bumps).
+
+Not changed: the same account loop exists in the video handler (confirmed by the
+independent review) and probably in fetch / search / image / tts — tracked in #518.
+
 # v0.15.147 (2026-10-02)
 
 ## Feat: OpenAI GPT-6.1 Sol + missing GPT-5.x/5.6/o-series registry (closes #513)

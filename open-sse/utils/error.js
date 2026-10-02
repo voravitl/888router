@@ -145,7 +145,9 @@ export function unavailableResponse(statusCode, message, retryAfter, retryAfterH
  */
 export function formatProviderError(error, provider, model, statusCode) {
   const code = statusCode || error.code || "FETCH_FAILED";
-  const message = error.message || "Unknown error";
+  // Some errors carry no message (Next's ResponseAborted): name the class
+  // rather than printing a bare "Unknown error" that hides what happened (#517).
+  const message = error.message || (error.name && error.name !== "Error" ? error.name : "Unknown error");
   // Expose low-level cause (e.g. UND_ERR_SOCKET, ECONNRESET, ETIMEDOUT) for diagnosing fetch failures
   const causeCode = error.cause?.code;
   const causeMsg = error.cause?.message;

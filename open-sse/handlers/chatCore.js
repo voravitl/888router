@@ -10,6 +10,7 @@ import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { isClientAbort } from "../utils/abort.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -385,15 +386,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
+    // The client going away is a 499, not a provider failure. Next aborts the
+    // request signal with ResponseAborted (not AbortError), so trust the signal
+    // too — otherwise it is logged and classified as a 502 "Unknown error" (#517).
+    const clientAborted = isClientAbort(error, signal);
     trackPendingRequest(model, provider, connectionId, false, true);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${clientAborted ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId, clientModel,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
-      response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
+      response: { error: error.message || String(error), status: clientAborted ? 499 : 502, thinking: null },
       status: "error",
       prunerStats,
       rtkStats,
@@ -401,7 +406,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       headroomDiagnostics
     }, { id: detailId })).catch(() => { });
 
-    if (error.name === "AbortError") {
+    if (clientAborted) {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }

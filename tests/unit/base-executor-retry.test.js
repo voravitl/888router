@@ -105,3 +105,75 @@ describe("BaseExecutor.execute — computeRetryDelay hook veto", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+// #517: Next aborts request.signal with `new ResponseAborted()` (name
+// "ResponseAborted", empty message), not an AbortError. The executor must hand
+// that back as the abort it is — not retry it as a 502 network error, and not
+// try the next fallback url on a signal that is already aborted.
+describe("BaseExecutor.execute — client abort is not a retryable network error", () => {
+  class ResponseAborted extends Error {
+    constructor(...args) {
+      super(...args);
+      this.name = "ResponseAborted";
+    }
+  }
+
+  async function runAborted(config, reason) {
+    const ac = new AbortController();
+    fetchMock.mockImplementationOnce(async () => {
+      ac.abort(reason);
+      throw reason;
+    });
+    const ex = makeExec(config);
+    let thrown = null;
+    try {
+      await ex.execute({ model: "m", body: {}, stream: false, credentials: creds, signal: ac.signal });
+    } catch (e) {
+      thrown = e;
+    }
+    return thrown;
+  }
+
+  it("rethrows ResponseAborted without retrying the 502 config", async () => {
+    const reason = new ResponseAborted();
+    const thrown = await runAborted(
+      { baseUrl: "https://x/api", retry: { 502: { attempts: 3, delayMs: 0 } } },
+      reason,
+    );
+    expect(thrown).toBe(reason);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not walk the fallback urls once the client is gone", async () => {
+    const reason = new ResponseAborted();
+    const thrown = await runAborted(
+      { baseUrls: ["https://a/api", "https://b/api"], retry: { 502: { attempts: 0 } } },
+      reason,
+    );
+    expect(thrown).toBe(reason);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats an aborted signal as the abort even when fetch reports a generic error", async () => {
+    const generic = new Error("fetch failed");
+    const thrown = await runAborted(
+      { baseUrl: "https://x/api", retry: { 502: { attempts: 3, delayMs: 0 } } },
+      generic,
+    );
+    expect(thrown).toBe(generic);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still retries a genuine network error when the client is still connected", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api", retry: { 502: { attempts: 1, delayMs: 0 } } });
+    fetchMock
+      .mockImplementationOnce(async () => { throw new Error("ECONNRESET"); })
+      .mockResolvedValueOnce(res(200));
+    const out = await ex.execute({
+      model: "m", body: {}, stream: false, credentials: creds,
+      signal: new AbortController().signal,
+    });
+    expect(out.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
