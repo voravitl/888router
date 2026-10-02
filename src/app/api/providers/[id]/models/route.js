@@ -1094,16 +1094,20 @@ export async function GET(request, { params }) {
     const parsed = config.parseResponse(data);
     let models = (Array.isArray(parsed) && parsed.length > 0) ? [...parsed] : (pDef?.models ? [...pDef.models] : []);
 
-    // For openai and codex, ensure newly released static registry models (such as GPT-6 variants)
-    // are merged into the synced list so users can select and sync newly released models
+    // For openai and codex, merge static registry models the upstream /models
+    // response does not carry yet, so a freshly released model is selectable
+    // before OpenAI lists it upstream. This used to be gated on a `/gpt-6/`
+    // regex, which meant every OTHER new model (GPT-6.1 Sol, the gpt-5.6
+    // line, gpt-5.5, o1-pro, …) stayed invisible until someone hand-edited the
+    // registry AND widened the regex. Merging every unseen static model removes
+    // the per-release regex edit; dedup keeps upstream ordering authoritative.
     if ((connection.provider === "openai" || connection.provider === "codex") && pDef?.models) {
       const seen = new Set(models.map((m) => (typeof m === "string" ? m : m.id)));
       for (const sm of pDef.models) {
         const id = typeof sm === "string" ? sm : sm.id;
-        if (/gpt-6/i.test(id) && !seen.has(id)) {
-          seen.add(id);
-          models.push(typeof sm === "string" ? { id: sm, name: sm } : { ...sm, id: sm.id, name: sm.name || sm.id });
-        }
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        models.push(typeof sm === "string" ? { id: sm, name: sm } : { ...sm, id: sm.id, name: sm.name || sm.id });
       }
     }
 

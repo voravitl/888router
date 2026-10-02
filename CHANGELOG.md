@@ -1,3 +1,25 @@
+# v0.15.147 (2026-10-02)
+
+## Feat: OpenAI GPT-6.1 Sol + missing GPT-5.x/5.6/o-series registry (closes #513)
+
+`models.dev` (2026-10-02) lists `gpt-6.1-sol` (released 2026-09-29, context
+1.05M, vision+pdf input, reasoning effort low–max) plus the 5.5/5.6 lines and
+`o1-pro`, but the static registry had only `gpt-6-astra` in the GPT-6 family
+and the `/gpt-6/` merge regex in `models/route.js` could only surface ids the
+registry already carried — so every other new model stayed invisible in the
+dashboard sync list until a hand-edit.
+
+- **Registry**: +18 models in `open-sse/providers/registry/openai.js` with
+  capabilities from models.dev (context windows, vision, reasoning):
+  `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6*` (4), `gpt-5.5`,
+  `gpt-5.5-pro`, `gpt-5.4-pro`, `gpt-5.3-codex*` (2), `gpt-5.2-pro`,
+  `gpt-5-pro`, `o1-pro`; existing GPT-5.x entries gained verified caps.
+- **Merge rule**: dropped the per-release `/gpt-6/` regex — the models endpoint
+  now merges EVERY static model the upstream list omits (upstream ordering
+  stays authoritative; deduped). Future releases need only a registry row.
+- Tests: `openai-models-sync.test.js` (+46 lines) asserts the dotted ids and
+  the 5.6/5.5 line merge; `capabilities` + `gpt6-capabilities` suites green.
+
 # v0.15.146 (2026-10-02)
 
 ## Fix: combo failover observability + strategy honesty (closes #512)
