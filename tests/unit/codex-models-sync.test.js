@@ -62,6 +62,12 @@ describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
             supported_reasoning_levels: [{ effort: "medium" }],
           },
           {
+            slug: "gpt-6.1-sol",
+            display_name: "GPT-6.1-Sol from upstream",
+            max_context_window: 1050000,
+            input_modalities: ["text", "image"],
+          },
+          {
             slug: "gpt-reserve",
             display_name: "GPT-Reserve",
             max_context_window: 872000,
@@ -93,9 +99,19 @@ describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
 
     // Primary models present
     expect(modelIds).toContain("gpt-6-astra");
+    expect(modelIds).toContain("gpt-6.1-sol");
     expect(modelIds).toContain("gpt-6-sol");
     expect(modelIds).toContain("gpt-6-luna");
+    expect(modelIds).toContain("gpt-6.1-sol-review");
     expect(modelIds).toContain("gpt-reserve");
+    expect(body.models.filter((m) => m.id === "gpt-6.1-sol")).toHaveLength(1);
+    expect(body.models.find((m) => m.id === "gpt-6.1-sol")).toMatchObject({
+      name: "GPT-6.1-Sol from upstream",
+      context_length: 1050000,
+      contextWindow: 1050000,
+      vision: true,
+    });
+    expect(body.models.filter((m) => m.id === "gpt-6.1-sol-review")).toHaveLength(1);
 
     // Auto-generated review pairs present
     expect(modelIds).toContain("gpt-6-astra-review");
@@ -134,7 +150,7 @@ describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
       isActive: true,
     });
 
-    // Upstream returns older list without gpt-6-sol / gpt-6-luna
+    // Upstream returns older list without GPT-6 models.
     mocks.fetch.mockResolvedValue({
       ok: true,
       status: 200,
@@ -160,7 +176,17 @@ describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
 
     // Static registry GPT-6 models merged
     expect(modelIds).toContain("gpt-6-astra");
+    expect(modelIds).toContain("gpt-6.1-sol");
+    expect(modelIds).toContain("gpt-6.1-sol-review");
     expect(modelIds).toContain("gpt-6-sol");
     expect(modelIds).toContain("gpt-6-luna");
+    expect(body.models.filter((m) => m.id === "gpt-6.1-sol")).toHaveLength(1);
+    expect(body.models.filter((m) => m.id === "gpt-6.1-sol-review")).toHaveLength(1);
+    expect(mocks.stampSyncedModels).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ connectionId: "conn-codex-2", modelId: "gpt-6.1-sol" }),
+        expect.objectContaining({ connectionId: "conn-codex-2", modelId: "gpt-6.1-sol-review" }),
+      ])
+    );
   });
 });

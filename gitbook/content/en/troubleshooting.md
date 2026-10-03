@@ -344,6 +344,12 @@ Common issues and solutions when using 9Router.
 
 ---
 
+## A new OpenAI model is missing from Codex sync
+
+OpenAI API and OpenAI Codex have separate provider registries. Adding a model to the OpenAI API registry does not add it to Codex. A successful sync preserves upstream entries and supplements missing entries from the selected provider's registry.
+
+Check the Codex upstream catalog or current Codex client catalog before adding a model to the Codex registry. Use the existing review-model helper, and test both a missing upstream entry and an upstream entry whose metadata must remain authoritative. A catalog entry alone does not prove account access.
+
 ## Need More Help?
 
 - **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)

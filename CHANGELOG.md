@@ -1,3 +1,11 @@
+# v0.15.149 (2026-10-03)
+
+## Fix: GPT-6.1 Sol missing from OpenAI Codex model sync
+
+- Add `gpt-6.1-sol` to the Codex static registry so successful model sync can include it and its generated review entry when the upstream catalog omits them.
+- Preserve upstream metadata and avoid duplicate base/review entries; regression tests cover both upstream and static fallback paths.
+- Evidence: local Codex model catalog fetched 2026-10-03 for client `0.160.0` lists `gpt-6.1-sol` as visible and API-supported. Catalog inclusion does not guarantee access for every account.
+
 # v0.15.148 (2026-10-02)
 
 ## Fix: a client abort no longer parks accounts/pools (closes #517)
