@@ -17,11 +17,18 @@ const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   getModelInfo: vi.fn(),
   getComboModels: vi.fn(),
+  ensureModelContextLoaded: vi.fn(async () => {}),
   handleChatCore: vi.fn(),
+  handleComboChat: vi.fn(),
+  updateHealthEma: vi.fn(() => ({})),
+  updateProviderConnection: vi.fn(async () => {}),
   checkAndRefreshToken: vi.fn(),
 }));
 
 vi.mock("open-sse/index.js", () => ({}));
+vi.mock("@/sse/services/modelContext.js", () => ({
+  ensureModelContextLoaded: mocks.ensureModelContextLoaded,
+}));
 
 vi.mock("@/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
@@ -41,17 +48,22 @@ vi.mock("open-sse/utils/claudeHeaderCache.js", () => ({ cacheClaudeHeaders: vi.f
 
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
-  updateProviderConnection: vi.fn(async () => {}),
+  updateProviderConnection: mocks.updateProviderConnection,
 }));
 
 vi.mock("open-sse/services/accountScoring.js", () => ({
   isAccountQualityFailure: vi.fn(() => false),
-  updateHealthEma: vi.fn(() => ({})),
+  updateHealthEma: mocks.updateHealthEma,
 }));
 
 vi.mock("@/sse/services/model.js", () => ({
   getModelInfo: mocks.getModelInfo,
   getComboModels: mocks.getComboModels,
+}));
+
+vi.mock("open-sse/services/combo.js", async (importOriginal) => ({
+  ...await importOriginal(),
+  handleComboChat: mocks.handleComboChat,
 }));
 
 vi.mock("open-sse/handlers/chatCore.js", () => ({
@@ -138,6 +150,93 @@ describe("handleChat account loop on a client abort (#517)", () => {
     mocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: true, cooldownMs: 0 });
   });
 
+  it("gives each account its own complete message, image and tool payload", async () => {
+    const original = { model: "opencode/muse", messages: [{ role: "user", content: [
+      { type: "text", text: "original instruction" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,aGVsbG8=" } },
+    ] }], tools: [{ type: "function", function: { name: "inspect", parameters: { type: "object" } } }] };
+    const expected = structuredClone(original);
+    mocks.getProviderCredentials.mockReset();
+    mocks.getProviderCredentials.mockResolvedValueOnce(POOL).mockResolvedValueOnce({ ...POOL, connectionId: "second" });
+    mocks.handleChatCore.mockImplementationOnce(async ({ body }) => {
+      body.messages[0].content[0].text = "mutated by failed candidate";
+      body.messages[0].content[1].image_url.url = "changed image";
+      body.tools[0].function.parameters.type = "string";
+      return failedAttempt(502);
+    }).mockImplementationOnce(async ({ body }) => {
+      expect(body).toEqual(expected);
+      return { success: true, response: new Response("success") };
+    });
+    const request = new Request("http://localhost/v1/messages", { method: "POST",
+      headers: { "content-type": "application/json" }, body: JSON.stringify(original) });
+    const response = await handleChat(request, { endpoint: "/v1/messages", body: original, headers: {} });
+    expect(await response.text()).toBe("success");
+    expect(original).toEqual(expected);
+    expect(mocks.handleChatCore).toHaveBeenCalledTimes(2);
+  });
+
+  it("combo cancellation reaches core even while the client request remains live", async () => {
+    const combo = new AbortController();
+    mocks.getComboModels.mockResolvedValueOnce(["opencode/muse"]);
+    mocks.handleComboChat.mockImplementationOnce(({ body, handleSingleModel }) =>
+      handleSingleModel(body, "opencode/muse", { signal: combo.signal }));
+    mocks.handleChatCore.mockImplementationOnce(async ({ signal }) => {
+      expect(signal.aborted).toBe(false);
+      combo.abort(new Error("candidate timeout"));
+      expect(signal.aborted).toBe(true);
+      expect(signal.reason.message).toBe("candidate timeout");
+      return failedAttempt(499);
+    });
+    const request = makeRequest(new AbortController().signal);
+    const response = await handleChat(request);
+    expect(request.signal.aborted).toBe(false);
+    expect(response.status).toBe(499);
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(1);
+    expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+  });
+
+  it("credential-scoped cancellation reaches core and stops account rotation", async () => {
+    const account = new AbortController();
+    mocks.getProviderCredentials.mockReset();
+    mocks.getProviderCredentials.mockResolvedValueOnce({ ...POOL, signal: account.signal });
+    mocks.handleChatCore.mockImplementationOnce(async ({ signal }) => {
+      account.abort(new Error("connection cancelled"));
+      expect(signal.aborted).toBe(true);
+      expect(signal.reason.message).toBe("connection cancelled");
+      return failedAttempt(499);
+    });
+    await handleChat(makeRequest(new AbortController().signal));
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(1);
+    expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+  });
+
+  it("local validation failure does not retry or mutate account health", async () => {
+    mocks.handleChatCore.mockResolvedValueOnce({ ...failedAttempt(400), localValidationError: true });
+    const response = await handleChat(makeRequest(new AbortController().signal));
+    expect(response.status).toBe(400);
+    expect(mocks.handleChatCore).toHaveBeenCalledTimes(1);
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(1);
+    expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+    expect(mocks.updateHealthEma).not.toHaveBeenCalled();
+    expect(mocks.updateProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("hydrates synced context before combo selection and model resolution", async () => {
+    mocks.handleChatCore.mockResolvedValueOnce(failedAttempt(502));
+    mocks.markAccountUnavailable.mockResolvedValueOnce({ shouldFallback: false, cooldownMs: 0 });
+    await handleChat(makeRequest(new AbortController().signal));
+    expect(mocks.ensureModelContextLoaded).toHaveBeenCalledTimes(1);
+    expect(mocks.ensureModelContextLoaded.mock.invocationCallOrder[0]).toBeLessThan(mocks.getComboModels.mock.invocationCallOrder[0]);
+    expect(mocks.ensureModelContextLoaded.mock.invocationCallOrder[0]).toBeLessThan(mocks.getModelInfo.mock.invocationCallOrder[0]);
+  });
+
+  it("rejects unauthorized requests before reading synced model metadata", async () => {
+    mocks.getSettings.mockResolvedValueOnce({ requireApiKey: true });
+    const response = await handleChat(makeRequest(new AbortController().signal));
+    expect(response.status).toBe(401);
+    expect(mocks.ensureModelContextLoaded).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["ResponseAborted (Next)", () => new ResponseAborted()],
     ["AbortError (DOMException)", () => new DOMException("The operation was aborted", "AbortError")],
@@ -179,5 +278,32 @@ describe("handleChat account loop on a client abort (#517)", () => {
     expect(mocks.markAccountUnavailable.mock.calls[0][0]).toBe("noauth:pool-a");
     expect(mocks.markAccountUnavailable.mock.calls[0][1]).toBe(502);
     expect(response.status).toBe(502);
+  });
+
+  it("forwards fusion panel deadline cancellation to chatCore without parking accounts", async () => {
+    vi.useFakeTimers();
+    try {
+      mocks.getSettings.mockResolvedValue({ requireApiKey: false, comboStrategy: "fusion", comboStrategies: {
+        "opencode/muse": { fusionTuning: { panelHardTimeoutMs: 100 } },
+      } });
+      mocks.getComboModels.mockResolvedValue(["opencode/a", "opencode/b"]);
+      mocks.getProviderCredentials.mockReset().mockResolvedValue(POOL);
+      const candidateSignals = [];
+      mocks.handleChatCore.mockImplementation(({ signal }) => {
+        candidateSignals.push(signal);
+        return new Promise((resolve) => signal.addEventListener("abort", () => resolve(failedAttempt(499)), { once: true }));
+      });
+      const external = new AbortController();
+      const pending = handleChat(makeRequest(external.signal));
+      await vi.advanceTimersByTimeAsync(100);
+      expect((await pending).status).toBe(503);
+      expect(candidateSignals).toHaveLength(2);
+      expect(candidateSignals.every((signal) => signal.aborted)).toBe(true);
+      expect(external.signal.aborted).toBe(false);
+      expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+    } finally {
+      mocks.handleChatCore.mockReset();
+      vi.useRealTimers();
+    }
   });
 });

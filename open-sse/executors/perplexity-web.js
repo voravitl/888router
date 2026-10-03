@@ -204,8 +204,7 @@ function buildQuery(parsed, followUpUuid, tools) {
   if (parsed.history.length > 0) obj.history = parsed.history;
   if (parsed.currentMsg) obj.query = parsed.currentMsg;
   else if (parsed.history.length === 0) obj.query = "";
-  const json = JSON.stringify(obj);
-  return json.length > 96000 ? json.slice(-96000) : json;
+  return JSON.stringify(obj);
 }
 
 async function* extractContent(eventStream, signal) {

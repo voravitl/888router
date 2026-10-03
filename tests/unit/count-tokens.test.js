@@ -14,7 +14,7 @@ async function countTokens(body) {
 }
 
 describe("Anthropic count_tokens estimator", () => {
-  it("preserves the existing plain text estimate", async () => {
+  it("includes a small framing allowance for plain text", async () => {
     const result = await countTokens({
       messages: [
         {
@@ -24,7 +24,23 @@ describe("Anthropic count_tokens estimator", () => {
       ],
     });
 
-    expect(result.input_tokens).toBe(3);
+    expect(result.input_tokens).toBeGreaterThanOrEqual(3);
+    expect(result.input_tokens).toBeLessThan(20);
+  });
+
+  it("does not apply the ASCII four-character ratio to Thai text", async () => {
+    const result = await countTokens({ messages: [{ role: "user", content: "ก".repeat(1000) }] });
+    expect(result.input_tokens).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("labels counts as estimates and excludes encoded media from text counts", async () => {
+    const response = await POST(new Request("https://9router.local/v1/messages/count_tokens", {
+      method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: [
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "A".repeat(100000) } },
+      ] }] }),
+    }));
+    expect(response.headers.get("X-888-Token-Count-Method")).toBe("estimate");
+    expect((await response.json()).input_tokens).toBeLessThan(100);
   });
 
   it("counts tool and thinking content blocks that carry context", async () => {

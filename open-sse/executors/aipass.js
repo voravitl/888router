@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
 import {
   hasConnectedClients,
   BridgeJob,
@@ -77,7 +78,20 @@ export class AipassExecutor extends BaseExecutor {
     return ["bridge://aipass-hub"];
   }
 
-  async execute({ model, body, stream, signal, log }) {
+  async execute({ model, body, stream, signal, log, credentials }) {
+    // The browser bridge only submits the last user query into a shared
+    // upstream conversation. It cannot replay full history/tools faithfully.
+    // Fail before touching that conversation instead of silently losing input.
+    if (credentials?.preserveRequestInput || getRequestTimeoutPolicy(body).longContext) {
+      return {
+        response: new Response(JSON.stringify({ error: {
+          type: "unsupported_request",
+          code: "unsupported_request",
+          message: "AiPASS browser bridge cannot preserve full request context; choose a provider with full-history support.",
+        } }), { status: 400, headers: { "Content-Type": "application/json" } }),
+        url: "bridge://aipass-hub", headers: {}, transformedBody: body,
+      };
+    }
     // The hub (extension SSE) is the only transport: the old standalone-bridge
     // fallback at 127.0.0.1:8787 collided with the headroom container port and
     // ECONNREFUSED'd 502s whenever the extension's SSE was mid-reconnect.

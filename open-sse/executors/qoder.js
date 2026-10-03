@@ -30,6 +30,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
 import {
   QODER_CHAT_URL_ENCODED,
   QODER_CHAT_BASE_ALT,
@@ -536,7 +537,10 @@ export class QoderExecutor extends BaseExecutor {
     };
 
     // Abort if upstream doesn't return response headers within connect timeout.
-    const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+    const timeoutPolicy = credentials?.requestTimeoutPolicy || getRequestTimeoutPolicy(body);
+    const normalTimeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+    const timeoutMs = timeoutPolicy.longContext
+      ? Math.max(normalTimeoutMs, timeoutPolicy.connectTimeoutMs) : normalTimeoutMs;
     const connectCtrl = new AbortController();
     const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
     const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;

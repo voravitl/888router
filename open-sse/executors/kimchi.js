@@ -115,7 +115,7 @@ export class KimchiExecutor extends DefaultExecutor {
 
     stripMessageArtifacts(transformed);
     stripToolArtifacts(transformed);
-    stripReasoningContent(transformed);
+    if (!credentials?.preserveRequestInput) stripReasoningContent(transformed);
     return transformed;
   }
 }

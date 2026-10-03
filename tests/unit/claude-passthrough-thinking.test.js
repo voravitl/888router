@@ -37,6 +37,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+const { registerDynamicCapabilitiesScoped } = await import("../../open-sse/providers/capabilities.js");
 
 const CLAUDE_HEADERS = {
   "user-agent": "claude-cli/2.1.92 (external, cli)",
@@ -88,6 +89,39 @@ describe("handleChatCore claude passthrough thinking", () => {
       headers: {},
       transformedBody: null,
     });
+  });
+
+  it("rejects an excessive explicit output budget before translation or upstream execution", async () => {
+    const result = await handleChatCore({
+      body: { messages: [{ role: "user", content: "small request" }], max_tokens: 100000 },
+      modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "test" }, log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      prunerEnabled: true,
+    });
+    expect(result.success).toBe(false);
+    expect(result.localValidationError).toBe(true);
+    expect(result.response.status).toBe(400);
+    expect((await result.response.json()).error.code).toBe("output_limit_exceeded");
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves a large OpenAI history despite enabled compression and style settings", async () => {
+    registerDynamicCapabilitiesScoped("openai", "context-integrity-test", { contextWindow: 1000000, maxOutput: 32000 });
+    const content = `START_KEEP_${"abcd ".repeat(400000)}_END_KEEP`;
+    const body = { model: "context-integrity-test", stream: false, messages: [
+      { role: "system", content: "Retain original instructions." },
+      { role: "user", content },
+    ], max_tokens: 128 };
+    const before = structuredClone(body);
+    await handleChatCore({ body, modelInfo: { provider: "openai", model: body.model },
+      credentials: { apiKey: "test" }, log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      prunerEnabled: true, rtkEnabled: true, headroomEnabled: true,
+      cavemanEnabled: true, cavemanLevel: "high", ponytailEnabled: true, ponytailLevel: "high",
+      clientRawRequest: { headers: {}, body: before }, sourceFormatOverride: "openai",
+    });
+    expect(executeMock).toHaveBeenCalledOnce();
+    expect(executeMock.mock.calls[0][0].body.messages).toEqual(before.messages);
+    expect(body).toEqual(before);
   });
 
   it("sonnet-5 keeps adaptive thinking with injected max effort, no reasoning keys", async () => {

@@ -122,11 +122,17 @@ describe("buildQuery", () => {
     expect(q).toBe("y");
   });
 
-  it("truncates query if JSON exceeds 96000 chars", () => {
-    const big = "x".repeat(100000);
-    const parsed = { systemMsg: big, history: [], currentMsg: "hi" };
+  it("preserves complete instructions, history and query beyond 96000 characters", () => {
+    const big = "BEGIN " + "x".repeat(100000) + " END";
+    const parsed = { systemMsg: big,
+      history: [{ role: "user", content: "HISTORY " + "y".repeat(100000) }],
+      currentMsg: "CURRENT " + "z".repeat(100000) };
     const q = buildQuery(parsed, null);
-    expect(q.length).toBeLessThanOrEqual(96000);
+    expect(q.length).toBeGreaterThan(300000);
+    const obj = JSON.parse(q);
+    expect(obj.instructions).toContain(big);
+    expect(obj.history).toEqual(parsed.history);
+    expect(obj.query).toBe(parsed.currentMsg);
   });
 });
 

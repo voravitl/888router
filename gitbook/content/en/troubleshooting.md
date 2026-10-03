@@ -383,3 +383,120 @@ performance. A proxy cannot guarantee higher throughput or answer quality than
 the same upstream provider. Claude Code also has different fine-grained tool
 streaming defaults for a custom base URL. See Anthropic's
 [Claude Code gateway compatibility guide](https://code.claude.com/docs/en/llm-gateway-protocol).
+
+### Long context and heavy tool workloads
+
+A gateway cannot give every model the same context window. Check the actual
+provider, model, account access, and requested output budget. A model catalog or
+successful short request does not establish support for a 500K-token request.
+Unknown models remain eligible for upstream validation; an unknown limit is not
+advertised as unlimited capacity.
+
+The gateway uses a Unicode-aware estimate of text, instructions, tool definitions,
+and conversation history for routing. It includes the requested output budget
+when comparing known context limits and prefers candidates with enough declared
+capacity. Estimated overflow candidates remain available for authoritative
+upstream validation; character estimates do not cause definitive local input
+rejection. Explicit output budgets exceeding a declared output limit are
+rejected locally without changing account health. This estimate is not the provider's tokenizer and does
+not establish the cost of images, audio, video, documents, or opaque reasoning
+state. Use provider token-count endpoints where available and compare the
+provider's returned usage. OpenAI documents
+[Responses input token counting](https://developers.openai.com/api/docs/guides/token-counting)
+and Gemini documents
+[countTokens](https://ai.google.dev/api/tokens).
+
+Large requests receive a longer, bounded wait for response headers and the first
+stream chunk rather than the ordinary short request budget. A stalled stream or
+exhausted total time budget still fails; waiting longer does not expand the
+upstream model's context limit. For requests estimated at 100K input tokens or
+more, the large-request header/first-chunk budget defaults to 180 seconds
+(`LONG_CONTEXT_TIMEOUT_MS`), the stream-head idle budget to 60 seconds, and the budget for starting
+fallback candidates to 360 seconds. These are not limits on the total duration
+of a healthy response stream.
+
+Kiro does not automatically discard history to retry a context-limit error by
+default. `providerSpecificData.kiroAllowContextTruncation: true` explicitly enables
+the legacy reduction behavior on a cloned request and emits a warning; enabling
+it can remove information needed for the task. Prefer a suitable larger-context
+model or explicit client compaction.
+
+Claude Code may use a 200K default for an unrecognized custom model alias even
+when its upstream model supports more. Configure the client's model metadata
+according to the
+[Claude Code gateway guide](https://code.claude.com/docs/en/llm-gateway-protocol#settings-for-unrecognized-model-ids).
+Client context metadata must describe the models the alias can actually select.
+
+Run the offline large-payload diagnostic from the repository root:
+
+```bash
+node scripts/benchmark-long-context.mjs
+```
+
+It generates 50K, 200K, and 500K routing estimates in Anthropic Messages, OpenAI
+Chat Completions, OpenAI Responses, and Gemini formats. Each format exercises
+Unicode text, previous tool calls/results, and retrieval of unique markers at
+the beginning, middle, and end. The checks validate JSON round trips and response
+parsers against synthetic valid, incorrect, incomplete, and failed replies.
+They do not call the gateway or prove provider acceptance or reasoning quality.
+
+Live testing is opt-in and may incur provider charges. Select an existing model
+or combo that is expected to support the requested context. With
+`LONG_CONTEXT_SQLITE=true`, the script reads an active gateway API key from the
+running `888route` container's SQLite database in read-only mode. Alternatively,
+provide `LONG_CONTEXT_API_KEY` through the environment. It never prints keys,
+headers, request bodies, or response text.
+
+```bash
+LONG_CONTEXT_LIVE=true LONG_CONTEXT_SQLITE=true \
+LONG_CONTEXT_MODEL=your-configured-model-or-combo \
+LONG_CONTEXT_FORMATS=openai-chat LONG_CONTEXT_SIZES=50000 \
+node scripts/benchmark-long-context.mjs
+```
+
+Supported format values are `anthropic`, `openai-chat`, `responses`, and `gemini`;
+comma-separated formats and sizes are supported. Live mode defaults to one
+format at 50K and sends text and tool tasks sequentially. Set
+`LONG_CONTEXT_BASE_URL` to the gateway origin if it is not
+`http://localhost:20129`. `LONG_CONTEXT_TIMEOUT_MS` sets the benchmark's per-request
+client deadline (default 180 seconds, maximum 600 seconds); it does not configure
+the running gateway. JSON response capture is capped at 1 MiB.
+
+The summary includes estimated input, available response usage, status, timings,
+returned model, and an optional nonce-matched provider/model/account routing
+trace from read-only telemetry. Missing telemetry is reported as unavailable.
+These are non-streaming retrieval/tool smoke checks, not a streaming endurance,
+concurrency, cache-equivalence, or direct-provider performance benchmark. An
+upstream context rejection, fallback, timeout, or truncated/incomplete answer
+must not be counted as a successful large-context run.
+
+In live results, `pass` means the HTTP request completed and the marker/tool task
+passed. It does **not** certify the context size. `actualTotalInputTokens` includes
+Anthropic's input, cache-read, and cache-creation tokens; other formats' prompt
+counts already include cached input. `contextTargetMet` compares that reported
+count with the requested estimated target. Missing or invalid counts produce
+`contextVerification: "not_measured"`; smaller counts produce
+`"below_requested_target"`. Tokenizer differences can cause a smaller actual
+count even when the task succeeds, so this is reported separately from semantic
+success. `measuredContextTaskPass` requires task success and a provider-reported
+count at the target, with no observed response/telemetry model mismatch. Even
+that does not prove that every history entry was retained or used correctly.
+
+`actualSelectedLeaf` records the telemetry-selected provider/model/account when
+available, otherwise only the response model. Requested aliases and returned
+model IDs may differ. Response/telemetry disagreement is reported explicitly;
+no result is classified as a direct-provider comparison. `headersMs` and
+`totalMs` describe non-streaming response headers and completion, respectively,
+rather than time to the first useful streamed token.
+
+The Gemini `generateContent`/`streamGenerateContent` endpoint passes native
+`contents`, function calls/results, tools, media parts, generation settings,
+and extensions to the shared provider translator. It preserves full
+provider/model paths and takes streaming intent from the URL action. Its response
+adapter preserves native Gemini output and translates OpenAI-shaped tool calls,
+including fragmented streamed arguments, without reducing requests to text-only
+messages. Native Gemini audio/TTS requests retain their dedicated forwarding path.
+
+### Provider-specific transport limits
+
+Long-input handling cannot raise an upstream model's context limit. AiPASS's browser bridge cannot preserve a long multi-turn request and returns `unsupported_request`, allowing a configured combo to try another provider. Qoder retains its normal 120-second header wait and extends it for long input. Cursor's buffered HTTP/2 response uses the long-request budget; this is a whole buffered-response deadline, not a streaming idle timeout. Healthy streaming responses are not universally cut off after the combo's candidate-start budget.

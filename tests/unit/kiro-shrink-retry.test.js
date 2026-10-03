@@ -1,5 +1,5 @@
 /**
- * Integration test for KiroExecutor.execute() reactive shrink-retry (issue #141).
+ * Integration test for explicitly opted-in Kiro context truncation and safe defaults.
  *
  * Unlike kiro-shrink-payload.test.js (which unit-tests the pure shrink function),
  * this drives the REAL execute() loop end-to-end with a mocked upstream:
@@ -21,6 +21,8 @@ import { BaseExecutor } from "../../open-sse/executors/base.js";
 import KiroExecutor from "../../open-sse/executors/kiro.js";
 
 // Real upstream 400 shape (matches the error the user reported).
+const TRUNCATION_CREDENTIALS = { providerSpecificData: { kiroAllowContextTruncation: true } };
+
 const CL_400 = JSON.stringify({
   message: "Input content length exceeds threshold.",
   reason: "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
@@ -55,13 +57,38 @@ function makeBody(pairs) {
   };
 }
 
-describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", () => {
+describe("KiroExecutor context integrity and explicit shrink-retry", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it.each([undefined, false, "true"])("preserves content-length error and complete input without strict opt-in (%s)", async (setting) => {
+    const body = makeBody(6);
+    body.conversationState.currentMessage.userInputMessage.content = "first " + "X".repeat(50000) + " last";
+    const original = structuredClone(body);
+    const upstream = new Response(CL_400, { status: 400, headers: { "x-upstream-error": "context" } });
+    const cancelSpy = vi.spyOn(upstream.body, "cancel");
+    const initialResult = { response: upstream, url: "u", headers: {}, transformedBody: body };
+    const spy = vi.spyOn(BaseExecutor.prototype, "execute").mockResolvedValue(initialResult);
+    const exec = new KiroExecutor();
+    const gate = vi.spyOn(exec, "attachIntegrityGate");
+
+    const result = await exec.execute({ model: "kr/x", body, stream: true,
+      credentials: { providerSpecificData: { kiroAllowContextTruncation: setting } } });
+
+    expect(result).toBe(initialResult);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(body).toEqual(original);
+    expect(cancelSpy).not.toHaveBeenCalled();
+    expect(gate).not.toHaveBeenCalled();
+    expect(result.response.headers.get("x-upstream-error")).toBe("context");
+    expect(await result.response.text()).toBe(CL_400);
+  });
 
   it("400 content_length → shrinks payload → retries → 200 success", async () => {
     const cancelLog = [];
     const body = makeBody(6); // 12 history items
     const historyLenAtCall = [];
+    const original = structuredClone(body);
+    const log = { warn: vi.fn() };
     let call = 0;
 
     const spy = vi
@@ -77,8 +104,10 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
     const exec = new KiroExecutor();
     const transformSpy = vi.spyOn(exec, "transformEventStreamToSSE").mockImplementation((resp) => resp);
 
-    const result = await exec.execute({ model: "kr/gpt-5.6-terra", body, stream: true, log: null });
+    const result = await exec.execute({ model: "kr/gpt-5.6-terra", body, stream: true, credentials: TRUNCATION_CREDENTIALS, log });
 
+    expect(body).toEqual(original);
+    expect(log.warn).toHaveBeenCalledWith("KIRO", expect.stringContaining("conversation content discarded"));
     expect(spy).toHaveBeenCalledTimes(2);                            // initial + 1 retry
     expect(result.response.ok).toBe(true);                          // ended on 200
     expect(historyLenAtCall[1]).toBeLessThan(historyLenAtCall[0]);  // MUTATION propagated: payload shrank between calls
@@ -105,7 +134,7 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
       }));
 
     const exec = new KiroExecutor();
-    const result = await exec.execute({ model: "kr/x", body, stream: true, log: null });
+    const result = await exec.execute({ model: "kr/x", body, stream: true, credentials: TRUNCATION_CREDENTIALS, log: null });
 
     expect(spy).toHaveBeenCalledTimes(1);                       // no retry
     expect(result.response.status).toBe(400);                   // surfaced as-is
@@ -136,7 +165,7 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
     const exec = new KiroExecutor();
     exec.transformEventStreamToSSE = transformSpy;
 
-    const result = await exec.execute({ model: "kr/x", body, stream: true, log: null });
+    const result = await exec.execute({ model: "kr/x", body, stream: true, credentials: TRUNCATION_CREDENTIALS, log: null });
 
     // Finding #1 fix: proves the cap is exactly KIRO_MAX_SHRINK_RETRIES (5)
     expect(spy).toHaveBeenCalledTimes(6);                       // initial + 5 retries = 6 total
@@ -164,10 +193,11 @@ describe("KiroExecutor reactive shrink-retry (integration, mocked upstream)", ()
     const exec = new KiroExecutor();
     const transformSpy = vi.spyOn(exec, "transformEventStreamToSSE").mockImplementation((r) => r);
 
-    const result = await exec.execute({ model: "kr/x", body, stream: true, log: null });
+    const result = await exec.execute({ model: "kr/x", body, stream: true, credentials: TRUNCATION_CREDENTIALS, log: null });
 
     expect(result.response.ok).toBe(true);
-    expect(body.conversationState.currentMessage.userInputMessage.content.length).toBeLessThan(50000); // truncated
+    expect(body.conversationState.currentMessage.userInputMessage.content.length).toBe(50000);
+    expect(result.transformedBody.conversationState.currentMessage.userInputMessage.content.length).toBeLessThan(50000);
     expect(cancelLog).toEqual([400]);
     // Finding #2 fix: verify transform IS called on success path
     expect(transformSpy).toHaveBeenCalledTimes(1);

@@ -77,7 +77,8 @@ vi.mock("../../open-sse/rtk/headroom.js", () => ({
   isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
-vi.mock("../../open-sse/providers/capabilities.js", () => ({
+vi.mock("../../open-sse/providers/capabilities.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getCapabilitiesForModel: vi.fn(() => ({})),
 }));
 
