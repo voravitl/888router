@@ -179,6 +179,8 @@ function validateOffline(item) {
   const validReply = mockReply(item.format, item.kind, item.expected);
   const missingUsage = parseResponse(item.format, validReply, item.kind, item.expected);
   assert.deepEqual(contextMeasurement(missingUsage, item.target), { actualTotalInputTokens: null, contextTargetMet: null, contextVerification: "not_measured" });
+  assert.equal(contextMeasurement({ usageProvenance: "provider_response_telemetry", verifiedTotalInputTokens: 513_352 }, 500_000).contextTargetMet, true);
+  assert.equal(contextMeasurement({ usageProvenance: "provider_response_telemetry", verifiedTotalInputTokens: 513_352 }, 800_000).contextTargetMet, false);
   const tinyUsage = parseResponse(item.format, { ...validReply, ...fixtureUsage(item.format, 5), model: "different-selected-model" }, item.kind, item.expected);
   assert.equal(tinyUsage.pass, true);
   assert.equal(contextMeasurement({ ...tinyUsage, usageProvenance: "provider_response_telemetry", verifiedTotalInputTokens: 5 }, item.target).contextTargetMet, false);
@@ -261,7 +263,7 @@ async function runLive(item, base, model, key, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let status = null;
-  const summary = { format: item.format, task: item.kind, requestedModel: model, targetEstimatedTokens: item.target, estimatedInputTokens: estimateRequestTokens(item.body), characterEstimateTokens: Math.ceil(JSON.stringify(item.body).length / 4) };
+  const summary = { format: item.format, task: item.kind, requestedModel: model, targetEstimatedTokens: item.target, targetMeasuredTokens: item.measurementTarget, estimatedInputTokens: estimateRequestTokens(item.body), characterEstimateTokens: Math.ceil(JSON.stringify(item.body).length / 4) };
   try {
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
     if (item.format === "anthropic") headers["anthropic-version"] = "2023-06-01";
@@ -282,7 +284,7 @@ async function runLive(item, base, model, key, timeoutMs) {
     const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     const parsed = parseResponse(item.format, value, item.kind, item.expected);
     const routing = routingTrace(timestamp, item.nonce);
-    const measurement = contextMeasurement({ ...parsed, ...verifiedProviderUsage(routing) }, item.target);
+    const measurement = contextMeasurement({ ...parsed, ...verifiedProviderUsage(routing) }, item.measurementTarget);
     const route = selectedRoute(parsed, routing, model);
     const pass = response.ok && parsed.pass;
     return { ...summary, ...parsed, pass, ...measurement, ...route, usageProvenance: measurement.actualTotalInputTokens === null ? "not_verified" : "provider_response_telemetry", measuredContextTaskPass: pass && measurement.contextTargetMet === true && route.returnedModelMatchesTrace !== false, status, headersMs, totalMs: Math.round(performance.now() - started), routing };
@@ -298,6 +300,8 @@ async function main() {
   const sizes = process.env.LONG_CONTEXT_SIZES?.split(",").map(Number) || (live ? [50_000] : SIZES);
   assert.ok(formats.length > 0 && formats.every((format) => FORMATS.includes(format)), "invalid_formats");
   assert.ok(sizes.length > 0 && sizes.every((size) => Number.isInteger(size) && size >= 1_000 && size <= 1_000_000), "invalid_sizes");
+  const minimumActual = process.env.LONG_CONTEXT_MIN_ACTUAL_INPUT_TOKENS === undefined ? null : Number(process.env.LONG_CONTEXT_MIN_ACTUAL_INPUT_TOKENS);
+  assert.ok(minimumActual === null || (Number.isInteger(minimumActual) && minimumActual >= 1_000 && minimumActual <= 1_000_000), "invalid_actual_input_target");
   const model = process.env.LONG_CONTEXT_MODEL || "offline-model";
   if (live && !process.env.LONG_CONTEXT_MODEL) throw new Error("live_model_required");
   const timeoutMs = Number(process.env.LONG_CONTEXT_TIMEOUT_MS || 180_000);
@@ -308,6 +312,7 @@ async function main() {
     for (const size of sizes) {
       for (const kind of ["text", "tool"]) {
         const item = payload(format, kind, size, model);
+        item.measurementTarget = minimumActual ?? size;
         const offline = validateOffline(item);
         results.push(live ? await runLive(item, process.env.LONG_CONTEXT_BASE_URL || "http://localhost:20129", model, key, timeoutMs) : offline);
       }

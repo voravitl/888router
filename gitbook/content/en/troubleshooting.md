@@ -474,7 +474,12 @@ In live results, `pass` means the HTTP request completed and the marker/tool tas
 passed. It does **not** certify the context size. `actualTotalInputTokens` includes
 Anthropic's input, cache-read, and cache-creation tokens; other formats' prompt
 counts already include cached input. `contextTargetMet` compares that reported
-count with the requested estimated target. Measurement requires nonce-matched,
+count with `targetMeasuredTokens` (defaults to the estimated target). Set
+`LONG_CONTEXT_MIN_ACTUAL_INPUT_TOKENS=500000` with, for example,
+`LONG_CONTEXT_SIZES=800000` to test at least 500K actual input tokens despite
+tokenizer differences. Choose a model that accepts the generated request; this
+setting changes only the benchmark threshold, never the gateway input or usage.
+Measurement requires nonce-matched,
 read-only request telemetry containing the unmodified provider response usage
 (`LONG_CONTEXT_SQLITE=true`). Estimated usage, gateway-padded client counts,
 and unavailable telemetry do not certify the target. Missing or invalid counts produce

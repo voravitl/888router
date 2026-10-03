@@ -49,9 +49,9 @@ describe("non-streaming Responses SSE (opencode-go muse-spark)", () => {
     expect(chat.usage.completion_tokens).toBe(5);
   });
 
-  it("documents the old bug: chat-only parser drops Responses events", () => {
+  it("rejects Responses events when given to the chat-only parser", () => {
     const parsed = parseSSEToOpenAIResponse(RESPONSES_SSE, "muse-spark-1.3-contributor");
-    expect(parsed.choices[0].message.content).toBe("");
+    expect(parsed).toBeNull();
   });
 
   it("assembles data-only SSE (no event: lines, e.g. opencode Go)", async () => {
