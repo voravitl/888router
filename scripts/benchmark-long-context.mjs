@@ -24,33 +24,37 @@ function payload(format, kind, target, model) {
   const blocks = Math.ceil(target / fillerTokens);
   const document = `CURRENT_CONTEXT_START=${expected.start}\n${filler.repeat(Math.floor(blocks / 2))}CURRENT_CONTEXT_MIDDLE=${expected.middle}\n${filler.repeat(Math.ceil(blocks / 2))}CURRENT_CONTEXT_END=${expected.end}\n${instructions}`;
   const previous = { start: "previous_start", middle: "previous_middle", end: "previous_end" };
+  // Keep correlation in the small request configuration even when document
+  // previews and tool-only provider output are truncated by observability.
+  const toolDescription = `Record the three current context markers. Benchmark trace: ${nonce}`;
+  const initialMessage = `Capture the previous markers. Benchmark trace: ${nonce}`;
   let body;
   if (format === "anthropic") {
     body = { model, max_tokens: 256, stream: false, messages: [
-      { role: "user", content: "Capture the previous markers." },
+      { role: "user", content: initialMessage },
       { role: "assistant", content: [{ type: "tool_use", id: "previous_call", name: toolName, input: previous }] },
       { role: "user", content: [{ type: "tool_result", tool_use_id: "previous_call", content: "Previous markers captured." }, { type: "text", text: document }] },
-    ], tools: [{ name: toolName, description: "Record the three current context markers.", input_schema: schema }] };
+    ], tools: [{ name: toolName, description: toolDescription, input_schema: schema }] };
   } else if (format === "openai-chat") {
     body = { model, max_tokens: 256, stream: false, messages: [
-      { role: "user", content: "Capture the previous markers." },
+      { role: "user", content: initialMessage },
       { role: "assistant", content: null, tool_calls: [{ id: "previous_call", type: "function", function: { name: toolName, arguments: JSON.stringify(previous) } }] },
       { role: "tool", tool_call_id: "previous_call", content: "Previous markers captured." },
       { role: "user", content: document },
-    ], tools: [{ type: "function", function: { name: toolName, description: "Record the three current context markers.", parameters: schema } }] };
+    ], tools: [{ type: "function", function: { name: toolName, description: toolDescription, parameters: schema } }] };
   } else if (format === "responses") {
     body = { model, max_output_tokens: 256, stream: false, input: [
-      { role: "user", content: "Capture the previous markers." },
+      { role: "user", content: initialMessage },
       { type: "function_call", call_id: "previous_call", name: toolName, arguments: JSON.stringify(previous) },
       { type: "function_call_output", call_id: "previous_call", output: "Previous markers captured." },
       { role: "user", content: [{ type: "input_text", text: document }] },
-    ], tools: [{ type: "function", name: toolName, description: "Record the three current context markers.", parameters: schema }] };
+    ], tools: [{ type: "function", name: toolName, description: toolDescription, parameters: schema }] };
   } else if (format === "gemini") {
     body = { contents: [
-      { role: "user", parts: [{ text: "Capture the previous markers." }] },
+      { role: "user", parts: [{ text: initialMessage }] },
       { role: "model", parts: [{ functionCall: { name: toolName, args: previous } }] },
       { role: "user", parts: [{ functionResponse: { name: toolName, response: { result: "Previous markers captured." } } }, { text: document }] },
-    ], tools: [{ functionDeclarations: [{ name: toolName, description: "Record the three current context markers.", parameters: schema }] }], generationConfig: { maxOutputTokens: 256 } };
+    ], tools: [{ functionDeclarations: [{ name: toolName, description: toolDescription, parameters: schema }] }], generationConfig: { maxOutputTokens: 256 } };
   } else throw new Error("unsupported_format");
   return { body, expected, nonce, document, format, kind, target };
 }
@@ -172,6 +176,7 @@ function validateOffline(item) {
   assert.ok(encoded.includes("Previous markers captured."));
   assert.ok(item.document.indexOf(item.expected.start) < item.document.indexOf(item.expected.middle));
   assert.ok(item.document.indexOf(item.expected.middle) < item.document.indexOf(item.expected.end));
+  assert.ok(JSON.stringify(item.body.tools).includes(item.nonce), "bounded_request_config_contains_trace_nonce");
   assert.ok(estimateRequestTokens(item.body) >= item.target);
   assert.ok(estimateRequestTokens(item.body) < item.target + Math.max(1_000, item.target * 0.05));
   assert.equal(parseResponse(item.format, mockReply(item.format, item.kind, item.expected), item.kind, item.expected).pass, true);
@@ -244,7 +249,7 @@ function routerKey() {
 function routingTrace(timestamp, nonce) {
   if (process.env.LONG_CONTEXT_SQLITE !== "true") return { available: false };
   try {
-    const records = sqliteRead("const D=require('better-sqlite3');const d=new D('/app/data/db/data.sqlite',{readonly:true,fileMustExist:true});const r=d.prepare(`SELECT timestamp,provider,model,connectionId,status,json_extract(data,'$.providerResponse.usage') AS upstreamUsage,json_extract(data,'$.providerResponse.usageMetadata') AS upstreamUsageMetadata FROM requestDetails WHERE timestamp>=? AND instr(data,?)>0 ORDER BY timestamp DESC LIMIT 10`).all(process.argv[1],process.argv[2]);process.stdout.write(JSON.stringify(r));d.close();", [timestamp, nonce]);
+    const records = sqliteRead("const D=require('better-sqlite3');const d=new D('/app/data/db/data.sqlite',{readonly:true,fileMustExist:true});const r=d.prepare(`SELECT timestamp,provider,model,connectionId,status,COALESCE(json_extract(data,'$.providerResponse.usage'),json_extract(data,'$.providerResponse.response.usage')) AS upstreamUsage,COALESCE(json_extract(data,'$.providerResponse.usageMetadata'),json_extract(data,'$.providerResponse.response.usageMetadata')) AS upstreamUsageMetadata FROM requestDetails WHERE timestamp>=? AND instr(data,?)>0 ORDER BY timestamp DESC LIMIT 10`).all(process.argv[1],process.argv[2]);process.stdout.write(JSON.stringify(r));d.close();", [timestamp, nonce]);
     return { available: records.length > 0, records: records.map((record) => ({ ...record,
       upstreamUsage: typeof record.upstreamUsage === "string" ? JSON.parse(record.upstreamUsage) : record.upstreamUsage,
       upstreamUsageMetadata: typeof record.upstreamUsageMetadata === "string" ? JSON.parse(record.upstreamUsageMetadata) : record.upstreamUsageMetadata,

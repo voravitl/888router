@@ -482,7 +482,10 @@ setting changes only the benchmark threshold, never the gateway input or usage.
 Measurement requires nonce-matched,
 read-only request telemetry containing the unmodified provider response usage
 (`LONG_CONTEXT_SQLITE=true`). Estimated usage, gateway-padded client counts,
-and unavailable telemetry do not certify the target. Missing or invalid counts produce
+and unavailable telemetry do not certify the target. Oversized response previews
+retain bounded raw usage separately; full response bodies remain truncated. The
+fixture places its unique trace nonce in the tool description and first-message
+preview so tool-only runs remain attributable when saved inputs are truncated. Missing or invalid counts produce
 `contextVerification: "not_measured"`; smaller counts produce
 `"below_requested_target"`. Tokenizer differences can cause a smaller actual
 count even when the task succeeds, so this is reported separately from semantic
