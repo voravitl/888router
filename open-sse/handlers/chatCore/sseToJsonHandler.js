@@ -4,7 +4,7 @@ import { isClientAbort } from "../../utils/abort.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
-import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
+import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -13,11 +13,7 @@ import { parseUniversalToolCalls, getDeclaredToolNames } from "../../translator/
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
-  const byType = item.content.find((c) => c.type === "output_text");
-  if (typeof byType?.text === "string") return byType.text;
-  const anyText = item.content.find((c) => typeof c.text === "string");
-  if (typeof anyText?.text === "string") return anyText.text;
-  return "";
+  return item.content.filter((part) => typeof part?.text === "string").map((part) => part.text).join("");
 }
 
 /**
@@ -43,21 +39,24 @@ function pickAssistantMessageForChatCompletion(output) {
 export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const chunks = [];
   let streamError = null;
+  let hasTerminal = false;
 
   for (const line of String(rawSSE || "").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
     const payload = trimmed.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
+    if (payload === "[DONE]") { hasTerminal = true; continue; }
+    if (!payload) continue;
     try {
       const chunk = JSON.parse(payload);
+      if (chunk?.choices?.some((choice) => choice.finish_reason)) hasTerminal = true;
       if (chunk?.error) streamError = chunk.error;
       else chunks.push(chunk);
     } catch { /* ignore malformed lines */ }
   }
 
   if (streamError) return { error: streamError };
-  if (chunks.length === 0) return null;
+  if (chunks.length === 0 || !hasTerminal || !chunks.some((chunk) => chunk.choices?.length)) return null;
 
   const first = chunks[0];
   const contentParts = [];
@@ -106,6 +105,17 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   return result;
 }
 
+function parseExecutableToolArguments(value, incomplete) {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value || "{}") : (value ?? {});
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Invalid tool argument object");
+    return parsed;
+  } catch (error) {
+    if (incomplete) return null;
+    throw error;
+  }
+}
+
 /**
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
@@ -129,31 +139,38 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   };
   const detailOverrides = { endpoint: clientRawRequest?.endpoint || null, ...(detailId ? { id: detailId } : {}) };
 
+  const finishSuccess = async (clientResponse, rawProviderResponse, usage, summary) => {
+    // Construct/serialize the client result before recording success or clearing
+    // account errors. Malformed conversion must not leave success telemetry.
+    const response = new Response(JSON.stringify(clientResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+    if (onRequestSuccess) await onRequestSuccess();
+    appendLog({ tokens: usage, status: "200 OK" });
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
+    const totalLatency = Date.now() - requestStartTime;
+    saveRequestDetail(buildRequestDetail({
+      ...ctx, providerResponse: structuredClone(rawProviderResponse),
+      latency: { ttft: totalLatency, total: totalLatency },
+      tokens: extractUsageFromResponse(rawProviderResponse) || usage,
+      response: summary, status: "success",
+    }, detailOverrides)).catch(() => {});
+    return { success: true, response };
+  };
+
   // Codex/Responses API SSE path
-  const isCodexResponsesApi = isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES || sourceFormat === FORMATS.OPENAI_RESPONSES;
+  const isCodexResponsesApi = targetFormat === FORMATS.OPENAI_RESPONSES || (!targetFormat && isResponsesProvider(provider));
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
-      if (onRequestSuccess) await onRequestSuccess();
-
+      if (jsonResponse.error || jsonResponse.status === "failed" || jsonResponse.status === "in_progress") {
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, jsonResponse.error?.message || "Upstream Responses stream did not complete");
+      }
       const usage = jsonResponse.usage || {};
-      appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
-
-      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
-      const totalLatency = Date.now() - requestStartTime;
-
-      saveRequestDetail(buildRequestDetail({
-        ...ctx,
-        latency: { ttft: totalLatency, total: totalLatency },
-        tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
-        response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
-        status: "success"
-      }, detailOverrides)).catch(() => {});
+      const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const summary = { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" };
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+        return await finishSuccess(jsonResponse, jsonResponse, usage, summary);
       }
 
       // Build client-format response
@@ -174,17 +191,21 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const hasToolCalls = toolCalls.length > 0;
 
       if (sourceFormat === FORMATS.CLAUDE) {
+        if (jsonResponse.status === "incomplete" && jsonResponse.incomplete_details?.reason === "content_filter") {
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Upstream response blocked by content filter");
+        }
         const content = [];
+        const thinking = (jsonResponse.output || []).filter((item) => item.type === "reasoning")
+          .flatMap((item) => item.summary || []).map((part) => part.text || "").join("");
+        // Foreign reasoning has no Anthropic signature; preserve it as text.
+        // https://platform.claude.com/docs/en/build-with-claude/thinking
+        if (thinking) content.push({ type: "text", text: thinking });
         if (textContent) {
           content.push({ type: "text", text: textContent });
         }
         for (const tc of toolCalls) {
-          let parsedArgs = {};
-          try {
-            parsedArgs = typeof tc.function.arguments === "string" ? JSON.parse(tc.function.arguments) : (tc.function.arguments || {});
-          } catch {
-            parsedArgs = {};
-          }
+          const parsedArgs = parseExecutableToolArguments(tc.function.arguments, jsonResponse.status === "incomplete");
+          if (parsedArgs === null) continue;
           content.push({
             type: "tool_use",
             id: tc.id,
@@ -196,7 +217,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           content.push({ type: "text", text: "" });
         }
         const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const stopReason = hasToolCalls ? "tool_use" : (responseDone ? "end_turn" : (jsonResponse.status || "end_turn"));
+        const stopReason = jsonResponse.status === "incomplete" ? "max_tokens"
+          : (hasToolCalls ? "tool_use" : (responseDone ? "end_turn" : (jsonResponse.status || "end_turn")));
         finalResp = {
           id: String(jsonResponse.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
           type: "message",
@@ -206,35 +228,58 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           stop_reason: stopReason,
           stop_sequence: null,
           usage: {
-            input_tokens: inTokens,
-            output_tokens: outTokens
+            input_tokens: Math.max(0, inTokens - (usage.input_tokens_details?.cached_tokens || 0)),
+            output_tokens: outTokens,
+            ...(usage.input_tokens_details?.cached_tokens !== undefined && { cache_read_input_tokens: usage.input_tokens_details.cached_tokens }),
+            ...(usage.estimated !== undefined && { estimated: usage.estimated }),
           }
         };
       } else if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
-        finalResp = {
-          response: {
-            candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
-            usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens },
-            modelVersion: model,
-            responseId: jsonResponse.id || `resp_${Date.now()}`
-          }
+        const parts = textContent ? [{ text: textContent }] : [];
+        for (const tc of toolCalls) {
+          const args = parseExecutableToolArguments(tc.function.arguments, jsonResponse.status === "incomplete");
+          if (args !== null) parts.push({ functionCall: { name: tc.function.name, args } });
+        }
+        if (parts.length === 0) parts.push({ text: "" });
+        const geminiResponse = {
+          candidates: [{ content: { role: "model", parts }, finishReason: jsonResponse.status === "incomplete"
+            ? (jsonResponse.incomplete_details?.reason === "content_filter" ? "SAFETY" : "MAX_TOKENS") : "STOP", index: 0 }],
+          usageMetadata: {
+            // Gemini candidates exclude reasoning, which has its own counter.
+            // https://ai.google.dev/api/generate-content#UsageMetadata
+            promptTokenCount: inTokens, candidatesTokenCount: Math.max(0, outTokens - (usage.output_tokens_details?.reasoning_tokens || 0)),
+            totalTokenCount: usage.total_tokens ?? inTokens + outTokens,
+            ...(usage.input_tokens_details?.cached_tokens !== undefined && { cachedContentTokenCount: usage.input_tokens_details.cached_tokens }),
+            ...(usage.output_tokens_details?.reasoning_tokens !== undefined && { thoughtsTokenCount: usage.output_tokens_details.reasoning_tokens }),
+            ...(usage.estimated !== undefined && { estimated: usage.estimated }),
+          },
+          modelVersion: jsonResponse.model || model,
+          responseId: jsonResponse.id || `resp_${Date.now()}`,
         };
+        finalResp = sourceFormat === FORMATS.GEMINI ? geminiResponse : { response: geminiResponse };
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
         const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
+        const finishReason = jsonResponse.status === "incomplete"
+          ? (jsonResponse.incomplete_details?.reason === "content_filter" ? "content_filter" : "length")
+          : (hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop")));
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",
           created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
           model: jsonResponse.model || model,
           choices: [{ index: 0, message, finish_reason: finishReason }],
-          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens }
+          usage: {
+            prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: usage.total_tokens ?? inTokens + outTokens,
+            ...(usage.input_tokens_details && { prompt_tokens_details: structuredClone(usage.input_tokens_details) }),
+            ...(usage.output_tokens_details && { completion_tokens_details: structuredClone(usage.output_tokens_details) }),
+            ...(usage.estimated !== undefined && { estimated: usage.estimated }),
+          }
         };
       }
 
-      return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+      return await finishSuccess(finalResp, jsonResponse, usage, summary);
     } catch (err) {
       // Client went away mid-read: a 499, not a provider 502 (#517).
       if (isClientAbort(err)) return createErrorResult(499, "Request aborted");
@@ -255,24 +300,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       );
     }
 
-    if (onRequestSuccess) await onRequestSuccess();
-
     const usage = parsed.usage || {};
-    appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
-
-    const totalLatency = Date.now() - requestStartTime;
-    saveRequestDetail(buildRequestDetail({
-      ...ctx,
-      latency: { ttft: totalLatency, total: totalLatency },
-      tokens: usage,
-      response: {
-        content: parsed.choices?.[0]?.message?.content || null,
-        thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
-        finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
-      },
-      status: "success"
-    }, detailOverrides)).catch(() => {});
+    const rawProviderResponse = structuredClone(parsed);
+    const summary = {
+      content: parsed.choices?.[0]?.message?.content || null,
+      thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
+      finish_reason: parsed.choices?.[0]?.finish_reason || "unknown",
+    };
 
     // Universal Tool Engine parsing for forced SSE-to-JSON path
     const declaredToolsList = translatedBody?._declaredTools
@@ -287,39 +321,65 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       if (toolParsed.hasToolCalls) {
         choice.message.tool_calls = toolParsed.toolCalls;
         choice.message.content = toolParsed.text || null;
-        choice.finish_reason = "tool_calls";
+        if (choice.finish_reason !== "length" && choice.finish_reason !== "content_filter") {
+          choice.finish_reason = "tool_calls";
+        }
       } else if (toolParsed.text !== choice.message.content) {
         choice.message.content = toolParsed.text || null;
       }
     }
 
-    // Strip reasoning_content only when content is non-empty.
-    // When content is empty (e.g. thinking models that used all tokens for reasoning),
-    // reasoning_content is the only useful output and must be preserved.
-    // Previously this was unconditional, which broke Qwen3.5, Claude extended thinking, etc.
-    if (parsed?.choices) {
-      for (const choice of parsed.choices) {
-        if (choice?.message?.reasoning_content && choice.message.content) {
-          delete choice.message.reasoning_content;
-        }
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      const choice = parsed.choices?.[0] || {};
+      const message = choice.message || {};
+      const output = [];
+      const incompleteReason = choice.finish_reason === "length" ? "max_output_tokens"
+        : (choice.finish_reason === "content_filter" ? "content_filter" : null);
+      const itemStatus = incompleteReason ? "incomplete" : "completed";
+      const responseId = String(parsed.id || `resp_${Date.now()}`).replace(/^chatcmpl-/, "resp_");
+      if (message.reasoning_content) {
+        output.push({ id: `rs_${responseId}`, type: "reasoning", summary: [{ type: "summary_text", text: message.reasoning_content }] });
       }
+      if (message.content) {
+        output.push({ id: `msg_${responseId}`, type: "message", role: "assistant", status: itemStatus,
+          content: [{ type: "output_text", text: message.content, annotations: [] }] });
+      }
+      for (const [index, call] of (message.tool_calls || []).entries()) {
+        const callId = call.id || `call_${responseId}_${index}`;
+        output.push({ id: `fc_${callId}`, type: "function_call", call_id: callId,
+          name: call.function?.name || "", arguments: call.function?.arguments || "{}", status: itemStatus });
+      }
+      const responsesBody = {
+        id: responseId, object: "response", created_at: parsed.created, model: parsed.model,
+        status: incompleteReason ? "incomplete" : "completed", output, error: null,
+        incomplete_details: incompleteReason ? { reason: incompleteReason } : null,
+        usage: {
+          input_tokens: usage.prompt_tokens || 0, output_tokens: usage.completion_tokens || 0,
+          total_tokens: usage.total_tokens ?? (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+          ...(usage.prompt_tokens_details && { input_tokens_details: structuredClone(usage.prompt_tokens_details) }),
+          ...(usage.completion_tokens_details && { output_tokens_details: structuredClone(usage.completion_tokens_details) }),
+          ...(usage.estimated !== undefined && { estimated: usage.estimated }),
+        },
+      };
+      return await finishSuccess(responsesBody, rawProviderResponse, usage, summary);
     }
 
     if (sourceFormat === FORMATS.CLAUDE) {
       const choice = parsed?.choices?.[0] || {};
+      if (choice.finish_reason === "content_filter") {
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Upstream response blocked by content filter");
+      }
       const msg = choice.message || {};
       const content = [];
+      // Foreign reasoning is unsigned and must remain replayable as text.
+      if (msg.reasoning_content) content.push({ type: "text", text: msg.reasoning_content });
       if (msg.content) {
         content.push({ type: "text", text: msg.content });
       }
       if (Array.isArray(msg.tool_calls)) {
         for (const tc of msg.tool_calls) {
-          let parsedArgs = {};
-          try {
-            parsedArgs = typeof tc.function?.arguments === "string" ? JSON.parse(tc.function.arguments) : (tc.function?.arguments || {});
-          } catch {
-            parsedArgs = {};
-          }
+          const parsedArgs = parseExecutableToolArguments(tc.function?.arguments, choice.finish_reason === "length");
+          if (parsedArgs === null) continue;
           content.push({
             type: "tool_use",
             id: tc.id || `toolu_${Date.now()}`,
@@ -337,21 +397,23 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         role: "assistant",
         model: parsed.model || model,
         content,
-        stop_reason: choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn",
+        stop_reason: choice.finish_reason === "length" ? "max_tokens" : (choice.finish_reason === "tool_calls" ? "tool_use" : "end_turn"),
         stop_sequence: null,
         usage: {
-          input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-          output_tokens: usage.completion_tokens || usage.output_tokens || 0
+          input_tokens: Math.max(0, (usage.prompt_tokens || usage.input_tokens || 0) - (usage.prompt_tokens_details?.cached_tokens || 0)),
+          output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+          ...(usage.prompt_tokens_details?.cached_tokens !== undefined && { cache_read_input_tokens: usage.prompt_tokens_details.cached_tokens }),
+          ...(usage.estimated !== undefined && { estimated: usage.estimated }),
         }
       };
-      return { success: true, response: new Response(JSON.stringify(claudeResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+      return await finishSuccess(claudeResp, rawProviderResponse, usage, summary);
     }
 
     if (!parsed.usage) {
       parsed.usage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
     }
 
-    return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    return await finishSuccess(parsed, rawProviderResponse, usage, summary);
   } catch (err) {
     if (isClientAbort(err)) return createErrorResult(499, "Request aborted");
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);

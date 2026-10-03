@@ -108,3 +108,9 @@ session prefix caching must not restore an instruction the caller edited.
 Verify all four conversation formats and actual selected provider/model;
 synthetic payload/parser checks do not establish provider acceptance or task
 quality. See `scripts/benchmark-long-context.mjs` and the troubleshooting guide.
+
+Forced-SSE JSON conversion must select its parser from the upstream transport,
+retain tool calls and terminal disposition in every client format, and snapshot
+raw provider usage before client formatting. Tool-only responses need telemetry
+as well. Benchmark actual input thresholds are separate from fixture estimates;
+never certify an estimated usage field as provider-measured context.

@@ -1,3 +1,11 @@
+# v0.15.153 (2026-10-03)
+
+## Fix: preserve forced-stream responses across client API formats
+
+- Select the forced-SSE parser by upstream transport and preserve Gemini tool calls, Responses output, provider model, usage details and terminal status when returning JSON.
+- Store reconstructed provider responses before client formatting so text and tool-only requests retain raw usage evidence.
+- Separate the live long-context benchmark actual-input threshold from the generated token estimate; estimated or missing usage remains unverified.
+
 # v0.15.152 (2026-10-03)
 
 ## Fix: preserve long requests and recover across provider capacity limits
