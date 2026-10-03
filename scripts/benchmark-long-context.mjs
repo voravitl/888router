@@ -111,9 +111,28 @@ function parseResponse(format, value, kind, expected) {
 }
 
 function contextMeasurement(parsed, target) {
-  const actualTotalInputTokens = parsed.totalInputTokens;
+  const actualTotalInputTokens = parsed.usageProvenance === "provider_response_telemetry" && !parsed.estimatedUsage
+    ? parsed.verifiedTotalInputTokens ?? null : null;
   const contextTargetMet = actualTotalInputTokens === null ? null : actualTotalInputTokens >= target;
   return { actualTotalInputTokens, contextTargetMet, contextVerification: contextTargetMet === null ? "not_measured" : contextTargetMet ? "provider_reported_target_met" : "below_requested_target" };
+}
+
+function verifiedProviderUsage(routing) {
+  const selected = routing.records?.find((record) => ["success", "200", 200].includes(record.status));
+  const usage = selected?.upstreamUsage;
+  const metadata = selected?.upstreamUsageMetadata;
+  if ((!usage && !metadata) || usage?.estimated || metadata?.estimated) return {};
+  const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  let total = count(metadata?.promptTokenCount ?? usage?.prompt_tokens ?? usage?.input_tokens);
+  // Claude cache tokens are exclusive of input_tokens; Responses/OpenAI totals
+  // already include cache hits. Read raw provider fields, before gateway padding.
+  if (total !== null && usage?.input_tokens !== undefined &&
+    (usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined)) {
+    const read = count(usage.cache_read_input_tokens ?? 0);
+    const created = count(usage.cache_creation_input_tokens ?? 0);
+    total = read === null || created === null ? null : total + read + created;
+  }
+  return total === null ? {} : { usageProvenance: "provider_response_telemetry", verifiedTotalInputTokens: total };
 }
 
 function selectedRoute(parsed, routing, requestedModel) {
@@ -162,8 +181,8 @@ function validateOffline(item) {
   assert.deepEqual(contextMeasurement(missingUsage, item.target), { actualTotalInputTokens: null, contextTargetMet: null, contextVerification: "not_measured" });
   const tinyUsage = parseResponse(item.format, { ...validReply, ...fixtureUsage(item.format, 5), model: "different-selected-model" }, item.kind, item.expected);
   assert.equal(tinyUsage.pass, true);
-  assert.equal(contextMeasurement(tinyUsage, item.target).contextTargetMet, false);
-  assert.equal(contextMeasurement(tinyUsage, item.target).contextVerification, "below_requested_target");
+  assert.equal(contextMeasurement({ ...tinyUsage, usageProvenance: "provider_response_telemetry", verifiedTotalInputTokens: 5 }, item.target).contextTargetMet, false);
+  assert.equal(contextMeasurement({ ...tinyUsage, usageProvenance: "provider_response_telemetry", verifiedTotalInputTokens: 5 }, item.target).contextVerification, "below_requested_target");
   const route = selectedRoute(tinyUsage, { available: false }, "requested-model");
   assert.equal(route.requestedModelMatchesReturned, false);
   assert.equal(route.actualSelectedLeaf.model, "different-selected-model");
@@ -172,7 +191,11 @@ function validateOffline(item) {
   assert.equal(mismatch.returnedModelMatchesTrace, false);
   const cachedReply = parseResponse(item.format, { ...validReply, ...fixtureUsage(item.format, item.format === "anthropic" ? 5 : item.target, item.target - 10, 5) }, item.kind, item.expected);
   assert.equal(cachedReply.totalInputTokens, item.target);
-  assert.equal(contextMeasurement(cachedReply, item.target).contextTargetMet, true);
+  assert.equal(contextMeasurement({ ...cachedReply, usageProvenance: "provider_response_telemetry", verifiedTotalInputTokens: cachedReply.totalInputTokens }, item.target).contextTargetMet, true);
+  assert.equal(contextMeasurement({ ...cachedReply, totalInputTokens: item.target + 2000 }, item.target).contextVerification, "not_measured");
+  assert.deepEqual(verifiedProviderUsage({ records: [{ status: "success", upstreamUsage: { prompt_tokens: item.target, estimated: true } }] }), {});
+  const padded = { ...cachedReply, ...verifiedProviderUsage({ records: [{ status: "success", upstreamUsage: { prompt_tokens: item.target - 1500 } }] }) };
+  assert.equal(contextMeasurement(padded, item.target).contextTargetMet, false);
   const invalidUsage = parseResponse(item.format, { ...validReply, ...fixtureUsage(item.format, "500000") }, item.kind, item.expected);
   assert.equal(contextMeasurement(invalidUsage, item.target).contextVerification, "not_measured");
   const wrong = { ...item.expected, middle: "missing_middle" };
@@ -219,8 +242,11 @@ function routerKey() {
 function routingTrace(timestamp, nonce) {
   if (process.env.LONG_CONTEXT_SQLITE !== "true") return { available: false };
   try {
-    const records = sqliteRead("const D=require('better-sqlite3');const d=new D('/app/data/db/data.sqlite',{readonly:true,fileMustExist:true});const r=d.prepare('SELECT timestamp,provider,model,connectionId,status FROM requestDetails WHERE timestamp>=? AND instr(data,?)>0 ORDER BY timestamp DESC LIMIT 10').all(process.argv[1],process.argv[2]);process.stdout.write(JSON.stringify(r));d.close();", [timestamp, nonce]);
-    return { available: records.length > 0, records };
+    const records = sqliteRead("const D=require('better-sqlite3');const d=new D('/app/data/db/data.sqlite',{readonly:true,fileMustExist:true});const r=d.prepare(`SELECT timestamp,provider,model,connectionId,status,json_extract(data,'$.providerResponse.usage') AS upstreamUsage,json_extract(data,'$.providerResponse.usageMetadata') AS upstreamUsageMetadata FROM requestDetails WHERE timestamp>=? AND instr(data,?)>0 ORDER BY timestamp DESC LIMIT 10`).all(process.argv[1],process.argv[2]);process.stdout.write(JSON.stringify(r));d.close();", [timestamp, nonce]);
+    return { available: records.length > 0, records: records.map((record) => ({ ...record,
+      upstreamUsage: typeof record.upstreamUsage === "string" ? JSON.parse(record.upstreamUsage) : record.upstreamUsage,
+      upstreamUsageMetadata: typeof record.upstreamUsageMetadata === "string" ? JSON.parse(record.upstreamUsageMetadata) : record.upstreamUsageMetadata,
+    })) };
   } catch { return { available: false }; }
 }
 
@@ -256,10 +282,10 @@ async function runLive(item, base, model, key, timeoutMs) {
     const value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
     const parsed = parseResponse(item.format, value, item.kind, item.expected);
     const routing = routingTrace(timestamp, item.nonce);
-    const measurement = contextMeasurement(parsed, item.target);
+    const measurement = contextMeasurement({ ...parsed, ...verifiedProviderUsage(routing) }, item.target);
     const route = selectedRoute(parsed, routing, model);
     const pass = response.ok && parsed.pass;
-    return { ...summary, ...parsed, pass, ...measurement, ...route, measuredContextTaskPass: pass && measurement.contextTargetMet === true && route.returnedModelMatchesTrace !== false, status, headersMs, totalMs: Math.round(performance.now() - started), routing };
+    return { ...summary, ...parsed, pass, ...measurement, ...route, usageProvenance: measurement.actualTotalInputTokens === null ? "not_verified" : "provider_response_telemetry", measuredContextTaskPass: pass && measurement.contextTargetMet === true && route.returnedModelMatchesTrace !== false, status, headersMs, totalMs: Math.round(performance.now() - started), routing };
   } catch (error) {
     const category = controller.signal.aborted ? "timeout" : ["response_limit_exceeded", "empty_response"].includes(error.message) ? error.message : "request_or_parse_error";
     return { ...summary, pass: false, measuredContextTaskPass: false, actualTotalInputTokens: null, contextTargetMet: null, contextVerification: "not_measured", directProviderComparison: "not_performed", status, totalMs: Math.round(performance.now() - started), errorCategory: category, routing: routingTrace(timestamp, item.nonce) };

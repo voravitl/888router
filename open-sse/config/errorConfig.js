@@ -113,6 +113,7 @@ export const ERROR_RULES = [
   { text: "input is too long", modelError: true },
   { text: "output_limit_exceeded", modelError: true },
   { text: "cannot preserve full request context", modelError: true },
+  { text: "unsupported request:", modelError: true },
   // OpenCode Free Tier rate limit — backoff: true makes it escalate like a
   // regular 429 (2s→4s→8s…). But opencode free returns 429 *aggressively*
   // and ALL proxy pools and accounts share the same upstream quota, so

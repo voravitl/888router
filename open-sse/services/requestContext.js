@@ -58,6 +58,23 @@ export function reservedOutputTokens(body = {}) {
   return valid.length ? Math.ceil(Math.max(...valid)) : 0;
 }
 
+// Translators can insert defaults or increase tool budgets. Keep an explicit
+// client reservation intact; only gateway-generated defaults may be capped.
+export function alignTranslatedOutputBudget(translated, original, ref) {
+  const requested = reservedOutputTokens(original);
+  const { maxOutput } = getDeclaredModelLimits(ref);
+  const fields = [[translated, "max_tokens"], [translated, "max_completion_tokens"],
+    [translated, "max_output_tokens"], [translated.generationConfig, "maxOutputTokens"],
+    [translated.generation_config, "max_output_tokens"], [translated.inferenceConfig, "maxTokens"],
+    [translated.request?.generationConfig, "maxOutputTokens"]];
+  for (const [container, key] of fields) {
+    const value = container?.[key];
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
+    if (requested) container[key] = requested;
+    else if (maxOutput && value > maxOutput) container[key] = maxOutput;
+  }
+}
+
 export function getDeclaredModelLimits(ref) {
   const parsed = typeof ref === "string" ? parseModel(ref) : ref;
   return resolveKnownLimits(parsed?.provider, stripContextSuffix(parsed?.model));

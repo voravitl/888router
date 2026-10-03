@@ -105,6 +105,43 @@ describe("handleChatCore claude passthrough thinking", () => {
     expect(executeMock).not.toHaveBeenCalled();
   });
 
+  it("preserves a Gemini client's small output budget through real translation with tools", async () => {
+    const result = await handleChatCore({ body: {
+      model: "gpt-4o", stream: false, contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      tools: [{ functionDeclarations: [{ name: "lookup", parameters: { type: "object", properties: {} } }] }],
+      generationConfig: { maxOutputTokens: 256 },
+    }, modelInfo: { provider: "openai", model: "gpt-4o" }, credentials: { apiKey: "test-key" },
+    sourceFormatOverride: "gemini", isCombo: true });
+    expect(result.localValidationError).not.toBe(true);
+    expect(executeMock).toHaveBeenCalledOnce();
+    expect(executeMock.mock.calls[0][0].body.max_tokens).toBe(256);
+  });
+
+  it.each([256, 4096])("fits generated Claude thinking inside the explicit output budget (%s)", async (budget) => {
+    await handleChatCore({ body: { model: "claude-sonnet-4-20250514", stream: false,
+      messages: [{ role: "user", content: "hi" }], max_tokens: budget, reasoning_effort: "high" },
+    modelInfo: { provider: "claude", model: "claude-sonnet-4-20250514" },
+    credentials: { apiKey: "test-key" }, sourceFormatOverride: "openai", isCombo: true });
+    const sent = executeMock.mock.calls[0][0].body;
+    expect(sent.max_tokens).toBe(budget);
+    if (sent.thinking?.budget_tokens) expect(sent.thinking.budget_tokens).toBeLessThan(budget);
+    if (budget < 1024) expect(sent.thinking).toBeUndefined();
+  });
+
+  it.each([false, true])("keeps native Gemini transport fields out of the outbound JSON (%s)", async (stream) => {
+    await handleChatCore({ body: {
+      model: "gemini-2.5-pro", stream, contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      generationConfig: { maxOutputTokens: 256 },
+    }, modelInfo: { provider: "gemini", model: "gemini-2.5-pro" }, credentials: { apiKey: "test-key" },
+    sourceFormatOverride: "gemini", isCombo: true });
+    expect(executeMock).toHaveBeenCalledOnce();
+    const sent = executeMock.mock.calls[0][0];
+    expect(sent.stream).toBe(stream);
+    expect(sent.body).not.toHaveProperty("stream");
+    expect(sent.body).not.toHaveProperty("model");
+    expect(sent.body.contents).toEqual([{ role: "user", parts: [{ text: "hi" }] }]);
+  });
+
   it("preserves a large OpenAI history despite enabled compression and style settings", async () => {
     registerDynamicCapabilitiesScoped("openai", "context-integrity-test", { contextWindow: 1000000, maxOutput: 32000 });
     const content = `START_KEEP_${"abcd ".repeat(400000)}_END_KEEP`;

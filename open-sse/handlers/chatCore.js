@@ -36,10 +36,11 @@ import { pruneMessageHistory } from "../translator/concerns/pruner.js";
 import { injectPromptCaching } from "../translator/concerns/promptCache.js";
 import { routeByIntent } from "../translator/concerns/intentRouter.js";
 import { getCachedResponse, isResponseCacheOptIn } from "../translator/concerns/responseCache.js";
-import { getContextFit, contextLimitMessage, estimateRequestTokens } from "../services/requestContext.js";
+import { getContextFit, contextLimitMessage, estimateRequestTokens, alignTranslatedOutputBudget } from "../services/requestContext.js";
 import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
 
 function localValidationResult(message, code, details = {}) {
+  if (code === "unsupported_request") message = `Unsupported request: ${message}`;
   const result = createErrorResult(HTTP_STATUS.BAD_REQUEST, message);
   result.localValidationError = true;
   result.response = new Response(JSON.stringify({ error: {
@@ -254,7 +255,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       applyThinking(FORMATS.CLAUDE, translatedBody.model, translatedBody, provider, captureThinking(body));
     }
   } else {
-    translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, requestCredentials || credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    try {
+      translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, requestCredentials || credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    } catch (error) {
+      if (error?.code === "unsupported_request") return localValidationResult(error.message, error.code);
+      throw error;
+    }
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
@@ -361,7 +367,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // system/tools/messages, and a stale anchor costs a full prefix rewrite.
   if (!preserveRequestInput && finalFormat === "claude") anchorClaudeCache(translatedBody);
 
-  // Translators may add output defaults or increase budgets for thinking/tools.
+  // Preserve explicit reservations; constrain only gateway-generated defaults.
+  alignTranslatedOutputBudget(translatedBody, body, { provider, model: upstreamModel });
+  // Generated Claude thinking must fit the preserved client reservation.
+  // Explicit client thinking remains upstream-validated without alteration.
+  if (finalFormat === FORMATS.CLAUDE && !body.thinking?.budget_tokens
+    && translatedBody.thinking?.budget_tokens >= translatedBody.max_tokens) {
+    if (translatedBody.max_tokens > 1024) translatedBody.thinking.budget_tokens = translatedBody.max_tokens - 1;
+    else delete translatedBody.thinking;
+  }
+  // Gemini selects model and streaming through its URL, not JSON fields.
+  if (finalFormat === FORMATS.GEMINI) {
+    delete translatedBody.stream;
+    delete translatedBody.model;
+  }
   // Validate the actual outbound budget as well as the original client budget.
   const outboundFit = getContextFit(translatedBody, { provider, model: upstreamModel });
   if (outboundFit.reason === "output_limit_exceeded") {

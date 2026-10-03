@@ -1,8 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { estimateRequestTokens, getContextFit, getDeclaredModelLimits } from "../../open-sse/services/requestContext.js";
+import { estimateRequestTokens, getContextFit, getDeclaredModelLimits, alignTranslatedOutputBudget } from "../../open-sse/services/requestContext.js";
 import { registerDynamicCapabilitiesScoped } from "../../open-sse/providers/capabilities.js";
 
 describe("provider-agnostic request context", () => {
+  it("restores a valid explicit budget raised by translation and caps only defaults", () => {
+    const translated = { max_tokens: 32000 };
+    alignTranslatedOutputBudget(translated, { generationConfig: { maxOutputTokens: 256 } }, "openai/gpt-4o");
+    expect(translated.max_tokens).toBe(256);
+    expect(getContextFit(translated, "openai/gpt-4o").reason).toBe(null);
+    const defaults = { max_tokens: 64000 };
+    alignTranslatedOutputBudget(defaults, {}, "openai/gpt-4o");
+    expect(defaults.max_tokens).toBe(16384);
+    const gemini = { generationConfig: { maxOutputTokens: 32000 } };
+    alignTranslatedOutputBudget(gemini, { max_tokens: 128 }, "openai/gpt-4o");
+    expect(gemini.generationConfig.maxOutputTokens).toBe(128);
+    const unknown = { max_tokens: 64000 };
+    alignTranslatedOutputBudget(unknown, {}, "unknown/unpublished-model");
+    expect(unknown.max_tokens).toBe(64000);
+  });
   it.each([
     { messages: [{ role: "user", content: "x".repeat(2000000) }] },
     { input: [{ role: "user", content: [{ type: "input_text", text: "x".repeat(2000000) }] }] },

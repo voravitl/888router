@@ -285,9 +285,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint });
 
+  // Client formatting/padding must not mutate the upstream usage saved below.
+  const clientResponseBody = structuredClone(responseBody);
   let translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat)
-    : responseBody;
+    ? translateNonStreamingResponse(clientResponseBody, targetFormat, sourceFormat)
+    : clientResponseBody;
   if (toolNameMap?.size > 0) {
     translatedResponse = restoreOpencodeToolNames(translatedResponse, toolNameMap);
   }
@@ -379,7 +381,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   if (translatedResponse?.usage) {
-    translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
+    // Gemini's endpoint adapter consumes this intermediate OpenAI completion.
+    // Filtering its usage as native Gemini would erase every token count.
+    const usageFormat = sourceFormat === FORMATS.GEMINI && translatedResponse?.choices
+      ? FORMATS.OPENAI
+      : sourceFormat;
+    translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), usageFormat);
   }
 
   // Strip reasoning_content only when content is non-empty.
