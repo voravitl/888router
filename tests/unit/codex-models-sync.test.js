@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   stampSyncedModels: vi.fn(async () => ({})),
   getSyncedModelsMap: vi.fn(async () => ({})),
   saveModelDynamicCapabilities: vi.fn(async () => ({})),
+  resolveCodexDiscoveryVersion: vi.fn(),
   fetch: vi.fn(),
 }));
 
@@ -21,12 +22,17 @@ vi.mock("@/lib/db", () => ({
 
 vi.stubGlobal("fetch", mocks.fetch);
 
+vi.mock("open-sse/services/codexDiscoveryVersion.js", () => ({
+  resolveCodexDiscoveryVersion: mocks.resolveCodexDiscoveryVersion,
+}));
+
 describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.resolveCodexDiscoveryVersion.mockResolvedValue({ version: "0.160.0" });
   });
 
-  it("fetches codex models with client_version=0.156.1 and generates review pairs", async () => {
+  it("fetches codex models with the current release version and generates review pairs", async () => {
     mocks.getProviderConnectionById.mockResolvedValue({
       id: "conn-codex-1",
       provider: "codex",
@@ -77,9 +83,6 @@ describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
       }),
     });
 
-    const { CODEX_CLI_VERSION } = await import("../../open-sse/providers/shared.js");
-    expect(CODEX_CLI_VERSION).toBe("0.156.1");
-
     const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
 
     const res = await GET(new Request("http://localhost/api/providers/conn-codex-1/models"), {
@@ -91,7 +94,7 @@ describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
 
     // Verify correct URL and headers
     const [calledUrl, calledInit] = mocks.fetch.mock.calls[0];
-    expect(calledUrl).toContain("https://chatgpt.com/backend-api/codex/models?client_version=0.156.1");
+    expect(calledUrl).toContain("https://chatgpt.com/backend-api/codex/models?client_version=0.160.0");
     expect(calledInit.headers.Authorization).toBe("Bearer codex-test-token");
     expect(calledInit.headers.originator).toBe("codex_cli_rs");
 
@@ -188,5 +191,39 @@ describe("Codex Provider Model Sync (GPT-6 Astra, Sol, Luna Support)", () => {
         expect.objectContaining({ connectionId: "conn-codex-2", modelId: "gpt-6.1-sol-review" }),
       ])
     );
+  });
+
+  it("syncs an unknown future model without a registry edit and shows discovery fallback warnings", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-future", provider: "codex", accessToken: "test-token", isActive: true,
+    });
+    mocks.resolveCodexDiscoveryVersion.mockResolvedValue({
+      version: "0.200.0", warning: "Release refresh unavailable; using last known version.",
+    });
+    mocks.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [{
+        slug: "future-codex-not-in-registry", display_name: "Future Codex",
+        max_context_window: 123456, input_modalities: ["text"],
+      }] }),
+    });
+    const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
+    const response = await GET(new Request("http://localhost/api/providers/conn-future/models"), {
+      params: Promise.resolve({ id: "conn-future" }),
+    });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(mocks.fetch.mock.calls[0][0]).toContain("client_version=0.200.0");
+    expect(body.warning).toContain("Release refresh unavailable");
+    for (const id of ["future-codex-not-in-registry", "future-codex-not-in-registry-review"]) {
+      expect(body.models.filter((m) => m.id === id)).toHaveLength(1);
+      expect(body.models.find((m) => m.id === id)).toMatchObject({ contextWindow: 123456, vision: false });
+      expect(mocks.stampSyncedModels).toHaveBeenCalledWith(expect.arrayContaining([
+        expect.objectContaining({ connectionId: "conn-future", modelId: id }),
+      ]));
+      expect(mocks.saveModelDynamicCapabilities).toHaveBeenCalledWith(
+        "codex", id, expect.objectContaining({ contextWindow: 123456, vision: false }),
+      );
+    }
   });
 });

@@ -348,7 +348,9 @@ Common issues and solutions when using 9Router.
 
 OpenAI API and OpenAI Codex have separate provider registries. Adding a model to the OpenAI API registry does not add it to Codex. A successful sync preserves upstream entries and supplements missing entries from the selected provider's registry.
 
-Check the Codex upstream catalog or current Codex client catalog before adding a model to the Codex registry. Use the existing review-model helper, and test both a missing upstream entry and an upstream entry whose metadata must remain authoritative. A catalog entry alone does not prove account access.
+Codex sync automatically reads the latest stable release version from the official `@openai/codex` npm package and uses it for authenticated model discovery. Each successful Sync refreshes this version, so new upstream model IDs do not require a registry edit. Upstream names, context limits and image support remain authoritative; chat models receive review variants automatically.
+
+If release metadata is unavailable, sync uses the last known version (or the bundled baseline), displays a warning, and retries the release lookup after a one-minute backoff. Concurrent syncs share the release lookup; model catalogs remain account-specific. Only public release metadata goes to npm, with no provider credentials. Sync cannot make models available before the provider exposes them to the account. A catalog entry alone does not prove account access.
 
 ## Need More Help?
 
