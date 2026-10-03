@@ -43,13 +43,29 @@ function isClaudeCodeClient(headers) {
  * Called at the entry point before any translation/forwarding.
  * @param {object} headers - Lowercase header key/value object (from request.headers.entries())
  */
+export function getClaudeRequestHeaders(headers) {
+  if (!headers || typeof headers !== "object" || !isClaudeCodeClient(headers)) return null;
+  const captured = {};
+  for (const key of CLAUDE_IDENTITY_HEADERS) {
+    if (headers[key] !== undefined && headers[key] !== null) captured[key] = headers[key];
+  }
+  // Anthropic's gateway contract treats protocol/beta headers as an open list.
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.startsWith("anthropic-") && value !== undefined && value !== null) captured[key] = value;
+  }
+  return captured;
+}
+
 export function cacheClaudeHeaders(headers) {
   if (!headers || typeof headers !== "object") return;
   if (!isClaudeCodeClient(headers)) return;
 
+  // Only the legacy identity whitelist may enter the shared fallback cache.
+  // Open-ended protocol headers can contain workspace/account state and belong
+  // exclusively to the current request's getClaudeRequestHeaders() result.
   const captured = {};
   for (const key of CLAUDE_IDENTITY_HEADERS) {
-    if (headers[key] !== undefined && headers[key] !== null) {
+    if (key !== "x-claude-code-session-id" && headers[key] !== undefined && headers[key] !== null) {
       captured[key] = headers[key];
     }
   }

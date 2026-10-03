@@ -1,6 +1,6 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
-import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
+import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger, createClaudeNativeStreamWithLogger } from "../../utils/stream.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
@@ -36,6 +36,10 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if ((toolNameMap && toolNameMap.size > 0) || needsTranslation(targetFormat, sourceFormat)) {
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey);
+  }
+
+  if (sourceFormat === FORMATS.CLAUDE && targetFormat === FORMATS.CLAUDE) {
+    return createClaudeNativeStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
   }
 
   return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
@@ -95,19 +99,25 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey });
 
+  const declaredTools = translatedBody?._declaredTools
+    || body?._declaredTools
+    || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
+  const hasTools = (declaredTools && declaredTools.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
+  const hasToolShim = universalToolsMode !== "off" && hasTools;
+  const isNativeClaudePassthrough = sourceFormat === FORMATS.CLAUDE
+    && targetFormat === FORMATS.CLAUDE
+    && !(toolNameMap && toolNameMap.size > 0)
+    && !hasToolShim;
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const isClaudeTarget = targetFormat === FORMATS.CLAUDE;
-  const onAbortTerminal = isResponsesPassthrough
+  const onAbortTerminal = isNativeClaudePassthrough
+    ? null
+    : isResponsesPassthrough
     ? buildAbortedResponsesTerminalBytes
     : isClaudeTarget
       ? buildAbortedClaudeTerminalBytes
       : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const declaredTools = translatedBody?._declaredTools
-    || body?._declaredTools
-    || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
-  const hasTools = (declaredTools && declaredTools.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
-
   let transform = transformStream;
   // Gate the tool shim on the effective universal tools mode: when "off", do
   // NOT run the shim even if tools are present — the shim itself is what
@@ -130,7 +140,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  let outputStream = pipeWithDisconnect(providerResponse, transform, streamController, onAbortTerminal, stallTimeoutMs);
+  let outputStream = pipeWithDisconnect(providerResponse, transform, streamController, onAbortTerminal, stallTimeoutMs, {
+    propagateUpstreamErrors: isNativeClaudePassthrough,
+  });
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId, clientModel,

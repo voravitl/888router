@@ -357,3 +357,29 @@ If release metadata is unavailable, sync uses the last known version (or the bun
 - **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
 - **Documentation:** [9router.com/docs](https://9router.com/docs)
 - **FAQ:** [faq.md](faq.md)
+
+
+### Claude Code behaves differently through a gateway
+
+Claude Code requests default to preserving client semantics. For native Claude
+Messages routes, 888router forwards the request body with only the resolved model
+changed. Client thinking, effort, tools, system blocks, history, extensions, and
+cache controls remain client-owned. Provider thinking defaults, tool deduplication,
+RTK, Headroom, pruning, Caveman/Ponytail, and automatic cache rewriting do not run
+by default on Claude Code requests. Cross-provider combo leaves still require
+protocol translation and the selected provider's compatibility constraints.
+
+To explicitly use the configured request transformations, send
+`x-888-native-transformations: true`. This can change model behavior and cache
+reuse. Native Claude SSE preserves upstream bytes and event order, including
+pings, thinking signatures, partial tool arguments, and unknown future events.
+It does not append an OpenAI `[DONE]` sentinel. An interrupted native stream
+propagates the upstream failure without fabricating a successful completion.
+
+A combo can fall back to a different provider or model. Compare the actual
+resolved provider/model, client version, effort, cache state, first useful text
+or tool event, total time, and task success before drawing conclusions about
+performance. A proxy cannot guarantee higher throughput or answer quality than
+the same upstream provider. Claude Code also has different fine-grained tool
+streaming defaults for a custom base URL. See Anthropic's
+[Claude Code gateway compatibility guide](https://code.claude.com/docs/en/llm-gateway-protocol).

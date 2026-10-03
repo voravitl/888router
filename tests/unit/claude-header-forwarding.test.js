@@ -27,6 +27,18 @@ describe("claudeHeaderCache", () => {
     expect(cacheModule.getCachedClaudeHeaders()).toBeNull();
   });
 
+  it("keeps workspace and future protocol headers request-local", () => {
+    const headers = {
+      "user-agent": "claude-cli/2.1.288",
+      "anthropic-workspace-id": "workspace-a",
+      "anthropic-future-protocol": "account-a",
+      "x-claude-code-session-id": "session-a",
+    };
+    expect(cacheModule.getClaudeRequestHeaders(headers)).toMatchObject(headers);
+    cacheModule.cacheClaudeHeaders(headers);
+    expect(cacheModule.getCachedClaudeHeaders()).toEqual({ "user-agent": headers["user-agent"] });
+  });
+
   it("caches headers when user-agent contains 'claude-code'", () => {
     cacheModule.cacheClaudeHeaders({
       "user-agent": "claude-code/2.1.63 node/24.3.0",
@@ -413,5 +425,94 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
     });
 
     expect(gotScrapingMock).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("DefaultExecutor native Claude request fidelity", () => {
+  it("preserves parameters and extensions instead of applying compatibility stripping", async () => {
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const executor = new DefaultExecutor("claude");
+    const body = { model: "claude-test", temperature: 0.2, thinking: { type: "adaptive" }, output_config: { effort: "medium" }, extensions: { client_owned: true } };
+    const before = structuredClone(body);
+    expect(executor.transformRequest(body.model, body, true, { nativeClaudeFidelity: true })).toEqual(before);
+    expect(body).toEqual(before);
+  });
+
+  it("keeps compatibility stripping available outside native fidelity mode", async () => {
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const executor = new DefaultExecutor("claude");
+    const body = { model: "claude-test", temperature: 0.2 };
+    expect(executor.transformRequest(body.model, body, true, {})).not.toHaveProperty("temperature");
+  });
+});
+
+
+describe("Claude request-local header isolation", () => {
+  it("keeps concurrent clients' beta and session headers separate and auth provider-owned", async () => {
+    vi.resetModules();
+    const cache = await import("open-sse/utils/claudeHeaderCache.js");
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const executor = new DefaultExecutor("claude");
+    const a = { "user-agent": "claude-cli/a", "anthropic-beta": "client-a-beta", "x-claude-code-session-id": "session-a", "anthropic-future-feature": "a", authorization: "Bearer client-key", "x-api-key": "client-api-key" };
+    const b = { "user-agent": "claude-cli/b", "anthropic-beta": "client-b-beta", "x-claude-code-session-id": "session-b" };
+    cache.cacheClaudeHeaders(a);
+    cache.cacheClaudeHeaders(b);
+    const headersA = executor.buildHeaders({ accessToken: "upstream-a", rawHeaders: a, nativeClaudeFidelity: true }, true, "", "claude-test");
+    const headersB = executor.buildHeaders({ accessToken: "upstream-b", rawHeaders: b, nativeClaudeFidelity: true }, true, "", "claude-test");
+    expect(headersA["x-claude-code-session-id"]).toBe("session-a");
+    expect(headersA["anthropic-beta"]).toBe("client-a-beta,oauth-2025-04-20");
+    expect(headersA["anthropic-future-feature"]).toBe("a");
+    expect(headersA.Authorization).toBe("Bearer upstream-a");
+    expect(headersA["x-api-key"]).toBeUndefined();
+    expect(headersB["x-claude-code-session-id"]).toBe("session-b");
+    expect(headersB["anthropic-beta"]).toBe("client-b-beta,oauth-2025-04-20");
+    expect(headersB["anthropic-future-feature"]).toBeUndefined();
+    expect(cache.getCachedClaudeHeaders()["x-claude-code-session-id"]).toBeUndefined();
+  });
+
+  it("never uses a previous client's overlay for an empty request-scoped header object", async () => {
+    vi.resetModules();
+    const cache = await import("open-sse/utils/claudeHeaderCache.js");
+    cache.cacheClaudeHeaders({ "user-agent": "claude-cli/other", "anthropic-beta": "other-beta", "x-claude-code-session-id": "other-session" });
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const headers = new DefaultExecutor("claude").buildHeaders({ apiKey: "upstream", rawHeaders: {} }, true);
+    expect(headers["x-claude-code-session-id"]).toBeUndefined();
+    expect(headers["anthropic-beta"] || headers["Anthropic-Beta"]).not.toContain("other-beta");
+    expect(headers["user-agent"] || headers["User-Agent"]).not.toBe("claude-cli/other");
+  });
+});
+
+
+describe("Native Claude protocol header provider matrix", () => {
+  it.each(["claude", "anthropic", "anthropic-compatible-official"])("preserves request protocol headers for %s", async (provider) => {
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const headers = new DefaultExecutor(provider).buildHeaders({ apiKey: "provider-key", nativeClaudeFidelity: true, providerSpecificData: { baseUrl: "https://api.anthropic.com/v1" }, rawHeaders: { "user-agent": "claude-cli/test", "anthropic-version": "client-version", "anthropic-beta": "client-feature", "anthropic-future-feature": "future" } }, true, "https://api.anthropic.com/v1/messages", "claude-test");
+    expect(headers["anthropic-version"]).toBe("client-version");
+    expect(headers["anthropic-beta"]).toBe("client-feature");
+    expect(headers["anthropic-future-feature"]).toBe("future");
+    expect(headers["x-api-key"]).toBe("provider-key");
+  });
+
+  it.each(["claude", "anthropic", "anthropic-compatible-official"])("does not invent beta flags for an API-key client without betas: %s", async (provider) => {
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const headers = new DefaultExecutor(provider).buildHeaders({ apiKey: "provider-key", nativeClaudeFidelity: true, rawHeaders: { "user-agent": "claude-cli/test" }, providerSpecificData: { baseUrl: "https://api.anthropic.com/v1" } }, true, "https://api.anthropic.com/v1/messages", "claude-test");
+    expect(headers["anthropic-beta"] || headers["Anthropic-Beta"]).toBeUndefined();
+  });
+
+  it("adds only the OAuth beta when official compatible upstream uses an OAuth credential", async () => {
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const headers = new DefaultExecutor("anthropic-compatible-official").buildHeaders({ accessToken: "provider-token", nativeClaudeFidelity: true, rawHeaders: { "user-agent": "claude-cli/test" }, providerSpecificData: { baseUrl: "https://api.anthropic.com/v1" } }, true, "https://api.anthropic.com/v1/messages", "claude-test");
+    expect(headers["anthropic-beta"]).toBeUndefined();
+    expect(headers["Anthropic-Beta"]).toBe("oauth-2025-04-20");
+    expect(headers.Authorization).toBe("Bearer provider-token");
+  });
+
+  it("does not treat a hostname containing api.anthropic.com as first-party", async () => {
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const headers = new DefaultExecutor("anthropic-compatible-thirdparty").buildHeaders({ accessToken: "provider-token", nativeClaudeFidelity: true, rawHeaders: { "user-agent": "claude-cli/test", "x-app": "cli", "x-claude-code-session-id": "private-session", "anthropic-beta": "claude-code-20250219,client-feature" }, providerSpecificData: { baseUrl: "https://api.anthropic.com.example.org/v1" } }, true, "https://api.anthropic.com.example.org/v1/messages", "claude-test");
+    expect(headers["anthropic-beta"]).toBe("client-feature");
+    expect(headers["x-app"]).toBeUndefined();
+    expect(headers["x-claude-code-session-id"]).toBeUndefined();
   });
 });
