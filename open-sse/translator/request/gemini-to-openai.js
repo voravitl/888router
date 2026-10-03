@@ -139,8 +139,14 @@ function convertGeminiContent(content, callState) {
       supported = true;
     }
     if (part.functionResponse) {
-      flush();
       const response = part.functionResponse;
+      if (parts.length || toolCalls.length) {
+        throw unsupportedRequest("Interleaved Gemini content and tool results cannot retain their order in this chat format; use a native Gemini route.");
+      }
+      if (response.parts?.length) {
+        throw unsupportedRequest("Gemini tool-result media cannot be translated to this chat format; use a native Gemini route.");
+      }
+      flush();
       const queue = callState.pending.get(response.name) || [];
       const id = response.id || queue[0] || `call_${response.name}`;
       const index = queue.indexOf(id);
@@ -169,4 +175,3 @@ function extractGeminiText(content) {
 // Register
 register(FORMATS.GEMINI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
 register(FORMATS.GEMINI_CLI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
-

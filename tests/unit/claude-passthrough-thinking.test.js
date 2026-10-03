@@ -117,6 +117,18 @@ describe("handleChatCore claude passthrough thinking", () => {
     expect(executeMock.mock.calls[0][0].body.max_tokens).toBe(256);
   });
 
+  it("returns local unsupported_request for unrepresentable Gemini tool media before dispatch", async () => {
+    const result = await handleChatCore({ body: { model: "gpt-4o", stream: false,
+      contents: [{ role: "user", parts: [{ functionResponse: { name: "lookup", response: { image: { $ref: "x" } },
+        parts: [{ inlineData: { mimeType: "image/png", data: "aGVsbG8=" } }],
+      } }] }] }, modelInfo: { provider: "openai", model: "gpt-4o" }, credentials: { apiKey: "test-key" },
+      sourceFormatOverride: "gemini", isCombo: true });
+    expect(result.localValidationError).toBe(true);
+    expect(result.response.status).toBe(400);
+    expect((await result.response.json()).error.code).toBe("unsupported_request");
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
   it.each([256, 4096])("fits generated Claude thinking inside the explicit output budget (%s)", async (budget) => {
     await handleChatCore({ body: { model: "claude-sonnet-4-20250514", stream: false,
       messages: [{ role: "user", content: "hi" }], max_tokens: budget, reasoning_effort: "high" },

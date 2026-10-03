@@ -1137,7 +1137,8 @@ export class KiroExecutor extends BaseExecutor {
           ...(state.usage || {}),
           prompt_tokens: prompt,
           completion_tokens: completion,
-          total_tokens: prompt + completion
+          total_tokens: prompt + completion,
+          estimated: true
         };
       }
       const finishReason = truncatedAfterOutput

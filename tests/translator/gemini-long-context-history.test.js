@@ -29,13 +29,27 @@ describe("Gemini large mixed history through the real translator", () => {
     expect(output.tools.map((tool) => tool.function.name)).toEqual(["lookup", "check"]);
   });
 
-  it("keeps interleaved text and results in source order", () => {
-    const output = translate({ contents: [{ role: "user", parts: [
+  it("rejects interleaved text/results that would require reordering or invalid tool grammar", () => {
+    const body = { contents: [{ role: "user", parts: [
       { text: "before" }, { functionResponse: { name: "one", response: { value: 0 } } },
       { text: "between" }, { functionResponse: { name: "two", response: { value: 2 } } }, { text: "after" },
-    ] }] });
-    expect(output.messages.map((message) => message.role)).toEqual(["user", "tool", "user", "tool", "user"]);
-    expect(output.messages.map((message) => message.content)).toEqual(["before", '{"value":0}', "between", '{"value":2}', "after"]);
+    ] }] };
+    expect(() => translate(body)).toThrow(/native Gemini route/);
+    try { translate(body); } catch (error) { expect(error.code).toBe("unsupported_request"); }
+    const middle = { contents: [{ role: "user", parts: [
+      { functionResponse: { name: "one", response: { value: 1 } } }, { text: "middle" },
+      { functionResponse: { name: "two", response: { value: 2 } } },
+    ] }] };
+    expect(() => translate(middle)).toThrow(/Interleaved/);
+  });
+
+  it("rejects nested tool-result media instead of dropping its referenced bytes", () => {
+    const body = { contents: [{ role: "user", parts: [{ functionResponse: {
+      name: "lookup", response: { image: { $ref: "image1" } },
+      parts: [{ inlineData: { mimeType: "image/png", data: "aGVsbG8=" } }],
+    } }] }] };
+    expect(() => translate(body)).toThrow(/tool-result media/);
+    try { translate(body); } catch (error) { expect(error.code).toBe("unsupported_request"); }
   });
 
   it("pairs parallel same-name calls without explicit ids with distinct ordered results", () => {

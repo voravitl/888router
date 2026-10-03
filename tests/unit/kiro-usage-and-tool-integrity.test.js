@@ -183,6 +183,14 @@ afterEach(() => {
 });
 
 describe("A: tool-call bytes count as output tokens", () => {
+  it("labels percentage-derived token counts as estimates", async () => {
+    const body = await run([
+      frame("assistantResponseEvent", { content: "ok" }),
+      frame("metadataEvent", { stopReason: "end_turn" }),
+      ...METERED,
+    ]);
+    expect(usageFrom(body).estimated).toBe(true);
+  });
   it("does not report a tool-only turn as OUT 1", async () => {
     const body = await run([
       frame("toolUseEvent", {
