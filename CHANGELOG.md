@@ -1,3 +1,11 @@
+# v0.15.154 (2026-10-03)
+
+## Fix: retain provider usage evidence and recover from retired models
+
+- Treat metadata-free Antigravity model-retirement notices returned as HTTP 200 JSON or SSE as model-unavailable errors, allowing combo fallback without quarantining healthy accounts.
+- Preserve bounded upstream usage and model/status metadata when request-details response previews exceed the configured size limit. Full response bodies remain truncated.
+- Keep benchmark trace nonces in the tool description and first-message preview so oversized inputs and tool-only responses remain attributable.
+
 # v0.15.153 (2026-10-03)
 
 ## Fix: preserve forced-stream responses across client API formats
