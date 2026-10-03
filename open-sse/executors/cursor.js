@@ -12,6 +12,7 @@ import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { chatChunkSse } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
 import zlib from "zlib";
 
 // Detect cloud environment
@@ -194,12 +195,15 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  makeHttp2Request(url, headers, body, signal) {
+  makeHttp2Request(url, headers, body, signal, timeoutPolicy = null) {
     if (!http2) {
       throw new Error("http2 module not available");
     }
 
-    const HTTP2_TIMEOUT_MS = 60000; // 60s max — prevent hung sessions
+    // This transport buffers the entire response: this is a whole-request
+    // deadline, not a header timeout. Long prefill gets a larger bounded wait.
+    const HTTP2_TIMEOUT_MS = timeoutPolicy?.longContext
+      ? Math.max(180000, timeoutPolicy.totalBudgetMs) : 60000;
 
     return new Promise((resolve, reject) => {
       const urlObj = new URL(url);
@@ -261,7 +265,8 @@ export class CursorExecutor extends BaseExecutor {
     try {
       const shouldForceFetch = proxyOptions?.enabled === true || proxyOptions?.connectionProxyEnabled === true || !!proxyOptions?.vercelRelayUrl;
       const response = (http2 && !shouldForceFetch)
-        ? await this.makeHttp2Request(url, headers, transformedBody, signal)
+        ? await this.makeHttp2Request(url, headers, transformedBody, signal,
+          credentials?.requestTimeoutPolicy || getRequestTimeoutPolicy(body))
         : await this.makeFetchRequest(url, headers, transformedBody, signal, proxyOptions);
 
       if (response.status !== 200) {

@@ -37,6 +37,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+const { registerDynamicCapabilitiesScoped } = await import("../../open-sse/providers/capabilities.js");
 
 const CLAUDE_HEADERS = {
   "user-agent": "claude-cli/2.1.92 (external, cli)",
@@ -88,6 +89,100 @@ describe("handleChatCore claude passthrough thinking", () => {
       headers: {},
       transformedBody: null,
     });
+  });
+
+  it("rejects an excessive explicit output budget before translation or upstream execution", async () => {
+    const result = await handleChatCore({
+      body: { messages: [{ role: "user", content: "small request" }], max_tokens: 100000 },
+      modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "test" }, log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      prunerEnabled: true,
+    });
+    expect(result.success).toBe(false);
+    expect(result.localValidationError).toBe(true);
+    expect(result.response.status).toBe(400);
+    expect((await result.response.json()).error.code).toBe("output_limit_exceeded");
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves a Gemini client's small output budget through real translation with tools", async () => {
+    const result = await handleChatCore({ body: {
+      model: "gpt-4o", stream: false, contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      tools: [{ functionDeclarations: [{ name: "lookup", parameters: { type: "object", properties: {} } }] }],
+      generationConfig: { maxOutputTokens: 256 },
+    }, modelInfo: { provider: "openai", model: "gpt-4o" }, credentials: { apiKey: "test-key" },
+    sourceFormatOverride: "gemini", isCombo: true });
+    expect(result.localValidationError).not.toBe(true);
+    expect(executeMock).toHaveBeenCalledOnce();
+    expect(executeMock.mock.calls[0][0].body.max_tokens).toBe(256);
+  });
+
+  it("returns local unsupported_request for unrepresentable Gemini tool media before dispatch", async () => {
+    const result = await handleChatCore({ body: { model: "gpt-4o", stream: false,
+      contents: [{ role: "user", parts: [{ functionResponse: { name: "lookup", response: { image: { $ref: "x" } },
+        parts: [{ inlineData: { mimeType: "image/png", data: "aGVsbG8=" } }],
+      } }] }] }, modelInfo: { provider: "openai", model: "gpt-4o" }, credentials: { apiKey: "test-key" },
+      sourceFormatOverride: "gemini", isCombo: true });
+    expect(result.localValidationError).toBe(true);
+    expect(result.response.status).toBe(400);
+    expect((await result.response.json()).error.code).toBe("unsupported_request");
+    expect(executeMock).not.toHaveBeenCalled();
+  });
+
+  it.each([256, 4096])("fits generated Claude thinking inside the explicit output budget (%s)", async (budget) => {
+    await handleChatCore({ body: { model: "claude-sonnet-4-20250514", stream: false,
+      messages: [{ role: "user", content: "hi" }], max_tokens: budget, reasoning_effort: "high" },
+    modelInfo: { provider: "claude", model: "claude-sonnet-4-20250514" },
+    credentials: { apiKey: "test-key" }, sourceFormatOverride: "openai", isCombo: true });
+    const sent = executeMock.mock.calls[0][0].body;
+    expect(sent.max_tokens).toBe(budget);
+    if (sent.thinking?.budget_tokens) expect(sent.thinking.budget_tokens).toBeLessThan(budget);
+    if (budget < 1024) expect(sent.thinking).toBeUndefined();
+  });
+
+  it.each(["claude", "openai"])("retains original budgets when same-format thinking or provider settings mutate the working body (%s)", async (sourceFormat) => {
+    const body = { model: "claude-sonnet-4-20250514", stream: false,
+      messages: [{ role: "user", content: "hi" }], max_tokens: 4096, reasoning_effort: "high" };
+    await handleChatCore({ body, modelInfo: { provider: "claude", model: body.model }, credentials: { apiKey: "test-key" },
+      sourceFormatOverride: sourceFormat, isCombo: true,
+      providerThinking: { mode: "on" } });
+    const sent = executeMock.mock.calls[0][0].body;
+    expect(sent.max_tokens).toBe(4096);
+    if (sent.thinking?.budget_tokens) expect(sent.thinking.budget_tokens).toBeLessThan(4096);
+    expect(body).not.toHaveProperty("thinking");
+  });
+
+  it.each([false, true])("keeps native Gemini transport fields out of the outbound JSON (%s)", async (stream) => {
+    await handleChatCore({ body: {
+      model: "gemini-2.5-pro", stream, contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      generationConfig: { maxOutputTokens: 256 },
+    }, modelInfo: { provider: "gemini", model: "gemini-2.5-pro" }, credentials: { apiKey: "test-key" },
+    sourceFormatOverride: "gemini", isCombo: true });
+    expect(executeMock).toHaveBeenCalledOnce();
+    const sent = executeMock.mock.calls[0][0];
+    expect(sent.stream).toBe(stream);
+    expect(sent.body).not.toHaveProperty("stream");
+    expect(sent.body).not.toHaveProperty("model");
+    expect(sent.body.contents).toEqual([{ role: "user", parts: [{ text: "hi" }] }]);
+  });
+
+  it("preserves a large OpenAI history despite enabled compression and style settings", async () => {
+    registerDynamicCapabilitiesScoped("openai", "context-integrity-test", { contextWindow: 1000000, maxOutput: 32000 });
+    const content = `START_KEEP_${"abcd ".repeat(400000)}_END_KEEP`;
+    const body = { model: "context-integrity-test", stream: false, messages: [
+      { role: "system", content: "Retain original instructions." },
+      { role: "user", content },
+    ], max_tokens: 128 };
+    const before = structuredClone(body);
+    await handleChatCore({ body, modelInfo: { provider: "openai", model: body.model },
+      credentials: { apiKey: "test" }, log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      prunerEnabled: true, rtkEnabled: true, headroomEnabled: true,
+      cavemanEnabled: true, cavemanLevel: "high", ponytailEnabled: true, ponytailLevel: "high",
+      clientRawRequest: { headers: {}, body: before }, sourceFormatOverride: "openai",
+    });
+    expect(executeMock).toHaveBeenCalledOnce();
+    expect(executeMock.mock.calls[0][0].body.messages).toEqual(before.messages);
+    expect(body).toEqual(before);
   });
 
   it("sonnet-5 keeps adaptive thinking with injected max effort, no reasoning keys", async () => {

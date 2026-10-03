@@ -89,3 +89,22 @@ model, a 429, or a malformed tool request is not a valid latency/quality A/B.
 Run the Claude passthrough, native stream and header regression suites from the
 repo root, then the full suite before release. Source:
 [Anthropic gateway protocol](https://code.claude.com/docs/en/llm-gateway-protocol).
+
+## Long-context gateway regression lesson
+
+Context capacity belongs to the selected model/provider, not a combo alias or
+client `[1m]` suffix. Load persisted provider-scoped limits before routing after
+startup, include output reservation, and prefer declared larger-context candidates
+without deleting history. Approximate overflow remains eligible for upstream
+validation; only explicit output-limit violations are rejected locally without
+parking accounts. Unknown limits need upstream validation. Gateway
+Unicode-aware counts are estimates; compare full provider usage/count endpoints
+before claiming a 500K-token pass.
+
+Long uploads/prefill need bounded larger header/stream-head waits. Preserve
+large history and tools instead of optional compression/style transforms by
+default. Kiro context-limit failures must not silently shrink the request, and
+session prefix caching must not restore an instruction the caller edited.
+Verify all four conversation formats and actual selected provider/model;
+synthetic payload/parser checks do not establish provider acceptance or task
+quality. See `scripts/benchmark-long-context.mjs` and the troubleshooting guide.

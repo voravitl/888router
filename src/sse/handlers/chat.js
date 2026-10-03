@@ -16,6 +16,7 @@ import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings, updateProviderConnection } from "@/lib/localDb";
 import { isAccountQualityFailure, updateHealthEma } from "open-sse/services/accountScoring.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
+import { ensureModelContextLoaded } from "../services/modelContext.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { resolveUniversalToolsMode } from "open-sse/translator/concerns/universalToolPrompt.js";
 import { DEFAULT_HEADROOM_URL, resolveHeadroomUrl } from "@/lib/headroom/detect";
@@ -109,6 +110,8 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
+  await ensureModelContextLoaded(log);
+
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
@@ -122,18 +125,20 @@ export async function handleChat(request, clientRawRequest = null) {
       return handleFusionChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m, isPanel) => {
+        resolveModelInfo: getModelInfo,
+        handleSingleModel: (b, m, isPanel, opts) => {
           let cleanRawReq = clientRawRequest;
           if (isPanel && clientRawRequest) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, 0, opts);
         },
         log,
         comboName: modelStr,
         judgeModel: comboStrategies[modelStr]?.judgeModel,
         tuning: comboStrategies[modelStr]?.fusionTuning,
+        signal: request?.signal,
       });
     }
 
@@ -142,6 +147,7 @@ export async function handleChat(request, clientRawRequest = null) {
     return handleComboChat({
       body,
       models: comboModels,
+      resolveModelInfo: getModelInfo,
       handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, 0, opts),
       log,
       comboName: modelStr,
@@ -159,6 +165,8 @@ export async function handleChat(request, clientRawRequest = null) {
  * Handle single model chat request
  */
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, isCombo = false, depth = 0, options = {}) {
+  const requestSignals = [request?.signal, options?.signal].filter(Boolean);
+  const requestSignal = requestSignals.length ? AbortSignal.any(requestSignals) : undefined;
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -180,18 +188,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return handleFusionChat({
           body,
           models: comboModels,
-          handleSingleModel: (b, m, isPanel) => {
+          resolveModelInfo: getModelInfo,
+          handleSingleModel: (b, m, isPanel, opts) => {
             let cleanRawReq = clientRawRequest;
             if (isPanel && clientRawRequest) {
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, depth + 1, opts);
           },
           log,
           comboName: modelStr,
           judgeModel: comboStrategies[modelStr]?.judgeModel,
           tuning: comboStrategies[modelStr]?.fusionTuning,
+          signal: requestSignal,
         });
       }
 
@@ -200,12 +210,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return handleComboChat({
         body,
         models: comboModels,
+        resolveModelInfo: getModelInfo,
         handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, depth + 1, opts),
         log,
         comboName: modelStr,
         comboStrategy,
         comboStickyLimit,
-        signal: request?.signal || options?.signal,
+        signal: requestSignal,
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -235,6 +246,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
+    if (requestSignal?.aborted) return errorResponse(499, "Request aborted");
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
@@ -271,9 +283,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const candidateSignals = [requestSignal, refreshedCredentials.signal].filter(Boolean);
+    const candidateSignal = candidateSignals.length ? AbortSignal.any(candidateSignals) : undefined;
     const dispatchStartedAt = Date.now();
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
+      body: { ...structuredClone(body), model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
@@ -304,7 +318,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       isCombo: isCombo || !!options?.isCombo,
-      signal: request?.signal || options?.signal,
+      signal: candidateSignal,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -336,9 +350,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // failing instantly on the same aborted signal — one cancelled request took
     // the whole provider out of rotation (#517). Next aborts with ResponseAborted
     // (not AbortError), so trust the signal itself, not the failure's shape.
-    if (isClientAbort(null, request?.signal || options?.signal)) {
+    if (isClientAbort(null, candidateSignal)) {
       return result.response ?? errorResponse(499, "Request aborted");
     }
+
+    // Request validation is independent of account health; trying another
+    // account cannot repair the same invalid request.
+    if (result.localValidationError) return result.response;
 
     // 409/429 on quota-tracked providers: consult/refresh the live quota cache
     // (antigravity) or record a strike (ollama, opencode-free) BEFORE locking,

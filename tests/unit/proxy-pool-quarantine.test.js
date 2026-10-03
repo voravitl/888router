@@ -357,6 +357,13 @@ describe("all-stale-no-URL", () => {
 });
 
 describe("modelError vs pool failure classification", () => {
+  it.each(["content_length_exceeds_threshold", "context_length_exceeded", "maximum context length exceeded", "AiPASS browser bridge cannot preserve full request context"])("keeps a healthy pool available after request capacity error: %s", async (message) => {
+    resetPools({ id: "contextPool", name: "Context pool" });
+    const result = await markAccountUnavailable("noauth:contextPool", 400, message, "opencode");
+    expect(result.modelError).toBe(true);
+    expect(result.shouldFallback).toBe(false);
+    expect(poolWrites).toHaveLength(0);
+  });
   it("classifies 'model is unavailable' and 'endpoint is unavailable' as modelError (does not fallback pool)", () => {
     const r1 = checkFallbackError(400, "Error: Model is unavailable.");
     expect(r1.modelError).toBe(true);

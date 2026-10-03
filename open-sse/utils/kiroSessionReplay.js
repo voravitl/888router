@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 
 const sessionStartStore = new Map();
@@ -73,9 +74,20 @@ export function applyKiroSessionReplay({
   currentMessage,
 } = {}) {
   const key = sessionKey(connectionId, conversationId);
-  const existing = conversationId ? sessionStartStore.get(key) : null;
+  let existing = conversationId ? sessionStartStore.get(key) : null;
   const baseHistory = clone(history) || [];
   const baseCurrent = clone(currentMessage) || { userInputMessage: { content: "" } };
+
+  // Cacheability must not restore an old instruction after the caller edits its
+  // history. Compare the unprefixed source, including images and tool context.
+  const firstSourceIndex = findFirstUserIndex(baseHistory);
+  if (existing && canReplaceSessionStart(baseHistory, firstSourceIndex)) {
+    const source = ensureUserMessageModelId(clone(baseHistory[firstSourceIndex]), modelId);
+    if (createHash("sha256").update(JSON.stringify(source)).digest("hex") !== existing.sourceSignature) {
+      sessionStartStore.delete(key);
+      existing = null;
+    }
+  }
 
   if (existing && existing.modelId === modelId && existing.systemPrompt === systemPrompt) {
     existing.lastUsed = Date.now();
@@ -97,6 +109,10 @@ export function applyKiroSessionReplay({
   }
 
   const firstUserIndex = findFirstUserIndex(baseHistory);
+  const sourceSessionStart = ensureUserMessageModelId(
+    clone(canReplaceSessionStart(baseHistory, firstUserIndex) ? baseHistory[firstUserIndex] : baseCurrent),
+    modelId
+  );
   let sessionStart;
   let nextCurrent = ensureUserMessageModelId(baseCurrent, modelId);
   if (canReplaceSessionStart(baseHistory, firstUserIndex)) {
@@ -119,6 +135,7 @@ export function applyKiroSessionReplay({
   if (conversationId) {
     rememberSessionStart(key, {
       sessionStart: clone(sessionStart),
+      sourceSignature: createHash("sha256").update(JSON.stringify(sourceSessionStart)).digest("hex"),
       modelId,
       systemPrompt,
     });

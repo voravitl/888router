@@ -357,10 +357,17 @@ export class KiroExecutor extends BaseExecutor {
    * classify the status, and trigger account fallback/cooldown.
    */
   async execute(args) {
-    let result = await super.execute(args);
+    const allowContextTruncation = args.credentials?.providerSpecificData?.kiroAllowContextTruncation === true;
+    // Legacy truncation is explicitly connection-scoped. Never mutate the caller's
+    // payload: combo fallback must still have the complete original conversation.
+    const executionArgs = allowContextTruncation
+      ? { ...args, body: structuredClone(args.body) }
+      : args;
+    let result = await super.execute(executionArgs);
 
     let attempts = 0;
     while (
+      allowContextTruncation &&
       result?.response &&
       !result.response.ok &&
       result.response.status === 400 &&
@@ -374,16 +381,18 @@ export class KiroExecutor extends BaseExecutor {
       }
       if (!/content_length_exceeds_threshold/i.test(bodyText)) break;
 
-      if (!shrinkKiroPayload(args.body)) break;
+      if (!shrinkKiroPayload(executionArgs.body)) break;
 
       try { await result.response.body?.cancel?.(); } catch { /* best-effort */ }
 
       attempts++;
-      args.log?.info?.("KIRO", `content-length 400 — shrank payload, retry ${attempts}/${KIRO_MAX_SHRINK_RETRIES}`);
-      result = await super.execute(args);
+      const warning = `kiroAllowContextTruncation enabled: conversation content discarded after upstream content-length 400, retry ${attempts}/${KIRO_MAX_SHRINK_RETRIES}`;
+      if (args.log?.warn) args.log.warn("KIRO", warning);
+      else console.warn(`[KIRO] ${warning}`);
+      result = await super.execute(executionArgs);
     }
 
-    if (result?.response?.ok) this.attachIntegrityGate(result, args);
+    if (result?.response?.ok) this.attachIntegrityGate(result, executionArgs);
     return result;
   }
 
@@ -1128,7 +1137,8 @@ export class KiroExecutor extends BaseExecutor {
           ...(state.usage || {}),
           prompt_tokens: prompt,
           completion_tokens: completion,
-          total_tokens: prompt + completion
+          total_tokens: prompt + completion,
+          estimated: true
         };
       }
       const finishReason = truncatedAfterOutput

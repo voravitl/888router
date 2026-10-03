@@ -1,3 +1,13 @@
+# v0.15.152 (2026-10-03)
+
+## Fix: preserve long requests and recover across provider capacity limits
+
+- Preserve large request history, instructions, tools and supported media across OpenAI Chat, Responses, Claude Messages and Gemini endpoints. Gemini native requests retain function calls/results and schemas; Perplexity web no longer slices serialized history. Unsupported AiPASS long-context requests fail explicitly instead of silently dropping history.
+- Prefer candidates with sufficient declared context, resolve aliases and persisted provider-scoped limits on cold start, and leave approximate input decisions to upstream validation. Reject known excessive output budgets and allow capacity errors to fail over without quarantining healthy accounts.
+- Extend long-input transport waits, propagate client/candidate cancellation, and cancel unfinished fusion panels/judges. Keep each fallback request isolated. Kiro context shrinking is disabled unless explicitly enabled; replay caches detect changed initial context.
+- Add four-format offline fixtures and opt-in live benchmarks that report semantic correctness, provider-reported input tokens and observed routing separately. Estimates and mock tests do not establish 500K support, direct-provider parity or universal model capacity.
+- Evidence: official OpenAI token-counting/truncation documentation, Gemini model/token APIs and Claude Code custom-model context guidance; targeted regression coverage and independent review accompany this release.
+
 # v0.15.151 (2026-10-03)
 
 ## Fix: preserve Claude Code requests and native Claude streams

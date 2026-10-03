@@ -8,6 +8,8 @@ import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { createComboStreamGuard } from "./comboStreamGuard.js";
+import { getContextFit, estimateRequestTokens } from "./requestContext.js";
+import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -650,9 +652,42 @@ export function allFailedRetryAfterSeconds(resetHints, processedCount, now = Dat
   return Math.min(Math.max(Math.ceil((earliest - now) / 1000), 1), COMBO_ALL_FAILED_RETRY_AFTER_CAP_S);
 }
 
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null }) {
+function contextCapacityResponse() {
+  return new Response(JSON.stringify({ error: {
+    type: "invalid_request_error",
+    code: "output_limit_exceeded",
+    message: "The requested output budget exceeds every eligible model's declared output limit. Input was not truncated.",
+  } }), { status: 400, headers: { "Content-Type": "application/json" } });
+}
+
+async function resolveCandidateRefs(models, resolveModelInfo, log) {
+  const refs = new Map();
+  for (const model of models) {
+    if (!resolveModelInfo) { refs.set(model, model); continue; }
+    try {
+      const resolved = await resolveModelInfo(model);
+      refs.set(model, resolved?.provider && resolved?.model ? resolved : { provider: null, model: null });
+    } catch {
+      log?.warn?.("COMBO", "Candidate metadata resolution unavailable; retaining candidate with unknown limits.");
+      refs.set(model, { provider: null, model: null });
+    }
+  }
+  return refs;
+}
+
+export async function handleComboChat({ body, models, handleSingleModel, resolveModelInfo, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null }) {
+  // Approximate token counts guide ordering; only an exact output-budget
+  // violation excludes a candidate. The upstream tokenizer remains authoritative.
+  const estimatedInputTokens = estimateRequestTokens(body);
+  const modelRefs = await resolveCandidateRefs(models, resolveModelInfo, log);
+  const fits = new Map(models.map((model) => [model, getContextFit(body, modelRefs.get(model), estimatedInputTokens)]));
+  const eligibleModels = models.filter((model) => fits.get(model).reason !== "output_limit_exceeded");
+  if (models.length > 0 && eligibleModels.length === 0) {
+    return contextCapacityResponse();
+  }
   // Apply rotation strategy if enabled (supports round-robin, cache-optimized)
-  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit, body);
+  let rotatedModels = getRotatedModels(eligibleModels, comboName, comboStrategy, comboStickyLimit, body);
+  const timeoutPolicy = getRequestTimeoutPolicy(body);
 
   // Combo-wide time budget: per-candidate deadlines (TTFT/stall/head) stack, so
   // N slow models × 30s each can hold one request for minutes before a 504 —
@@ -665,7 +700,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     if (!Number.isFinite(n) || n <= 0) return def;
     return Math.min(Math.max(Math.round(n), min), max);
   };
-  const COMBO_TOTAL_BUDGET_MS = parseTotalBudgetMs(process.env.COMBO_TOTAL_BUDGET_MS);
+  const COMBO_TOTAL_BUDGET_MS = parseTotalBudgetMs(process.env.COMBO_TOTAL_BUDGET_MS, timeoutPolicy.totalBudgetMs);
   const comboStartMs = Date.now();
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
@@ -679,6 +714,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       rotatedModels = reordered;
     }
   }
+  rotatedModels = rotatedModels.filter((model) => fits.get(model).reason !== "context_length_exceeded")
+    .concat(rotatedModels.filter((model) => fits.get(model).reason === "context_length_exceeded"));
   
   let lastError = null;
   let earliestRetryAfter = null;
@@ -783,9 +820,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
               if (!Number.isFinite(n) || n <= 0) return def;
               return Math.min(Math.max(Math.round(n), min), max);
             };
-            const COMBO_TTFT_TIMEOUT_MS = parseClampedMs(process.env.COMBO_TTFT_TIMEOUT_MS, 30000);
-            const COMBO_STALL_TIMEOUT_MS = parseClampedMs(process.env.COMBO_STALL_TIMEOUT_MS, Math.min(COMBO_TTFT_TIMEOUT_MS, 30000));
-            const COMBO_HEAD_DEADLINE_MS = parseClampedMs(process.env.COMBO_HEAD_DEADLINE_MS, 120000);
+            const COMBO_TTFT_TIMEOUT_MS = parseClampedMs(process.env.COMBO_TTFT_TIMEOUT_MS, timeoutPolicy.firstChunkTimeoutMs);
+            const COMBO_STALL_TIMEOUT_MS = parseClampedMs(process.env.COMBO_STALL_TIMEOUT_MS, Math.min(COMBO_TTFT_TIMEOUT_MS, timeoutPolicy.stallTimeoutMs));
+            const COMBO_HEAD_DEADLINE_MS = parseClampedMs(process.env.COMBO_HEAD_DEADLINE_MS, timeoutPolicy.headDeadlineMs);
             const decisionDeadline = Date.now() + COMBO_HEAD_DEADLINE_MS;
             const TIMEOUT_SENTINEL = Symbol("COMBO_HEAD_TIMEOUT");
             let onHeadCandidateAbort;
@@ -899,6 +936,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                 log.warn("COMBO", `Model ${modelStr} exhausted max_tokens on reasoning (streamed), retrying once with raised budget`);
                 await safeCancelReader(reader);
                 if (signal?.aborted) break;
+                const raisedBody = withRaisedMaxTokens(body);
+                if (getContextFit(raisedBody, modelRefs.get(modelStr)).reason === "output_limit_exceeded") {
+                  lastError = "Raised reasoning output budget exceeds model capacity";
+                  lastStatus = 400;
+                  continue;
+                }
                 const retryAbortCtrl = new AbortController();
                 const onRetryClientAbort = () => retryAbortCtrl.abort();
                 if (signal) {
@@ -915,7 +958,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
                 let retried;
                 try {
                   retried = await withAbortRace(
-                    handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: retryAbortCtrl.signal }),
+                    handleSingleModel(raisedBody, modelStr, { isCombo: true, signal: retryAbortCtrl.signal }),
                     signal
                   );
                 } catch (retryErr) {
@@ -1043,10 +1086,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
             if (result.body) {
               await safeCancelStream(result.body);
             }
+            const raisedBody = withRaisedMaxTokens(body);
+            if (getContextFit(raisedBody, modelRefs.get(modelStr)).reason === "output_limit_exceeded") {
+              lastError = "Raised reasoning output budget exceeds model capacity";
+              lastStatus = 400;
+              continue;
+            }
             let retried;
             try {
               retried = await withAbortRace(
-                handleSingleModel(withRaisedMaxTokens(body), modelStr, { isCombo: true, signal: candidateAbortCtrl.signal }),
+                handleSingleModel(raisedBody, modelStr, { isCombo: true, signal: candidateAbortCtrl.signal }),
                 signal
               );
             } catch (retryErr) {
@@ -1451,13 +1500,24 @@ const FUSION_DEFAULTS = {
   panelHardTimeoutMs: Number.parseInt(process.env.FUSION_HARD_TIMEOUT_MS, 10) || 30000, // absolute cap (30s) so one hung model cannot stall forever
 };
 
-// Resolve a Response (or {__error}) within ms; the loser keeps running but is ignored.
-function withTimeout(promise, ms) {
+// Bound candidate work and actively cancel it when its deadline expires.
+function withTimeout(promise, ms, onTimeout, signal) {
   return new Promise((resolve) => {
-    const t = setTimeout(() => resolve({ __timeout: true }), ms);
+    let finished = false;
+    const finish = (value) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(t);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(value);
+    };
+    const onAbort = () => finish({ __aborted: true });
+    const t = setTimeout(() => { finish({ __timeout: true }); onTimeout?.(); }, ms);
+    if (signal?.aborted) onAbort();
+    else signal?.addEventListener("abort", onAbort, { once: true });
     Promise.resolve(promise)
-      .then((v) => { clearTimeout(t); resolve(v); })
-      .catch((e) => { clearTimeout(t); resolve({ __error: e }); });
+      .then(finish)
+      .catch((e) => finish({ __error: e }));
   });
 }
 
@@ -1468,7 +1528,7 @@ function withTimeout(promise, ms) {
  * still preferring a full panel when everyone is fast. Bounded by a hard timeout.
  * Returns a sparse array aligned to `calls` (undefined = not yet / dropped).
  */
-function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs }) {
+function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs }, onFinish, signal) {
   return new Promise((resolve) => {
     const out = new Array(calls.length);
     let settled = 0;
@@ -1480,14 +1540,19 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
       finished = true;
       clearTimeout(hardTimer);
       if (graceTimer) clearTimeout(graceTimer);
+      signal?.removeEventListener("abort", finish);
+      onFinish?.(out);
       resolve(out);
     };
     const hardTimer = setTimeout(finish, panelHardTimeoutMs);
+    if (signal?.aborted) finish();
+    else signal?.addEventListener("abort", finish, { once: true });
     calls.forEach((p, i) => {
       Promise.resolve(p)
-        .then((v) => { out[i] = v; })
-        .catch((e) => { out[i] = { __error: e }; })
+        .then((v) => { if (!finished) out[i] = v; })
+        .catch((e) => { if (!finished) out[i] = { __error: e }; })
         .finally(() => {
+          if (finished) return;
           settled++;
           if (out[i] && out[i].ok) ok++;
           if (settled === calls.length) return finish();
@@ -1513,15 +1578,20 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
  * @param {Object} options
  * @param {Object} options.body - Request body (client format)
  * @param {string[]} options.models - Panel model strings
- * @param {Function} options.handleSingleModel - (body, modelStr) => Promise<Response>
+ * @param {Function} options.handleSingleModel - (body, modelStr, isPanel, { signal }) => Promise<Response>
  * @param {Object} options.log - Logger
  * @param {string} [options.comboName] - Combo name (logging)
  * @param {string} [options.judgeModel] - Judge model; falls back to panel[0]
  * @param {Object} [options.tuning] - Override FUSION_DEFAULTS (minPanel, grace, timeout)
+ * @param {AbortSignal} [options.signal] - External cancellation shared by panel and final requests
  * @returns {Promise<Response>}
  */
-export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning }) {
-  const panel = Array.isArray(models) ? models.filter(Boolean) : [];
+export async function handleFusionChat({ body, models, handleSingleModel, resolveModelInfo, log, comboName, judgeModel, tuning, signal = null }) {
+  if (signal?.aborted) return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), { status: 499, headers: { "Content-Type": "application/json" } });
+  const requestedPanel = Array.isArray(models) ? models.filter(Boolean) : [];
+  const modelRefs = await resolveCandidateRefs(requestedPanel, resolveModelInfo, log);
+  const panel = requestedPanel.filter((model) => getContextFit(body, modelRefs.get(model)).reason !== "output_limit_exceeded");
+  if (requestedPanel.length > 0 && panel.length === 0) return contextCapacityResponse();
   if (panel.length === 0) {
     return new Response(
       JSON.stringify({ error: { message: "Fusion combo has no models" } }),
@@ -1531,10 +1601,16 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // A single-model fusion has nothing to fuse — just answer directly.
   if (panel.length === 1) {
-    return handleSingleModel(body, panel[0]);
+    return handleSingleModel(body, panel[0], undefined, { signal });
   }
 
-  const cfg = { ...FUSION_DEFAULTS, ...(tuning || {}) };
+  const timeoutPolicy = getRequestTimeoutPolicy(body);
+  const configuredFusionTimeout = Number(process.env.FUSION_HARD_TIMEOUT_MS);
+  const adaptivePanelTimeout = Number.isFinite(configuredFusionTimeout) && configuredFusionTimeout > 0
+    ? configuredFusionTimeout
+    : (timeoutPolicy.longContext ? timeoutPolicy.firstChunkTimeoutMs : FUSION_DEFAULTS.panelHardTimeoutMs);
+  const cfg = { ...FUSION_DEFAULTS, panelHardTimeoutMs: adaptivePanelTimeout, ...(tuning || {}) };
+  cfg.panelHardTimeoutMs = Math.min(Math.max(Number(cfg.panelHardTimeoutMs) || adaptivePanelTimeout, 50), 300000);
   const minPanel = Math.min(Math.max(2, cfg.minPanel), panel.length);
   const judge = judgeModel && judgeModel.trim() ? judgeModel.trim() : panel[0];
   log.info("FUSION", `Combo "${comboName}" | panel=${panel.length} [${panel.join(", ")}] | judge=${judge} | quorum=${minPanel}`);
@@ -1554,9 +1630,30 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
 
   const t0 = Date.now();
-  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
-  const settled = await collectPanel(calls, { ...cfg, minPanel });
+  const panelControllers = panel.map(() => new AbortController());
+  const calls = panel.map((m, i) => {
+    const controller = panelControllers[i];
+    const candidateSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+    const work = (async () => {
+      const res = await handleSingleModel(panelBody, m, true, { signal: candidateSignal });
+      if (!res.ok) {
+        if (res.body) await safeCancelStream(res.body);
+        return res;
+      }
+      // Include body consumption in the panel deadline: headers alone do not
+      // constitute a completed answer, and quorum cannot count a stalled body.
+      const json = await res.json();
+      return { ok: res.ok, status: res.status, panelText: extractPanelText(json) };
+    })();
+    return withTimeout(work, cfg.panelHardTimeoutMs, () => controller.abort(), candidateSignal);
+  });
+  const settled = await collectPanel(calls, { ...cfg, minPanel }, (results) => {
+    panelControllers.forEach((controller, i) => {
+      if (!results[i]?.ok) controller.abort();
+    });
+  }, signal);
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
+  if (signal?.aborted) return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), { status: 499, headers: { "Content-Type": "application/json" } });
 
   // 2. Collect successful answers.
   const answers = [];
@@ -1568,8 +1665,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
     if (res.__error) { log.warn("FUSION", `Panel ${model} threw`, { error: res.__error?.message || String(res.__error) }); continue; }
     if (!res.ok) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status }); continue; }
     try {
-      const json = await res.clone().json();
-      const text = extractPanelText(json);
+      const text = res.panelText;
       if (text) {
         answers.push({ model, text });
         log.info("FUSION", `Panel ${model} ok (${text.length} chars)`);
@@ -1591,13 +1687,25 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
   if (answers.length === 1) {
     log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-    return handleSingleModel(body, answers[0].model);
   }
 
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
-  const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
-  log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
-  return handleSingleModel(judgeBody, judge);
+  const finalModel = answers.length === 1 ? answers[0].model : judge;
+  const judgeBody = answers.length === 1 ? body : appendUserTurn(body, buildJudgePrompt(answers));
+  const judgeRefs = modelRefs.has(finalModel) ? modelRefs : await resolveCandidateRefs([finalModel], resolveModelInfo, log);
+  if (getContextFit(judgeBody, judgeRefs.get(finalModel)).reason === "output_limit_exceeded") return contextCapacityResponse();
+  if (signal?.aborted) return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), { status: 499, headers: { "Content-Type": "application/json" } });
+  if (answers.length > 1) log.info("FUSION", `Judging ${answers.length} answers with ${finalModel}`);
+  const judgeController = new AbortController();
+  const judgeSignal = signal ? AbortSignal.any([signal, judgeController.signal]) : judgeController.signal;
+  const judged = await withTimeout(handleSingleModel(judgeBody, finalModel, undefined, { signal: judgeSignal }),
+    cfg.panelHardTimeoutMs, () => judgeController.abort(), judgeSignal);
+  if (judged.__aborted) return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), { status: 499, headers: { "Content-Type": "application/json" } });
+  if (judged.__timeout || judged.__error) {
+    judgeController.abort();
+    return new Response(JSON.stringify({ error: { message: judged.__timeout ? "Fusion judge response deadline exceeded" : "Fusion judge failed" } }), { status: judged.__timeout ? 504 : 502, headers: { "Content-Type": "application/json" } });
+  }
+  return judged;
 }
 
 /**

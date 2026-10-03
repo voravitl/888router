@@ -102,11 +102,18 @@ export const ERROR_RULES = [
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
-  // Gateway input-size limit — not account-specific. KiroExecutor reactively
-  // shrinks + retries on the same account first; if it still surfaces, rotating
-  // accounts is futile (identical payload, same wall), so do not fall back or
-  // lock the account — surface the 400 to the client.
-  { text: "content_length_exceeds_threshold", noFallback: true },
+  // Input/output capacity belongs to the selected model, not account health.
+  // Do not rotate/park accounts; let the combo try another provider unchanged.
+  { text: "content_length_exceeds_threshold", modelError: true },
+  { text: "context_length_exceeded", modelError: true },
+  { text: "maximum context length", modelError: true },
+  { text: "exceed context limit", modelError: true },
+  { text: "exceeds the context", modelError: true },
+  { text: "prompt is too long", modelError: true },
+  { text: "input is too long", modelError: true },
+  { text: "output_limit_exceeded", modelError: true },
+  { text: "cannot preserve full request context", modelError: true },
+  { text: "unsupported request:", modelError: true },
   // OpenCode Free Tier rate limit — backoff: true makes it escalate like a
   // regular 429 (2s→4s→8s…). But opencode free returns 429 *aggressively*
   // and ALL proxy pools and accounts share the same upstream quota, so
@@ -143,6 +150,7 @@ export const ERROR_RULES = [
   { status: 403, cooldownMs: COOLDOWN.long },
   // 404 = model not found → don't cycle accounts, let combo skip to next model
   { status: 404, modelError: true },
+  { status: 413, modelError: true },
   { status: 429, backoff: true },
   // 503/502/504 transient — shouldFallback so account layer rotates pools,
   // but short cooldown so combo doesn't stall on one exhausted proxy relay.

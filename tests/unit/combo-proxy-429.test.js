@@ -29,7 +29,8 @@ vi.mock("open-sse/utils/error.js", () => ({
   })),
 }));
 
-vi.mock("open-sse/providers/capabilities.js", () => ({
+vi.mock("open-sse/providers/capabilities.js", async (importOriginal) => ({
+  ...await importOriginal(),
   getCapabilitiesForModel: vi.fn(() => ({})),
 }));
 
@@ -37,7 +38,8 @@ vi.mock("open-sse/translator/formats/gemini.js", () => ({
   extractTextContent: vi.fn(() => ""),
 }));
 
-vi.mock("open-sse/config/runtimeConfig.js", () => ({
+vi.mock("open-sse/config/runtimeConfig.js", async (importOriginal) => ({
+  ...await importOriginal(),
   HTTP_STATUS: { RATE_LIMITED: 429, SERVICE_UNAVAILABLE: 503, OK: 200 },
 }));
 

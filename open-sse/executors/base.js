@@ -5,6 +5,7 @@ import { dbg } from "../utils/debugLog.js";
 import { isClientAbort } from "../utils/abort.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
+import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -153,8 +154,11 @@ export class BaseExecutor {
 
       // Abort if upstream doesn't return response headers within connection timeout
       const connectCtrl = new AbortController();
-      const defaultTimeout = isCombo ? 10000 : FETCH_CONNECT_TIMEOUT_MS;
-      const timeoutMs = this.config?.timeoutMs ? (isCombo ? Math.min(this.config.timeoutMs, 10000) : this.config.timeoutMs) : defaultTimeout;
+      const timeoutPolicy = credentials?.requestTimeoutPolicy || getRequestTimeoutPolicy(body);
+      const defaultTimeout = isCombo ? timeoutPolicy.connectTimeoutMs : FETCH_CONNECT_TIMEOUT_MS;
+      const timeoutMs = timeoutPolicy.longContext
+        ? Math.max(defaultTimeout, this.config?.timeoutMs || 0, timeoutPolicy.connectTimeoutMs)
+        : (this.config?.timeoutMs ? (isCombo ? Math.min(this.config.timeoutMs, 10000) : this.config.timeoutMs) : defaultTimeout);
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 

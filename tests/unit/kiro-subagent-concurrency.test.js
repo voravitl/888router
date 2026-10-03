@@ -8,6 +8,43 @@ describe("Kiro Subagent Isolation & Session Replay Protection", () => {
     clearKiroSessionReplayStore();
   });
 
+  it("rebases cached first instruction after caller history changes without mutating input", () => {
+    const options = { conversationId: "edited-session", connectionId: "conn", modelId: "claude-sonnet",
+      systemPrompt: "system", contentPrefix: "stable prefix", currentContentPrefix: "current prefix" };
+    const first = applyKiroSessionReplay({ ...options,
+      currentMessage: { userInputMessage: { content: "old instruction" } } });
+    const history = [
+      { userInputMessage: { content: "edited instruction", images: [{ source: "new-image" }] } },
+      { assistantResponseMessage: { content: "previous answer" } },
+    ];
+    const original = structuredClone(history);
+    const input = { ...options, history, currentMessage: { userInputMessage: { content: "next task" } } };
+    const rebased = applyKiroSessionReplay(input);
+
+    expect(first.replayed).toBe(false);
+    expect(rebased.replayed).toBe(false);
+    expect(history).toEqual(original);
+    expect(rebased.history[0].userInputMessage.content).toBe("stable prefix\n\nedited instruction");
+    expect(rebased.history[0].userInputMessage.images).toEqual(history[0].userInputMessage.images);
+    expect(JSON.stringify(rebased)).not.toContain("old instruction");
+    const next = applyKiroSessionReplay(input);
+    expect(next.replayed).toBe(true);
+    expect(next.history[0]).toEqual(rebased.history[0]);
+  });
+
+  it("keeps unchanged first instruction cacheable despite a changing volatile prefix", () => {
+    const options = { conversationId: "stable-session", modelId: "model", systemPrompt: "system" };
+    const first = applyKiroSessionReplay({ ...options, contentPrefix: "time one",
+      currentMessage: { userInputMessage: { content: "original instruction" } } });
+    const second = applyKiroSessionReplay({ ...options, contentPrefix: "time two", currentContentPrefix: "new time",
+      history: [{ userInputMessage: { content: "original instruction" } },
+        { assistantResponseMessage: { content: "answer" } }],
+      currentMessage: { userInputMessage: { content: "continue" } } });
+    expect(second.replayed).toBe(true);
+    expect(second.history[0]).toEqual(first.currentMessage);
+    expect(second.currentMessage.userInputMessage.content).toBe("new time\n\ncontinue");
+  });
+
   it("subagents get distinct conversationId under scope=kiro", () => {
     const rootSession = "550e8400-e29b-41d4-a716-446655440000";
 

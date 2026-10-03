@@ -36,6 +36,18 @@ import { pruneMessageHistory } from "../translator/concerns/pruner.js";
 import { injectPromptCaching } from "../translator/concerns/promptCache.js";
 import { routeByIntent } from "../translator/concerns/intentRouter.js";
 import { getCachedResponse, isResponseCacheOptIn } from "../translator/concerns/responseCache.js";
+import { getContextFit, contextLimitMessage, estimateRequestTokens, alignTranslatedOutputBudget, reservedOutputTokens } from "../services/requestContext.js";
+import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
+
+function localValidationResult(message, code, details = {}) {
+  if (code === "unsupported_request") message = `Unsupported request: ${message}`;
+  const result = createErrorResult(HTTP_STATUS.BAD_REQUEST, message);
+  result.localValidationError = true;
+  result.response = new Response(JSON.stringify({ error: {
+    type: "invalid_request_error", code, message, ...details,
+  } }), { status: 400, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
+  return result;
+}
 
 
 /**
@@ -46,6 +58,10 @@ import { getCachedResponse, isResponseCacheOptIn } from "../translator/concerns/
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode, isCombo = false, signal = null }) {
+  body = structuredClone(body);
+  const clientOutputBudget = { max_tokens: reservedOutputTokens(body) };
+  const clientThinkingBudget = body.thinking?.budget_tokens;
+  modelInfo = { ...modelInfo };
   const requestStartTime = Date.now();
   const detailId = `detail_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   let rtkStats = null;
@@ -135,15 +151,37 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     && sourceFormat === FORMATS.CLAUDE && targetFormat === FORMATS.CLAUDE;
   const nativeTransformationsOptIn = String(clientRawRequest?.headers?.["x-888-native-transformations"] || "").toLowerCase() === "true";
   const preserveClaudeClientInput = clientTool === "claude" && sourceFormat === FORMATS.CLAUDE && !nativeTransformationsOptIn;
+  // Large requests retain their history/tool results across every provider.
+  // Explicitly opting into transformations retains the legacy compression path.
+  let preserveRequestInput = preserveClaudeClientInput
+    || (estimateRequestTokens(body) >= 100000 && !nativeTransformationsOptIn);
   const preserveNativeClaudeRequest = nativeClaudePassthrough && preserveClaudeClientInput;
   const effectiveUniversalToolsMode = preserveNativeClaudeRequest ? "off" : universalToolsMode;
   if (useTransport && requestCredentials) requestCredentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
 
+  const contextFit = getContextFit(body, { provider, model: upstreamModel });
+  if (contextFit.reason === "context_length_exceeded") {
+    log?.warn?.("MODEL_CONTEXT", "Estimated context exceeds declared window; retaining input for authoritative upstream validation.");
+    if (!nativeTransformationsOptIn) preserveRequestInput = true;
+  }
+  if (contextFit.reason === "output_limit_exceeded") {
+    const message = contextLimitMessage(contextFit);
+    return localValidationResult(message, contextFit.reason, {
+      estimated_input_tokens: contextFit.estimatedInputTokens,
+      requested_output_tokens: contextFit.reservedOutputTokens,
+      context_window: contextFit.contextWindow,
+    });
+  }
+  if (requestCredentials) {
+    requestCredentials.requestTimeoutPolicy = getRequestTimeoutPolicy(body);
+    requestCredentials.preserveRequestInput = preserveRequestInput;
+  }
+
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
-  if (!preserveClaudeClientInput && providerThinking?.mode && providerThinking.mode !== "auto") {
+  if (!preserveRequestInput && providerThinking?.mode && providerThinking.mode !== "auto") {
     const mode = providerThinking.mode;
     if (mode === "on" && !body.thinking) {
       console.log("Injecting provider-level thinking config override: on");
@@ -155,7 +193,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
-  const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
+  const clientRequestedStreaming = body.stream === true || (body.stream !== false
+    && [FORMATS.ANTIGRAVITY, FORMATS.GEMINI, FORMATS.GEMINI_CLI].includes(sourceFormat));
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
 
@@ -195,12 +234,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
   if (!passthrough) {
     const caps = getCapabilitiesForModel(provider, model);
-    if (stripUnsupportedModalities(body, sourceFormat, caps)) {
+    if (!preserveRequestInput && stripUnsupportedModalities(body, sourceFormat, caps)) {
       log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
     }
     // Convert remote image URLs to base64 for targets that can't fetch URLs.
     try {
-      const n = await prefetchRemoteImages(body, sourceFormat, targetFormat, { signal: undefined });
+      const n = await prefetchRemoteImages(body, sourceFormat, targetFormat, { signal });
       if (n > 0) log?.debug?.("MODALITY", `prefetched ${n} remote image(s) for ${targetFormat}`);
     } catch (e) { log?.warn?.("MODALITY", `image prefetch failed: ${e.message}`); }
   }
@@ -218,7 +257,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       applyThinking(FORMATS.CLAUDE, translatedBody.model, translatedBody, provider, captureThinking(body));
     }
   } else {
-    translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, requestCredentials || credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    try {
+      translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, requestCredentials || credentials, provider, reqLogger, stripList, connectionId, clientTool);
+    } catch (error) {
+      if (error?.code === "unsupported_request") return localValidationResult(error.message, error.code);
+      throw error;
+    }
     if (!translatedBody) {
       trackPendingRequest(model, provider, connectionId, false, true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
@@ -229,7 +273,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
-  if (!preserveClaudeClientInput && clientTool === "claude" && Array.isArray(translatedBody.tools)) {
+  if (!preserveRequestInput && clientTool === "claude" && Array.isArray(translatedBody.tools)) {
     const { tools: deduped, stripped } = dedupeTools(translatedBody.tools);
     if (stripped.length > 0) {
       translatedBody.tools = deduped;
@@ -241,6 +285,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Claude Code / agent clients often send 260+ MCP tools and get 400 invalid-argument.
   const maxTools = PROVIDERS[provider]?.maxTools;
   if (!preserveNativeClaudeRequest && maxTools && Array.isArray(translatedBody.tools)) {
+    if (preserveRequestInput && translatedBody.tools.length > maxTools) {
+      return localValidationResult(`Provider ${provider} accepts at most ${maxTools} tools; the ${translatedBody.tools.length} supplied tools were not truncated.`, "unsupported_request");
+    }
     const { cappedFrom, cappedTo } = capTools(translatedBody, maxTools);
     if (cappedFrom > cappedTo) {
       log?.warn?.("TOOLCAP", `${provider}: tools ${cappedFrom} → ${cappedTo} (max ${maxTools})`);
@@ -253,6 +300,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // TTS models don't support tool messages/function calling
   if (!preserveNativeClaudeRequest && getModelType(alias, model) === "tts" && translatedBody.messages) {
+    if (preserveRequestInput && (translatedBody.tools?.length || translatedBody.messages.some(msg => msg.role === "tool"))) {
+      return localValidationResult("This speech model cannot preserve a tool conversation. Select a model supporting tool calls.", "unsupported_request");
+    }
     translatedBody.messages = translatedBody.messages.filter(msg => msg.role !== "tool");
     delete translatedBody.tools;
   }
@@ -260,23 +310,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let prunerStats = null;
 
   // Context Pruner: atomic middle-out pruning when prompt tokens exceed model context budget
-  if (!preserveClaudeClientInput && prunerEnabled !== false) {
+  if (!preserveRequestInput && prunerEnabled !== false) {
     pruneMessageHistory(translatedBody, provider, upstreamModel);
     prunerStats = translatedBody._prunerStats || null;
   }
-  if (!preserveClaudeClientInput) {
+  if (!preserveRequestInput) {
     delete translatedBody._pruned;
     delete translatedBody._omittedTurns;
     delete translatedBody._prunerStats;
   }
 
   // RTK: compress tool_result content
-  if (!preserveClaudeClientInput) rtkStats = compressMessages(translatedBody, rtkEnabled);
+  if (!preserveRequestInput) rtkStats = compressMessages(translatedBody, rtkEnabled);
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
-  if (!preserveClaudeClientInput) {
+  if (!preserveRequestInput) {
     headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
   }
   const headroomLine = formatHeadroomLog(headroomStats);
@@ -286,24 +336,24 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
       log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${headroomSizeLine}`);
     }
-  } else if (preserveClaudeClientInput && headroomEnabled) {
-    log?.debug?.("HEADROOM", "skipped to preserve Claude client request");
+  } else if (preserveRequestInput && headroomEnabled) {
+    log?.debug?.("HEADROOM", "skipped to preserve request input");
   } else if (headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
   // Caveman: inject terse-style system prompt
-  if (!preserveClaudeClientInput && cavemanEnabled && cavemanLevel) {
+  if (!preserveRequestInput && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
-  if (!preserveClaudeClientInput && ponytailEnabled && ponytailLevel) {
+  if (!preserveRequestInput && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
   }
 
   // Auto Prompt Caching: inject cache_control or normalize static prefix
-  if (!preserveClaudeClientInput && injectPromptCaching(translatedBody, finalFormat)) {
+  if (!preserveRequestInput && injectPromptCaching(translatedBody, finalFormat)) {
     log?.debug?.("PROMPTCACHE", `injected prompt cache controls for ${finalFormat}`);
   }
 
@@ -317,7 +367,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Pin cache breakpoints to the final body — every saver above can reshape
   // system/tools/messages, and a stale anchor costs a full prefix rewrite.
-  if (!preserveClaudeClientInput && finalFormat === "claude") anchorClaudeCache(translatedBody);
+  if (!preserveRequestInput && finalFormat === "claude") anchorClaudeCache(translatedBody);
+
+  // Preserve explicit reservations; constrain only gateway-generated defaults.
+  alignTranslatedOutputBudget(translatedBody, clientOutputBudget, { provider, model: upstreamModel });
+  // Generated Claude thinking must fit the preserved client reservation.
+  // Explicit client thinking remains upstream-validated without alteration.
+  if (finalFormat === FORMATS.CLAUDE && !clientThinkingBudget
+    && translatedBody.thinking?.budget_tokens >= translatedBody.max_tokens) {
+    if (translatedBody.max_tokens > 1024) translatedBody.thinking.budget_tokens = translatedBody.max_tokens - 1;
+    else delete translatedBody.thinking;
+  }
+  // Gemini selects model and streaming through its URL, not JSON fields.
+  if (finalFormat === FORMATS.GEMINI) {
+    delete translatedBody.stream;
+    delete translatedBody.model;
+  }
+  // Validate the actual outbound budget as well as the original client budget.
+  const outboundFit = getContextFit(translatedBody, { provider, model: upstreamModel });
+  if (outboundFit.reason === "output_limit_exceeded") {
+    return localValidationResult(contextLimitMessage(outboundFit), outboundFit.reason);
+  }
 
   if (isRetiredProvider(provider)) {
     return createErrorResult(HTTP_STATUS.GONE, retiredProviderMessage(provider));
