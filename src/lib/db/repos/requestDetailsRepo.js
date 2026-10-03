@@ -150,6 +150,68 @@ function truncateField(obj, maxSize) {
   return obj;
 }
 
+// Retain only token evidence, not arbitrary provider extensions or strings.
+// Fixed keys/depth keep hostile usage metadata bounded and exclude credentials.
+const USAGE_NUMBER_FIELDS = [
+  "input_tokens", "output_tokens", "total_tokens", "prompt_tokens", "completion_tokens",
+  "promptTokenCount", "candidatesTokenCount", "totalTokenCount", "cachedContentTokenCount", "thoughtsTokenCount",
+  "inputTokens", "outputTokens", "totalTokens", "cachedTokens", "toolUsePromptTokenCount",
+  "cached_tokens", "reasoning_tokens", "cache_read_input_tokens", "cache_creation_input_tokens", "cache_creation_tokens",
+  "audio_tokens", "text_tokens", "accepted_prediction_tokens", "rejected_prediction_tokens",
+  "ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens", "prompt_eval_count", "eval_count",
+];
+const USAGE_DETAIL_FIELDS = ["input_tokens_details", "output_tokens_details", "prompt_tokens_details", "completion_tokens_details", "cache_creation"];
+
+function pickUsageEvidence(usage, includeDetails = true) {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+  // Dropping an invalid provenance flag could falsely certify estimated counts.
+  if (Object.hasOwn(usage, "estimated") && typeof usage.estimated !== "boolean") return null;
+  const evidence = {};
+  const retain = (key, value) => {
+    if (JSON.stringify({ ...evidence, [key]: value }).length <= 1024) evidence[key] = value;
+  };
+  if (typeof usage.estimated === "boolean") evidence.estimated = usage.estimated;
+  for (const key of USAGE_NUMBER_FIELDS) {
+    if (typeof usage[key] === "number" && Number.isFinite(usage[key])) retain(key, usage[key]);
+  }
+  if (includeDetails) {
+    for (const key of USAGE_DETAIL_FIELDS) {
+      const details = pickUsageEvidence(usage[key], false);
+      if (details && Object.keys(details).length) retain(key, details);
+    }
+  }
+  return evidence;
+}
+
+function truncateProviderResponse(response, maxSize) {
+  const truncated = truncateField(response, maxSize);
+  if (!truncated?._truncated || !response || typeof response !== "object") return truncated;
+
+  // Usage survives payload truncation independently of response text/tool size.
+  // Respect the existing record cap; unknown or unavailable counts stay absent.
+  const evidence = {};
+  // Antigravity/Gemini CLI use one response envelope; keep its native shape.
+  const envelopes = [response];
+  if (response.response && typeof response.response === "object") envelopes.push(response.response);
+  for (const envelope of envelopes) {
+    const fields = {};
+    for (const key of ["usage", "usageMetadata"]) {
+      const usage = pickUsageEvidence(envelope[key]);
+      if (usage !== null) fields[key] = usage;
+    }
+    for (const key of ["id", "model", "modelVersion", "status"]) {
+      if (typeof envelope[key] === "string" && envelope[key].length <= 256) fields[key] = envelope[key];
+    }
+    if (envelope === response) Object.assign(evidence, fields);
+    else if (Object.keys(fields).length) evidence.response = fields;
+  }
+  const compact = { ...truncated };
+  for (const [key, value] of Object.entries(evidence)) {
+    if (JSON.stringify({ ...compact, [key]: value }).length <= maxSize) compact[key] = value;
+  }
+  return compact;
+}
+
 let flushPromise = null;
 
 async function flushToDatabase() {
@@ -188,7 +250,7 @@ async function flushToDatabase() {
               tokens: item.tokens || {},
               request: truncateField(item.request, config.maxJsonSize),
               providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-              providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
+              providerResponse: truncateProviderResponse(item.providerResponse, config.maxJsonSize),
               response: truncateField(item.response, config.maxJsonSize),
               // Token-saver benchmark fields (must survive flush — dropped previously)
               prunerStats: ps || null,

@@ -32,6 +32,104 @@ function sanitizeFunctionName(name) {
 const MAX_RETRY_AFTER_MS = 10000;
 const ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS = 15000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
+const MAX_RETIREMENT_NOTICE_BYTES = 8192;
+const RETIREMENT_NOTICE_STREAM_WAIT_MS = 1000;
+
+async function readStreamRetirementNotice(response) {
+  if (Number(response.headers.get("content-length")) > MAX_RETIREMENT_NOTICE_BYTES) return null;
+  const reader = response.clone().body?.getReader();
+  if (!reader) return null;
+  const decoder = new TextDecoder();
+  const expired = Symbol("inspection deadline");
+  let timer;
+  const deadline = new Promise(resolve => { timer = setTimeout(() => resolve(expired), RETIREMENT_NOTICE_STREAM_WAIT_MS); });
+  let bytes = 0;
+  let buffer = "";
+  let notice = null;
+  let terminal = false;
+  const consumeFrame = (frame) => {
+    const lines = frame.split(/\r?\n/).filter(line => line.trim() && !line.startsWith(":"));
+    if (!lines.length) return true;
+    if (lines.some(line => !line.startsWith("data:"))) return false;
+    const data = lines.map(line => line.slice(5).trimStart()).join("\n");
+    if (data === "[DONE]") { terminal = true; return !!notice; }
+    if (notice) return false;
+    notice = getRetiredModelNotice(JSON.parse(data));
+    return !!notice;
+  };
+  try {
+    for (;;) {
+      const result = await Promise.race([reader.read(), deadline]);
+      if (result === expired) return null;
+      if (result.done) {
+        buffer += decoder.decode();
+        if (buffer.trim() && !consumeFrame(buffer)) return null;
+        return notice;
+      }
+      bytes += result.value.byteLength;
+      if (bytes > MAX_RETIREMENT_NOTICE_BYTES) return null;
+      buffer += decoder.decode(result.value, { stream: true });
+      let separator;
+      while ((separator = /\r?\n\r?\n/.exec(buffer))) {
+        const frame = buffer.slice(0, separator.index);
+        buffer = buffer.slice(separator.index + separator[0].length);
+        if (!consumeFrame(frame)) return null;
+        if (terminal) return buffer.trim() ? null : notice;
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+async function readNoticePayload(response) {
+  if (Number(response.headers.get("content-length")) > MAX_RETIREMENT_NOTICE_BYTES) return null;
+  const reader = response.clone().body?.getReader();
+  if (!reader) return null;
+  const decoder = new TextDecoder();
+  const expired = Symbol("inspection deadline");
+  let timer;
+  const deadline = new Promise(resolve => { timer = setTimeout(() => resolve(expired), RETIREMENT_NOTICE_STREAM_WAIT_MS); });
+  let bytes = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const result = await Promise.race([reader.read(), deadline]);
+      if (result === expired) return null;
+      const { done, value } = result;
+      if (done) return JSON.parse(text + decoder.decode());
+      bytes += value.byteLength;
+      if (bytes > MAX_RETIREMENT_NOTICE_BYTES) return null;
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    clearTimeout(timer);
+    // A tee's cancel promise can wait for the original branch. Never await it:
+    // the ordinary response must remain readable by the caller.
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+// Observed 2026-10-03: retired models return a metadata-free JSON/SSE notice
+// with HTTP 200 instead of an error. Do not treat quoted/generated answers
+// (which carry completion metadata) as these provider notices.
+function getRetiredModelNotice(payload) {
+  const native = payload?.response;
+  const candidates = native?.candidates;
+  if (!native || "usageMetadata" in payload || "modelVersion" in payload
+    || "usageMetadata" in native || "modelVersion" in native
+    || !Array.isArray(candidates) || candidates.length !== 1) return null;
+  const candidate = candidates[0];
+  const parts = candidate?.content?.parts;
+  if (!candidate || "finishReason" in candidate || !Array.isArray(parts) || parts.length !== 1
+    || Object.keys(parts[0] || {}).length !== 1 || typeof parts[0]?.text !== "string") return null;
+  const text = parts[0].text.trim();
+  return /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,100} is no longer available\. Please switch to [A-Za-z0-9][A-Za-z0-9 ._-]{0,100}\.$/.test(text)
+    ? text : null;
+}
 
 const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [
   /high\s+traffic/i,
@@ -139,7 +237,34 @@ export class AntigravityExecutor extends BaseExecutor {
       ? Object.assign(Object.create(args.credentials), { _currentSessionId: sessionId })
       : { _currentSessionId: sessionId };
     const scopedArgs = { ...args, credentials: scopedCredentials };
-    return super.execute(scopedArgs);
+    const result = await super.execute(scopedArgs);
+    let response = result.response;
+    if (!response.ok || !response.body || response.status === 204 || response.status === 205) return result;
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json") && !contentType.includes("text/event-stream")) return result;
+    // The direct DNS-bypass transport exposes a Web body but no clone(). Wrap
+    // it so inspecting a tee cannot consume the body's ordinary response path.
+    if (typeof response.clone !== "function") {
+      response = new Response(response.body, { status: response.status, statusText: response.statusText, headers: response.headers });
+      result.response = response;
+    }
+    let notice = null;
+    try {
+      notice = contentType.includes("text/event-stream")
+        ? await readStreamRetirementNotice(response)
+        : getRetiredModelNotice(await readNoticePayload(response));
+    } catch { /* Preserve malformed/ordinary responses. */ }
+    if (!notice) return result;
+
+    const headers = new Headers(response.headers);
+    headers.delete("content-length");
+    headers.delete("content-encoding");
+    headers.set("content-type", "application/json");
+    result.response = new Response(JSON.stringify({
+      error: { type: "invalid_request_error", code: "model_not_found", message: notice },
+    }), { status: HTTP_STATUS.NOT_FOUND, headers });
+    void response.body?.cancel().catch(() => {});
+    return result;
   }
 
   transformRequest(model, body, stream, credentials) {

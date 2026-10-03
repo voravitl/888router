@@ -114,3 +114,14 @@ retain tool calls and terminal disposition in every client format, and snapshot
 raw provider usage before client formatting. Tool-only responses need telemetry
 as well. Benchmark actual input thresholds are separate from fixture estimates;
 never certify an estimated usage field as provider-measured context.
+
+Observability truncation must preserve bounded raw provider usage, model and
+status independently of response content. Verify persistence through the real
+request-details repository, not only a mocked handler save. Put benchmark trace
+nonces in bounded request metadata so tool-only runs remain attributable.
+
+Antigravity can return a metadata-free HTTP 200 retirement notice instead of a
+model answer, including a lone SSE notice. Inspect only a bounded first frame
+with a short deadline; preserve ordinary long streams. Normalize observed retirement notices to model-unavailable errors
+so combos continue. A quoted notice in a normal completion with model/usage or
+finish metadata must remain a valid answer.
