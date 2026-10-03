@@ -128,6 +128,18 @@ describe("handleChatCore claude passthrough thinking", () => {
     if (budget < 1024) expect(sent.thinking).toBeUndefined();
   });
 
+  it.each(["claude", "openai"])("retains original budgets when same-format thinking or provider settings mutate the working body (%s)", async (sourceFormat) => {
+    const body = { model: "claude-sonnet-4-20250514", stream: false,
+      messages: [{ role: "user", content: "hi" }], max_tokens: 4096, reasoning_effort: "high" };
+    await handleChatCore({ body, modelInfo: { provider: "claude", model: body.model }, credentials: { apiKey: "test-key" },
+      sourceFormatOverride: sourceFormat, isCombo: true,
+      providerThinking: { mode: "on" } });
+    const sent = executeMock.mock.calls[0][0].body;
+    expect(sent.max_tokens).toBe(4096);
+    if (sent.thinking?.budget_tokens) expect(sent.thinking.budget_tokens).toBeLessThan(4096);
+    expect(body).not.toHaveProperty("thinking");
+  });
+
   it.each([false, true])("keeps native Gemini transport fields out of the outbound JSON (%s)", async (stream) => {
     await handleChatCore({ body: {
       model: "gemini-2.5-pro", stream, contents: [{ role: "user", parts: [{ text: "hi" }] }],

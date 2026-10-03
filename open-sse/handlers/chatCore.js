@@ -36,7 +36,7 @@ import { pruneMessageHistory } from "../translator/concerns/pruner.js";
 import { injectPromptCaching } from "../translator/concerns/promptCache.js";
 import { routeByIntent } from "../translator/concerns/intentRouter.js";
 import { getCachedResponse, isResponseCacheOptIn } from "../translator/concerns/responseCache.js";
-import { getContextFit, contextLimitMessage, estimateRequestTokens, alignTranslatedOutputBudget } from "../services/requestContext.js";
+import { getContextFit, contextLimitMessage, estimateRequestTokens, alignTranslatedOutputBudget, reservedOutputTokens } from "../services/requestContext.js";
 import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
 
 function localValidationResult(message, code, details = {}) {
@@ -59,6 +59,8 @@ function localValidationResult(message, code, details = {}) {
  */
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode, isCombo = false, signal = null }) {
   body = structuredClone(body);
+  const clientOutputBudget = { max_tokens: reservedOutputTokens(body) };
+  const clientThinkingBudget = body.thinking?.budget_tokens;
   modelInfo = { ...modelInfo };
   const requestStartTime = Date.now();
   const detailId = `detail_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -368,10 +370,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!preserveRequestInput && finalFormat === "claude") anchorClaudeCache(translatedBody);
 
   // Preserve explicit reservations; constrain only gateway-generated defaults.
-  alignTranslatedOutputBudget(translatedBody, body, { provider, model: upstreamModel });
+  alignTranslatedOutputBudget(translatedBody, clientOutputBudget, { provider, model: upstreamModel });
   // Generated Claude thinking must fit the preserved client reservation.
   // Explicit client thinking remains upstream-validated without alteration.
-  if (finalFormat === FORMATS.CLAUDE && !body.thinking?.budget_tokens
+  if (finalFormat === FORMATS.CLAUDE && !clientThinkingBudget
     && translatedBody.thinking?.budget_tokens >= translatedBody.max_tokens) {
     if (translatedBody.max_tokens > 1024) translatedBody.thinking.budget_tokens = translatedBody.max_tokens - 1;
     else delete translatedBody.thinking;
