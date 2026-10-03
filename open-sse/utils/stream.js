@@ -659,3 +659,117 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     apiKey
   });
 }
+
+/** Observe Claude SSE for accounting while forwarding every upstream byte unchanged. */
+export function createClaudeNativeStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  let lineBuffer = "";
+  let dataLines = [];
+  let usage = null;
+  let ttftAt = null;
+  let contentLength = 0;
+  let accumulatedContent = "";
+  let accumulatedThinking = "";
+  let accumulatedToolCalls = null;
+  let completed = false;
+  let eventChars = 0;
+  let eventLines = 0;
+  let discardEvent = false;
+  let discardLine = false;
+  const MAX_EVENT_CHARS = 1024 * 1024;
+  const MAX_EVENT_LINES = 2048;
+  const MAX_LINE_CHARS = 64 * 1024;
+  const MAX_CAPTURE_CHARS = 256 * 1024;
+  const MAX_TOOL_CALLS = 64;
+
+  const processEvent = () => {
+    if (!discardEvent && dataLines.length > 0) {
+      try {
+        const parsed = JSON.parse(dataLines.join("\n"));
+        if (parsed?.type === "content_block_start" && parsed.content_block?.type === "tool_use") {
+          accumulatedToolCalls ||= [];
+          const { id, name } = parsed.content_block;
+          if (accumulatedToolCalls.length < MAX_TOOL_CALLS && !accumulatedToolCalls.some((tool) => tool.id === id)) {
+            accumulatedToolCalls.push({ id: id || `tool_${accumulatedToolCalls.length}`, name: name || null });
+          }
+        }
+        const delta = parsed?.delta;
+        if (typeof delta?.text === "string") {
+          contentLength += delta.text.length;
+          if (accumulatedContent.length < MAX_CAPTURE_CHARS) accumulatedContent += delta.text.slice(0, MAX_CAPTURE_CHARS - accumulatedContent.length);
+        }
+        if (typeof delta?.thinking === "string") {
+          contentLength += delta.thinking.length;
+          if (accumulatedThinking.length < MAX_CAPTURE_CHARS) accumulatedThinking += delta.thinking.slice(0, MAX_CAPTURE_CHARS - accumulatedThinking.length);
+        }
+        const extracted = extractUsage(parsed);
+        if (extracted) usage = mergeUsage(usage, extracted);
+      } catch {
+        // Unknown or non-JSON Claude events remain opaque to the observer.
+      }
+    }
+    dataLines = [];
+    eventChars = 0;
+    eventLines = 0;
+    discardEvent = false;
+  };
+
+  const observe = (text, final = false) => {
+    if (discardLine) {
+      const newlineAt = text.indexOf("\n");
+      if (newlineAt === -1) return;
+      discardLine = false;
+      text = text.slice(newlineAt + 1);
+    }
+    lineBuffer += text;
+    if (lineBuffer.length > MAX_LINE_CHARS && !lineBuffer.includes("\n")) {
+      lineBuffer = "";
+      dataLines = [];
+      discardEvent = true;
+      discardLine = true;
+      return;
+    }
+    const lines = lineBuffer.split("\n");
+    const trailingLine = final ? null : (lines.pop() || "");
+    lineBuffer = trailingLine || "";
+    for (let line of lines) {
+      if (discardLine) discardLine = false;
+      if (line.endsWith("\r")) line = line.slice(0, -1);
+      if (line === "") processEvent();
+      else {
+        eventLines++;
+        eventChars += line.length + 1;
+        if (line.length > MAX_LINE_CHARS || eventChars > MAX_EVENT_CHARS || eventLines > MAX_EVENT_LINES) {
+          discardEvent = true;
+          dataLines = [];
+          continue;
+        }
+      }
+      if (line !== "" && line.startsWith("data:") && !discardEvent) {
+        const value = line.slice(5);
+        dataLines.push(value.startsWith(" ") ? value.slice(1) : value);
+      }
+    }
+    if (final) processEvent();
+  };
+
+  return new TransformStream({
+    transform(chunk, controller) {
+      if (ttftAt === null) ttftAt = Date.now();
+      const text = decoder.decode(chunk, { stream: true });
+      reqLogger?.appendProviderChunk?.(text);
+      controller.enqueue(chunk);
+      observe(text);
+    },
+    flush() {
+      observe(decoder.decode(), true);
+      if (completed) return;
+      completed = true;
+      trackPendingRequest(model, provider, connectionId, false);
+      if (!hasValidUsage(usage) && contentLength > 0) usage = estimateUsage(body, contentLength, FORMATS.CLAUDE);
+      if (hasValidUsage(usage)) logUsage(provider, usage, model, connectionId, apiKey);
+      else appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => {});
+      onStreamComplete?.({ content: accumulatedContent, thinking: accumulatedThinking, toolCalls: accumulatedToolCalls }, usage, ttftAt);
+    }
+  });
+}

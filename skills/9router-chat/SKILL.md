@@ -71,3 +71,21 @@ Anthropic (`/v1/messages`):
   "content": [{ "type": "text", "text": "Hello!" }],
   "stop_reason": "end_turn", "usage": { "input_tokens": 8, "output_tokens": 2 } }
 ```
+
+
+## Claude Code gateway regression lesson
+
+Claude Code requests preserve client semantics by default: native Claude routes
+retain system block order, tools, effort/thinking, signatures and cache controls.
+Optional compression/style/history transforms require explicit
+`x-888-native-transformations: true`; translated combo leaves still need provider
+compatibility translation. Same-format Claude SSE ends with Claude lifecycle
+events, not an injected OpenAI `[DONE]`. Keep protocol/session headers
+request-local and authentication provider-owned.
+
+When comparing a combo with direct access, record the actual provider/model and
+first useful text/tool event, not just the first heartbeat or HTTP 200. A fallback
+model, a 429, or a malformed tool request is not a valid latency/quality A/B.
+Run the Claude passthrough, native stream and header regression suites from the
+repo root, then the full suite before release. Source:
+[Anthropic gateway protocol](https://code.claude.com/docs/en/llm-gateway-protocol).

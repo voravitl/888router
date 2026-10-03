@@ -129,13 +129,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     ? runtimeTransport
     : resolveTransport(provider, modelSupportedFormats[0]);
   const targetFormat = modelTargetFormat || useTransport?.format || getTargetFormat(provider, requestCredentials || credentials);
+  const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
+  const passthrough = isNativePassthrough(clientTool, provider);
+  const nativeClaudePassthrough = clientTool === "claude" && passthrough
+    && sourceFormat === FORMATS.CLAUDE && targetFormat === FORMATS.CLAUDE;
+  const nativeTransformationsOptIn = String(clientRawRequest?.headers?.["x-888-native-transformations"] || "").toLowerCase() === "true";
+  const preserveClaudeClientInput = clientTool === "claude" && sourceFormat === FORMATS.CLAUDE && !nativeTransformationsOptIn;
+  const preserveNativeClaudeRequest = nativeClaudePassthrough && preserveClaudeClientInput;
+  const effectiveUniversalToolsMode = preserveNativeClaudeRequest ? "off" : universalToolsMode;
   if (useTransport && requestCredentials) requestCredentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
-  if (providerThinking?.mode && providerThinking.mode !== "auto") {
+  if (!preserveClaudeClientInput && providerThinking?.mode && providerThinking.mode !== "auto") {
     const mode = providerThinking.mode;
     if (mode === "on" && !body.thinking) {
       console.log("Injecting provider-level thinking config override: on");
@@ -180,11 +188,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Native passthrough: CLI tool and provider are the same ecosystem
   // Skip all translation/normalization — only model and Bearer are swapped
-  const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
-  const passthrough = isNativePassthrough(clientTool, provider);
-
   // Expose raw client headers to translators/executors for session-id resolution
   if (requestCredentials) requestCredentials.rawHeaders = clientRawRequest?.headers || {};
+  if (preserveNativeClaudeRequest && requestCredentials) requestCredentials.nativeClaudeFidelity = true;
 
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
   if (!passthrough) {
@@ -202,10 +208,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let translatedBody;
   let toolNameMap;
   if (passthrough) {
-    log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
-    translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
+    log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | ${preserveNativeClaudeRequest ? "native faithful" : "native transformed"}`);
+    translatedBody = preserveNativeClaudeRequest
+      ? { ...structuredClone(body), model: stripThinkingSuffix(upstreamModel) }
+      : { ...body, model: stripThinkingSuffix(upstreamModel) };
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
-    if (clientTool === "claude") {
+    if (clientTool === "claude" && !preserveNativeClaudeRequest) {
       normalizeClaudePassthrough(translatedBody, translatedBody.model);
       applyThinking(FORMATS.CLAUDE, translatedBody.model, translatedBody, provider, captureThinking(body));
     }
@@ -221,7 +229,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
-  if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
+  if (!preserveClaudeClientInput && clientTool === "claude" && Array.isArray(translatedBody.tools)) {
     const { tools: deduped, stripped } = dedupeTools(translatedBody.tools);
     if (stripped.length > 0) {
       translatedBody.tools = deduped;
@@ -232,7 +240,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Cap tools for providers with hard upstream limits (e.g. xAI max 250).
   // Claude Code / agent clients often send 260+ MCP tools and get 400 invalid-argument.
   const maxTools = PROVIDERS[provider]?.maxTools;
-  if (maxTools && Array.isArray(translatedBody.tools)) {
+  if (!preserveNativeClaudeRequest && maxTools && Array.isArray(translatedBody.tools)) {
     const { cappedFrom, cappedTo } = capTools(translatedBody, maxTools);
     if (cappedFrom > cappedTo) {
       log?.warn?.("TOOLCAP", `${provider}: tools ${cappedFrom} → ${cappedTo} (max ${maxTools})`);
@@ -244,7 +252,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const finalFormat = passthrough ? sourceFormat : targetFormat;
 
   // TTS models don't support tool messages/function calling
-  if (getModelType(alias, model) === "tts" && translatedBody.messages) {
+  if (!preserveNativeClaudeRequest && getModelType(alias, model) === "tts" && translatedBody.messages) {
     translatedBody.messages = translatedBody.messages.filter(msg => msg.role !== "tool");
     delete translatedBody.tools;
   }
@@ -252,21 +260,25 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let prunerStats = null;
 
   // Context Pruner: atomic middle-out pruning when prompt tokens exceed model context budget
-  if (prunerEnabled !== false) {
+  if (!preserveClaudeClientInput && prunerEnabled !== false) {
     pruneMessageHistory(translatedBody, provider, upstreamModel);
     prunerStats = translatedBody._prunerStats || null;
   }
-  delete translatedBody._pruned;
-  delete translatedBody._omittedTurns;
-  delete translatedBody._prunerStats;
+  if (!preserveClaudeClientInput) {
+    delete translatedBody._pruned;
+    delete translatedBody._omittedTurns;
+    delete translatedBody._prunerStats;
+  }
 
   // RTK: compress tool_result content
-  rtkStats = compressMessages(translatedBody, rtkEnabled);
+  if (!preserveClaudeClientInput) rtkStats = compressMessages(translatedBody, rtkEnabled);
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
-  headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
+  if (!preserveClaudeClientInput) {
+    headroomStats = await compressWithHeadroom(translatedBody, { enabled: headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
+  }
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
   if (headroomLine) {
@@ -274,28 +286,30 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
       log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${headroomSizeLine}`);
     }
+  } else if (preserveClaudeClientInput && headroomEnabled) {
+    log?.debug?.("HEADROOM", "skipped to preserve Claude client request");
   } else if (headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
   // Caveman: inject terse-style system prompt
-  if (cavemanEnabled && cavemanLevel) {
+  if (!preserveClaudeClientInput && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
     log?.debug?.("CAVEMAN", `${cavemanLevel} | ${finalFormat}`);
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
-  if (ponytailEnabled && ponytailLevel) {
+  if (!preserveClaudeClientInput && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
   }
 
   // Auto Prompt Caching: inject cache_control or normalize static prefix
-  if (injectPromptCaching(translatedBody, finalFormat)) {
+  if (!preserveClaudeClientInput && injectPromptCaching(translatedBody, finalFormat)) {
     log?.debug?.("PROMPTCACHE", `injected prompt cache controls for ${finalFormat}`);
   }
 
   // Universal Tool Call Engine: inject XML preamble & adapt history for non-tool models
   const modelCaps = getCapabilitiesForModel(provider, model);
-  if (shouldInjectUniversalToolPrompt(translatedBody, { provider, model: upstreamModel, capabilities: modelCaps }, { universalToolsMode })) {
+  if (!preserveNativeClaudeRequest && shouldInjectUniversalToolPrompt(translatedBody, { provider, model: upstreamModel, capabilities: modelCaps }, { universalToolsMode: effectiveUniversalToolsMode })) {
     adaptHistoryForUniversalTools(translatedBody, log);
     injectUniversalToolPrompt(translatedBody);
     log?.info?.("TOOLSHIM", `injected universal tool preamble for model ${upstreamModel}`);
@@ -303,7 +317,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Pin cache breakpoints to the final body — every saver above can reshape
   // system/tools/messages, and a stale anchor costs a full prefix rewrite.
-  if (finalFormat === "claude") anchorClaudeCache(translatedBody);
+  if (!preserveClaudeClientInput && finalFormat === "claude") anchorClaudeCache(translatedBody);
 
   if (isRetiredProvider(provider)) {
     return createErrorResult(HTTP_STATUS.GONE, retiredProviderMessage(provider));
@@ -366,7 +380,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
-  const upstreamPayload = stripPrivateToolFields({ ...translatedBody });
+  const upstreamPayload = preserveNativeClaudeRequest ? translatedBody : stripPrivateToolFields({ ...translatedBody });
   const effectiveModel = upstreamModel || model;
   const execCredentials = requestCredentials || credentials;
   try {
@@ -465,7 +479,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const sharedCtx = {
     provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess,
-    prunerStats, rtkStats, headroomStats, headroomDiagnostics, detailId, clientModel, universalToolsMode,
+    prunerStats, rtkStats, headroomStats, headroomDiagnostics, detailId, clientModel, universalToolsMode: effectiveUniversalToolsMode,
   };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);

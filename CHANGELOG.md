@@ -1,3 +1,12 @@
+# v0.15.151 (2026-10-03)
+
+## Fix: preserve Claude Code requests and native Claude streams
+
+- Claude Code skips optional router compression, pruning, tool deduplication, style prompts, provider thinking overrides and cache rewriting by default, including translated combo leaves. Native Claude Messages retains client payload fields apart from the resolved model; `x-888-native-transformations: true` explicitly restores configured transformations.
+- Forward same-format Claude SSE bytes without an OpenAI `[DONE]` sentinel or fabricated success on interruption. Observe Claude text, thinking, tool calls and usage correctly so valid native replies are not falsely recorded as empty.
+- Use request-local Claude identity/protocol headers, keep session IDs and open-ended protocol headers out of the global fallback cache, preserve client beta flags and retain the required OAuth beta for provider-token authentication.
+- Evidence: Anthropic's Claude Code gateway compatibility guide requires preserving request fields, system block order, cache controls and SSE events. Regression fixtures cover payload preservation, no Headroom call, stream byte identity, split UTF-8, tools/usage and interleaved client headers. Live synthetic combo tests and same-account direct requests are reported separately; upstream quota/error outcomes do not establish a speed or quality equivalence guarantee.
+
 # v0.15.150 (2026-10-03)
 
 ## Fix: automatically refresh Codex model discovery version

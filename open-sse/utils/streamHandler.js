@@ -105,7 +105,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null, { propagateUpstreamErrors = false, getUpstreamFailure = null } = {}) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
@@ -197,6 +197,11 @@ export function createDisconnectAwareStream(transformStream, streamController, o
 
   return new ReadableStream({
     async pull(controller) {
+      const nativeUpstreamFailure = propagateUpstreamErrors ? getUpstreamFailure?.() : null;
+      if (nativeUpstreamFailure) {
+        controller.error(nativeUpstreamFailure);
+        return;
+      }
       if (!streamController.isConnected()) {
         emitTerminal(controller);
         controller.close();
@@ -218,6 +223,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
+        const nativeUpstreamFailure = propagateUpstreamErrors ? getUpstreamFailure?.() : null;
         // Controller already closed = downstream ended; not an upstream error, skip noisy log.
         const msg0 = error?.message || "";
         const isControllerClosed = msg0.includes("already closed") || msg0.includes("Invalid state");
@@ -239,6 +245,18 @@ export function createDisconnectAwareStream(transformStream, streamController, o
           code === "ETIMEDOUT" ||
           code === "EPIPE" ||
           code === "UND_ERR_SOCKET";
+
+        // Native passthrough must expose upstream truncation as a stream error:
+        // appending a synthetic Claude success terminal would turn partial JSON
+        // into a malformed but apparently completed response.
+        if (nativeUpstreamFailure) {
+          try { controller.error(nativeUpstreamFailure); } catch { /* already closed or cancelled */ }
+          return;
+        }
+        if (propagateUpstreamErrors && wasConnected) {
+          try { controller.error(error); } catch { /* already closed or cancelled */ }
+          return;
+        }
 
         // Graceful close on network/abort, or when a structured terminal is available
         // (Responses passthrough prefers response.failed + [DONE] over a raw transport error)
@@ -277,13 +295,15 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, options = {}) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
   const t0 = Date.now();
   const tag = "STREAM";
+  let nativeUpstreamFailure = null;
+  let upstreamTapController = null;
   const clearStall = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
@@ -292,7 +312,12 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     stallTimer = setTimeout(() => {
       stallTimer = null;
       dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
-      streamController.handleError?.(new Error("stream stall timeout"));
+      const error = new Error("stream stall timeout");
+      if (options.propagateUpstreamErrors) nativeUpstreamFailure = error;
+      streamController.handleError?.(error);
+      if (options.propagateUpstreamErrors) {
+        try { upstreamTapController?.error(error); } catch { /* pipeline already ended */ }
+      }
       streamController.abort?.();
     }, stallTimeoutMs);
   };
@@ -314,6 +339,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   dbg(tag, `pipe start | stallTimeout=${stallTimeoutMs}ms`);
 
   const upstreamTap = new TransformStream({
+    start(controller) { upstreamTapController = controller; },
     transform(chunk, controller) {
       chunkCount++;
       const sz = chunk?.byteLength || chunk?.length || 0;
@@ -337,7 +363,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     wrappedController,
-    onAbortTerminal
+    onAbortTerminal,
+    { ...options, getUpstreamFailure: () => nativeUpstreamFailure }
   );
 }
-

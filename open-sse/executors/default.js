@@ -8,7 +8,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 
-import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
+import { getCachedClaudeHeaders, getClaudeRequestHeaders } from "../utils/claudeHeaderCache.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -43,11 +43,14 @@ const HEADER_HOOKS = {
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
-  claudeOverlay: (h) => {
-    const cached = getCachedClaudeHeaders();
+  claudeOverlay: (h, credentials) => {
+    // A request-scoped header object must never inherit another client's session
+    // or beta flags from the process-wide last-seen cache.
+    const requestScoped = credentials?.rawHeaders !== undefined;
+    const cached = requestScoped ? getClaudeRequestHeaders(credentials.rawHeaders) : getCachedClaudeHeaders();
     if (!cached) return;
     for (const [k, v] of Object.entries(cached)) {
-      if (k === "anthropic-beta") {
+      if (k === "anthropic-beta" && !credentials?.nativeClaudeFidelity) {
         const existing = (h["Anthropic-Beta"] || h["anthropic-beta"] || "").split(",").map(s => s.trim()).filter(Boolean);
         const incoming = v.split(",").map(s => s.trim()).filter(Boolean);
         h["anthropic-beta"] = Array.from(new Set([...existing, ...incoming])).join(",");
@@ -87,7 +90,10 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream, credentials) {
+    // Native Claude Code owns its request semantics; compatibility rewrites
+    // belong to translated requests or the explicit transformations opt-in.
+    if (credentials?.nativeClaudeFidelity === true) return body;
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
@@ -171,10 +177,30 @@ export class DefaultExecutor extends BaseExecutor {
     const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
-    for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
+    if (credentials?.nativeClaudeFidelity) {
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase() === "anthropic-beta") delete headers[key];
+      }
+      // Native protocol headers also apply to API-key and compatible providers,
+      // whose auth descriptors do not carry the Claude OAuth overlay hook.
+      HEADER_HOOKS.claudeOverlay(headers, credentials);
+    } else {
+      for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
+    }
     applyAuth(headers, desc, credentials);
 
-    if (model && (this.provider === "claude" || this.provider?.startsWith?.("anthropic-compatible-"))) {
+    // OAuth's required beta follows the selected provider credential, not the
+    // gateway API key the client used. Other client beta flags stay request-local.
+    const endpoint = url || rt?.baseUrl || credentials?.providerSpecificData?.baseUrl || this.config.baseUrl || ANTHROPIC_COMPAT_BASE;
+    let isOfficialAnthropic = false;
+    try { isOfficialAnthropic = new URL(endpoint).hostname === "api.anthropic.com"; } catch { /* Unconfigured endpoints are not first-party. */ }
+    if (credentials?.nativeClaudeFidelity && isOfficialAnthropic && credentials.accessToken && !credentials.apiKey && headers.Authorization === `Bearer ${credentials.accessToken}`) {
+      const key = headers["anthropic-beta"] !== undefined ? "anthropic-beta" : "Anthropic-Beta";
+      const flags = (headers[key] || "").split(",").map(value => value.trim()).filter(Boolean);
+      headers[key] = [...new Set([...flags, "oauth-2025-04-20"])].join(",");
+    }
+
+    if (!credentials?.nativeClaudeFidelity && model && (this.provider === "claude" || this.provider?.startsWith?.("anthropic-compatible-"))) {
       const dynamicBeta = selectAnthropicBeta(model);
       const key = headers["Anthropic-Beta"] ? "Anthropic-Beta" : headers["anthropic-beta"] ? "anthropic-beta" : "Anthropic-Beta";
       const existing = headers[key] ? headers[key].split(",").map(s => s.trim()).filter(Boolean) : [];
@@ -184,8 +210,6 @@ export class DefaultExecutor extends BaseExecutor {
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
-      const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
-      const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
       if (!isOfficialAnthropic) {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
@@ -197,6 +221,7 @@ export class DefaultExecutor extends BaseExecutor {
         delete headers["Anthropic-Dangerous-Direct-Browser-Access"];
         delete headers["x-app"];
         delete headers["X-App"];
+        delete headers["x-claude-code-session-id"];
         // Strip claude-code-20250219 from Anthropic-Beta / anthropic-beta
         for (const betaKey of ["anthropic-beta", "Anthropic-Beta"]) {
           if (headers[betaKey]) {
