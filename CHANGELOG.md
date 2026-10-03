@@ -1,3 +1,12 @@
+# v0.15.150 (2026-10-03)
+
+## Fix: automatically refresh Codex model discovery version
+
+- Resolve the latest stable Codex release from official npm metadata on each successful Sync, rather than freezing discovery at the bundled CLI version. New account-visible upstream model IDs do not require a registry edit.
+- Share concurrent release lookups, bound them to three seconds, and retain the last known version with a visible warning and one-minute retry backoff on metadata failures. No provider credentials are sent to npm.
+- Regression coverage includes an unknown future model, metadata preservation, review variants, persistence, release updates, outages, timeouts and recovery.
+- Evidence: the same live Codex account returned nine models without GPT-6.1 using client version `0.156.1`, ten including GPT-6.1 using `0.160.0`, and HTTP 400 without a version. Official npm metadata reported `0.160.0`. Account entitlement and upstream rollout still determine availability.
+
 # v0.15.149 (2026-10-03)
 
 ## Fix: GPT-6.1 Sol missing from OpenAI Codex model sync

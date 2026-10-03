@@ -10,7 +10,7 @@ import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js"
 import { refreshProviderCredentials } from "open-sse/services/oauthCredentialManager.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { formatModelsFetchError, safeLogDetail } from "@/lib/upstreamErrorDetail";
-import { CODEX_CLI_VERSION } from "open-sse/providers/shared.js";
+import { resolveCodexDiscoveryVersion } from "open-sse/services/codexDiscoveryVersion.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -222,7 +222,7 @@ const PROVIDER_MODELS_CONFIG = {
     parseResponse: (data) => data.data || []
   },
   codex: {
-    url: `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLI_VERSION}`,
+    url: "https://chatgpt.com/backend-api/codex/models",
     method: "GET",
     headers: { "Content-Type": "application/json", "Accept": "application/json", "originator": "codex_cli_rs" },
     authHeader: "Authorization",
@@ -985,6 +985,13 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "No valid token found" }, { status: 401 });
     }
 
+    let discoveryWarning;
+    if (connection.provider === "codex") {
+      const discovery = await resolveCodexDiscoveryVersion();
+      config = { ...config, url: `${config.url}?client_version=${encodeURIComponent(discovery.version)}` };
+      discoveryWarning = discovery.warning;
+    }
+
     const buildFetchRequest = (authToken, conn = connection) => {
       let requestUrl = config.url;
       if (conn.provider === "qwen") {
@@ -1114,7 +1121,8 @@ export async function GET(request, { params }) {
     return buildModelsResponse({
       provider: connection.provider,
       connectionId: connection.id,
-      models
+      models,
+      warning: discoveryWarning,
     });
   } catch (error) {
     console.log("Error fetching provider models:", error);
