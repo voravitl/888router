@@ -115,6 +115,14 @@ raw provider usage before client formatting. Tool-only responses need telemetry
 as well. Benchmark actual input thresholds are separate from fixture estimates;
 never certify an estimated usage field as provider-measured context.
 
+Native JSON and forced-SSE paths must share final client Responses conversion.
+An upstream `MAX_TOKENS` remains incomplete even when a complete-looking tool
+call is present. Gemini thinking belongs to output usage, never input usage;
+preserve native cache counts. A 256-token benchmark output limit can be consumed
+by thinking: use an explicit larger fixture budget instead of silently raising
+the client's limit. Forward explicit model versions without a hardcoded ceiling
+or quiet downgrade; unavailable models belong in normal error/fallback handling.
+
 Observability truncation must preserve bounded raw provider usage, model and
 status independently of response content. Verify persistence through the real
 request-details repository, not only a mocked handler save. Put benchmark trace

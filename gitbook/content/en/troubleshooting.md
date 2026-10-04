@@ -479,6 +479,11 @@ count with `targetMeasuredTokens` (defaults to the estimated target). Set
 `LONG_CONTEXT_SIZES=800000` to test at least 500K actual input tokens despite
 tokenizer differences. Choose a model that accepts the generated request; this
 setting changes only the benchmark threshold, never the gateway input or usage.
+The benchmark defaults to a 256-token output budget. Reasoning models may spend
+that budget on thinking and return `MAX_TOKENS` before completing the answer.
+Set `LONG_CONTEXT_MAX_OUTPUT_TOKENS=4096` when testing those models; this changes
+the explicit fixture output budget in every client format. The gateway preserves
+the requested limit, and truncated text or tool output does not count as complete.
 Measurement requires nonce-matched,
 read-only request telemetry containing the unmodified provider response usage
 (`LONG_CONTEXT_SQLITE=true`). Estimated usage, gateway-padded client counts,
@@ -499,6 +504,11 @@ model IDs may differ. Response/telemetry disagreement is reported explicitly;
 no result is classified as a direct-provider comparison. `headersMs` and
 `totalMs` describe non-streaming response headers and completion, respectively,
 rather than time to the first useful streamed token.
+
+Antigravity forwards explicit Gemini Flash versions without a hardcoded version
+ceiling or silent downgrade. A provider that rejects the requested model returns
+an error so a configured combo can try another candidate. A new model ID does
+not establish its capabilities; obtain provider metadata before claiming support.
 
 The Gemini `generateContent`/`streamGenerateContent` endpoint passes native
 `contents`, function calls/results, tools, media parts, generation settings,

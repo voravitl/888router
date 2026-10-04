@@ -16,7 +16,7 @@ const schema = { type: "object", properties: { start: { type: "string" }, middle
 const toolName = "capture_context";
 const filler = "Reference entry: retain the full history. ภาษาไทย 中文 🌏 café.\n";
 
-function payload(format, kind, target, model) {
+function payload(format, kind, target, model, maxOutputTokens = 256) {
   const nonce = randomUUID();
   const expected = Object.fromEntries(["start", "middle", "end"].map((position) => [position, `${position}_${nonce}`]));
   const instructions = `Find the three CURRENT_CONTEXT markers in the document; previous tool results are unrelated. ${kind === "tool" ? `Call ${toolName} once with their values.` : "Return only a JSON object with keys start, middle, end containing their values."}`;
@@ -30,20 +30,20 @@ function payload(format, kind, target, model) {
   const initialMessage = `Capture the previous markers. Benchmark trace: ${nonce}`;
   let body;
   if (format === "anthropic") {
-    body = { model, max_tokens: 256, stream: false, messages: [
+    body = { model, max_tokens: maxOutputTokens, stream: false, messages: [
       { role: "user", content: initialMessage },
       { role: "assistant", content: [{ type: "tool_use", id: "previous_call", name: toolName, input: previous }] },
       { role: "user", content: [{ type: "tool_result", tool_use_id: "previous_call", content: "Previous markers captured." }, { type: "text", text: document }] },
     ], tools: [{ name: toolName, description: toolDescription, input_schema: schema }] };
   } else if (format === "openai-chat") {
-    body = { model, max_tokens: 256, stream: false, messages: [
+    body = { model, max_tokens: maxOutputTokens, stream: false, messages: [
       { role: "user", content: initialMessage },
       { role: "assistant", content: null, tool_calls: [{ id: "previous_call", type: "function", function: { name: toolName, arguments: JSON.stringify(previous) } }] },
       { role: "tool", tool_call_id: "previous_call", content: "Previous markers captured." },
       { role: "user", content: document },
     ], tools: [{ type: "function", function: { name: toolName, description: toolDescription, parameters: schema } }] };
   } else if (format === "responses") {
-    body = { model, max_output_tokens: 256, stream: false, input: [
+    body = { model, max_output_tokens: maxOutputTokens, stream: false, input: [
       { role: "user", content: initialMessage },
       { type: "function_call", call_id: "previous_call", name: toolName, arguments: JSON.stringify(previous) },
       { type: "function_call_output", call_id: "previous_call", output: "Previous markers captured." },
@@ -54,9 +54,9 @@ function payload(format, kind, target, model) {
       { role: "user", parts: [{ text: initialMessage }] },
       { role: "model", parts: [{ functionCall: { name: toolName, args: previous } }] },
       { role: "user", parts: [{ functionResponse: { name: toolName, response: { result: "Previous markers captured." } } }, { text: document }] },
-    ], tools: [{ functionDeclarations: [{ name: toolName, description: toolDescription, parameters: schema }] }], generationConfig: { maxOutputTokens: 256 } };
+    ], tools: [{ functionDeclarations: [{ name: toolName, description: toolDescription, parameters: schema }] }], generationConfig: { maxOutputTokens } };
   } else throw new Error("unsupported_format");
-  return { body, expected, nonce, document, format, kind, target };
+  return { body, expected, nonce, document, format, kind, target, maxOutputTokens };
 }
 
 function parseResponse(format, value, kind, expected) {
@@ -231,7 +231,7 @@ function validateOffline(item) {
     else duplicate.candidates[0].content.parts.push(duplicate.candidates[0].content.parts[0]);
     assert.equal(parseResponse(item.format, duplicate, item.kind, item.expected).pass, false);
   }
-  return { format: item.format, task: item.kind, targetEstimatedTokens: item.target, estimatedInputTokens: estimateRequestTokens(item.body), characterEstimateTokens: Math.ceil(encoded.length / 4), bytes: Buffer.byteLength(encoded), roundTripAndParserPass: true };
+  return { format: item.format, task: item.kind, maxOutputTokens: item.maxOutputTokens, targetEstimatedTokens: item.target, estimatedInputTokens: estimateRequestTokens(item.body), characterEstimateTokens: Math.ceil(encoded.length / 4), bytes: Buffer.byteLength(encoded), roundTripAndParserPass: true };
 }
 
 function sqliteRead(source, args = []) {
@@ -268,7 +268,7 @@ async function runLive(item, base, model, key, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let status = null;
-  const summary = { format: item.format, task: item.kind, requestedModel: model, targetEstimatedTokens: item.target, targetMeasuredTokens: item.measurementTarget, estimatedInputTokens: estimateRequestTokens(item.body), characterEstimateTokens: Math.ceil(JSON.stringify(item.body).length / 4) };
+  const summary = { format: item.format, task: item.kind, requestedModel: model, maxOutputTokens: item.maxOutputTokens, targetEstimatedTokens: item.target, targetMeasuredTokens: item.measurementTarget, estimatedInputTokens: estimateRequestTokens(item.body), characterEstimateTokens: Math.ceil(JSON.stringify(item.body).length / 4) };
   try {
     const headers = { "Content-Type": "application/json", Authorization: `Bearer ${key}` };
     if (item.format === "anthropic") headers["anthropic-version"] = "2023-06-01";
@@ -311,12 +311,14 @@ async function main() {
   if (live && !process.env.LONG_CONTEXT_MODEL) throw new Error("live_model_required");
   const timeoutMs = Number(process.env.LONG_CONTEXT_TIMEOUT_MS || 180_000);
   assert.ok(Number.isInteger(timeoutMs) && timeoutMs >= 1_000 && timeoutMs <= 600_000, "invalid_timeout");
+  const maxOutputTokens = Number(process.env.LONG_CONTEXT_MAX_OUTPUT_TOKENS || 256);
+  assert.ok(Number.isInteger(maxOutputTokens) && maxOutputTokens >= 1 && maxOutputTokens <= 65_536, "invalid_output_budget");
   const key = live ? routerKey() : null;
   const results = [];
   for (const format of formats) {
     for (const size of sizes) {
       for (const kind of ["text", "tool"]) {
-        const item = payload(format, kind, size, model);
+        const item = payload(format, kind, size, model, maxOutputTokens);
         item.measurementTarget = minimumActual ?? size;
         const offline = validateOffline(item);
         results.push(live ? await runLive(item, process.env.LONG_CONTEXT_BASE_URL || "http://localhost:20129", model, key, timeoutMs) : offline);

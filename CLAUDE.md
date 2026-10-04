@@ -104,9 +104,9 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 
 **Issue for PR link (HARD):** every code-changing PR must include `closes #N` / `fixes #N` / `resolves #N`. Issue exists to **link the PR** (audit trail) — body may be one line (`PR tracking.`). Do not ship on CHANGELOG/version alone.
 
-**FAST path (single fix):** issue → branch → PR (`closes #N`) → CI → merge → if `package.json` version bumped then `tag vX.Y.Z` + GitHub Release → deploy. Longrun optional.
+**FAST path (single fix):** issue → branch → PR (`closes #N`) → CI → merge → if `package.json` version bumped then `tag vX.Y.Z` + GitHub Release → deploy.
 
-**FULL path:** longrun / multi-task — same issue link; `tracking_issue` on prd tasks; issue-audit before merge.
+**FULL path:** multi-task — same issue link on every PR.
 
 **Carve-out:** `[skip-issue]` only for pure docs/chore with no version ship.
 

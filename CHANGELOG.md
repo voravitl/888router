@@ -1,3 +1,12 @@
+# v0.15.156 (2026-10-04)
+
+## Fix: preserve native JSON completion and explicit model identity
+
+- Share Chat-to-Responses JSON finalization between native JSON and forced-SSE paths, including terminal disposition, tool calls and usage.
+- Keep Gemini output-budget exhaustion incomplete even when tool arguments look complete. Count thinking as output and preserve cache usage.
+- Forward explicit Gemini Flash versions without silently downgrading to a hardcoded ceiling. Unknown IDs require provider validation or synced metadata, not borrowed capabilities.
+- Allow an explicit benchmark output budget for reasoning models while preserving the gateway client's requested limit.
+
 # v0.15.155 (2026-10-04)
 
 ## Fix: clean obsolete default settings configuration
