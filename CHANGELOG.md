@@ -1,3 +1,10 @@
+# v0.15.157 (2026-10-04)
+
+## Feat: register Antigravity Claude 5.5 tiered models
+
+- Register live `claude-sonnet-5-5-{high,medium,low}` and `claude-opus-5-5-{high,medium,low}` from `:fetchAvailableModels` (first seen 2026-10-04); drop stale `claude-sonnet-4-6` / `claude-opus-4-6-thinking` the backend no longer exposes.
+- Resolve 1M adaptive capabilities for tiered 5.5 IDs so thinking budgets stay under the declared output cap and `effort: max` keeps its provider-native meaning.
+
 # v0.15.156 (2026-10-04)
 
 ## Fix: preserve native JSON completion and explicit model identity

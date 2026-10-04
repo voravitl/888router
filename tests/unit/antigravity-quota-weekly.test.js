@@ -173,10 +173,10 @@ describe("Antigravity weekly quota overlay", () => {
         "gemini-3.8-flash-high": {
           quotaInfo: { resetTime: "2026-09-13T12:00:00Z" },
         },
-        "claude-sonnet-4-6": {
+        "claude-sonnet-5-5-high": {
           quotaInfo: { resetTime: "2026-09-14T12:00:00Z" },
         },
-        "claude-opus-4-6-thinking": {
+        "claude-opus-5-5-medium": {
           quotaInfo: { resetTime: "2026-09-15T12:00:00Z" },
         },
       },

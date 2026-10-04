@@ -15,12 +15,12 @@ const proxyAwareFetch = vi.fn(async (url) => ({
             displayName: "Gemini 3.7 Flash (Low)",
             quotaInfo: { remainingFraction: 0.4, resetTime: "2026-09-05T12:00:00Z" },
           },
-          "claude-sonnet-4-6": {
-            displayName: "Claude Sonnet 4.6 (Thinking)",
+          "claude-sonnet-5-5-high": {
+            displayName: "Claude Sonnet 5.5 (High)",
             quotaInfo: { remainingFraction: 0.7, resetTime: "2026-09-04T12:00:00Z" },
           },
-          "claude-opus-4-6-thinking": {
-            displayName: "Claude Opus 4.6 (Thinking)",
+          "claude-opus-5-5-medium": {
+            displayName: "Claude Opus 5.5 (Medium)",
             quotaInfo: { remainingFraction: 0.2, resetTime: "2026-09-06T12:00:00Z" },
           },
           "gpt-oss-120b-medium": {
