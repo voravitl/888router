@@ -1,9 +1,10 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
-import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { fromOpenAIFinish, toOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
+import { openAICompletionToResponses } from "../../utils/completionToResponses.js";
 import { isClientAbort } from "../../utils/abort.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -90,7 +91,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
           else if (part.text !== undefined) textContent += part.text;
           if (part.functionCall) {
             toolCalls.push({
-              id: `call_${part.functionCall.name}_${Date.now()}_${toolCalls.length}`,
+              id: part.functionCall.id || `call_${part.functionCall.name}_${Date.now()}_${toolCalls.length}`,
               type: "function",
               function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) }
             });
@@ -110,23 +111,24 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       if (toolCalls.length > 0) message.tool_calls = toolCalls;
       if (!message.content && !message.tool_calls) message.content = "";
 
-      let finishReason = (candidate.finishReason || "stop").toLowerCase();
+      let finishReason = toOpenAIFinish(candidate.finishReason || "STOP", FORMATS.GEMINI);
       if (finishReason === "stop" && toolCalls.length > 0) finishReason = "tool_calls";
 
       const result = {
         id: `chatcmpl-${response.responseId || Date.now()}`,
         object: "chat.completion",
         created: Math.floor(new Date(response.createTime || Date.now()).getTime() / 1000),
-        model: response.modelVersion || "gemini",
+        model: response.modelVersion || "unknown",
         choices: [{ index: 0, message, finish_reason: finishReason }]
       };
 
       if (usage) {
         result.usage = {
-          prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
-          completion_tokens: usage.candidatesTokenCount || 0,
+          prompt_tokens: usage.promptTokenCount || 0,
+          completion_tokens: (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0),
           total_tokens: usage.totalTokenCount || 0
         };
+        if (usage.cachedContentTokenCount !== undefined) result.usage.prompt_tokens_details = { cached_tokens: usage.cachedContentTokenCount };
         if (usage.thoughtsTokenCount > 0) {
           result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
         }
@@ -213,6 +215,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     return openAICompletionToClaudeMessage(openAIFormatted);
   }
 
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+    const response = openAICompletionToResponses(openAIFormatted);
+    if (!openAIFormatted.usage) delete response.usage;
+    return response;
+  }
   return openAIFormatted;
 }
 
@@ -287,8 +294,11 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   // Client formatting/padding must not mutate the upstream usage saved below.
   const clientResponseBody = structuredClone(responseBody);
+  // Apply ordinary tool normalization before finalizing a translated Responses
+  // client reply. Native Responses JSON retains its original output/status.
+  const finalizeResponses = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat !== FORMATS.OPENAI_RESPONSES;
   let translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(clientResponseBody, targetFormat, sourceFormat)
+    ? translateNonStreamingResponse(clientResponseBody, targetFormat, finalizeResponses ? FORMATS.OPENAI : sourceFormat)
     : clientResponseBody;
   if (toolNameMap?.size > 0) {
     translatedResponse = restoreOpencodeToolNames(translatedResponse, toolNameMap);
@@ -361,7 +371,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     const choice = translatedResponse.choices[0];
     const msg = choice.message;
     const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
-    if (hasToolCalls && choice.finish_reason !== "tool_calls") {
+    if (hasToolCalls && !["tool_calls", "length", "content_filter"].includes(choice.finish_reason)) {
       choice.finish_reason = "tool_calls";
     }
   }
@@ -380,13 +390,28 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
   }
 
+  const responsesSummary = finalizeResponses ? {
+    content: translatedResponse?.choices?.[0]?.message?.content || null,
+    thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || null,
+    finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown",
+  } : null;
+  if (finalizeResponses) {
+    const hadUsage = Boolean(translatedResponse.usage);
+    translatedResponse = openAICompletionToResponses(translatedResponse);
+    if (!hadUsage) delete translatedResponse.usage;
+  }
+
   if (translatedResponse?.usage) {
     // Gemini's endpoint adapter consumes this intermediate OpenAI completion.
     // Filtering its usage as native Gemini would erase every token count.
     const usageFormat = sourceFormat === FORMATS.GEMINI && translatedResponse?.choices
       ? FORMATS.OPENAI
       : sourceFormat;
-    translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), usageFormat);
+    const paddedUsage = addBufferToUsage(translatedResponse.usage);
+    translatedResponse.usage = filterUsageForFormat(paddedUsage, usageFormat);
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES && paddedUsage.total_tokens !== undefined) {
+      translatedResponse.usage.total_tokens = paddedUsage.total_tokens;
+    }
   }
 
   // Strip reasoning_content only when content is non-empty.
@@ -411,7 +436,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null,
     providerResponse: responseBody || null,
-    response: {
+    response: responsesSummary || {
       content: translatedResponse?.choices?.[0]?.message?.content || translatedResponse?.content || null,
       thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
       finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
