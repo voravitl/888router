@@ -1,3 +1,10 @@
+# v0.15.155 (2026-10-04)
+
+## Fix: clean obsolete default settings configuration
+
+- Remove obsolete default settings (`pxpipeEnabled`, `pxpipeAutoInstall`, `pxpipeMinChars`, `pxpipeTimeoutMs`, `tunnelProvider`, `quotaVisibility`) from `settingsRepo.js`.
+- Add unit test suite `tests/unit/settingsRepoClean.test.js` to verify clean default settings schema and update persistence.
+
 # v0.15.154 (2026-10-03)
 
 ## Fix: retain provider usage evidence and recover from retired models

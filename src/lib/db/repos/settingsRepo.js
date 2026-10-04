@@ -8,7 +8,6 @@ const DEFAULT_SETTINGS = {
   cloudEnabled: false,
   tunnelEnabled: false,
   tunnelUrl: "",
-  tunnelProvider: "cloudflare",
   tailscaleEnabled: false,
   tailscaleUrl: "",
   fallbackStrategy: "weighted",
@@ -53,7 +52,6 @@ const DEFAULT_SETTINGS = {
   ponytailLevel: "full",
   // Universal tools mode: "auto" (cap-based inject) | "off" (disable shim path)
   universalToolsMode: "auto",
-  quotaVisibility: {},
   capacityAdapter: {
     vision: { enabled: true, roundRobin: false, models: [] },
     pdf: { enabled: false, roundRobin: false, models: [] },
@@ -62,10 +60,6 @@ const DEFAULT_SETTINGS = {
   },
   requireApiKey: true,
   enableObservability: false,
-  pxpipeEnabled: false,
-  pxpipeAutoInstall: true,
-  pxpipeMinChars: 25000,
-  pxpipeTimeoutMs: 15000,
 };
 
 async function readRaw() {
