@@ -67,6 +67,12 @@ const MODEL_SYNONYMS = {
     "gemini-3.1-pro-high": "gemini-pro-agent",
     "gemini-3-pro-high": "gemini-pro-agent",
     "gemini-3-pro-low": "gemini-3.1-pro-low",
+    "claude-sonnet-5-5-high": "claude-sonnet-5-5-high",
+    "claude-sonnet-5-5-medium": "claude-sonnet-5-5-medium",
+    "claude-sonnet-5-5-low": "claude-sonnet-5-5-low",
+    "claude-opus-5-5-high": "claude-opus-5-5-high",
+    "claude-opus-5-5-medium": "claude-opus-5-5-medium",
+    "claude-opus-5-5-low": "claude-opus-5-5-low",
   },
 };
 
@@ -79,8 +85,8 @@ const MODEL_PATTERNS = {
     { match: /flash.*agent|agent.*flash|flash/i,                   alias: "gemini-3-flash-agent" },
     { match: /pro.*low|low.*pro/i,                                 alias: "gemini-3.1-pro-low" },
     { match: /gemini.*pro|pro.*gemini/i,                           alias: "gemini-pro-agent" },
-    { match: /opus/i,                                              alias: "claude-opus-4-6-thinking" },
-    { match: /sonnet|claude/i,                                     alias: "claude-sonnet-4-6" },
+    { match: /opus/i,                                              alias: "claude-opus-5-5-medium" },
+    { match: /sonnet|claude/i,                                     alias: "claude-sonnet-5-5-medium" },
     { match: /gpt.*oss|oss/i,                                      alias: "gpt-oss-120b-medium" },
   ],
 };
