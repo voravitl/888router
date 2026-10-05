@@ -7,7 +7,6 @@ import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
-import { resolveAntigravityFlashModel } from "../providers/models/helpers.js";
 
 // Sanitize competitive system prompts (Zed, Claude Code, Anthropic Agent SDK)
 // to prevent Google Antigravity backend from flagging requests and returning 429 Quota Exhausted.
@@ -410,13 +409,10 @@ export class AntigravityExecutor extends BaseExecutor {
     // Strip blacklisted thinking fields from top-level body (set by thinkingUnified.js at root, not body.request)
     stripBlacklisted(body);
 
-    // Google Antigravity backend model name dynamic resolution (future-proof without hardcoding)
-    const upstreamModel = resolveAntigravityFlashModel(model);
-
     return {
       ...body,
       project: projectId,
-      model: upstreamModel,
+      model,
       userAgent: "antigravity",
       requestType: "agent",
       requestId: `agent-${crypto.randomUUID()}`,

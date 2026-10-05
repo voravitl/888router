@@ -68,11 +68,14 @@ describe("Antigravity quota tracker: Gemini 3.8 Flash usage bars", () => {
   it("preserves explicit current and future model IDs without borrowing older catalog metadata", async () => {
     const { getModelUpstreamId, isValidModel, findModelName } = await import("../../open-sse/config/providerModels.js");
     const { normalizeModel } = await import("../../open-sse/providers/models/schema.js");
-    for (const id of ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low",
-      "gemini-3.10-flash-high", "gemini-3.9-flash-high", "gemini-4.0-flash-low", "gemini-4.5-flash",
-      "gemini-999-flash-high", "gemini-3.6-flash-high", "gemini-3.5-flash-low"]) {
+    for (const id of ["gemini-3.10-flash-high", "gemini-3.9-flash-high", "gemini-4.0-flash-low", "gemini-4.5-flash",
+      "gemini-999-flash-high", "gemini-3.5-flash-low"]) {
       expect(getModelUpstreamId("ag", id)).toBe(id);
     }
+    expect(getModelUpstreamId("ag", "gemini-3.8-flash-high")).toBe("gemini-3.8-flash-high(high)");
+    expect(getModelUpstreamId("ag", "gemini-3.8-flash-medium")).toBe("gemini-3.8-flash-medium(medium)");
+    expect(getModelUpstreamId("ag", "gemini-3.8-flash-low")).toBe("gemini-3.8-flash-low(low)");
+    expect(getModelUpstreamId("ag", "gemini-3.6-flash-high")).toBe("gemini-3.6-flash-tiered(high)");
     expect(isValidModel("ag", "gemini-3.8-flash-high")).toBe(true);
     expect(isValidModel("ag", "gemini-3.9-flash-high")).toBe(false);
     expect(isValidModel("ag", "gemini-999-flash-high")).toBe(false);

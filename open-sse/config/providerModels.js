@@ -29,18 +29,14 @@ const DOT_VERSION_PROVIDERS = new Set(["kr", "kiro"]);
 // ("claude-sonnet-4-5" ~= "claude-sonnet-4.5"). Other providers use exact match only.
 function findModel(models, modelId, aliasOrId) {
   if (!models) return undefined;
-  const found = models.find(m => m.id === modelId);
+  const baseModelId = typeof modelId === "string"
+    ? modelId.replace(/\([^()]+\)\s*$/, "").trim()
+    : modelId;
+  const found = models.find(m => m.id === modelId || m.id === baseModelId);
   if (found) return found;
-  if (DOT_VERSION_PROVIDERS.has(aliasOrId)) {
-    const normalized = normalizeModelId(modelId);
-    if (normalized !== modelId) {
-      const match = models.find(m => m.id === normalized);
-      if (match) return match;
-    }
-  }
-  if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof modelId === "string") {
-    const resolved = resolveAntigravityFlashModel(modelId);
-    if (resolved !== modelId) {
+  if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof baseModelId === "string") {
+    const resolved = resolveAntigravityFlashModel(baseModelId);
+    if (resolved !== baseModelId) {
       const match = models.find(m => m.id === resolved);
       if (match) {
         return {
@@ -50,6 +46,13 @@ function findModel(models, modelId, aliasOrId) {
           upstreamModelId: match.upstreamModelId || match.id
         };
       }
+    }
+  }
+  if (DOT_VERSION_PROVIDERS.has(aliasOrId)) {
+    const normalized = normalizeModelId(baseModelId);
+    if (normalized !== baseModelId) {
+      const match = models.find(m => m.id === normalized);
+      if (match) return match;
     }
   }
   return undefined;
@@ -101,7 +104,13 @@ export function getModelUpstreamId(aliasOrId, modelId) {
   const baseId = suffix ? modelId.slice(0, sufMatch.index).trim() : modelId;
   const models = PROVIDER_MODELS[aliasOrId];
   const found = findModel(models, baseId, aliasOrId);
-  if (found?.upstreamModelId) return found.upstreamModelId + suffix;
+  const resolvedId = found?.upstreamModelId || found?.id;
+  if (resolvedId) {
+    const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
+    const presetSuffix = presetMatch?.[0] || "";
+    const resolvedBase = presetSuffix ? resolvedId.slice(0, presetMatch.index).trim() : resolvedId;
+    return resolvedBase + (suffix || presetSuffix);
+  }
   if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof baseId === "string") {
     const resolved = resolveAntigravityFlashModel(baseId);
     if (resolved !== baseId) return resolved + suffix;
