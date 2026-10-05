@@ -102,21 +102,10 @@ export async function PATCH(request) {
       body.universalToolsMode = mode;
     }
 
-    const settings = await updateSettings(body);
-
-    // Apply outbound proxy settings immediately (no restart required)
-    if (
-      Object.prototype.hasOwnProperty.call(body, "outboundProxyEnabled") ||
-      Object.prototype.hasOwnProperty.call(body, "outboundProxyUrl") ||
-      Object.prototype.hasOwnProperty.call(body, "outboundNoProxy")
-    ) {
-      applyOutboundProxyEnv(settings);
-    }
-
-    // Normalize persisted strategy strings at the trust boundary: a raw PATCH
-    // can otherwise store a value the gateway cannot run (stale UI copy,
-    // hand-edited settings, legacy aliases). Fail-open — normalize + warn,
-    // never 400 — so old clients keep working.
+    // Normalize persisted strategy strings at the trust boundary BEFORE
+    // persisting: a raw PATCH can otherwise store a value the gateway cannot
+    // run (stale UI copy, hand-edited settings, legacy aliases). Fail-open —
+    // normalize + warn, never 400 — so old clients keep working.
     if (Object.prototype.hasOwnProperty.call(body, "comboStrategy")) {
       body.comboStrategy = normalizePersistedStrategy(body.comboStrategy);
     }
@@ -126,6 +115,17 @@ export async function PATCH(request) {
           entry.fallbackStrategy = normalizePersistedStrategy(entry.fallbackStrategy, name);
         }
       }
+    }
+
+    const settings = await updateSettings(body);
+
+    // Apply outbound proxy settings immediately (no restart required)
+    if (
+      Object.prototype.hasOwnProperty.call(body, "outboundProxyEnabled") ||
+      Object.prototype.hasOwnProperty.call(body, "outboundProxyUrl") ||
+      Object.prototype.hasOwnProperty.call(body, "outboundNoProxy")
+    ) {
+      applyOutboundProxyEnv(settings);
     }
 
     // Invalidate combo rotation state when strategy settings change

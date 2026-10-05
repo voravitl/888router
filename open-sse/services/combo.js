@@ -301,6 +301,9 @@ export function computePrefixHash(body) {
  * connections, so one exhausted account does not drag down a provider that
  * still has a healthy account. Fail-open everywhere: unknown providers, a
  * throwing reader, or no connections all yield null (→ score 0 → list order).
+ * A snapshot with no (or unparseable) checkedAt is treated as STALE — a
+ * reading that can never age out would otherwise pin the selector to dead
+ * data forever.
  */
 export async function readComboQuotaForModel(modelStr, getConnections, { maxAgeMs = 60 * 60 * 1000 } = {}) {
   try {
@@ -317,7 +320,7 @@ export async function readComboQuotaForModel(modelStr, getConnections, { maxAgeM
       const pct = Number.isFinite(c?.quotaRemainingPct) ? c.quotaRemainingPct : null;
       if (pct == null) continue;
       const checkedAt = c?.quotaCheckedAt ? Date.parse(c.quotaCheckedAt) : NaN;
-      if (Number.isFinite(checkedAt) && now - checkedAt > maxAgeMs) continue;
+      if (!Number.isFinite(checkedAt) || now - checkedAt > maxAgeMs) continue;
       if (best == null || pct > best.pct) {
         best = { pct, checkedAt: c.quotaCheckedAt, connectionId: c.id };
       }
@@ -325,6 +328,46 @@ export async function readComboQuotaForModel(modelStr, getConnections, { maxAgeM
     return best;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Batch quota resolution for a candidate list, grouped by provider so each
+ * distinct provider costs exactly one `getConnections` call no matter how many
+ * of its models sit in the combo. Returns `{ quotaByModel }` shaped for
+ * `orderByHeadroom` via `ctx`. Fail-open: a throwing reader yields `{}`.
+ */
+export async function readComboQuotaByModel(models, getConnections, opts = {}) {
+  try {
+    if (typeof getConnections !== "function") return {};
+    const byProvider = new Map();
+    for (const m of models || []) {
+      const prefix = String(m).includes("/") ? String(m).slice(0, String(m).indexOf("/")) : "";
+      const provider = resolveProviderAlias(prefix) || prefix;
+      if (!provider) continue;
+      if (!byProvider.has(provider)) byProvider.set(provider, []);
+      byProvider.get(provider).push(m);
+    }
+    const quotaByModel = {};
+    await Promise.all([...byProvider.entries()].map(async ([provider, members]) => {
+      const connections = await getConnections({ provider, isActive: true });
+      const now = Date.now();
+      const maxAgeMs = opts.maxAgeMs ?? 60 * 60 * 1000;
+      let best = null;
+      for (const c of connections || []) {
+        const pct = Number.isFinite(c?.quotaRemainingPct) ? c.quotaRemainingPct : null;
+        if (pct == null) continue;
+        const checkedAt = c?.quotaCheckedAt ? Date.parse(c.quotaCheckedAt) : NaN;
+        if (!Number.isFinite(checkedAt) || now - checkedAt > maxAgeMs) continue;
+        if (best == null || pct > best.pct) {
+          best = { pct, checkedAt: c.quotaCheckedAt, connectionId: c.id };
+        }
+      }
+      if (best) for (const m of members) quotaByModel[m] = best;
+    }));
+    return quotaByModel;
+  } catch {
+    return {};
   }
 }
 
@@ -935,14 +978,14 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
     : "";
   if (redirectNote) log.warn("COMBO", `Combo "${comboName || ""}" strategy redirect (${getComboStrategyRedirectCount()} total): "${comboStrategy}" → "${effectiveStrategy}"`);
   // Headroom needs a quota reading per candidate, fetched once up front (not
-  // per attempt) and keyed by exact candidate string. Any fetch failure leaves
-  // the map empty, so the selector falls back to list order. Lazily resolved
-  // reader keeps the Next.js DB layer out of this module (see readComboQuotaForModel).
+  // per attempt) and keyed by exact candidate string. Reads are grouped by
+  // provider (one getConnections call each), and any fetch failure leaves the
+  // map empty so the selector falls back to list order. Lazily resolved
+  // reader keeps the Next.js DB layer out of this module (see readComboQuotaByModel).
   let headroomCtx = comboQuotaCtx;
   if (effectiveStrategy === "headroom" && !headroomCtx && typeof getComboConnections === "function") {
     try {
-      const entries = await Promise.all(eligibleModels.map(async (m) => [m, await readComboQuotaForModel(m, getComboConnections)]));
-      headroomCtx = { quotaByModel: Object.fromEntries(entries.filter(([, r]) => r)) };
+      headroomCtx = { quotaByModel: await readComboQuotaByModel(eligibleModels, getComboConnections) };
     } catch {
       headroomCtx = null; // fail-open → selector sees no readings → list order
     }
@@ -1569,6 +1612,23 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
         const providerOf = (m) => (typeof m === "string" && m.includes("/")) ? m.slice(0, m.indexOf("/")) : m;
         const failedProvider = providerOf(modelStr);
         const nextIdx = rotatedModels.findIndex((m, j) => j > i && providerOf(m) !== failedProvider);
+        const lockUntilMs = retryAfter ? new Date(retryAfter).getTime() : NaN;
+        // Record the failed model AND every jumped-over same-provider candidate:
+        // they share the exhausted account/quota, so the next request must
+        // pre-skip all of them, not just the one that surfaced the verdict.
+        if (Number.isFinite(lockUntilMs)) {
+          markComboKnownUnavailable(modelStr, lockUntilMs);
+          resetHints.set(i, lockUntilMs);
+          for (let j = i + 1; j < (nextIdx > i ? nextIdx : rotatedModels.length); j++) {
+            if (providerOf(rotatedModels[j]) === failedProvider) {
+              markComboKnownUnavailable(rotatedModels[j], lockUntilMs);
+              resetHints.set(j, lockUntilMs);
+            }
+          }
+        } else if (resetMs != null) {
+          resetHints.set(i, resetMs);
+          markComboKnownUnavailable(modelStr, resetMs);
+        }
         log.warn("COMBO", `Model ${modelStr} hit a long quota window (retry-after ${Math.round((new Date(retryAfter).getTime() - Date.now()) / 60000)}m); skipping remaining ${failedProvider} models`);
         candidateAbortCtrl.abort();
         if (result.body) await safeCancelStream(result.body);

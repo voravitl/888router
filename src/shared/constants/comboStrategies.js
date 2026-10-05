@@ -121,8 +121,8 @@ export const STRATEGY_DETAILS = [
     category: "performance",
     categoryLabel: "Load Balancing",
     badgeVariant: "primary",
-    summary: "Tracks active concurrent requests in-process and routes the incoming request to the model currently handling the fewest active requests.",
-    howItWorks: "Maintains a process-local in-flight counter per candidate (++ on attempt start, -- on settle) and starts with `min(in-flight)`. Ties keep list order.",
+    summary: "Tracks active combo attempts in-process and routes the incoming request to the model currently handling the fewest active attempts.",
+    howItWorks: "Maintains a process-local attempt counter per candidate (++ when a combo attempt starts, -- when it settles) and starts with `min(attempts)`. It measures combo attempts, not upstream connections or tokens — a model serving one long stream and a model serving one quick call count the same. Ties keep list order.",
     bestFor: "Multi-user shared proxy setups and concurrent agent swarms to prevent overloading any single model connection.",
     tips: "Great for local Ollama instances or self-hosted servers with finite parallel processing threads."
   },

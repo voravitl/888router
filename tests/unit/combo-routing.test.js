@@ -16,6 +16,7 @@ import {
   markComboHeadTimeout,
   markComboKnownUnavailable,
   normalizePersistedStrategy,
+  readComboQuotaByModel,
   readComboQuotaForModel,
   resetComboRotation,
 } from "../../open-sse/services/combo.js";
@@ -296,7 +297,7 @@ describe("combo locked-head pre-skip", () => {
   it("records a Retry-After 429 lock so the next request pre-skips it", async () => {
     clearComboKnownUnavailable();
     const models = ["a/quota-hit", "b/healthy"];
-    const handleSingleModel = vi.fn(async (body, modelStr) =>
+    const handleSingleModel = vi.fn(async (_body, modelStr) =>
       modelStr === "a/quota-hit"
         ? makeFailure(502, "pool parked", 45)
         : makeSuccess(),
@@ -369,6 +370,124 @@ describe("combo locked-head pre-skip", () => {
     expect(await readComboQuotaForModel("no-slash-model", async () => [])).toBeNull();
   });
 
+  it("readComboQuotaForModel treats a missing checkedAt as stale, not fresh-forever", async () => {
+    const reader = async () => [{ id: "c1", quotaRemainingPct: 90 }];
+    expect(await readComboQuotaForModel("ag/m", reader)).toBeNull();
+  });
+
+  it("readComboQuotaByModel groups by provider: one reader call per provider", async () => {
+    const now = new Date().toISOString();
+    const getConnections = vi.fn(async ({ provider }) => (
+      provider === "antigravity"
+        ? [{ id: "c1", quotaRemainingPct: 80, quotaCheckedAt: now }]
+        : [{ id: "c2", quotaRemainingPct: 10, quotaCheckedAt: now }]
+    ));
+    const quotaByModel = await readComboQuotaByModel(
+      ["ag/m1", "ag/m2", "cc/m3"], getConnections,
+    );
+    expect(getConnections).toHaveBeenCalledTimes(2);
+    expect(getConnections).toHaveBeenCalledWith({ provider: "antigravity", isActive: true });
+    expect(getConnections).toHaveBeenCalledWith({ provider: "claude", isActive: true });
+    expect(quotaByModel["ag/m1"].pct).toBe(80);
+    expect(quotaByModel["ag/m2"].pct).toBe(80);
+    expect(quotaByModel["cc/m3"].pct).toBe(10);
+  });
+
+  it("readComboQuotaByModel fails open to {} when the reader throws", async () => {
+    const quotaByModel = await readComboQuotaByModel(["ag/m1"], async () => { throw new Error("db down"); });
+    expect(quotaByModel).toEqual({});
+  });
+
+  it("handleComboChat with headroom + getComboConnections starts with the highest-quota provider", async () => {
+    clearComboKnownUnavailable();
+    const now = new Date().toISOString();
+    const getComboConnections = vi.fn(async ({ provider }) => (
+      provider === "antigravity"
+        ? [{ id: "c1", quotaRemainingPct: 90, quotaCheckedAt: now }]
+        : [{ id: "c2", quotaRemainingPct: 10, quotaCheckedAt: now }]
+    ));
+    const seen = [];
+    const handleSingleModel = vi.fn(async (_body, modelStr) => {
+      seen.push(modelStr);
+      return {
+        status: 200, ok: true, statusText: "OK",
+        headers: { get: () => "application/json" },
+        clone: () => ({ json: async () => ({ choices: [{ message: { content: "hi" } }] }) }),
+      };
+    });
+    const result = await handleComboChat({
+      body: { model: "headroom-combo" },
+      models: ["cc/low-quota-model", "ag/high-quota-model"],
+      handleSingleModel,
+      log,
+      comboName: "headroom-combo",
+      comboStrategy: "headroom",
+      getComboConnections,
+    });
+    expect(result.ok).toBe(true);
+    // One reader call per provider, then the high-quota candidate leads.
+    expect(getComboConnections).toHaveBeenCalledTimes(2);
+    expect(seen[0]).toBe("ag/high-quota-model");
+  });
+
+  it("handleComboChat headroom without a connections reader keeps list order (fail-open)", async () => {
+    clearComboKnownUnavailable();
+    const seen = [];
+    const handleSingleModel = vi.fn(async (_body, modelStr) => {
+      seen.push(modelStr);
+      return {
+        status: 200, ok: true, statusText: "OK",
+        headers: { get: () => "application/json" },
+        clone: () => ({ json: async () => ({ choices: [{ message: { content: "hi" } }] }) }),
+      };
+    });
+    const result = await handleComboChat({
+      body: { model: "headroom-combo" },
+      models: ["cc/model-a", "ag/model-b"],
+      handleSingleModel,
+      log,
+      comboName: "headroom-combo",
+      comboStrategy: "headroom",
+    });
+    expect(result.ok).toBe(true);
+    expect(seen[0]).toBe("cc/model-a");
+  });
+
+  it("long-quota text verdict parks the failed model AND jumped-over same-provider models", async () => {
+    clearComboKnownUnavailable();
+    const seen = [];
+    const handleSingleModel = vi.fn(async (_body, modelStr) => {
+      seen.push(modelStr);
+      if (modelStr === "ag/first") {
+        return new Response(
+          JSON.stringify({ error: { message: "[antigravity/x] [429]: Individual quota reached. Resets in 80h25m39s." } }),
+          { status: 429, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return {
+        status: 200, ok: true, statusText: "OK",
+        headers: { get: () => "application/json" },
+        clone: () => ({ json: async () => ({ choices: [{ message: { content: "hi" } }] }) }),
+      };
+    });
+    const result = await handleComboChat({
+      body: { model: "quota-combo", messages: [{ role: "user", content: "hi" }] },
+      models: ["ag/first", "ag/second", "kr/third"],
+      handleSingleModel,
+      log,
+      comboName: "quota-combo",
+      comboStrategy: "fallback",
+    });
+    expect(result.ok).toBe(true);
+    // Same-provider jump: ag/second never attempted this request …
+    expect(seen).toEqual(["ag/first", "kr/third"]);
+    // … and both ag models are parked for the next request.
+    expect(getComboKnownUnavailable("ag/first")).toBeGreaterThan(Date.now());
+    expect(getComboKnownUnavailable("ag/second")).toBeGreaterThan(Date.now());
+    expect(getComboKnownUnavailable("kr/third")).toBe(0);
+    clearComboKnownUnavailable();
+  });
+
   it("in-flight counters settle back to zero after attempts", async () => {
     clearComboInFlightCounters();
     const models = ["provider/model-a", "provider/model-b"];
@@ -421,7 +540,7 @@ describe("combo p2c distribution and total-budget break", () => {
       const fail = () => new Response(JSON.stringify({ error: { message: "boom" } }), {
         status: 500, headers: { "Content-Type": "application/json" },
       });
-      const handleSingleModel = vi.fn(async (body, modelStr) => {
+      const handleSingleModel = vi.fn(async (_body, modelStr) => {
         if (modelStr === "a/slow") {
           // Burn the whole budget on the first candidate so the second never starts.
           await new Promise((r) => setTimeout(r, 11_000));
