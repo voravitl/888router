@@ -1,3 +1,9 @@
+# v0.15.161 (2026-10-05)
+
+## Fix: revert antigravity tier-suffixed upstreamModelId — bare IDs are correct
+
+- Live probe with a real OAuth token proved the `(tier)` suffix wrong: bare `gemini-3.8-flash-medium` returns HTTP 200, suffixed `gemini-3.8-flash-medium(medium)` returns HTTP 404. Reverts the 9 `upstreamModelId` tier suffixes added in v0.15.160; the IDE 2.11.0 client markers, executor dedup, and double-suffix guard stay.
+
 # v0.15.160 (2026-10-05)
 
 ## Fix: map antigravity gemini-3.6/3.7/3.8 flash to upstream tier-suffixed IDs
