@@ -49,6 +49,7 @@ vi.mock("open-sse/utils/claudeHeaderCache.js", () => ({ cacheClaudeHeaders: vi.f
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
   updateProviderConnection: mocks.updateProviderConnection,
+  getProviderConnections: vi.fn(async () => []),
 }));
 
 vi.mock("open-sse/services/accountScoring.js", () => ({

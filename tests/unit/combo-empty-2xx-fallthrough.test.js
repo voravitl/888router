@@ -1,5 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
 import {
+  clearComboKnownUnavailable,
   handleComboChat,
   hasUsableCompletionPayload,
   toHttpFailureStatus,

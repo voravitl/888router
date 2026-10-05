@@ -1,5 +1,8 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { handleComboChat } from "../../open-sse/services/combo.js";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { handleComboChat, clearComboKnownUnavailable } from "../../open-sse/services/combo.js";
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
 import { isModelLockActive, buildModelLockUpdate, MODEL_LOCK_ALL } from "../../open-sse/services/accountFallback.js";
 import { BaseExecutor } from "../../open-sse/executors/base.js";
 

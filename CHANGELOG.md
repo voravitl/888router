@@ -1,3 +1,12 @@
+# v0.15.158 (2026-10-05)
+
+## Feat: implement headroom, cost-optimized, least-used, random combo strategies + locked-head pre-skip
+
+- Replace the `getRotatedModels` if/else chain with a strategy registry covering all 10 dashboard strategies; `reset-window` joins the selectable set as an alias of `reset-aware`, and no `planned` entries remain.
+- Add four fail-open selectors: `headroom` (persisted per-provider quota snapshot, stale ignored, no data keeps list order), `cost-optimized` (static pricing lookup, unpriced models last), `least-used` (process-local in-flight counters), `random` (uniform stateless pick).
+- Add locked-head pre-skip: 429/quota Retry-After verdicts park the model process-locally so the next request skips it without an attempt, while keeping the all-failed Retry-After honest.
+- Normalize persisted strategy strings once per request (handlers + settings PATCH trust boundary, fail-open, warn-once, never 400); every `X-Router-Decision` header stamps the effective strategy.
+
 # v0.15.157 (2026-10-04)
 
 ## Feat: register Antigravity Claude 5.5 tiered models

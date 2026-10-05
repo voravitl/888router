@@ -5,13 +5,13 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getProviderConnections } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
-import { handleComboChat } from "open-sse/services/combo.js";
+import { handleComboChat, normalizePersistedStrategy } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
 
 // Providers that don't require credentials (noAuth)
@@ -50,7 +50,7 @@ export async function handleImageGeneration(request) {
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
     const comboStrategies = settings.comboStrategies || {};
-    const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
+    const comboStrategy = normalizePersistedStrategy(comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback", modelStr);
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     log.info("IMAGE", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
@@ -61,6 +61,7 @@ export async function handleImageGeneration(request) {
       comboName: modelStr,
       comboStrategy,
       comboStickyLimit,
+      getComboConnections: getProviderConnections,
       signal: request?.signal,
     });
   }

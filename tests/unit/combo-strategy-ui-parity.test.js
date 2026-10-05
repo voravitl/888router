@@ -16,6 +16,11 @@ const UI_ROTATION_STRATEGIES = [
   "cache-optimized",
   "p2c",
   "reset-aware",
+  "reset-window",
+  "cost-optimized",
+  "headroom",
+  "least-used",
+  "random",
 ];
 
 describe("combo strategy UI/backend parity", () => {
@@ -25,25 +30,33 @@ describe("combo strategy UI/backend parity", () => {
     }
   });
 
-  it("help-modal entries marked planned are exactly the unimplemented ones", () => {
+  it("no strategy is left planned — everything offered is implemented", () => {
     const planned = STRATEGY_DETAILS.filter((s) => s.planned).map((s) => s.id);
     const active = STRATEGY_DETAILS.filter((s) => !s.planned).map((s) => s.id);
+    expect(planned).toEqual([]);
     expect(active).toEqual([...UI_ROTATION_STRATEGIES, "fusion"]);
-    expect(planned).toEqual(["cost-optimized", "headroom", "least-used", "random"]);
-    for (const id of planned) {
-      expect(COMBO_ROTATION_STRATEGIES.has(id)).toBe(false);
-    }
+  });
+
+  it("reset-window is a selectable strategy (not documentation-only)", () => {
+    expect(UI_ROTATION_STRATEGIES).toContain("reset-window");
+    expect(COMBO_ROTATION_STRATEGIES.has("reset-window")).toBe(true);
+    expect(STRATEGY_DETAILS.some((s) => s.id === "reset-window" && !s.planned)).toBe(true);
   });
 
   it("active strategy count matches the documented entries", () => {
-    expect(ACTIVE_STRATEGY_COUNT).toBe(6);
+    expect(ACTIVE_STRATEGY_COUNT).toBe(11);
     expect(ACTIVE_STRATEGY_COUNT).toBe(STRATEGY_DETAILS.length - STRATEGY_DETAILS.filter((s) => s.planned).length);
   });
 
-  it("planned entries are labelled as not selectable", () => {
-    for (const s of STRATEGY_DETAILS.filter((x) => x.planned)) {
-      expect(s.summary).toContain("not yet implemented in the gateway");
-      expect(s.summary).toContain("selecting is disabled");
+  it("engine registry, UI set, and modal entries stay in lockstep", () => {
+    const uiSet = new Set(UI_ROTATION_STRATEGIES);
+    // Engine (minus fusion, which dispatches upstream) == UI set.
+    expect(new Set([...COMBO_ROTATION_STRATEGIES])).toEqual(uiSet);
+    // Modal lists exactly the UI set plus fusion.
+    const modalIds = STRATEGY_DETAILS.map((s) => s.id);
+    expect(new Set(modalIds)).toEqual(new Set([...UI_ROTATION_STRATEGIES, "fusion"]));
+    for (const s of STRATEGY_DETAILS) {
+      expect(s.summary).not.toContain("not yet implemented in the gateway");
     }
   });
 });

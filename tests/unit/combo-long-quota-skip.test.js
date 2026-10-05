@@ -4,7 +4,11 @@
 // 9-sonnet request failed over from 4/5 ag/claude-sonnet-4-6 (429 after ~95s
 // of in-executor retries) to 5/5 ag/gemini-3.8-flash-medium — the SAME
 // account/quota — and delivered a second 429 to the client as the verdict.
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from "vitest";
+import { clearComboKnownUnavailable } from "../../open-sse/services/combo.js";
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
 
 describe("handleComboChat: long quota windows skip same-provider candidates", () => {
   let handleComboChat;

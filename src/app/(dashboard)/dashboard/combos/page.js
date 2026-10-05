@@ -330,15 +330,20 @@ export default function CombosPage() {
   );
 }
 
-// Only strategies the gateway actually implements (see STRATEGY_DETAILS for the
-// full list, including `planned` entries that are documented but not selectable).
-// Derived from the shared constants so the select can never drift from the backend.
+// Every strategy the gateway implements (see STRATEGY_DETAILS for the full
+// list). Derived from the shared constants so the select can never drift from
+// the backend.
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Priority Fallback — try in order 🥇" },
   { value: "round-robin", label: "Round Robin — cycle evenly 🔄" },
   { value: "cache-optimized", label: "Cache-Optimized — pin prompt prefix for 90% cache hits 🎯" },
   { value: "p2c", label: "P2C — Power-of-Two-Choices ⚡" },
   { value: "reset-aware", label: "Reset-Aware — 5-minute rotation 📊" },
+  { value: "reset-window", label: "Reset-Window — 5-minute rotation 📊" },
+  { value: "headroom", label: "Headroom — most remaining quota first 🔋" },
+  { value: "cost-optimized", label: "Cost-Optimized — cheapest first 💰" },
+  { value: "least-used", label: "Least-Used — fewest in-flight first ⚖️" },
+  { value: "random", label: "Random — uniform pick 🎲" },
   { value: "fusion", label: "Fusion — fan-out panel + AI Judge synthesis 🧬" },
 ].filter((o) => ACTIVE_STRATEGY_IDS.includes(o.value));
 
