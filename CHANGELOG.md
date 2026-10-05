@@ -3,6 +3,8 @@
 ## Fix: map antigravity gemini-3.6/3.7/3.8 flash to upstream tier-suffixed IDs
 
 - Add `upstreamModelId` tier suffixes to the 3.6/3.7/3.8 flash registry entries (e.g. `gemini-3.8-flash-high(high)`, `gemini-3.7-flash-tiered(high)`), matching upstream decolua — the bare IDs returned 404 `Requested entity was not found` on every call.
+- Bump Antigravity IDE client markers to 2.11.0 (`shared.js`, MITM override, registry UA now shared) — per upstream decolua/9router#3725, older client versions get 404 on 3.8 models even with a correct model ID (client-version/model-catalog rollout gate).
+- Drop the duplicate `resolveAntigravityFlashModel` call in the executor — `chatCore` already passes the mapped upstream ID via `getModelUpstreamId` (upstream executor sends `body.model || model` through untouched).
 - Harden `getModelUpstreamId`/`findModel` against double suffixes when callers pass an already-suffixed ID (`high(high)` no longer possible).
 
 # v0.15.159 (2026-10-05)

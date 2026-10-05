@@ -1,7 +1,4 @@
-import { platform, arch } from "os";
-import { ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
-
-const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/1.107.0 ${platform()}/${arch()}`;
+import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
 const antigravityConfig = {
   id: "antigravity",
@@ -28,7 +25,7 @@ const antigravityConfig = {
     ],
     format: "antigravity",
     headers: {
-      "User-Agent": "antigravity/1.107.0 darwin/arm64",
+      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
     },
     retry: {
       "429": {
