@@ -1,3 +1,10 @@
+# v0.15.160 (2026-10-05)
+
+## Fix: map antigravity gemini-3.6/3.7/3.8 flash to upstream tier-suffixed IDs
+
+- Add `upstreamModelId` tier suffixes to the 3.6/3.7/3.8 flash registry entries (e.g. `gemini-3.8-flash-high(high)`, `gemini-3.7-flash-tiered(high)`), matching upstream decolua — the bare IDs returned 404 `Requested entity was not found` on every call.
+- Harden `getModelUpstreamId`/`findModel` against double suffixes when callers pass an already-suffixed ID (`high(high)` no longer possible).
+
 # v0.15.159 (2026-10-05)
 
 ## Fix: key quota strikes per model so the circuit breaker trips
