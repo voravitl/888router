@@ -1,3 +1,10 @@
+# v0.15.159 (2026-10-05)
+
+## Fix: key quota strikes per model so the circuit breaker trips
+
+- Key the 429 strike counter `conn|model` instead of `conn|*` so a success on one model can no longer wipe another model's count, and a strike-block on one model no longer parks healthy siblings sharing the same account.
+- Inverted the cross-model accumulation test to pin per-model semantics.
+
 # v0.15.158 (2026-10-05)
 
 ## Feat: implement headroom, cost-optimized, least-used, random combo strategies + locked-head pre-skip

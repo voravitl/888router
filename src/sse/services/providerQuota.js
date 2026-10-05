@@ -10,8 +10,9 @@
  *                 counted as a strike instead.
  *   ollama /      no quota API → strikes only. Three 429/409s on the same
  *   opencode-free connection+model inside the window block the pair for
- *   STRIKE_BLOCK_MS, because the free tier's real window (hourly+) is much
- *   longer than the seconds/minutes backoff the generic path parks.
+ *                 STRIKE_ONLY_BLOCK_MS, because the free tier's real window
+ *                 (hourly+) is much longer than the seconds/minutes backoff
+ *                 the generic path parks.
  *
  * Modeled on upstream decolua/9router src/sse/services/antigravityQuota.js,
  * generalized so a provider registers rather than being special-cased here.
@@ -43,6 +44,15 @@ const MIN_REFRESH_INTERVAL_MS = 30_000; // 30s between refreshes per connection
 // straight back. After STRIKE_THRESHOLD 429s within the window for the same
 // connection+model, treat optimistic-or-absent readings as untrusted and
 // cache-block that pair instead of retry-storming upstream.
+//
+// Arming precondition (worth knowing before trusting a quiet breaker): the
+// window is anchored at the FIRST strike, so a given connection+model must be
+// retried at least once per STRIKE_WINDOW_MS / (STRIKE_THRESHOLD - 1) = 30s
+// for the count to reach the threshold. Below that rate a provider whose quota
+// is genuinely account-wide (ollama's monthly limit) would stay at strike 1
+// and never arm. The per-model keying in strikeKey() is what buys sensitivity
+// back in the shape that actually failed: one dead model immediately after a
+// live sibling, where an account-level key never armed at all.
 const STRIKE_WINDOW_MS = 60_000; // strikes older than this reset the count
 const STRIKE_THRESHOLD = 3;
 const STRIKE_BLOCK_MS = 15 * 60_000;
@@ -51,17 +61,37 @@ const STRIKE_BLOCK_MS = 15 * 60_000;
 // reset — a 15m block would idle a working model ~15x past its real
 // recovery. (review F3)
 const STRIKE_ONLY_BLOCK_MS = 5 * 60_000;
-// Strike keying PER PROVIDER CLASS. Antigravity's quota is genuinely
-// per-model, so its key includes the model. Ollama/opencode free tiers meter
-// the ACCOUNT — ollama's own 429 names the user ("you (lvoravit) have reached
-// your monthly usage limit", no reset hint), so keying per model fragments the
-// count across a multi-model combo: three different models on one connection
-// would each be at strike 1 and nothing ever blocks. Key strike-only
-// providers per connection (account-level). (review F2, seen live)
+// Key separator for `connectionId|model` strike keys.
+const STRIKE_KEY_SEP = "|";
+
+// Strike keying is PER MODEL for every provider. The earlier account-level key
+// (`conn|*`, added for review F2 because ollama's 429 names the account) broke
+// two things at once, both seen in production traffic on 2026-09-30:
+//
+//  1. clearProviderStrikes() deletes by this same key on ANY success. The
+//     noAuth free pool serves many models from one account, so a combo that
+//     failed on `muse-spark` and then succeeded on `space-bunny-free` (same
+//     account, next candidate) wiped the strike count. Live result: 55
+//     strikes recorded across the `noauth` and `a5857d08` keys and the
+//     breaker tripped ZERO times — every request re-paid the walk.
+//  2. When it did trip (under heavier traffic), the account-level block took
+//     healthy siblings down with it: `[AUTH] a5857d08 | CACHE_BLOCK
+//     space-bunny-free — skip upstream until …` for 5 minutes, for a model
+//     that was serving fine while `muse-spark` was dead.
+//
+// The evidence says the 429 is per MODEL here, not per account: on the same
+// `a5857d08` account `muse-spark-1.3-contributor-free` returns
+// FreeUsageLimitError on every request while `space-bunny-free` serves
+// normally. What is genuinely out of quota is the model, so that is what gets
+// blocked.
+//
+// For a truly account-metered provider (ollama: "you (lvoravit) have reached
+// your monthly usage limit") per-model blocking reacts one model at a time.
+// That is slower to trip, never wrong, and self-heals through
+// STRIKE_ONLY_BLOCK_MS — and a sticky combo retries the same failing model, so
+// the count still reaches the threshold.
 function strikeKey(providerId, connectionId, model) {
-  return STRIKE_ONLY_PROVIDERS.has(providerId)
-    ? `${connectionId}|*`           // account-level
-    : `${connectionId}|${model}`;  // model-level (antigravity)
+  return `${connectionId}${STRIKE_KEY_SEP}${model}`;
 }
 const strikeCounts = new Map(); // strikeKey → { count, windowStart (anchored at first strike) }
 const strikeBlocks = new Map(); // strikeKey → blockedUntil ms
@@ -74,11 +104,10 @@ export function isQuotaTrackedProvider(providerId) {
 // Ollama Cloud and the opencode free tier both 429 with a plain "Rate limit
 // exceeded" and no reset hint; the generic seconds/minutes backoff parks the
 // account for a few seconds and the combo comes right back to it. Strike-only
-// class: no quota API to consult — see STRIKE_ONLY_BLOCK_MS / strikeKey below
-// for how they are handled. ("opencode-free" is defensive: the registry id is
-// "opencode" — alias oc/zen resolve to it — so that entry can never match;
+// class: no quota API to consult — the block is the shorter STRIKE_ONLY_BLOCK_MS
+// rather than STRIKE_BLOCK_MS. ("opencode-free" is defensive: the registry id
+// is "opencode" — alias oc/zen resolve to it — so that entry can never match;
 // kept for a future free-tier id split. review F5)
-const STRIKE_KEY_SEP = "|";
 const STRIKE_ONLY_PROVIDERS = new Set(["ollama", "opencode", "opencode-free"]);
 
 function assertTracked(providerId) {
@@ -121,6 +150,11 @@ function applyActiveStrikeBlocks(connectionId, quotas) {
  * Clear strike state for a connection|model after a successful request, so
  * "consecutive" strikes means consecutive. Only removes a synthesized cache
  * entry (resetAt == our block deadline); a real upstream 0% reading stays.
+ *
+ * The model in the key is load-bearing, not decorative: a success on model B
+ * must never clear model A's strikes, or a combo walking a dead model into a
+ * live sibling on the same account can never reach the threshold. (That was
+ * the account-level-key bug — see strikeKey.)
  */
 export function clearProviderStrikes(providerId, connectionId, model) {
   const key = strikeKey(providerId, connectionId, model);
@@ -145,11 +179,9 @@ export function getProviderQuotaCache() {
 /**
  * Is this connection+model pair currently blocked by the quota cache or the
  * strike breaker? Returns the blocked-until epoch ms, or null. This is the
- * single lookup the auth pre-filter should use:
- *   - strike-only providers block at the ACCOUNT level (key `conn|*`), so
- *     every model on that connection is blocked once the account trips;
- *   - quota-API providers block per model (key `conn|model`), plus the cache's
- *     own exhausted-0% entry with its upstream resetAt.
+ * single lookup the auth pre-filter should use. Both the strike breaker and the
+ * quota-API cache key on `conn|model`, so a model that is out of quota is
+ * skipped while its healthy siblings on the same account keep serving.
  */
 export function isPairBlocked(providerId, connectionId, model) {
   const now = Date.now();
@@ -269,8 +301,8 @@ export async function handleProviderQuotaError(providerId, connectionId, status,
 
   // Healthy-but-exhausted reading: clear strikes and use the exact resetAt.
   // Via strikeKey(), not a hand-built key: this branch is only reachable for
-  // quota-API providers today, but a hand-built model key would silently miss
-  // the account key if a strike-only provider ever gained an API.
+  // quota-API providers today, but hand-inlining the separator is how a key
+  // shape drift would slip in if a strike-only provider ever gained an API.
   strikeCounts.delete(strikeKey(providerId, connectionId, model));
   if (!quota.resetAt) return null;
 

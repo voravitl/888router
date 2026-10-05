@@ -9,9 +9,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 //                 PER MODEL, so strikes are keyed per model.
 //   ollama / opencode — NO quota API; their 429 ("Rate limit exceeded", or
 //                 ollama's "you (lvoravit) have reached your monthly usage
-//                 limit") names the ACCOUNT with no reset hint, so strikes
-//                 are keyed per ACCOUNT and a multi-model combo cannot keep
-//                 the breaker below threshold by rotating models.
+//                 limit") carries no reset hint, so only the strike breaker
+//                 stands between a dead model and a per-request walk of it.
+//                 Keyed PER MODEL like the quota-API class: production showed
+//                 the 429 is per model (muse-spark rate-limited on an account
+//                 whose space-bunny-free sibling serves fine), and a per-model
+//                 key is what lets a sibling's success stop masking the dead
+//                 model's strikes. See strikeKey() for the full rationale.
 
 const mocks = vi.hoisted(() => ({
   resolveConnectionProxyConfig: vi.fn(async () => ({
@@ -127,17 +131,54 @@ describe("providerQuota — strike breaker semantics", () => {
     expect(pairBlocked("antigravity", CONN, MODEL)).not.toBeNull();
   });
 
-  it("strike-only strikes ACCUMULATE across models on one connection (account metering)", async () => {
-    // Unlike antigravity, ollama/opencode meter the ACCOUNT: strikes on any
-    // model advance the same account count, so a multi-model combo cannot
-    // keep the breaker below threshold by rotating models.
+  it("strike-only keying is PER MODEL — a strike on one model never blocks a sibling", async () => {
+    // Was account-level (`conn|*`) so that ollama/opencode's account-metered
+    // quota could not be kept under threshold by rotating models. That had two
+    // live consequences, both observed on 2026-09-30:
+    //   - clearProviderStrikes() wipes the account key on ANY success, so a
+    //     combo walking muse-spark (429) into space-bunny-free (200) reset the
+    //     count every time: 55 strikes recorded, breaker tripped 0 times.
+    //   - when it did trip, the account block took space-bunny-free down for
+    //     5 minutes even though it was serving fine.
+    // The 429 is per MODEL on these providers: on the same `a5857d08` account
+    // muse-spark returns FreeUsageLimitError every request while
+    // space-bunny-free serves normally.
     expect(await handleProviderQuotaError("opencode", CONN, 429, MODEL, "tok", {})).toBeNull();
     expect(await handleProviderQuotaError("opencode", CONN, 429, "other-model", "tok", {})).toBeNull();
+    // Neither has reached the threshold on its own count.
+    expect(pairBlocked("opencode", CONN, MODEL)).toBeNull();
+    expect(pairBlocked("opencode", CONN, "other-model")).toBeNull();
+    // Each needs its own 3rd strike.
+    expect(await handleProviderQuotaError("opencode", CONN, 429, MODEL, "tok", {})).toBeNull();
     const blockMs = await handleProviderQuotaError("opencode", CONN, 429, MODEL, "tok", {});
     expect(blockMs).not.toBeNull();
-    // The account block is visible to BOTH models.
+    // MODEL is blocked; its healthy sibling is NOT collateral damage.
     expect(pairBlocked("opencode", CONN, MODEL)).toBe(blockMs);
-    expect(pairBlocked("opencode", CONN, "other-model")).toBe(blockMs);
+    expect(pairBlocked("opencode", CONN, "other-model")).toBeNull();
+  });
+
+  it("a success on a DIFFERENT model does not clear this model's strikes", async () => {
+    // The exact production sequence: muse-spark 429s, the combo's next
+    // candidate space-bunny-free succeeds on the same account, and the strike
+    // count must survive it. With the account key this third 429 returned null.
+    const BAD = "muse-spark-1.3-contributor-free";
+    const GOOD = "space-bunny-free";
+    expect(await handleProviderQuotaError("opencode", "noauth", 429, BAD, "tok", {})).toBeNull();
+    clearProviderStrikes("opencode", "noauth", GOOD);
+    expect(await handleProviderQuotaError("opencode", "noauth", 429, BAD, "tok", {})).toBeNull();
+    clearProviderStrikes("opencode", "noauth", GOOD);
+    const blockMs = await handleProviderQuotaError("opencode", "noauth", 429, BAD, "tok", {});
+    expect(blockMs).not.toBeNull();
+    // The model that kept working is still usable.
+    expect(pairBlocked("opencode", "noauth", GOOD)).toBeNull();
+  });
+
+  it("a success on the SAME model does still reset its own count", async () => {
+    expect(await handleProviderQuotaError("opencode", CONN, 429, MODEL, "tok", {})).toBeNull();
+    expect(await handleProviderQuotaError("opencode", CONN, 429, MODEL, "tok", {})).toBeNull();
+    clearProviderStrikes("opencode", CONN, MODEL);
+    expect(await handleProviderQuotaError("opencode", CONN, 429, MODEL, "tok", {})).toBeNull();
+    expect(pairBlocked("opencode", CONN, MODEL)).toBeNull();
   });
 
   it("antigravity keying stays MODEL-level (its quota is genuinely per-model)", async () => {
