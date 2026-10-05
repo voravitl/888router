@@ -10,6 +10,8 @@ import { extractTextContent } from "../translator/formats/gemini.js";
 import { createComboStreamGuard } from "./comboStreamGuard.js";
 import { getContextFit, estimateRequestTokens } from "./requestContext.js";
 import { getRequestTimeoutPolicy } from "../utils/requestTimeout.js";
+import { getPricingForModel } from "../providers/pricing.js";
+import { resolveProviderAlias } from "./model.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -293,18 +295,237 @@ export function computePrefixHash(body) {
 }
 
 /**
- * Strategy names getRotatedModels() actually implements. Anything else falls
- * through to plain list order — see the unknown-strategy warning below.
+ * Resolve one model string to its quota reading, for the `headroom` selector.
+ * Provider comes from model parsing (`ag/model` → antigravity via the alias
+ * map); each provider then contributes its best (max) snapshot across ACTIVE
+ * connections, so one exhausted account does not drag down a provider that
+ * still has a healthy account. Fail-open everywhere: unknown providers, a
+ * throwing reader, or no connections all yield null (→ score 0 → list order).
+ */
+export async function readComboQuotaForModel(modelStr, getConnections, { maxAgeMs = 60 * 60 * 1000 } = {}) {
+  try {
+    const prefix = String(modelStr).includes("/")
+      ? String(modelStr).slice(0, String(modelStr).indexOf("/"))
+      : "";
+    const provider = resolveProviderAlias(prefix) || prefix;
+    if (!provider || typeof getConnections !== "function") return null;
+
+    const connections = await getConnections({ provider, isActive: true });
+    const now = Date.now();
+    let best = null;
+    for (const c of connections || []) {
+      const pct = Number.isFinite(c?.quotaRemainingPct) ? c.quotaRemainingPct : null;
+      if (pct == null) continue;
+      const checkedAt = c?.quotaCheckedAt ? Date.parse(c.quotaCheckedAt) : NaN;
+      if (Number.isFinite(checkedAt) && now - checkedAt > maxAgeMs) continue;
+      if (best == null || pct > best.pct) {
+        best = { pct, checkedAt: c.quotaCheckedAt, connectionId: c.id };
+      }
+    }
+    return best;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Selector for `headroom`: rank candidates by remaining provider quota, best
+ * (most headroom) first. Candidate readings arrive via `ctx.quotaByModel`
+ * (populated by handleComboChat through readComboQuotaForModel, or by tests
+ * directly) so the selector itself stays pure, synchronous and never opens the
+ * DB. Fail-open: any missing / stale / unreadable reading scores as "unknown"
+ * (0) and ties break by list order, so a combo with no quota data simply runs
+ * list order.
+ */
+function orderByHeadroom(models, ctx) {
+  const readings = ctx?.quotaByModel || {};
+  const maxAgeMs = ctx?.quotaMaxAgeMs ?? 60 * 60 * 1000;
+  const now = ctx?.now ?? Date.now();
+
+  const scoreOf = (m) => {
+    const r = readings[m];
+    if (!r) return 0;
+    const pct = Number.isFinite(r.pct) ? r.pct : null;
+    const checkedAt = r.checkedAt ? Date.parse(r.checkedAt) : NaN;
+    if (pct == null) return 0;
+    // A stale snapshot is as good as no snapshot — never rank on it.
+    if (Number.isFinite(checkedAt) && now - checkedAt > maxAgeMs) return 0;
+    return pct;
+  };
+
+  return models
+    .map((m, i) => ({ m, i, s: scoreOf(m) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map((x) => x.m);
+}
+
+/**
+ * Selector for `cost-optimized`: static per-model price lookup, cheapest first.
+ * Unknown-priced models score as most-expensive rather than cheapest, so a
+ * missing pricing entry never steers traffic to an unpriced model. Fail-open:
+ * a pricing lookup error leaves list order intact.
+ */
+function orderByCost(models) {
+  const blendedCost = (m) => {
+    const pricing = getPricingForModel(m);
+    if (!pricing) return Number.POSITIVE_INFINITY;
+    const input = Number.isFinite(pricing.input) ? pricing.input : 0;
+    const output = Number.isFinite(pricing.output) ? pricing.output : 0;
+    return input + output;
+  };
+  return models
+    .map((m, i) => ({ m, i, c: blendedCost(m) }))
+    .sort((a, b) => a.c - b.c || a.i - b.i)
+    .map((x) => x.m);
+}
+
+/**
+ * Selector for `least-used`: order by the in-flight request counter maintained
+ * by markComboInflight / clearComboInflight around each candidate attempt.
+ * Counter reads come from `ctx.inflightByModel` when supplied (tests) and the
+ * process-local map otherwise. Fail-open: ties and missing counters break by
+ * list order, and a read error leaves list order untouched.
+ */
+function orderByLeastUsed(models, ctx) {
+  const counts = ctx?.inflightByModel || comboInFlight;
+  const loadOf = (m) => {
+    const n = Number(counts.get ? counts.get(m) : counts[m]);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+  return models
+    .map((m, i) => ({ m, i, n: loadOf(m) }))
+    .sort((a, b) => a.n - b.n || a.i - b.i)
+    .map((x) => x.m);
+}
+
+/**
+ * In-memory in-flight counters for the `least-used` selector: incremented when
+ * a combo candidate attempt starts, decremented when it settles (success,
+ * failure, or skip). Process-local by design — the same tradeoff as
+ * comboHeadTimeoutCooldowns, and no DB read on the hot path. Exported helpers
+ * exist for tests.
+ */
+const comboInFlight = new Map();
+
+/** Start (or restart) the in-flight attempt count for `modelStr`. */
+export function markComboInflight(modelStr) {
+  comboInFlight.set(modelStr, (comboInFlight.get(modelStr) || 0) + 1);
+}
+
+/** Settle the in-flight attempt count for `modelStr` (never goes negative). */
+export function clearComboInflight(modelStr) {
+  const current = comboInFlight.get(modelStr) || 0;
+  if (current <= 1) comboInFlight.delete(modelStr);
+  else comboInFlight.set(modelStr, current - 1);
+}
+
+/** Current in-flight attempt count for `modelStr`. */
+export function getComboInflight(modelStr) {
+  return comboInFlight.get(modelStr) || 0;
+}
+
+/** Clear one or all in-flight counters. Exported for tests. */
+export function clearComboInFlightCounters(modelStr) {
+  if (modelStr) comboInFlight.delete(modelStr);
+  else comboInFlight.clear();
+}
+
+/**
+ * The rotation selectors, keyed by strategy id. Adding a strategy means adding
+ * an entry here — the UI's selectable set, ACTIVE_STRATEGY_IDS and this
+ * registry stay in lockstep via the parity tests.
+ *
+ * `fusion` is absent by design: handleFusionChat dispatches it before this
+ * ever runs (see src/sse/handlers/chat.js).
+ */
+const strategyRegistry = {
+  // Plain list order — the default and the redirect target.
+  fallback: (models) => models,
+
+  "round-robin": (models, { comboName, stickyLimit }) => {
+    const rotationKey = comboName || "__default__";
+    const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
+    const existingState = comboRotationState.get(rotationKey);
+    const state = typeof existingState === "number"
+      ? { index: existingState, consecutiveUseCount: 0 }
+      : (existingState || { index: 0, consecutiveUseCount: 0 });
+
+    const currentIndex = state.index % models.length;
+    const rotatedModels = rotateModelsFromIndex(models, currentIndex);
+    const nextUseCount = state.consecutiveUseCount + 1;
+
+    if (nextUseCount >= normalizedStickyLimit) {
+      comboRotationState.set(rotationKey, {
+        index: (currentIndex + 1) % models.length,
+        consecutiveUseCount: 0,
+      });
+    } else {
+      comboRotationState.set(rotationKey, {
+        index: currentIndex,
+        consecutiveUseCount: nextUseCount,
+      });
+    }
+
+    return rotatedModels;
+  },
+
+  // Pins the same prompt prefix/instructions to the same model index.
+  "cache-optimized": (models, { body }) => (body
+    ? rotateModelsFromIndex(models, computePrefixHash(body) % models.length)
+    : models),
+
+  // Power-of-Two-Choices (p2c): samples two candidates, starts from the first.
+  p2c: (models) => {
+    const idxA = Math.floor(Math.random() * models.length);
+    const idxB = Math.floor(Math.random() * models.length);
+    return rotateModelsFromIndex(models, Math.min(idxA, idxB));
+  },
+
+  // 5-minute wall-clock slot rotation. `reset-aware` and `reset-window` are the
+  // same engine behaviour under two names (both selectable in the dashboard).
+  "reset-aware": (models) => rotateModelsFromIndex(models, resetSlotIndex(models)),
+  "reset-window": (models) => rotateModelsFromIndex(models, resetSlotIndex(models)),
+
+  headroom: orderByHeadroom,
+  "cost-optimized": orderByCost,
+  "least-used": orderByLeastUsed,
+
+  // Uniform, stateless per-request pick (no head bias, unlike p2c).
+  random: (models) => rotateModelsFromIndex(models, Math.floor(Math.random() * models.length)),
+};
+
+/** 5-minute slot → starting index. Extracted so both reset aliases share it. */
+function resetSlotIndex(models) {
+  const timeSlot = Math.floor(Date.now() / (5 * 60 * 1000));
+  return timeSlot % models.length;
+}
+
+/**
+ * Strategy names getRotatedModels() actually implements. Anything else is
+ * normalized to `fallback` — see normalizePersistedStrategy.
  * `fusion` is handled by handleFusionChat (never reaches here).
  */
-export const COMBO_ROTATION_STRATEGIES = new Set([
-  "fallback",
-  "round-robin",
-  "cache-optimized",
-  "p2c",
-  "reset-aware",
-  "reset-window",
-]);
+export const COMBO_ROTATION_STRATEGIES = new Set(Object.keys(strategyRegistry));
+
+/**
+ * Redirect table for retired/renamed strategy strings. Kept per-string (not a
+ * blanket "anything unknown → fallback" only) so a legacy alias can be mapped
+ * to a real selector later. Empty today; unknown strings still fall back.
+ */
+const strategyRedirects = {};
+
+/** Count of strategies redirected by normalization this process (log visibility). */
+let strategyRedirectCount = 0;
+
+/** Redirect count since process start (or the last clear). Exposed for tests. */
+export function getComboStrategyRedirectCount() {
+  return strategyRedirectCount;
+}
+
+/** Reset the redirect counter. Test seam only. */
+export function clearComboStrategyRedirectCount() {
+  strategyRedirectCount = 0;
+}
 
 // Names already warned about, so a misconfigured combo logs once per process
 // instead of once per request.
@@ -316,80 +537,67 @@ export function clearComboUnknownStrategyWarnings() {
 }
 
 /**
+ * The single choke point that turns a persisted strategy string into an
+ * effective one. Unknown / retired strings are redirected (per-strategy map
+ * first, then `fallback`) and warned once per process, so a stale value can
+ * never again degrade silently while telemetry reports the string as-is.
+ *
+ * Fail-open by contract: this never throws and never returns null — an
+ * unusable input yields `fallback`, which is always implemented.
+ *
+ * @param {string|null|undefined} strategy - Raw persisted value
+ * @param {string} [comboName] - For the warn-once message
+ * @returns {string} An implemented strategy id
+ */
+export function normalizePersistedStrategy(strategy, comboName = "") {
+  if (strategy == null || strategy === "") return "fallback";
+  const raw = String(strategy);
+  if (COMBO_ROTATION_STRATEGIES.has(raw)) return raw;
+  // `fusion` is dispatched upstream (handleFusionChat) and never reaches
+  // getRotatedModels, so it must survive normalization untouched.
+  if (raw === "fusion") return raw;
+
+  const redirected = strategyRedirects[raw];
+  if (redirected && COMBO_ROTATION_STRATEGIES.has(redirected)) {
+    if (!warnedUnknownStrategies.has(raw)) {
+      warnedUnknownStrategies.add(raw);
+      strategyRedirectCount++;
+      console.warn(`[combo] retired strategy "${raw}" on combo "${comboName || ""}" → "${redirected}"`);
+    }
+    return redirected;
+  }
+
+  if (!warnedUnknownStrategies.has(raw)) {
+    warnedUnknownStrategies.add(raw);
+    strategyRedirectCount++;
+    console.warn(`[combo] unknown strategy "${raw}" on combo "${comboName || ""}" — using list order (fallback)`);
+  }
+  return "fallback";
+}
+
+/**
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
  * @param {string} comboName - Name of the combo
- * @param {string} strategy - "fallback", "round-robin", or "cache-optimized"
+ * @param {string} strategy - Persisted strategy id (normalized before dispatch)
  * @param {number|string} [stickyLimit=1] - Requests per combo model before switching
  * @param {object} [body=null] - Request body for cache-optimized hashing
+ * @param {object} [ctx={}] - Selector context (quotaByModel, inflightByModel, now)
  * @returns {string[]} Rotated models array
  */
-export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, body = null) {
+export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, body = null, ctx = {}) {
   if (!models || models.length <= 1) {
     return models;
   }
 
-  // A strategy the UI offers but the engine never implemented (e.g.
-  // "headroom", "cost-optimized") used to degrade silently, so a combo
-  // configured with one looked healthy in the dashboard while running plain
-  // fallback. Warn once so the mismatch is visible in the gateway log.
-  if (strategy && strategy !== "fallback" && !COMBO_ROTATION_STRATEGIES.has(strategy)) {
-    if (!warnedUnknownStrategies.has(strategy)) {
-      warnedUnknownStrategies.add(strategy);
-      console.warn(`[combo] unknown strategy "${strategy}" on combo "${comboName || ""}" — using list order (fallback)`);
-    }
-  }
-
-  // Cache-optimized: pins the same prompt prefix/instructions to the same model index
-  if (strategy === "cache-optimized" && body) {
-    const hash = computePrefixHash(body);
-    const targetIndex = hash % models.length;
-    return rotateModelsFromIndex(models, targetIndex);
-  }
-
-  // Power-of-Two-Choices (p2c): samples two candidates and picks the first/better one
-  if (strategy === "p2c") {
-    const idxA = Math.floor(Math.random() * models.length);
-    const idxB = Math.floor(Math.random() * models.length);
-    const targetIndex = Math.min(idxA, idxB);
-    return rotateModelsFromIndex(models, targetIndex);
-  }
-
-  // Reset-aware / reset-window: rotates based on time slots (e.g. 5-min window)
-  if (strategy === "reset-aware" || strategy === "reset-window") {
-    const timeSlot = Math.floor(Date.now() / (5 * 60 * 1000));
-    const targetIndex = timeSlot % models.length;
-    return rotateModelsFromIndex(models, targetIndex);
-  }
-
-  if (strategy !== "round-robin") {
+  // Every selector is fail-open: an unexpected throw inside one leaves the
+  // candidate list untouched (plain list order) instead of failing the request.
+  try {
+    const selector = strategyRegistry[normalizePersistedStrategy(strategy, comboName)];
+    return selector(models, { comboName, stickyLimit, body, ...ctx });
+  } catch {
     return models;
   }
-
-  const rotationKey = comboName || "__default__";
-  const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
-  const existingState = comboRotationState.get(rotationKey);
-  const state = typeof existingState === "number"
-    ? { index: existingState, consecutiveUseCount: 0 }
-    : (existingState || { index: 0, consecutiveUseCount: 0 });
-
-  const currentIndex = state.index % models.length;
-  const rotatedModels = rotateModelsFromIndex(models, currentIndex);
-  const nextUseCount = state.consecutiveUseCount + 1;
-
-  if (nextUseCount >= normalizedStickyLimit) {
-    comboRotationState.set(rotationKey, {
-      index: (currentIndex + 1) % models.length,
-      consecutiveUseCount: 0,
-    });
-  } else {
-    comboRotationState.set(rotationKey, {
-      index: currentIndex,
-      consecutiveUseCount: nextUseCount,
-    });
-  }
-
-  return rotatedModels;
 }
 
 /**
@@ -623,6 +831,39 @@ export function clearComboHeadTimeoutCooldown(modelStr) {
 }
 
 /**
+ * Models a combo learned are unavailable until a known time. When the combo
+ * loop sees a 429/quota verdict carrying a Retry-After (header or body), it
+ * records the unlock instant here so the NEXT request pre-skips that candidate
+ * instead of burning 1–5s discovering the lock again. Pure process-local
+ * state, same layering rationale as comboHeadTimeoutCooldowns — we deliberately
+ * do not reach into accountFallback's `isModelLockActive`, which is a
+ * per-account concern resolved during account selection.
+ */
+const comboKnownUnavailable = new Map();
+
+/** Epoch ms until which `modelStr` is known unavailable, or 0. */
+export function getComboKnownUnavailable(modelStr) {
+  return comboKnownUnavailable.get(modelStr) || 0;
+}
+
+/**
+ * Record that `modelStr` is unavailable until `untilEpochMs`. Non-finite or
+ * already-passed instants are ignored so the map can never park a model
+ * forever. Exported for tests.
+ */
+export function markComboKnownUnavailable(modelStr, untilEpochMs) {
+  const until = Number(untilEpochMs);
+  if (!Number.isFinite(until) || until <= Date.now()) return;
+  comboKnownUnavailable.set(modelStr, until);
+}
+
+/** Clear one or all known-unavailable entries. Exported for tests. */
+export function clearComboKnownUnavailable(modelStr) {
+  if (modelStr) comboKnownUnavailable.delete(modelStr);
+  else comboKnownUnavailable.clear();
+}
+
+/**
  * Retry-After for an all-failed verdict. A failed candidate that is known to be
  * unavailable until a given time (the AUTH layer's "pool parked / accounts
  * locked, reset after Ns" verdicts) says so in a Retry-After HEADER —
@@ -675,7 +916,7 @@ async function resolveCandidateRefs(models, resolveModelInfo, log) {
   return refs;
 }
 
-export async function handleComboChat({ body, models, handleSingleModel, resolveModelInfo, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null }) {
+export async function handleComboChat({ body, models, handleSingleModel, resolveModelInfo, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null, getComboConnections = null, comboQuotaCtx = null }) {
   // Approximate token counts guide ordering; only an exact output-budget
   // violation excludes a candidate. The upstream tokenizer remains authoritative.
   const estimatedInputTokens = estimateRequestTokens(body);
@@ -685,8 +926,28 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
   if (models.length > 0 && eligibleModels.length === 0) {
     return contextCapacityResponse();
   }
-  // Apply rotation strategy if enabled (supports round-robin, cache-optimized)
-  let rotatedModels = getRotatedModels(eligibleModels, comboName, comboStrategy, comboStickyLimit, body);
+  // Apply the persisted strategy — normalized once, so every log line and the
+  // X-Router-Decision header below report the strategy that actually ran, not
+  // the raw persisted string. Returned responses stamp this effective value.
+  const effectiveStrategy = normalizePersistedStrategy(comboStrategy, comboName);
+  const redirectNote = effectiveStrategy !== comboStrategy && comboStrategy != null && comboStrategy !== ""
+    ? ` (strategy "${comboStrategy}" normalized → "${effectiveStrategy}")`
+    : "";
+  if (redirectNote) log.warn("COMBO", `Combo "${comboName || ""}" strategy redirect (${getComboStrategyRedirectCount()} total): "${comboStrategy}" → "${effectiveStrategy}"`);
+  // Headroom needs a quota reading per candidate, fetched once up front (not
+  // per attempt) and keyed by exact candidate string. Any fetch failure leaves
+  // the map empty, so the selector falls back to list order. Lazily resolved
+  // reader keeps the Next.js DB layer out of this module (see readComboQuotaForModel).
+  let headroomCtx = comboQuotaCtx;
+  if (effectiveStrategy === "headroom" && !headroomCtx && typeof getComboConnections === "function") {
+    try {
+      const entries = await Promise.all(eligibleModels.map(async (m) => [m, await readComboQuotaForModel(m, getComboConnections)]));
+      headroomCtx = { quotaByModel: Object.fromEntries(entries.filter(([, r]) => r)) };
+    } catch {
+      headroomCtx = null; // fail-open → selector sees no readings → list order
+    }
+  }
+  let rotatedModels = getRotatedModels(eligibleModels, comboName, effectiveStrategy, comboStickyLimit, body, headroomCtx || {});
   const timeoutPolicy = getRequestTimeoutPolicy(body);
 
   // Combo-wide time budget: per-candidate deadlines (TTFT/stall/head) stack, so
@@ -746,6 +1007,17 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       continue;
     }
 
+    // Skip candidates locked by a known quota/rate-limit window — attempting
+    // one is a guaranteed repeat of the same 429 we already paid for. Fed from
+    // the reset hints collected below; mirrors the head-timeout pre-skip above.
+    const lockedUntil = getComboKnownUnavailable(modelStr);
+    if (lockedUntil > Date.now()) {
+      resetHints.set(i, lockedUntil);
+      log.info("COMBO", `Skipping model ${i + 1}/${rotatedModels.length}: ${modelStr} (known unavailable until ${new Date(lockedUntil).toISOString()}, ${Math.ceil((lockedUntil - Date.now()) / 1000)}s left)`);
+      lastError = lastError ? `${lastError}; ${modelStr} known unavailable` : `${modelStr} known unavailable`;
+      continue;
+    }
+
     // Combo-wide time budget: stop starting new candidates once exhausted so
     // one request cannot stack N × TTFT waits before returning a verdict.
     if (Date.now() - comboStartMs >= COMBO_TOTAL_BUDGET_MS) {
@@ -756,6 +1028,9 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
     }
 
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+    // In-flight mark for the `least-used` selector on LATER requests (this
+    // request's order is already fixed — only future requests read it back).
+    markComboInflight(modelStr);
 
     const candidateAbortCtrl = new AbortController();
     const onClientAbort = () => candidateAbortCtrl.abort();
@@ -1008,7 +1283,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
                   removeClientAbortListener();
                   throw wrapErr;
                 }
-                return attachRouterDecisionHeader(retriedWithCleanup, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+                return attachRouterDecisionHeader(retriedWithCleanup, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
               }
               log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
               await safeCancelReader(reader);
@@ -1032,7 +1307,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
               headers: streamHeaders,
             });
             isCandidateSelected = true;
-            return attachRouterDecisionHeader(responseWithHeaders, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+            return attachRouterDecisionHeader(responseWithHeaders, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
           }
         }
         // ponytail: reasoning models (deepseek, kimi, ...) can exhaust max_tokens
@@ -1133,7 +1408,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
                 removeClientAbortListener();
                 throw wrapErr;
               }
-              return attachRouterDecisionHeader(retriedWithCleanup, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+              return attachRouterDecisionHeader(retriedWithCleanup, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
             }
             candidateAbortCtrl.abort();
             if (retried.body) await safeCancelStream(retried.body);
@@ -1153,7 +1428,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
           removeClientAbortListener();
           throw wrapErr;
         }
-        return attachRouterDecisionHeader(resultWithCleanup, { strategy: comboStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+        return attachRouterDecisionHeader(resultWithCleanup, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
       }
 
       // Extract error info from response
@@ -1209,9 +1484,13 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       }
 
       // A candidate that says when it recovers (Retry-After from unavailableResponse)
-      // feeds the all-failed verdict's Retry-After.
+      // feeds the all-failed verdict's Retry-After — and records the lock so
+      // the next request pre-skips this candidate instead of re-attempting it.
       const resetMs = retryAfterHeaderMs(result.headers);
-      if (resetMs != null) resetHints.set(i, resetMs);
+      if (resetMs != null) {
+        resetHints.set(i, resetMs);
+        markComboKnownUnavailable(modelStr, resetMs);
+      }
 
       if (signal?.aborted) {
         log.warn("COMBO", `Client aborted request during error parsing (${comboName || ""})`);
@@ -1310,6 +1589,11 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       if (quotaLimited) {
         // Prefer an explicit retryAfter; else derive a cooldown from the
         // fallback classifier so the client gets a usable retry window.
+        // Either way the lock is recorded for the next request's pre-skip.
+        const lockMs = retryAfter
+          ? new Date(retryAfter).getTime()
+          : (cooldownMs && cooldownMs > 0 ? new Date(getUnavailableUntil(cooldownMs)).getTime() : NaN);
+        if (Number.isFinite(lockMs)) markComboKnownUnavailable(modelStr, lockMs);
         if (!retryAfter && cooldownMs && cooldownMs > 0) {
           earliestRetryAfter = getUnavailableUntil(cooldownMs);
         }
@@ -1356,6 +1640,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     } finally {
+      clearComboInflight(modelStr);
       if (!isCandidateSelected) {
         removeClientAbortListener();
       }
@@ -1373,7 +1658,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
   // Attach the router decision to failure verdicts too, not just successes:
   // without it a client retry ("API error · Retrying N/10" with no detail) can
   // never be correlated with the gateway reason that caused it.
-  const failureMeta = { strategy: comboStrategy, model: "none", fallbackCount: rotatedModels.length, status: "error" };
+  const failureMeta = { strategy: effectiveStrategy, model: "none", fallbackCount: rotatedModels.length, status: "error" };
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);

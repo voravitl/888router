@@ -1,11 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi, afterEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({ proxyAwareFetch: vi.fn() }));
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: mocks.proxyAwareFetch }));
 
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
-import { handleComboChat } from "../../open-sse/services/combo.js";
+import { handleComboChat, clearComboKnownUnavailable } from "../../open-sse/services/combo.js";
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
 
 // Exact upstream envelope observed on 2026-10-03, with no completion metadata.
 const notice = "Claude Opus 4.6 is no longer available. Please switch to Claude Opus 5.5.";

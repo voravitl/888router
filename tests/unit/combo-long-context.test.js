@@ -8,7 +8,10 @@ vi.mock("../../open-sse/services/requestContext.js", () => ({
   estimateRequestTokens: (...args) => estimateMock(...args),
 }));
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: (...args) => fetchMock(...args) }));
-import { handleComboChat, handleFusionChat, clearComboHeadTimeoutCooldown } from "../../open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, clearComboHeadTimeoutCooldown, clearComboKnownUnavailable } from "../../open-sse/services/combo.js";
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
 import { BaseExecutor } from "../../open-sse/executors/base.js";
 import { getRequestTimeoutPolicy } from "../../open-sse/utils/requestTimeout.js";
 

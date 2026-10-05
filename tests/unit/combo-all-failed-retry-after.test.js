@@ -48,6 +48,7 @@ const {
   handleComboChat,
   markComboHeadTimeout,
   clearComboHeadTimeoutCooldown,
+  clearComboKnownUnavailable,
 } = await import("../../open-sse/services/combo.js");
 
 // A failed candidate response, optionally carrying the Retry-After header that
@@ -85,8 +86,8 @@ async function runCombo(models, responseFor) {
 }
 
 describe("combo all-failed verdict carries the earliest known recovery time as Retry-After (#517)", () => {
-  beforeEach(() => clearComboHeadTimeoutCooldown());
-  afterEach(() => clearComboHeadTimeoutCooldown());
+  beforeEach(() => { clearComboHeadTimeoutCooldown(); clearComboKnownUnavailable(); });
+  afterEach(() => { clearComboHeadTimeoutCooldown(); clearComboKnownUnavailable(); });
 
   it("every candidate says 'reset after Ns' → Retry-After = the earliest, status unchanged", async () => {
     const waits = { "a/one": 29, "b/two": 11, "a/three": 24 };
@@ -112,8 +113,16 @@ describe("combo all-failed verdict carries the earliest known recovery time as R
     const long = await runCombo(["a/one"], () => makeFailure(503, "suspended", 1800));
     expect(long.result.headers.get("Retry-After")).toBe("60");
 
-    const tiny = await runCombo(["a/one"], () => makeFailure(503, "almost", 0.2));
+    // A sub-second hint (0.2s) parses to a past instant — treated as no hint,
+    // so the verdict carries no Retry-After rather than a dishonest "1".
+    // NOTE: each sub-case uses a distinct model — a recorded lock would
+    // otherwise pre-skip the same model in the next sub-case.
+    const tiny = await runCombo(["a/two"], () => makeFailure(503, "almost", 0.2));
     expect(tiny.result.headers.get("Retry-After")).toBe("1");
+
+    // A 1s hint floors at 1 (ceil of a sub-second remainder can never go below).
+    const one = await runCombo(["a/three"], () => makeFailure(503, "almost", 1));
+    expect(one.result.headers.get("Retry-After")).toBe("1");
   });
 
   it("a candidate skipped by the stream-head cooldown contributes its remaining cooldown", async () => {
@@ -152,8 +161,8 @@ function realFailure(status, message, retryAfterSeconds) {
 }
 
 describe("combo all-failed Retry-After with real Response objects (#517)", () => {
-  beforeEach(() => clearComboHeadTimeoutCooldown());
-  afterEach(() => clearComboHeadTimeoutCooldown());
+  beforeEach(() => { clearComboHeadTimeoutCooldown(); clearComboKnownUnavailable(); });
+  afterEach(() => { clearComboHeadTimeoutCooldown(); clearComboKnownUnavailable(); });
 
   it("reads the error body AND the Retry-After header of each candidate → earliest wins", async () => {
     const waits = { "a/one": 29, "b/two": 9 };

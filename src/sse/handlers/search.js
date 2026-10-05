@@ -5,14 +5,14 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getCombos } from "@/lib/localDb";
+import { getSettings, getCombos, getProviderConnections } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
-import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import { handleComboChat, getComboModelsFromData, normalizePersistedStrategy } from "open-sse/services/combo.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -73,7 +73,7 @@ export async function handleSearch(request) {
   const comboModels = getComboModelsFromData(providerInput, combos);
   if (comboModels) {
     const comboStrategies = settings.comboStrategies || {};
-    const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
+    const comboStrategy = normalizePersistedStrategy(comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback", providerInput);
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     log.info("SEARCH", `Combo "${providerInput}" with ${comboModels.length} providers (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
@@ -84,6 +84,7 @@ export async function handleSearch(request) {
       comboName: providerInput,
       comboStrategy,
       comboStickyLimit,
+      getComboConnections: getProviderConnections,
       signal: request?.signal,
     });
   }

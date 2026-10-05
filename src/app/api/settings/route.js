@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { resolveUniversalToolsMode, universalToolsLockedByEnv } from "open-sse/translator/concerns/universalToolPrompt.js";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
-import { resetComboRotation } from "open-sse/services/combo.js";
+import { resetComboRotation, normalizePersistedStrategy } from "open-sse/services/combo.js";
 import { runQuotaAutoPingTick } from "@/shared/services/quotaAutoPing";
 import bcrypt from "bcryptjs";
 
@@ -111,6 +111,21 @@ export async function PATCH(request) {
       Object.prototype.hasOwnProperty.call(body, "outboundNoProxy")
     ) {
       applyOutboundProxyEnv(settings);
+    }
+
+    // Normalize persisted strategy strings at the trust boundary: a raw PATCH
+    // can otherwise store a value the gateway cannot run (stale UI copy,
+    // hand-edited settings, legacy aliases). Fail-open — normalize + warn,
+    // never 400 — so old clients keep working.
+    if (Object.prototype.hasOwnProperty.call(body, "comboStrategy")) {
+      body.comboStrategy = normalizePersistedStrategy(body.comboStrategy);
+    }
+    if (body.comboStrategies && typeof body.comboStrategies === "object") {
+      for (const [name, entry] of Object.entries(body.comboStrategies)) {
+        if (entry && typeof entry === "object" && Object.prototype.hasOwnProperty.call(entry, "fallbackStrategy")) {
+          entry.fallbackStrategy = normalizePersistedStrategy(entry.fallbackStrategy, name);
+        }
+      }
     }
 
     // Invalidate combo rotation state when strategy settings change

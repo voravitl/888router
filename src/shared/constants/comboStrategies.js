@@ -3,9 +3,10 @@
 // test can assert UI↔backend parity without pulling in React.
 //
 // `planned: true` marks a strategy the UI documents but the gateway does NOT
-// implement — selecting one silently degraded to plain list order, so the
-// dashboard read as "working" while the combo ran fallback. Those entries stay
-// listed for transparency but cannot be selected.
+// implement yet. Planned entries stay listed for transparency but cannot be
+// selected (the modal + select gate on this flag). As of 0.15.158 every
+// dashboard-offered strategy is implemented, so no entry carries the flag —
+// it is kept for future roadmap items.
 
 export const STRATEGY_DETAILS = [
   {
@@ -74,6 +75,19 @@ export const STRATEGY_DETAILS = [
     tips: "Rotation is deterministic — use Round Robin instead if you want per-request alternation."
   },
   {
+    id: "reset-window",
+    icon: "🪟",
+    name: "Reset-Window",
+    tagline: "Rotate the starting model on a 5-minute wall-clock slot",
+    category: "cost",
+    categoryLabel: "Cost & Quota",
+    badgeVariant: "purple",
+    summary: "Same engine behaviour as Reset-Aware: divides time into 5-minute slots and rotates which model starts each slot. The gateway does NOT read provider quota headers or reset timestamps — the window is fixed, not derived from any provider.",
+    howItWorks: "Computes `Math.floor(Date.now() / 5min) % models.length` and rotates the list from that index. With N models each starting model leads for a fixed slice of wall-clock time.",
+    bestFor: "Free-tier combos where evenly spreading traffic over time matters more than any specific provider's reset schedule.",
+    tips: "Alias of Reset-Aware kept selectable so persisted `reset-window` values keep working; either id runs the same rotation."
+  },
+  {
     id: "cost-optimized",
     icon: "💰",
     name: "Cost-Optimized",
@@ -81,9 +95,8 @@ export const STRATEGY_DETAILS = [
     category: "cost",
     categoryLabel: "Cost & Quota",
     badgeVariant: "success",
-    planned: true,
-    summary: "Planned — not yet implemented in the gateway; selecting is disabled. Dynamically evaluates input and output token pricing for all models in the combo and routes to the lowest-cost or free endpoint first.",
-    howItWorks: "Checks model pricing metadata from providers registry and sorts models ascending by token cost before attempting execution.",
+    summary: "Evaluates input and output token pricing for all models in the combo and routes to the lowest-cost endpoint first; models with no pricing data sort last.",
+    howItWorks: "Looks up static per-model pricing (provider override → canonical table → pattern match) and sorts models ascending by input+output cost before attempting execution. Ties keep list order.",
     bestFor: "High-volume batch jobs, text summarization, data extraction, and cost-sensitive applications where preserving premium credits is paramount.",
     tips: "Add both premium and cheap/free models in the combo; expensive models will act as fallback only."
   },
@@ -95,9 +108,8 @@ export const STRATEGY_DETAILS = [
     category: "cost",
     categoryLabel: "Cost & Quota",
     badgeVariant: "info",
-    planned: true,
-    summary: "Planned — not yet implemented in the gateway; selecting is disabled. Inspects live rate-limit telemetry headers (`x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens`) and dynamically chooses the provider with the safest headroom margin.",
-    howItWorks: "Continuously tracks upstream response headers and health EWMA, prioritizing models with maximum remaining capacity buffer.",
+    summary: "Reads the persisted per-provider quota snapshot (remaining %) and starts with the provider holding the most remaining quota; combos with no quota data run list order.",
+    howItWorks: "Ranks candidates by their provider's best remaining-quota snapshot across active connections. Stale snapshots are ignored and missing data scores as unknown, so ties and quota-blind combos keep list order.",
     bestFor: "Burst-heavy workloads across multiple accounts with uneven monthly quota allowances.",
     tips: "Ensure upstream providers return standard rate-limit headers for optimal scoring."
   },
@@ -109,9 +121,8 @@ export const STRATEGY_DETAILS = [
     category: "performance",
     categoryLabel: "Load Balancing",
     badgeVariant: "primary",
-    planned: true,
-    summary: "Planned — not yet implemented in the gateway; selecting is disabled. Tracks active concurrent connections in real-time and routes the incoming request to the model currently handling the fewest active requests.",
-    howItWorks: "Increments in-flight counter on request start and decrements on completion. Always dispatches to `min(activeRequests)`.",
+    summary: "Tracks active concurrent requests in-process and routes the incoming request to the model currently handling the fewest active requests.",
+    howItWorks: "Maintains a process-local in-flight counter per candidate (++ on attempt start, -- on settle) and starts with `min(in-flight)`. Ties keep list order.",
     bestFor: "Multi-user shared proxy setups and concurrent agent swarms to prevent overloading any single model connection.",
     tips: "Great for local Ollama instances or self-hosted servers with finite parallel processing threads."
   },
@@ -123,8 +134,7 @@ export const STRATEGY_DETAILS = [
     category: "performance",
     categoryLabel: "Load Balancing",
     badgeVariant: "default",
-    planned: true,
-    summary: "Planned — not yet implemented in the gateway; selecting is disabled. Statistically distributes requests uniformly across all healthy models in the combo with equal probability.",
+    summary: "Statistically distributes requests uniformly across all healthy models in the combo with equal probability.",
     howItWorks: "Selects `Math.floor(Math.random() * models.length)` on every request. Completely stateless and zero overhead.",
     bestFor: "Simple multi-endpoint distribution where all models in the combo have identical pricing, speed, and capabilities.",
     tips: "Use when you have multiple mirror endpoints of the same model."
@@ -144,10 +154,9 @@ export const STRATEGY_DETAILS = [
   }
 ];
 
-// Strategies the gateway actually implements. `planned: true` entries above are
-// roadmap items only — shown for transparency but not selectable, because the
-// backend silently degraded them to plain list order while the UI claimed they
-// were active.
+// Every non-fusion strategy below is implemented by the gateway's strategy
+// registry (open-sse/services/combo.js). `planned: true` is reserved for future
+// roadmap items — while none exist, every non-fusion entry is selectable.
 export const ACTIVE_STRATEGY_COUNT = STRATEGY_DETAILS.filter((s) => !s.planned).length;
 
 // Values persisted into settings.comboStrategies[name].fallbackStrategy.

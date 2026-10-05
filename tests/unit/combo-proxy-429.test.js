@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // --- Mocks for combo.js dependencies ---
 vi.mock("open-sse/services/accountFallback.js", () => ({
@@ -44,7 +44,13 @@ vi.mock("open-sse/config/runtimeConfig.js", async (importOriginal) => ({
 }));
 
 // Import AFTER mocks.
-const { handleComboChat } = await import("../../open-sse/services/combo.js");
+const { handleComboChat, clearComboKnownUnavailable } = await import("../../open-sse/services/combo.js");
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
 
 function makeResponse(status, body) {
   return {

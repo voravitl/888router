@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-import { handleComboChat } from "../../open-sse/services/combo.js";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { handleComboChat, clearComboKnownUnavailable } from "../../open-sse/services/combo.js";
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
 import { estimateRequestTokens, getContextFit } from "../../open-sse/services/requestContext.js";
 import { registerDynamicCapabilitiesScoped, __resetScopedDynamicCache } from "../../open-sse/providers/capabilities.js";
 

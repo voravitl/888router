@@ -13,7 +13,7 @@ import {
   isQuotaTrackedProvider,
 } from "../services/providerQuota.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings, updateProviderConnection } from "@/lib/localDb";
+import { getSettings, updateProviderConnection, getProviderConnections } from "@/lib/localDb";
 import { isAccountQualityFailure, updateHealthEma } from "open-sse/services/accountScoring.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { ensureModelContextLoaded } from "../services/modelContext.js";
@@ -22,7 +22,7 @@ import { resolveUniversalToolsMode } from "open-sse/translator/concerns/universa
 import { DEFAULT_HEADROOM_URL, resolveHeadroomUrl } from "@/lib/headroom/detect";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { isClientAbort } from "open-sse/utils/abort.js";
-import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, normalizePersistedStrategy } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { isRetiredProvider, retiredProviderMessage } from "open-sse/config/retiredProviders.js";
@@ -118,7 +118,7 @@ export async function handleChat(request, clientRawRequest = null) {
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-    const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
+    const comboStrategy = normalizePersistedStrategy(comboSpecificStrategy || settings.comboStrategy || "fallback", modelStr);
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -153,6 +153,7 @@ export async function handleChat(request, clientRawRequest = null) {
       comboName: modelStr,
       comboStrategy,
       comboStickyLimit,
+      getComboConnections: getProviderConnections,
       signal: request?.signal,
     });
   }
@@ -181,7 +182,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
+      const comboStrategy = normalizePersistedStrategy(comboSpecificStrategy || chatSettings.comboStrategy || "fallback", modelStr);
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -216,6 +217,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboName: modelStr,
         comboStrategy,
         comboStickyLimit,
+        getComboConnections: getProviderConnections,
         signal: requestSignal,
       });
     }

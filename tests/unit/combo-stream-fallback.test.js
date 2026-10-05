@@ -1,5 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
-import { handleComboChat } from "../../open-sse/services/combo.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { handleComboChat, clearComboKnownUnavailable } from "../../open-sse/services/combo.js";
+
+beforeEach(() => clearComboKnownUnavailable());
+afterEach(() => clearComboKnownUnavailable());
 
 const enc = (s) => new TextEncoder().encode(s);
 
