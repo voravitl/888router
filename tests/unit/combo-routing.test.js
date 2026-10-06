@@ -592,6 +592,29 @@ describe("combo stream-head timeout cooldown", () => {
     clearComboHeadTimeoutCooldown();
     expect(getComboHeadTimeoutCooldown("provider/model-b")).toBe(0);
   });
+
+  it("getters lazily evict expired entries instead of letting the maps grow", () => {
+    vi.useFakeTimers();
+    try {
+      markComboHeadTimeout("provider/stale-a", 1000);
+      markComboKnownUnavailable("provider/stale-b", Date.now() + 1000);
+      expect(getComboHeadTimeoutCooldown("provider/stale-a")).toBeGreaterThan(0);
+      expect(getComboKnownUnavailable("provider/stale-b")).toBeGreaterThan(0);
+
+      vi.advanceTimersByTime(5000);
+
+      // Expired: getters return 0 AND drop the entries so the maps stay bounded
+      // across combo edits that churn model names.
+      expect(getComboHeadTimeoutCooldown("provider/stale-a")).toBe(0);
+      expect(getComboKnownUnavailable("provider/stale-b")).toBe(0);
+      markComboHeadTimeout("provider/fresh", 60_000);
+      expect(getComboHeadTimeoutCooldown("provider/fresh")).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+      clearComboHeadTimeoutCooldown();
+      clearComboKnownUnavailable();
+    }
+  });
 });
 
 describe("combo modelError fallback rules", () => {
