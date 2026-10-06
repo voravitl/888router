@@ -1,3 +1,10 @@
+# v0.15.164 (2026-10-06)
+
+## Fix: lazily evict expired combo cooldown/known-unavailable entries
+
+- `getComboHeadTimeoutCooldown` + `getComboKnownUnavailable` now delete expired entries on read and return 0 (single clock read) — the two Maps no longer accumulate stale entries for the process lifetime as combo edits churn model names. Zero behavior change for live entries (callers use the same `> Date.now()` guard).
+- Tests: fake-timers test pins eviction + fresh-entry passthrough.
+
 # v0.15.163 (2026-10-06)
 
 ## Fix: truncate pattern-valid opencode tool names over 64 chars before upstream

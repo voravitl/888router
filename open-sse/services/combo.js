@@ -875,9 +875,14 @@ export function resolveModelErrorCooldownMs(env = process.env) {
   return Math.min(Math.max(Math.round(n), COMBO_MODEL_ERROR_COOLDOWN_MIN_MS), COMBO_MODEL_ERROR_COOLDOWN_MAX_MS);
 }
 
-/** Epoch ms until which `modelStr` is parked after a stream-head timeout, or 0. */
+/** Epoch ms until which `modelStr` is parked after a stream-head timeout, or 0.
+ *  Expired entries are evicted on read so the map stays bounded across combo
+ *  edits that churn model names — no background sweep needed. */
 export function getComboHeadTimeoutCooldown(modelStr) {
-  return comboHeadTimeoutCooldowns.get(modelStr) || 0;
+  const until = comboHeadTimeoutCooldowns.get(modelStr) || 0;
+  if (!until) return 0;
+  if (until <= Date.now()) { comboHeadTimeoutCooldowns.delete(modelStr); return 0; }
+  return until;
 }
 
 /** Park `modelStr` for `ms` (default 30s). Exported for tests. */
@@ -902,9 +907,14 @@ export function clearComboHeadTimeoutCooldown(modelStr) {
  */
 const comboKnownUnavailable = new Map();
 
-/** Epoch ms until which `modelStr` is known unavailable, or 0. */
+/** Epoch ms until which `modelStr` is known unavailable, or 0.
+ *  Expired entries are evicted on read so the map stays bounded across combo
+ *  edits that churn model names — no background sweep needed. */
 export function getComboKnownUnavailable(modelStr) {
-  return comboKnownUnavailable.get(modelStr) || 0;
+  const until = comboKnownUnavailable.get(modelStr) || 0;
+  if (!until) return 0;
+  if (until <= Date.now()) { comboKnownUnavailable.delete(modelStr); return 0; }
+  return until;
 }
 
 /**
