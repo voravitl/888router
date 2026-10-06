@@ -1,3 +1,12 @@
+# v0.15.162 (2026-10-06)
+
+## Fix: park permanent combo model-error hops so dead hops are pre-skipped
+
+- Combo now records a TTL-backed lock (`comboKnownUnavailable`, 1h default via `COMBO_MODEL_ERROR_COOLDOWN_MS`, range 1m–6h) when a candidate fails with a **permanent** model error (`model is not supported`, `model not found`, `unknown model` — observed 407x/24h re-paying the same codex 400). The next request pre-skips the dead hop instead of re-discovering it.
+- New `permanentModelError` flag separates identity death from request-scoped failures (`context_length_exceeded`, `prompt too long`, 413, transient overload), which still fail over within the request but are never parked — a healthy model is never banned for one bad request. A compound check catches `Model '<id>' not found` (id between keywords); bare `not found` without `model` (account/key/project scoped, antigravity stale-IDE 404) never parks.
+- Empty 2xx SSE streams (zero text content, 174x/24h) now earn the same 30s head-timeout cooldown a stall gets, so brownout windows stop re-charging every request.
+- Tests: `combo-model-error-pre-skip.test.js` (7) + mock-free pinned classifier suite `error-config-permanent-model-error.test.js` (28).
+
 # v0.15.161 (2026-10-05)
 
 ## Fix: revert antigravity tier-suffixed upstreamModelId — bare IDs are correct

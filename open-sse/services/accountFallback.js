@@ -36,11 +36,30 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
+  // Compound identity check BEFORE the rule table: "Model '<id>' not found"
+  // carries the id BETWEEN the keywords, so no single-substring text rule can
+  // match it. Both keywords together = the model identity is dead upstream.
+  // "not found" WITHOUT "model" ("API key not found", "account not found",
+  // Google 404 "Requested entity was not found" — the antigravity stale-IDE
+  // signature, see open-sse/providers/shared.js) is account/client-side and
+  // must NOT park the model.
+  if (lowerError.includes("not found") && lowerError.includes("model")) {
+    return { shouldFallback: false, cooldownMs: 0, modelError: true, permanentModelError: true };
+  }
+
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
       if (rule.noFallback) return { shouldFallback: false, cooldownMs: 0 };
-      if (rule.modelError) return { shouldFallback: false, cooldownMs: 0, modelError: true };
+      if (rule.modelError) return {
+        shouldFallback: false,
+        cooldownMs: 0,
+        modelError: true,
+        // permanentModelError is a SUBSET of modelError: only identity errors
+        // ("not supported"/"not found") park the hop across requests.
+        // Request-scoped errors (context length, 413) must never park.
+        permanentModelError: !!rule.permanentModelError,
+      };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
@@ -55,7 +74,12 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
 
     // Status-based rule: match HTTP status code
     if (rule.status && rule.status === status) {
-      if (rule.modelError) return { shouldFallback: false, cooldownMs: 0, modelError: true };
+      if (rule.modelError) return {
+        shouldFallback: false,
+        cooldownMs: 0,
+        modelError: true,
+        permanentModelError: !!rule.permanentModelError,
+      };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
