@@ -37,6 +37,10 @@ export function sanitizeToolName(rawName, usedNames = new Set()) {
     let cleaned = trimmed.replace(OPENCODE_TOOL_NAME_INVALID_CHARS, "_");
     if (!cleaned) cleaned = "_tool";
     candidate = cleaned.slice(0, OPENCODE_TOOL_NAME_MAX_LEN);
+  } else if (trimmed.length > OPENCODE_TOOL_NAME_MAX_LEN) {
+    // Pattern-valid but overlong (e.g. MCP names, 92/111 chars): upstream
+    // rejects >64 with 400, so truncate independently of the pattern check.
+    candidate = trimmed.slice(0, OPENCODE_TOOL_NAME_MAX_LEN);
   }
   const base = candidate;
   let suffix = 2;
@@ -69,7 +73,9 @@ export function sanitizeOpencodeTools(body) {
   const getOrCreateSanitized = (rawName) => {
     if (!rawName || typeof rawName !== "string") return rawName;
     if (reverseMap.has(rawName)) return reverseMap.get(rawName);
-    if (OPENCODE_TOOL_NAME_PATTERN.test(rawName)) {
+    // Untouched only when pattern-valid AND within the upstream length cap —
+    // overlong valid names must still go through truncation below.
+    if (OPENCODE_TOOL_NAME_PATTERN.test(rawName) && rawName.length <= OPENCODE_TOOL_NAME_MAX_LEN) {
       usedNames.add(rawName);
       return rawName;
     }
@@ -81,29 +87,30 @@ export function sanitizeOpencodeTools(body) {
 
   // Pre-pass: register all naturally valid tool names across tools, messages, and input
   // to prevent collision when an invalid tool name (e.g. foo:bar) is sanitized into foo_bar.
+  // Overlong valid names are registered TRUNCATED (first 64 chars) — that is the
+  // name the main loop will actually emit, so that is the name collisions count against.
+  const reserveValidName = (rawName) => {
+    if (typeof rawName === "string" && OPENCODE_TOOL_NAME_PATTERN.test(rawName)) {
+      usedNames.add(rawName.slice(0, OPENCODE_TOOL_NAME_MAX_LEN));
+    }
+  };
   if (Array.isArray(body.tools)) {
     for (const tool of body.tools) {
       if (!tool || typeof tool !== "object" || Array.isArray(tool)) continue;
       const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
       const originalName = tool[ORIGINAL_TOOL_NAME] || fn?.[ORIGINAL_TOOL_NAME];
       const rawName = originalName || (typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : ""));
-      if (rawName && !originalName && OPENCODE_TOOL_NAME_PATTERN.test(rawName)) {
-        usedNames.add(rawName);
-      }
+      if (rawName && !originalName) reserveValidName(rawName);
     }
   }
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (!msg || typeof msg !== "object") continue;
-      if (typeof msg.name === "string" && !msg[ORIGINAL_TOOL_NAME] && OPENCODE_TOOL_NAME_PATTERN.test(msg.name)) {
-        usedNames.add(msg.name);
-      }
+      if (typeof msg.name === "string" && !msg[ORIGINAL_TOOL_NAME]) reserveValidName(msg.name);
       if (Array.isArray(msg.tool_calls)) {
         for (const tc of msg.tool_calls) {
           const fnName = tc?.function?.name;
-          if (typeof fnName === "string" && !tc?.function?.[ORIGINAL_TOOL_NAME] && OPENCODE_TOOL_NAME_PATTERN.test(fnName)) {
-            usedNames.add(fnName);
-          }
+          if (typeof fnName === "string" && !tc?.function?.[ORIGINAL_TOOL_NAME]) reserveValidName(fnName);
         }
       }
     }
@@ -111,9 +118,7 @@ export function sanitizeOpencodeTools(body) {
   if (Array.isArray(body.input)) {
     for (const item of body.input) {
       if (!item || typeof item !== "object") continue;
-      if (typeof item.name === "string" && !item[ORIGINAL_TOOL_NAME] && OPENCODE_TOOL_NAME_PATTERN.test(item.name)) {
-        usedNames.add(item.name);
-      }
+      if (typeof item.name === "string" && !item[ORIGINAL_TOOL_NAME]) reserveValidName(item.name);
     }
   }
 
@@ -127,8 +132,9 @@ export function sanitizeOpencodeTools(body) {
       const rawName = originalName || (typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : ""));
       if (!rawName) return tool;
 
-      // Already clean and not a previously sanitized alias
-      if (!originalName && OPENCODE_TOOL_NAME_PATTERN.test(rawName)) {
+      // Already clean and not a previously sanitized alias — and within the
+      // upstream length cap. Overlong valid names fall through to sanitize.
+      if (!originalName && OPENCODE_TOOL_NAME_PATTERN.test(rawName) && rawName.length <= OPENCODE_TOOL_NAME_MAX_LEN) {
         usedNames.add(rawName);
         return tool;
       }

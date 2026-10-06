@@ -66,6 +66,33 @@ describe("opencodeToolSanitizer — unit tests", () => {
       expect(sanitizeToolName("   ", used)).toBe("");
       expect(sanitizeToolName("::::", used)).toBe("____");
     });
+
+    it("truncates pattern-valid names longer than 64 chars (upstream rejects them)", () => {
+      // Observed 2026-10-06: MCP-style names (valid chars, 92/111 long) passed
+      // the sanitizer untouched and died upstream with 400 "`name` must be at
+      // most 64 characters". Length is enforced independently of the pattern.
+      const used = new Set();
+      const long92 = "mcp__plugin_canva_canva__search-folders_with_a_very_long_suffix_appended_here_12";
+      expect(long92.length).toBeGreaterThan(64);
+      const cut92 = sanitizeToolName(long92, used);
+      expect(cut92.length).toBeLessThanOrEqual(64);
+      expect(OPENCODE_TOOL_NAME_PATTERN.test(cut92)).toBe(true);
+
+      const long111 = `${"a".repeat(100)}_tail_long_enough_to_push_past_sixty_four_chars_total`;
+      expect(long111.length).toBeGreaterThan(64);
+      const cut111 = sanitizeToolName(long111, new Set());
+      expect(cut111.length).toBeLessThanOrEqual(64);
+    });
+
+    it("dedups overlong names that truncate to the same prefix", () => {
+      const used = new Set();
+      const prefix = "p".repeat(64);
+      const first = sanitizeToolName(`${prefix}_aaa`, used);
+      const second = sanitizeToolName(`${prefix}_bbb`, used);
+      expect(first.length).toBeLessThanOrEqual(64);
+      expect(second.length).toBeLessThanOrEqual(64);
+      expect(first).not.toBe(second);
+    });
   });
 
   describe("sanitizeOpencodeTools", () => {
