@@ -857,6 +857,18 @@ export function wrapSelectedBody(response, cleanup, onCancel) {
 const comboHeadTimeoutCooldowns = new Map();
 const COMBO_HEAD_TIMEOUT_COOLDOWN_MS = 30 * 1000;
 
+// "Permanent" model errors ("model not supported" / "model not found") never
+// recover on their own, yet without a recorded lock every request re-paid the
+// discovery round trip for the same dead hop (observed: 400 "model is not
+// supported" × 407/24h on one combo). TTL-backed so an account/plan upgrade
+// self-heals; bounded so a stale entry cannot park a model forever.
+// COMBO_MODEL_ERROR_COOLDOWN_MS env, default 1h, cap 6h.
+const COMBO_MODEL_ERROR_COOLDOWN_MS = (() => {
+  const n = Number(process.env.COMBO_MODEL_ERROR_COOLDOWN_MS);
+  if (!Number.isFinite(n) || n <= 0) return 60 * 60 * 1000;
+  return Math.min(n, 6 * 60 * 60 * 1000);
+})();
+
 /** Epoch ms until which `modelStr` is parked after a stream-head timeout, or 0. */
 export function getComboHeadTimeoutCooldown(modelStr) {
   return comboHeadTimeoutCooldowns.get(modelStr) || 0;
@@ -1330,6 +1342,10 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
               }
               log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
               await safeCancelReader(reader);
+              // The empty verdict cost the full head-wait just like a stall
+              // does — park the hop for the same 30s so a brownout window
+              // does not re-charge every request for the same dead candidate.
+              markComboHeadTimeout(modelStr);
               lastError = lastError ? `${lastError}; empty stream content` : "empty stream content";
               if (!lastStatus) lastStatus = 502;
               continue;
@@ -1666,7 +1682,11 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       }
 
       if (modelError) {
-        log.warn("COMBO", `Model ${modelStr} permanent model-error, skipping to next model`, { status: result.status });
+        // Permanent per the classifier — record the lock so the next request
+        // pre-skips this hop instead of re-discovering the same dead model
+        // (see COMBO_MODEL_ERROR_COOLDOWN_MS for the recovery story).
+        markComboKnownUnavailable(modelStr, Date.now() + COMBO_MODEL_ERROR_COOLDOWN_MS);
+        log.warn("COMBO", `Model ${modelStr} permanent model-error, skipping to next model (parked ${Math.round(COMBO_MODEL_ERROR_COOLDOWN_MS / 60_000)}m)`, { status: result.status });
       }
 
       // Fast failover: do NOT sleep in hot-path between candidates in a combo;
