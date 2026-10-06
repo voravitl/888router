@@ -1,12 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // --- Mocks for combo.js dependencies (same pattern as combo-all-failed-retry-after.test.js) ---
+// Mirrors the real errorConfig.js split: permanent identity errors park the
+// hop; request-scoped errors (context length, 413) must NEVER park it.
 vi.mock("open-sse/services/accountFallback.js", () => ({
   checkFallbackError: vi.fn((status, errorText) => {
     const lower = String(errorText || "").toLowerCase();
-    // "not supported" → permanent model error (mirrors errorConfig.js rule)
+    // "not supported" → permanent identity error (mirrors errorConfig.js rule)
     if (/not supported/.test(lower)) {
-      return { shouldFallback: false, cooldownMs: 0, modelError: true };
+      return { shouldFallback: false, cooldownMs: 0, modelError: true, permanentModelError: true };
+    }
+    // context-length / 413 → request-scoped model error, must not park
+    if (/context_length_exceeded|prompt is too long/.test(lower) || status === 413) {
+      return { shouldFallback: false, cooldownMs: 0, modelError: true, permanentModelError: false };
     }
     if (status === 429 || /quota|rate.?limit/.test(lower)) {
       return { shouldFallback: true, cooldownMs: 60_000, newBackoffLevel: 1 };
@@ -48,6 +54,7 @@ const {
   clearComboKnownUnavailable,
   getComboHeadTimeoutCooldown,
   clearComboHeadTimeoutCooldown,
+  resolveModelErrorCooldownMs,
 } = await import("../../open-sse/services/combo.js");
 
 const enc = new TextEncoder();
@@ -140,6 +147,47 @@ describe("combo parks permanent model-error hops so the next request pre-skips t
 
     expect(handleSingleModel).toHaveBeenCalledTimes(1);
     expect(handleSingleModel.mock.calls[0][1]).toBe("ocg/muse-spark");
+  });
+
+  it("request-scoped model errors (context length, 413) fail over but do NOT park the hop", async () => {
+    // A long prompt trips context_length_exceeded on the first candidate…
+    const longPromptFor = (m) => (m === "ag/gemini"
+      ? makeFailure(400, "This model's maximum context length is 128000 tokens, however you requested 200000 tokens.")
+      : makeSseSuccess());
+    const first = await runCombo(["ag/gemini", "ocg/muse-spark"], longPromptFor);
+    expect(first.handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(first.result.status).toBe(200);
+    expect(getComboKnownUnavailable("ag/gemini")).toBe(0);
+
+    // …and a later short prompt must still reach the (healthy) model.
+    const shortPromptFor = () => makeSseSuccess();
+    const { handleSingleModel } = await runCombo(["ag/gemini", "ocg/muse-spark"], shortPromptFor);
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
+    expect(handleSingleModel.mock.calls[0][1]).toBe("ag/gemini");
+  });
+
+  it("HTTP 413 fails over but does NOT park the hop", async () => {
+    const responseFor = (m) => (m === "ag/gemini"
+      ? { ...makeFailure(413, "payload too large"), status: 413 }
+      : makeSseSuccess());
+    const first = await runCombo(["ag/gemini", "ocg/muse-spark"], responseFor);
+    expect(first.handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(getComboKnownUnavailable("ag/gemini")).toBe(0);
+
+    const { handleSingleModel } = await runCombo(["ag/gemini", "ocg/muse-spark"], () => makeSseSuccess());
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
+    expect(handleSingleModel.mock.calls[0][1]).toBe("ag/gemini");
+  });
+});
+
+describe("resolveModelErrorCooldownMs", () => {
+  it("defaults to 1h; clamps to the 1m–6h range; reads env per call", () => {
+    expect(resolveModelErrorCooldownMs({})).toBe(3_600_000);
+    expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "bogus" })).toBe(3_600_000);
+    expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "1" })).toBe(60_000);
+    expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "60000" })).toBe(60_000);
+    expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "3600000" })).toBe(3_600_000);
+    expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "999999999" })).toBe(21_600_000);
   });
 });
 

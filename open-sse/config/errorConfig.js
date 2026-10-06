@@ -72,6 +72,12 @@ export const POOL_SUSPEND_PARK_MS = 30 * 60 * 1000;
  *   - noFallback: true = error is not account-specific (e.g. a gateway
  *     input-size limit); do not rotate accounts or lock the account —
  *     surface the error to the client instead.
+ *   - modelError: true = skip to next combo model (no account rotation).
+ *   - permanentModelError: true = subset of modelError that is request-
+ *     INDEPENDENT — the model identity itself is dead upstream (not
+ *     supported / not found). Safe to park across requests. Request-scoped
+ *     modelError (context length, 413, transient overload) must NOT set
+ *     this: locking on those bans a healthy model for one bad request.
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
@@ -80,15 +86,20 @@ export const ERROR_RULES = [
   // Retrying with another account of the same provider is pointless (same
   // model = same error). Account-level: shouldFallback=false (skip accounts).
   // Combo-level: modelError=true → skip to next model immediately.
-  { text: "not supported",    modelError: true },
-  { text: "model not found",  modelError: true },
-  { text: "model_not_found",  modelError: true },
-  { text: "unknown model",    modelError: true },
-  { text: "does not exist",   modelError: true },
-  { text: "invalid model",    modelError: true },
-  { text: "not available in", modelError: true },
-  { text: "endpoint is unavailable", modelError: true },
-  { text: "model is unavailable", modelError: true },
+  { text: "not supported",    modelError: true, permanentModelError: true },
+  { text: "model not found",  modelError: true, permanentModelError: true },
+  { text: "model_not_found",  modelError: true, permanentModelError: true },
+  { text: "unknown model",    modelError: true, permanentModelError: true },
+  { text: "does not exist",   modelError: true, permanentModelError: true },
+  { text: "invalid model",    modelError: true, permanentModelError: true },
+  { text: "not available in", modelError: true, permanentModelError: true },
+  { text: "endpoint is unavailable", modelError: true, permanentModelError: true },
+  { text: "model is unavailable", modelError: true, permanentModelError: true },
+  // Generic catch-all AFTER the specific rules above: upstreams phrase the
+  // same death many ways ("Model 'ag/x' not found", Google 404 "Requested
+  // entity was not found."). First-match-wins keeps the specific rules'
+  // priority; anything still carrying "not found" here is an identity death.
+  { text: "not found",        modelError: true, permanentModelError: true },
   // Model-level transient overload (e.g. Kiro 500 "reason": "MODEL_TEMPORARILY_UNAVAILABLE").
   // Retrying with another account of the same provider is pointless — the model
   // is overloaded for everyone. Model-level: combo skips to next model, and a
@@ -149,7 +160,8 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   // 404 = model not found → don't cycle accounts, let combo skip to next model
-  { status: 404, modelError: true },
+  { status: 404, modelError: true, permanentModelError: true },
+  // 413 = payload too large: request-scoped, NOT permanent — never park.
   { status: 413, modelError: true },
   { status: 429, backoff: true },
   // 503/502/504 transient — shouldFallback so account layer rotates pools,

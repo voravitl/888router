@@ -862,12 +862,18 @@ const COMBO_HEAD_TIMEOUT_COOLDOWN_MS = 30 * 1000;
 // discovery round trip for the same dead hop (observed: 400 "model is not
 // supported" × 407/24h on one combo). TTL-backed so an account/plan upgrade
 // self-heals; bounded so a stale entry cannot park a model forever.
-// COMBO_MODEL_ERROR_COOLDOWN_MS env, default 1h, cap 6h.
-const COMBO_MODEL_ERROR_COOLDOWN_MS = (() => {
-  const n = Number(process.env.COMBO_MODEL_ERROR_COOLDOWN_MS);
-  if (!Number.isFinite(n) || n <= 0) return 60 * 60 * 1000;
-  return Math.min(n, 6 * 60 * 60 * 1000);
-})();
+// COMBO_MODEL_ERROR_COOLDOWN_MS env, default 1h, range 1m–6h.
+const COMBO_MODEL_ERROR_COOLDOWN_DEFAULT_MS = 60 * 60 * 1000;
+const COMBO_MODEL_ERROR_COOLDOWN_MIN_MS = 60 * 1000;
+const COMBO_MODEL_ERROR_COOLDOWN_MAX_MS = 6 * 60 * 60 * 1000;
+
+/** Resolve the model-error park TTL. Read per-request (not module load) so a
+ *  container does not need a restart to pick up an env change. Exported for tests. */
+export function resolveModelErrorCooldownMs(env = process.env) {
+  const n = Number(env.COMBO_MODEL_ERROR_COOLDOWN_MS);
+  if (!Number.isFinite(n) || n <= 0) return COMBO_MODEL_ERROR_COOLDOWN_DEFAULT_MS;
+  return Math.min(Math.max(Math.round(n), COMBO_MODEL_ERROR_COOLDOWN_MIN_MS), COMBO_MODEL_ERROR_COOLDOWN_MAX_MS);
+}
 
 /** Epoch ms until which `modelStr` is parked after a stream-head timeout, or 0. */
 export function getComboHeadTimeoutCooldown(modelStr) {
@@ -1574,7 +1580,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       }
 
       // Check if should fallback to next model
-      const { shouldFallback, cooldownMs, modelError } = checkFallbackError(result.status, errorText);
+      const { shouldFallback, cooldownMs, modelError, permanentModelError } = checkFallbackError(result.status, errorText);
 
       // A model is quota/rate-limit limited when the upstream returned 429, or
       // when the error text is an explicit quota/rate-limit signal (even if no
@@ -1682,11 +1688,20 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       }
 
       if (modelError) {
-        // Permanent per the classifier — record the lock so the next request
-        // pre-skips this hop instead of re-discovering the same dead model
-        // (see COMBO_MODEL_ERROR_COOLDOWN_MS for the recovery story).
-        markComboKnownUnavailable(modelStr, Date.now() + COMBO_MODEL_ERROR_COOLDOWN_MS);
-        log.warn("COMBO", `Model ${modelStr} permanent model-error, skipping to next model (parked ${Math.round(COMBO_MODEL_ERROR_COOLDOWN_MS / 60_000)}m)`, { status: result.status });
+        if (permanentModelError) {
+          // Identity death upstream ("not supported"/"not found") — record the
+          // lock so the next request pre-skips this hop instead of
+          // re-discovering the same dead model (see
+          // resolveModelErrorCooldownMs for the recovery story).
+          const parkTtlMs = resolveModelErrorCooldownMs();
+          markComboKnownUnavailable(modelStr, Date.now() + parkTtlMs);
+          log.warn("COMBO", `Model ${modelStr} permanent model-error, skipping to next model (parked ${Math.round(parkTtlMs / 60_000)}m)`, { status: result.status });
+        } else {
+          // Request-scoped (context length, 413, transient overload): this
+          // request cannot use the model, but a shorter/later request can —
+          // skip within this request, do NOT park for later ones.
+          log.warn("COMBO", `Model ${modelStr} request-scoped model-error, skipping to next model (not parked)`, { status: result.status });
+        }
       }
 
       // Fast failover: do NOT sleep in hot-path between candidates in a combo;
