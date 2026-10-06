@@ -880,8 +880,9 @@ export function resolveModelErrorCooldownMs(env = process.env) {
  *  edits that churn model names — no background sweep needed. */
 export function getComboHeadTimeoutCooldown(modelStr) {
   const until = comboHeadTimeoutCooldowns.get(modelStr) || 0;
-  if (until && until <= Date.now()) comboHeadTimeoutCooldowns.delete(modelStr);
-  return until && until > Date.now() ? until : 0;
+  if (!until) return 0;
+  if (until <= Date.now()) { comboHeadTimeoutCooldowns.delete(modelStr); return 0; }
+  return until;
 }
 
 /** Park `modelStr` for `ms` (default 30s). Exported for tests. */
@@ -911,8 +912,9 @@ const comboKnownUnavailable = new Map();
  *  edits that churn model names — no background sweep needed. */
 export function getComboKnownUnavailable(modelStr) {
   const until = comboKnownUnavailable.get(modelStr) || 0;
-  if (until && until <= Date.now()) comboKnownUnavailable.delete(modelStr);
-  return until && until > Date.now() ? until : 0;
+  if (!until) return 0;
+  if (until <= Date.now()) { comboKnownUnavailable.delete(modelStr); return 0; }
+  return until;
 }
 
 /**
