@@ -93,6 +93,25 @@ describe("opencodeToolSanitizer — unit tests", () => {
       expect(second.length).toBeLessThanOrEqual(64);
       expect(first).not.toBe(second);
     });
+
+    it("single overlong tool through sanitizeOpencodeTools: truncated once, no spurious _2, stable on retry", () => {
+      // Regression for the pre-pass self-collision: a lone >64-char valid name
+      // must come out as the plain 64-char truncation (not _2), and a second
+      // pass over the already-sanitized body (retry path via ORIGINAL_TOOL_NAME)
+      // must yield the identical name.
+      const longName = `mcp__plugin_long_tool_name_${"x".repeat(60)}`;
+      expect(longName.length).toBeGreaterThan(64);
+      const body = {
+        tools: [{ type: "function", function: { name: longName, parameters: {} } }],
+      };
+      const first = sanitizeOpencodeTools(body);
+      const outName = first.body.tools[0].function.name;
+      expect(outName).toBe(longName.slice(0, 64));
+      expect(outName.length).toBeLessThanOrEqual(64);
+
+      const second = sanitizeOpencodeTools(first.body);
+      expect(second.body.tools[0].function.name).toBe(outName);
+    });
   });
 
   describe("sanitizeOpencodeTools", () => {

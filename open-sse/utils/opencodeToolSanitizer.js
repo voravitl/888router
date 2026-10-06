@@ -87,11 +87,16 @@ export function sanitizeOpencodeTools(body) {
 
   // Pre-pass: register all naturally valid tool names across tools, messages, and input
   // to prevent collision when an invalid tool name (e.g. foo:bar) is sanitized into foo_bar.
-  // Overlong valid names are registered TRUNCATED (first 64 chars) — that is the
-  // name the main loop will actually emit, so that is the name collisions count against.
+  // Only names already within the upstream length cap are reserved here: an
+  // overlong valid name would self-collide with its own truncated form and
+  // earn a spurious "_2" suffix (plus a different name on retry, when the
+  // pre-pass is skipped via ORIGINAL_TOOL_NAME). Overlong names are left for
+  // the main loop, which truncates then dedups against genuinely taken names.
   const reserveValidName = (rawName) => {
-    if (typeof rawName === "string" && OPENCODE_TOOL_NAME_PATTERN.test(rawName)) {
-      usedNames.add(rawName.slice(0, OPENCODE_TOOL_NAME_MAX_LEN));
+    if (typeof rawName === "string"
+      && rawName.length <= OPENCODE_TOOL_NAME_MAX_LEN
+      && OPENCODE_TOOL_NAME_PATTERN.test(rawName)) {
+      usedNames.add(rawName);
     }
   };
   if (Array.isArray(body.tools)) {
