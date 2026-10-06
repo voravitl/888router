@@ -95,11 +95,6 @@ export const ERROR_RULES = [
   { text: "not available in", modelError: true, permanentModelError: true },
   { text: "endpoint is unavailable", modelError: true, permanentModelError: true },
   { text: "model is unavailable", modelError: true, permanentModelError: true },
-  // Generic catch-all AFTER the specific rules above: upstreams phrase the
-  // same death many ways ("Model 'ag/x' not found", Google 404 "Requested
-  // entity was not found."). First-match-wins keeps the specific rules'
-  // priority; anything still carrying "not found" here is an identity death.
-  { text: "not found",        modelError: true, permanentModelError: true },
   // Model-level transient overload (e.g. Kiro 500 "reason": "MODEL_TEMPORARILY_UNAVAILABLE").
   // Retrying with another account of the same provider is pointless — the model
   // is overloaded for everyone. Model-level: combo skips to next model, and a

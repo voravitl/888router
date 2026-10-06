@@ -36,6 +36,17 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
+  // Compound identity check BEFORE the rule table: "Model '<id>' not found"
+  // carries the id BETWEEN the keywords, so no single-substring text rule can
+  // match it. Both keywords together = the model identity is dead upstream.
+  // "not found" WITHOUT "model" ("API key not found", "account not found",
+  // Google 404 "Requested entity was not found" — the antigravity stale-IDE
+  // signature, see open-sse/providers/shared.js) is account/client-side and
+  // must NOT park the model.
+  if (lowerError.includes("not found") && lowerError.includes("model")) {
+    return { shouldFallback: false, cooldownMs: 0, modelError: true, permanentModelError: true };
+  }
+
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {

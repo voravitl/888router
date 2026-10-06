@@ -32,6 +32,19 @@ const REQUEST_SCOPED = [
   "cannot preserve full request context",
   "unsupported request: foo",
   "MODEL_TEMPORARILY_UNAVAILABLE",
+  // "not found" WITHOUT "model" = account/client-side, never park the model:
+  "API key not found",
+  "account not found",
+  "organization not found",
+  "project not found",
+  "Requested entity was not found.",
+];
+
+const COMPOUND_IDENTITY = [
+  // The model id sits BETWEEN the keywords, so no single-substring text rule
+  // can match these — the compound check in checkFallbackError catches them.
+  "Model 'ag/gemini-3.7-flash-high' not found",
+  "The model 'gpt-6-sol' was not found",
 ];
 
 describe("errorConfig: permanentModelError is identity death only", () => {
@@ -46,8 +59,18 @@ describe("errorConfig: permanentModelError is identity death only", () => {
   for (const msg of REQUEST_SCOPED) {
     it(`never parks: "${msg.slice(0, 60)}…"`, () => {
       const r = checkFallbackError(400, msg);
+      // The pinned invariant is "not permanent" (never park). Absent field
+      // (transient default) counts as not permanent — only an explicit true
+      // may park. modelError itself is the classifier's business.
+      expect(r.permanentModelError).not.toBe(true);
+    });
+  }
+
+  for (const msg of COMPOUND_IDENTITY) {
+    it(`parks via compound check: "${msg.slice(0, 60)}…"`, () => {
+      const r = checkFallbackError(400, msg);
       expect(r.modelError).toBe(true);
-      expect(r.permanentModelError).toBe(false);
+      expect(r.permanentModelError).toBe(true);
     });
   }
 
