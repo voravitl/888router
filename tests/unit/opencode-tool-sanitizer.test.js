@@ -66,6 +66,52 @@ describe("opencodeToolSanitizer — unit tests", () => {
       expect(sanitizeToolName("   ", used)).toBe("");
       expect(sanitizeToolName("::::", used)).toBe("____");
     });
+
+    it("truncates pattern-valid names longer than 64 chars (upstream rejects them)", () => {
+      // Observed 2026-10-06: MCP-style names (valid chars, 92/111 long) passed
+      // the sanitizer untouched and died upstream with 400 "`name` must be at
+      // most 64 characters". Length is enforced independently of the pattern.
+      const used = new Set();
+      const long92 = "mcp__plugin_canva_canva__search-folders_with_a_very_long_suffix_appended_here_12";
+      expect(long92.length).toBeGreaterThan(64);
+      const cut92 = sanitizeToolName(long92, used);
+      expect(cut92.length).toBeLessThanOrEqual(64);
+      expect(OPENCODE_TOOL_NAME_PATTERN.test(cut92)).toBe(true);
+
+      const long111 = `${"a".repeat(100)}_tail_long_enough_to_push_past_sixty_four_chars_total`;
+      expect(long111.length).toBeGreaterThan(64);
+      const cut111 = sanitizeToolName(long111, new Set());
+      expect(cut111.length).toBeLessThanOrEqual(64);
+    });
+
+    it("dedups overlong names that truncate to the same prefix", () => {
+      const used = new Set();
+      const prefix = "p".repeat(64);
+      const first = sanitizeToolName(`${prefix}_aaa`, used);
+      const second = sanitizeToolName(`${prefix}_bbb`, used);
+      expect(first.length).toBeLessThanOrEqual(64);
+      expect(second.length).toBeLessThanOrEqual(64);
+      expect(first).not.toBe(second);
+    });
+
+    it("single overlong tool through sanitizeOpencodeTools: truncated once, no spurious _2, stable on retry", () => {
+      // Regression for the pre-pass self-collision: a lone >64-char valid name
+      // must come out as the plain 64-char truncation (not _2), and a second
+      // pass over the already-sanitized body (retry path via ORIGINAL_TOOL_NAME)
+      // must yield the identical name.
+      const longName = `mcp__plugin_long_tool_name_${"x".repeat(60)}`;
+      expect(longName.length).toBeGreaterThan(64);
+      const body = {
+        tools: [{ type: "function", function: { name: longName, parameters: {} } }],
+      };
+      const first = sanitizeOpencodeTools(body);
+      const outName = first.body.tools[0].function.name;
+      expect(outName).toBe(longName.slice(0, 64));
+      expect(outName.length).toBeLessThanOrEqual(64);
+
+      const second = sanitizeOpencodeTools(first.body);
+      expect(second.body.tools[0].function.name).toBe(outName);
+    });
   });
 
   describe("sanitizeOpencodeTools", () => {

@@ -1,3 +1,11 @@
+# v0.15.163 (2026-10-06)
+
+## Fix: truncate pattern-valid opencode tool names over 64 chars before upstream
+
+- Upstream (opencode Zen/Console, muse-spark mirrors) rejects function names longer than 64 chars with 400 (observed 26x/6h, got 92/111). The sanitizer only truncated pattern-invalid names, so valid-but-long MCP-style names passed through untouched and died upstream.
+- Length is now enforced independently of the pattern in `sanitizeToolName`, `getOrCreateSanitized`, the tools-loop early return, and the pre-pass reserves only in-cap names (no self-collision `_2`, retry-stable).
+- Tests: 3 new cases (truncate, dedup-after-truncate, E2E retry stability through `sanitizeOpencodeTools`).
+
 # v0.15.162 (2026-10-06)
 
 ## Fix: park permanent combo model-error hops so dead hops are pre-skipped
