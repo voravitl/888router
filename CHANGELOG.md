@@ -1,3 +1,11 @@
+# v0.15.165 (2026-10-14)
+
+## Fix: translate foreign opencode sessions into valid timestamped ses_ ids
+
+- `translateSessionId` derived the 12-hex `ses_` prefix from SHA-256 digest bits, but upstream Zen validates the prefix as a recent inverted timestamp (`~(Date.now()*4096+counter)`). Every translated session looked foreign, so `oc/*-free` calls through non-OpenCode clients got 403 FreeTierError even with a saved Zen key (local repro decoded 9179886178ms off now; upstream reports decolua/9router#4777 #4778 #4780 #4781).
+- Port of upstream PR #4782 (`opencode.js` hunk): translations now mint `generateSessionId()` and stay stable per downstream identity in a TTL/LRU Map (1000 entries, `MEMORY_CONFIG` windows). No UA, header, stream, or tool-fingerprint changes.
+- Tests: 3 new cases (prefix decodes within 60s of now, repeat-call stability, distinct inputs). Golden `golden-url-header` snapshots refreshed to 0.15.165 via `-u` (they still pinned 0.15.163).
+
 # v0.15.164 (2026-10-06)
 
 ## Fix: lazily evict expired combo cooldown/known-unavailable entries
