@@ -1,3 +1,11 @@
+# v0.15.166 (2026-10-14)
+
+## Fix: port upstream engine fixes (kimi, ollama, gemini, codex-image)
+
+- Port 6 merged upstream fixes missing locally: Kimi Responses transport for Responses clients, Ollama `prompt_eval_cached_count` usage tracking, Gemini duplicate `tool_call_ids` uniquifier plus `$ref` rename in function responses, Codex image usage tracking, and the Codex explicit-strict test pin.
+- Deferred, not ported: cursor AgentService rework and muse responses transport (local files diverged, need manual rework), upstream GLM capability pins (already covered locally), dashboard/CLI/feats (diverged surfaces, next pass).
+- Tests: 88 ported cases green across 8 files. Golden `golden-url-header` snapshots refreshed to 0.15.166 via `-u`.
+
 # v0.15.165 (2026-10-14)
 
 ## Fix: translate foreign opencode sessions into valid timestamped ses_ ids
