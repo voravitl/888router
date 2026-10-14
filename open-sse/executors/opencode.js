@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS } from "../config/runtimeConfig.js";
+import { OPENCODE_RESPONSES_MIN_OUTPUT_TOKENS, MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
@@ -163,22 +163,36 @@ export function generateRequestId(timestamp = Date.now()) {
   return `msg_${time}${unstableRandom()}`;
 }
 
-// Deterministically map a foreign session identity (claude/codex UUIDs,
+// Stably map a foreign session identity (claude/codex UUIDs,
 // hashes) into a canonical ses_ id so multi-turn prompt caching survives.
+const translatedSessionCache = new Map();
+const translatedSessionCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of translatedSessionCache) {
+    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+      translatedSessionCache.delete(key);
+    }
+  }
+}, MEMORY_CONFIG.sessionCleanupIntervalMs);
+if (translatedSessionCleanup.unref) translatedSessionCleanup.unref();
 export function translateSessionId(sessionId, clientTool = "") {
   if (typeof sessionId === "string" && OPENCODE_SESSION_RE.test(sessionId.trim())) {
     return sessionId.trim();
   }
-  const digest = crypto
-    .createHash("sha256")
-    .update(`opencode\0${clientTool || "generic"}\0${sessionId || ""}`)
-    .digest();
-  const timeHex = digest.subarray(0, 6).toString("hex");
-  let randomPart = "";
-  for (let i = 6; i < 20; i++) {
-    randomPart += BASE62_CHARS[digest[i] % 62];
+  const key = `opencode:ses:${clientTool || "generic"}:${sessionId || ""}`;
+  const existing = translatedSessionCache.get(key);
+  if (existing) {
+    existing.lastUsed = Date.now();
+    translatedSessionCache.delete(key);
+    translatedSessionCache.set(key, existing);
+    return existing.sessionId;
   }
-  return `ses_${timeHex}${randomPart}`;
+  if (translatedSessionCache.size >= 1000) {
+    translatedSessionCache.delete(translatedSessionCache.keys().next().value);
+  }
+  const translated = generateSessionId();
+  translatedSessionCache.set(key, { sessionId: translated, lastUsed: Date.now() });
+  return translated;
 }
 
 function normalizeSession(value) {

@@ -293,3 +293,35 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
     }
   });
 });
+
+describe("OpenCode translateSessionId timestamp validity", () => {
+  const MASK48 = (1n << 48n) - 1n;
+  const PERIOD48 = 1n << 48n;
+  function decodeTranslatedMs(id, now) {
+    const hex = id.slice(4, 16);
+    const low48 = MASK48 - BigInt(`0x${hex}`);
+    const scaledNow = BigInt(now) * 4096n;
+    const k = Math.round(Number(scaledNow - low48) / Number(PERIOD48));
+    return Number((low48 + BigInt(k) * PERIOD48) / 4096n);
+  }
+
+  it("emits a prefix that decodes to within 60s of now", () => {
+    const id = translateSessionId("claude:550e8400-e29b-41d4-a716-446655440000", "claude");
+    expect(id).toMatch(OPENCODE_SESSION_RE);
+    const now = Date.now();
+    expect(Math.abs(decodeTranslatedMs(id, now) - now)).toBeLessThan(60_000);
+  });
+
+  it("returns the identical id for a repeated call (stability)", () => {
+    const first = translateSessionId("claude:550e8400-e29b-41d4-a716-446655440000", "claude");
+    const second = translateSessionId("claude:550e8400-e29b-41d4-a716-446655440000", "claude");
+    expect(second).toBe(first);
+  });
+
+  it("returns a different id for a different input", () => {
+    const a = translateSessionId("claude:550e8400-e29b-41d4-a716-446655440000", "claude");
+    const b = translateSessionId("claude:6ba7b810-9dad-11d1-80b4-00c04fd430c8", "claude");
+    expect(b).not.toBe(a);
+    expect(b).toMatch(OPENCODE_SESSION_RE);
+  });
+});
