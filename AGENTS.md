@@ -108,6 +108,24 @@ Fallback ladder (top preferred; descend until one returns real findings):
   findings against the full file first — reviewers only see the diff hunks and
   will false-positive on symbols already used in the base file.
 
+### Squash merges can silently drop hunks — verify the merge tree, not the exit code (2026-10-16, PRs #545/#546)
+
+- PR #545's `--squash` landed its package bump, CHANGELOG, snapshot refresh and
+  four NEW test files but **zero source hunks**: 21 of those committed tests
+  failed on a clean checkout of `3fe3bf10`, and the deployed 0.15.166 image
+  carried none of the advertised fixes while `/api/version` said otherwise.
+  PR #546 restored the payload and the fix shipped verified, but the accident
+  is repeatable.
+- Therefore, before AND after every squash merge: pre-merge, enumerate the
+  PR's files (`gh pr view --json files`) and refuse to merge if source files
+  are missing; post-merge, inspect the squash tree (`git show --stat <sha>`
+  or `git show <sha>:<file> | grep <landmark>`). A clean local `git status`
+  and a green build prove nothing — "Build and Push Docker Image" does **not**
+  run vitest, so CI success has never meant tests pass in this repo.
+- Signature to watch for: a squash commit that adds test files touching code
+  that the same commit never modifies. That combination always deserves a
+  clean-checkout test run before trusting the merge.
+
 ### Capability-table edits (`open-sse/providers/capabilities.js`)
 
 - Prefer explicit `vision: false` over omission when a model genuinely cannot
