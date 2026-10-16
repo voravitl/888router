@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { clearModelsDevCache } from "../../open-sse/services/modelsDevModality.js";
+import { PROVIDERS } from "../../open-sse/config/providers.js";
 import {
   resolveOpenCodeGoModels,
   resetOpenCodeGoCatalogForTests,
@@ -131,6 +132,41 @@ describe("opencode-go model sync enriches context from models.dev", () => {
       "mimo-v2.6-pro",
       expect.objectContaining({ contextWindow: 1048576 })
     );
+  });
+
+  it("clones static fallback entries so enrichment never mutates the registry", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "conn-oc-go-1",
+      provider: "opencode-go",
+      apiKey: "oc_sk_test_go",
+      isActive: true,
+    });
+
+    // zen answers 200 but with an empty list → the route serves static seed
+    // clones enriched from models.dev; the registry objects themselves must
+    // stay pristine for the next request.
+    mocks.fetch.mockImplementation(async (url) => {
+      if (String(url).startsWith("https://opencode.ai/zen/go/v1/models")) {
+        return jsonResponse({ object: "list", data: [] });
+      }
+      if (String(url).includes("models.dev/api.json")) {
+        return jsonResponse(MODELS_DEV_FIXTURE);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const before = structuredClone(PROVIDERS["opencode-go"].models);
+
+    const { GET } = await import("../../src/app/api/providers/[id]/models/route.js");
+    const res = await GET(
+      new Request("http://localhost/api/providers/conn-oc-go-1/models"),
+      { params: Promise.resolve({ id: "conn-oc-go-1" }) }
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.models.length).toBeGreaterThan(0);
+
+    expect(PROVIDERS["opencode-go"].models).toEqual(before);
   });
 
   it("leaves models missing from models.dev untouched", async () => {
