@@ -117,8 +117,11 @@ describe("Gemini 4 Argon Antigravity tier", () => {
     };
 
     applyThinking("antigravity", upstreamModel, body, "antigravity");
+    // The executor receives the parenthesized upstream id (chatCore passes
+    // effectiveModel = upstreamModel with the "(high)" suffix intact) and must
+    // still emit the bare id on the wire.
     const finalBody = new AntigravityExecutor().transformRequest(
-      "gemini-4-argon-high",
+      upstreamModel,
       body,
       true,
       { projectId: "project", connectionId: "connection" }

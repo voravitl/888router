@@ -7,6 +7,7 @@ import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 
 // Sanitize competitive system prompts (Zed, Claude Code, Anthropic Agent SDK)
 // to prevent Google Antigravity backend from flagging requests and returning 429 Quota Exhausted.
@@ -267,6 +268,11 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Registry upstreamModelId may carry the "(level)" thinking suffix — e.g.
+    // gemini-4-argon-high(high) — consumed by the thinking machinery upstream
+    // of this call. The Antigravity wire model is spelled bare (observed
+    // published ids / quota keys: "gemini-3.8-flash-high" style, no parens).
+    model = stripThinkingSuffix(model);
     const projectId = credentials?.projectId || this.generateProjectId();
 
     // ─── Image generation: completely different request structure ───
