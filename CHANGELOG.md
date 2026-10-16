@@ -1,3 +1,13 @@
+# v0.15.168 (2026-10-17)
+
+## Fix: support Gemini 4 Argon (High) on antigravity — routing, thinking floor, quota
+
+- New antigravity model `gemini-4-argon-high` (registry entry with `upstreamModelId: "gemini-4-argon-high(high)"`, the parenthetical consumed by the existing `getModelUpstreamId` thinking-suffix machinery so requests pin thinkingLevel `high` while the wire keeps the bare id — mirrors upstream decolua/9router). Now routable via `ag/gemini-4-argon-high`.
+- Capabilities: `*gemini-4*` pattern — vision/audio/video, reasoning `gemini-level`, `thinkingCanDisable: false`, contextWindow 1,048,576, maxOutput 65,536; thinking levels `[low, medium, high]` — argon rejects `thinkingLevel: "minimal"` (and thinking budgets) with HTTP 400, so `LOW` is the floor.
+- Thinking clamp: `gemini-level` emission now clamps any unsupported level to the model's lowest supported level (from `thinkingLevels.js`) — an argon request with `reasoning_effort: "none"` or a small thinking budget emits `low` instead of dying with 400. Gemini 3 models keep `minimal` (regression guard).
+- Quota: `gemini-4-argon-high` added to the antigravity usage allowlist so the per-model bar and the pooled "Gemini (all models)" row include argon the moment Google's rollout lists it (live check 2026-10-17: account `g1-pro-tier`, argon not yet in `fetchAvailableModels`; observed keys are bare ids, no parentheticals).
+- Tests: `tests/unit/antigravity-argon.test.js` (9 cases: caps for antigravity/gemini/vertex, none/budget→low clamp, high pass-through, gemini-3 `minimal` regression guard, `ag` tier → wire model+thinkingLevel, quota parse + family rollup). Red-first commit trail.
+
 # v0.15.167 (2026-10-16)
 
 ## Fix: restore engine payload missing from the v0.15.166 squash merge — plus opencode-go model context
