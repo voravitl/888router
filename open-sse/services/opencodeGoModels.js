@@ -62,6 +62,31 @@ export function parseOpenCodeGoCatalog(json) {
   return models;
 }
 
+/**
+ * Mirror the fields models.dev enrichment (or the live body) actually filled
+ * in onto each entry as `capabilities` — contextWindow from a positive
+ * context_length, vision/reasoning only when booleans are present. Entries
+ * with nothing known stay bare, so /v1/models' liveCapabilitiesById never
+ * serves fabricated limits to clients: the enricher's only-fills-known-truth
+ * semantics (modelsDevModality). Pure — mutates and returns the same array.
+ */
+export function attachOpenCodeGoCapabilities(models) {
+  if (!Array.isArray(models)) return models;
+  for (const m of models) {
+    if (!m || typeof m !== "object") continue;
+    const caps = {};
+    if (typeof m.context_length === "number" && Number.isFinite(m.context_length) && m.context_length > 0) {
+      caps.contextWindow = m.context_length;
+    }
+    if (typeof m.vision === "boolean") caps.vision = m.vision;
+    if (typeof m.reasoning === "boolean") caps.reasoning = m.reasoning;
+    if (Object.keys(caps).length > 0) {
+      m.capabilities = caps;
+    }
+  }
+  return models;
+}
+
 /** Clear cache (tests + credential rotation). */
 export function resetOpenCodeGoCatalogForTests() {
   cached = null;
@@ -102,6 +127,15 @@ export async function resolveOpenCodeGoModels({ fetchImpl = fetch } = {}) {
         negCachedUntil = Date.now() + NEG_CACHE_TTL_MS;
         return null;
       }
+      // models.dev carries the capability truth the Go catalog omits; keep the
+      // module's fail-open contract — leave models as parsed ids on any error.
+      try {
+        const { enrichModalityFromModelsDev } = await import("./modelsDevModality.js");
+        await enrichModalityFromModelsDev(models, "opencode-go");
+      } catch {
+        // fail-open — bare {id,name} entries serve (static seed semantics)
+      }
+      attachOpenCodeGoCapabilities(models);
       cached = { expiresAt: Date.now() + CACHE_TTL_MS, models };
       return cached;
     } catch {
