@@ -27,7 +27,11 @@ Independent vitest ESM package (not wired into root `npm test`): unit, translato
 ### Working In This Directory
 - ALWAYS run from the repo root: `npx vitest run --config tests/vitest.config.js` (running from `tests/` breaks `path.resolve("src/...")` suites).
 - Single file: `npx vitest run unit/<name>.test.js` with paths relative to `tests/`.
-- Suite is not all-green on plain checkout (~64 known fails); judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run.
+- Suite is all-green as of 2026-10-17 (full run: 3,524 passed / 1
+  deliberate `test.fails` case / 0 failed) and `known-fails.txt` is EMPTY by
+  policy — see the header of `tests/__baseline__/known-fails.txt` for when to
+  re-add an entry. Judge regressions with `tests/__baseline__/verify-no-regression.mjs`
+  against that file, not a raw run; never re-fill it with passing tests.
 - `unit/xai-oauth-service.test.js` times out without network; `real/*.real.test.js` needs credentials — skip otherwise.
 
 ### Testing Requirements
