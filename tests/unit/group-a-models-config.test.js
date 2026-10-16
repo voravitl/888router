@@ -84,7 +84,9 @@ describe("Group A models config", () => {
       });
       const body = await res.json();
 
-      expect(mocks.fetch.mock.calls.at(-1)[0], provider).toBe(url);
+      // opencode-go appends a models.dev enrichment call after the endpoint
+      // call, so assert the endpoint call EXISTS rather than is last.
+      expect(mocks.fetch.mock.calls.some(([u]) => u === url), provider).toBe(true);
       expect(body.models.map((m) => ({ id: m.id })), provider).toEqual([{ id: "m1" }]);
     }
   });
