@@ -1099,7 +1099,7 @@ export async function GET(request, { params }) {
 
     const data = await response.json();
     const parsed = config.parseResponse(data);
-    let models = (Array.isArray(parsed) && parsed.length > 0) ? [...parsed] : (pDef?.models ? [...pDef.models] : []);
+    let models = (Array.isArray(parsed) && parsed.length > 0) ? [...parsed] : (pDef?.models ? pDef.models.map((m) => ({ ...m })) : []);
 
     // zen/go /v1/models returns ids only — no context/modality hints. Enrich
     // from models.dev (authoritative) so the dashboard and /v1/context stop
