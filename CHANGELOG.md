@@ -1,3 +1,10 @@
+# v0.15.167 (2026-10-16)
+
+## Fix: restore engine payload missing from the v0.15.166 squash merge — plus opencode-go model context
+
+- Disclosed defect of v0.15.166: its squash commit (`3fe3bf10`) landed only the version bump, changelog, snapshot refresh and four new test files — every source hunk was dropped from master. Evidence: the 21 tests committed in v0.15.166 fail on a clean checkout of that commit. This release restores the kimi/ollama/gemini/codex-image payload those tests pin; the running 0.15.166 image never contained them.
+- `opencode-go` model sync carried no context/vision/reasoning (zen/go `/v1/models` returns bare ids), nothing persisted to `modelCapabilities`, and `/v1/models` resolved against stale pattern fallbacks (live check: `mimo-v2.6-pro` showed 262144 instead of 1048576). Both surfaces now enrich from models.dev, which only fills unknown fields: the sync route mirrors `context_length` into `contextWindow` so `buildModelsResponse` emits both spellings and persists provider-scoped capability rows; the live resolver (`resolveOpenCodeGoModels`) attaches `capabilities` for `liveCapabilitiesById`. Enrichment is fail-open; models absent from models.dev stay bare (7 such live ids).
+
 # v0.15.166 (2026-10-14)
 
 ## Fix: port upstream engine fixes (kimi, ollama, gemini, codex-image)
