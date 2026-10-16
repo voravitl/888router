@@ -3,6 +3,7 @@
 // never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
@@ -217,7 +218,7 @@ function supportsMaxEffort(modelId) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, modelId = "") {
+function applyFormat(fmt, body, cfg, caps, modelId = "", supportedLevels = null) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -272,7 +273,11 @@ function applyFormat(fmt, body, cfg, caps, modelId = "") {
       break;
     }
     case "gemini-level": {
-      const level = none ? "minimal" : toGeminiThinkingLevel(eff);
+      let level = none ? "minimal" : toGeminiThinkingLevel(eff);
+      // Models without a "minimal" tier (Gemini 4 Argon) reject it with 400 —
+      // clamp to the lowest supported level (from thinkingLevels.js).
+      const lowest = supportedLevels?.find((l) => l !== "none");
+      if (supportedLevels?.length && lowest && !supportedLevels.includes(level)) level = lowest;
       setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
       break;
     }
@@ -355,7 +360,11 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   if (!cfg) return body;
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
+  // Levels the model actually supports (thinkingLevels.js statuted) — level
+  // formats clamp unsupported emissions to their lowest supported level
+  // instead of letting the upstream reject the request.
+  const supportedLevels = getThinkingLevels(provider, cleanModel);
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, cleanModel);
+  applyFormat(fmt, body, cfg, caps, cleanModel, supportedLevels);
   return body;
 }
