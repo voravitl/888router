@@ -1099,7 +1099,28 @@ export async function GET(request, { params }) {
 
     const data = await response.json();
     const parsed = config.parseResponse(data);
-    let models = (Array.isArray(parsed) && parsed.length > 0) ? [...parsed] : (pDef?.models ? [...pDef.models] : []);
+    let models = (Array.isArray(parsed) && parsed.length > 0) ? [...parsed] : (pDef?.models ? pDef.models.map((m) => ({ ...m })) : []);
+
+    // zen/go /v1/models returns ids only — no context/modality hints. Enrich
+    // from models.dev (authoritative) so the dashboard and /v1/context stop
+    // resolving against stale pattern fallbacks, and mirror context_length
+    // into contextWindow so the persisted capability row carries both
+    // spellings (same as the free opencode special case above).
+    if (connection.provider === "opencode-go") {
+      try {
+        const { enrichModalityFromModelsDev } = await import("open-sse/services/modelsDevModality.js");
+        await enrichModalityFromModelsDev(models, "opencode-go");
+      } catch (error) {
+        // fail-open: models stay as parsed ids (static table still applies)
+        console.log("Failed to enrich opencode-go models from models.dev:", error?.message || error);
+      }
+      for (const m of models) {
+        if (m && typeof m.id === "string" && typeof m.context_length === "number" && m.context_length > 0
+          && m.contextWindow === undefined) {
+          m.contextWindow = m.context_length;
+        }
+      }
+    }
 
     // For openai and codex, merge static registry models the upstream /models
     // response does not carry yet, so a freshly released model is selectable
