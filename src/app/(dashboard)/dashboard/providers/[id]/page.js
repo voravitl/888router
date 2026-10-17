@@ -1179,6 +1179,13 @@ export default function ProviderDetailPage() {
     // built-in (display) models. Each row carries enough context for the
     // Actions cell (custom rows show remove, built-in rows show disable).
     const findSynced = (modelId) => {
+      // Current format first: the sync route persists under `${provider}:${modelId}`
+      // (provider = connection.provider). Legacy builds wrote under the connection
+      // id (`${conn.id}:${modelId}`, often `public:...`) or a `public:`-prefixed
+      // key, whose values may be stale — prefer the current key so the dashboard
+      // doesn't display an outdated context window.
+      const currentKey = `${providerId}:${modelId}`;
+      if (syncedMap[currentKey]) return syncedMap[currentKey];
       for (const conn of connections) {
         const key = `${conn.id}:${modelId}`;
         if (syncedMap[key]) return syncedMap[key];
