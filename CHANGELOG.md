@@ -1,3 +1,9 @@
+# v0.15.169 (2026-10-17)
+
+## Chore: repo hygiene — remove tracked build log
+
+- `docker-build.log` (5KB local docker-build output) was accidentally tracked and shipped inside published images (`.dockerignore` did not exclude general `*.log`). Removed from the repo, kept on disk, and both `.gitignore` + `.dockerignore` now exclude `*.log` so it can never return. No runtime behavior change.
+
 # v0.15.168 (2026-10-17)
 
 ## Fix: support Gemini 4 Argon (High) on antigravity — routing, thinking floor, quota

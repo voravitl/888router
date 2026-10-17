@@ -92,3 +92,6 @@ docker-compose.override.yml
 docker-compose.override.yml
 
 .omc/stash-archive/
+
+# Build/scratch logs (never commit — hygiene)
+*.log
