@@ -11,17 +11,16 @@ const BASE_URL = process.env.AG_URL || "http://localhost:20128/v1";
 const API_KEY = process.env.AG_KEY;
 const TIMEOUT_MS = 90000;
 
-// All antigravity models (from providers/registry/antigravity.js)
+// Representative antigravity models currently available on the live gateway
+// (verified against the deployed router). The original list referenced models
+// that Google has since retired (claude-sonnet-4-6, claude-opus-4-6-thinking,
+// gemini-3.5-*, gemini-pro-agent, gemini-3.1-pro-low, gemini-3-flash-agent),
+// which made the optional-field scenario untestable.
 const AG_MODELS = [
-  "ag/gemini-3-flash-agent",
-  "ag/gemini-3.5-flash-low",
-  "ag/gemini-3.5-flash-extra-low",
-  "ag/gemini-pro-agent",
-  "ag/gemini-3.1-pro-low",
-  "ag/claude-sonnet-4-6",
-  "ag/claude-opus-4-6-thinking",
-  "ag/gpt-oss-120b-medium",
   "ag/gemini-3-flash",
+  "ag/gpt-oss-120b-medium",
+  "ag/gemini-3.8-flash-low",
+  "ag/claude-sonnet-5-5-low",
 ];
 
 // Simple text prompt — no tools
