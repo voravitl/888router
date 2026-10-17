@@ -2,7 +2,7 @@
 
 ## Chore: repo hygiene — remove tracked build log
 
-- `docker-build.log` (5KB local docker-build output) was accidentally tracked and shipped inside published images (`.dockerignore` did not exclude general `*.log`). Removed from the repo, kept on disk, and both `.gitignore` + `.dockerignore` now exclude `*.log` so it can never return. No runtime behavior change.
+- `docker-build.log` (5KB local docker-build output) was accidentally tracked and shipped inside published images (`.dockerignore` did not exclude general `*.log`). Removed from the repo (the local file was deleted during the same cleanup), and both `.gitignore` + `.dockerignore` now exclude `*.log` so it can never return. No runtime behavior change.
 
 # v0.15.168 (2026-10-17)
 
