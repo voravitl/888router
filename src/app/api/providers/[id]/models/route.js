@@ -1119,6 +1119,10 @@ export async function GET(request, { params }) {
           && m.contextWindow === undefined) {
           m.contextWindow = m.context_length;
         }
+        if (m && typeof m.id === "string" && typeof m.context_length === "number" && m.context_length > 0
+          && m.contextLength === undefined) {
+          m.contextLength = m.context_length;
+        }
       }
     }
 
