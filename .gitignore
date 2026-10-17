@@ -87,8 +87,7 @@ Reviewing Past Pull Requests.md
 # see docker-compose.override.yml for example). Never commit.
 docker-compose.override.yml
 
-# Local docker-compose override (pins image tag to a specific release;
-# see docker-compose.override.yml for example). Never commit.
-docker-compose.override.yml
-
 .omc/stash-archive/
+
+# Build/scratch logs (never commit — hygiene)
+*.log
