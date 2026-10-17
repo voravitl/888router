@@ -1,3 +1,10 @@
+# v0.15.170 (2026-10-17)
+
+## Fix: dashboard showed stale context window for public providers (opencode / opencode-go)
+
+- `findSynced` in the provider dashboard preferred the legacy `public:${providerId}:${modelId}` (and `${conn.id}:${modelId}` where `conn.id` starts with `public:`) kv key, whose values were written by older builds and can disagree with the current sync key `${providerId}:${modelId}`. Result: the dashboard displayed an outdated context window (e.g. `opencode:mimo-v2.6-flash-free` showed 1,048,576 instead of the synced 200,000; `oc/deepseek-v4.1-flash-free` showed a default instead of the synced value).
+- Fix: prefer the current key `${providerId}:${modelId}` first, then fall back to legacy keys. `/v1/models` already used the current key, so this aligns the two surfaces.
+
 # v0.15.169 (2026-10-17)
 
 ## Chore: repo hygiene — remove tracked build log

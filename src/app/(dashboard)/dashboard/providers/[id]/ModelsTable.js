@@ -167,7 +167,7 @@ export default function ModelsTable({
             {sorted.map((model, idx) => {
               const fullModel = fullModelFor ? fullModelFor(model) : model.fullModel;
               const rowKey = `${fullModel || model.id}-${idx}`;
-              const ctx = model.maxInputTokens || model.contextLength || (getContextWindow ? getContextWindow(fullModel) : 0) || 0;
+              const ctx = model.maxInputTokens || model.contextLength || model.contextWindow || model.context_length || (getContextWindow ? getContextWindow(fullModel) : 0) || 0;
               const testStatus = modelTestResults[model.id];
               const isTesting = testingModelIds && testingModelIds.has ? testingModelIds.has(model.id) : false;
               const isCustom = !!isCustomMap[model.id];

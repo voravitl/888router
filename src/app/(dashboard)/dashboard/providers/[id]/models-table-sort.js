@@ -23,8 +23,8 @@ export function compareModels(a, b, field, order, getContextWindow) {
   } else if (field === "context") {
     const fullA = a.fullModel || a.id;
     const fullB = b.fullModel || b.id;
-    const ca = a.maxInputTokens || a.contextLength || (getContextWindow ? getContextWindow(fullA) : 0) || 0;
-    const cb = b.maxInputTokens || b.contextLength || (getContextWindow ? getContextWindow(fullB) : 0) || 0;
+    const ca = a.maxInputTokens || a.contextLength || a.contextWindow || a.context_length || (getContextWindow ? getContextWindow(fullA) : 0) || 0;
+    const cb = b.maxInputTokens || b.contextLength || b.contextWindow || b.context_length || (getContextWindow ? getContextWindow(fullB) : 0) || 0;
     cmp = (ca - cb) * dir;
   }
 
