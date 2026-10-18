@@ -79,14 +79,16 @@ describe("openaiToClaudeRequest", () => {
 
       const result = openaiToClaudeRequest("claude-sonnet-4.5", body, false);
 
-      // Should have system but without JSON instructions
-      expect(result.system).toBeDefined();
-      
-      const systemText = result.system
+      // No client system message and no OAuth credential, so nothing is sent:
+      // the Claude Code identity line is OAuth-only (api.anthropic.com rejects
+      // it on API-key traffic with 400 "credit balance is too low").
+      expect(result.system).toBeUndefined();
+
+      const systemText = (result.system || [])
         .filter(s => s.type === "text")
         .map(s => s.text)
         .join("\n");
-      
+
       // Should NOT contain JSON-specific instructions
       expect(systemText).not.toContain("You must respond with valid JSON");
     });
