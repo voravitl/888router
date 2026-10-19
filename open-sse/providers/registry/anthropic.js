@@ -18,7 +18,11 @@ const anthropicConfig = {
     format: "claude",
     headers: {
       "anthropic-version": "2023-06-01",
-      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
+      // NOTE: do NOT include claude-code-20250219 here — api.anthropic.com
+      // rejects that beta on API-key traffic with 400 "credit balance is too
+      // low" (it is an OAuth/subscription entitlement). OAuth path is the
+      // "claude" provider, which keeps its own header list.
+      "Anthropic-Beta": "interleaved-thinking-2025-05-14",
     },
   },
   models: [
