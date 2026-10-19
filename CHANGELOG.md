@@ -1,3 +1,20 @@
+# v0.15.172 (2026-10-19)
+
+## Fix: opencode-go requests failed with "max_tokens and max_completion_tokens cannot be set together"
+
+- OpenAI-compatible upstreams (opencode-go's Go tier, OpenAI itself) reject a request carrying both `max_tokens` and `max_completion_tokens` with `400 invalid_request_error`. Verified live: `max_tokens` alone 200, `max_completion_tokens` alone 200, both 400.
+- Clients and `alignTranslatedOutputBudget` (which preserves whatever was present) can leave both set, so the gateway now drops `max_tokens` and keeps `max_completion_tokens` before the request leaves, for OpenAI-compatible targets only. Claude-format traffic uses `max_tokens` only and is untouched.
+- Boundary guard in `open-sse/handlers/chatCore.js`, applied after output-budget alignment.
+
+# v0.15.171 (2026-10-19)
+
+## Fix: Anthropic API-key provider could never serve a request (Claude Code identity line)
+
+- `api.anthropic.com` refuses any request whose `system` carries the exact line `You are Claude Code, Anthropic's official CLI for Claude.` when it is authenticated with an **API key**: `400 invalid_request_error`, "Your credit balance is too low to access the Anthropic API", raised before the model runs. The same line is accepted on subscription (`sk-ant-oat`) traffic. Verified live with an `sk-ant-usr` key — the exact block 400s, the same text without the trailing period 200s, and a replay of the gateway's own outbound body 400s while the same body with the line neutralized or dropped 200s.
+- Cause: the OpenAI→Claude bridge injected that line for provider `anthropic` (`openai-to-claude.js`), and Claude Code clients send it themselves, so every `anthropic/*` request failed with 400 no matter which key was configured.
+- Fix: the line is now injected only with a subscription (OAuth) credential, and `prepareClaudeRequest` strips it for the official Anthropic API-key path — which also covers Claude→Claude passthrough, where the client supplies it directly. The OAuth path keeps the line: it is required there and accepted.
+- New `open-sse/translator/concerns/claudeCodeIdentity.js` holds the rule, the provider set and the strip helpers; the golden OpenAI→Claude request snapshots were refreshed (separate commit) because the API-key path no longer carries the line.
+
 # v0.15.170 (2026-10-17)
 
 ## Fix: dashboard showed stale context window for public providers (opencode / opencode-go)

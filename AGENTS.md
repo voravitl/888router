@@ -189,3 +189,49 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+### Anthropic identity line is an entitlement, not an instruction (2026-10-19, v0.15.171)
+
+`api.anthropic.com` refuses any request whose `system` carries the exact string
+`"You are Claude Code, Anthropic's official CLI for Claude."` when it is
+authenticated with an API key: `400 invalid_request_error`, "Your credit balance
+is too low to access the Anthropic API", raised before the model runs. The same
+line is accepted on subscription (`sk-ant-oat`) traffic. Verified live:
+exact block → 400; without trailing period → 200; embedded in other text → 200;
+no system → 200. Both the OpenAI→Claude bridge (injection) and Claude Code
+clients (which send it themselves) trigger it.
+
+Rules going forward:
+- Inject `CLAUDE_SYSTEM_PROMPT` only with a subscription (`sk-ant-oat`) credential — never for API-key providers. Gate on the credential, not just the provider id.
+- Any official Anthropic API-key path must strip the line from `body.system` (string and block-array shapes); empty blocks must be dropped, not left as empty text.
+- Keep the OAuth path untouched — it requires the identity and is accepted.
+- Shared helper: `open-sse/translator/concerns/claudeCodeIdentity.js`
+  (`stripClaudeCodeIdentity`, `stripClaudeCodeIdentityFromBody`,
+  `isClaudeOAuthCredential`, `OFFICIAL_ANTHROPIC_PROVIDERS`). Reuse it instead
+  of re-implementing the regex per provider (antigravity.js already had a
+  private copy — consolidate if touching that area).
+
+### OpenAI-compatible upstreams reject both max_tokens and max_completion_tokens (2026-10-19, v0.15.172)
+
+opencode-go's Go tier (and OpenAI itself) returns
+`400 invalid_request_error "'max_tokens' and 'max_completion_tokens' cannot be
+set together."` when both are present. Verified live: each alone → 200, both → 400.
+
+Rule: at the chat boundary, when both fields are present on an OpenAI-compatible
+target, keep `max_completion_tokens` and delete `max_tokens` (after
+`alignTranslatedOutputBudget`). Claude-format traffic uses `max_tokens` only
+and must be left untouched. Boundary guard lives in
+`open-sse/handlers/chatCore.js`.
+
+### `noAuth` is dropped by `buildTransport` (2026-10-19)
+
+`open-sse/providers/index.js` `buildTransport` copied `hasFree`/`authType`/`maxTools`
+but not `noAuth`, so `PROVIDERS.opencode.noAuth` (and many others) was
+`undefined` and `BaseExecutor.noAuth` was always `false`. That defeated the
+"skip token refresh for noAuth providers" guards in chatCore/imageGenerationCore/
+embeddingsCore, producing `[TOKEN] OPENCODE | refresh failed` +
+`[TOKEN_REFRESH] All 3 retry attempts failed` on every 403.
+
+Rule: any new policy flag added to a registry entry must be copied in
+`buildTransport` (mirroring `hasFree`/`authType`/`maxTools`), and the
+`v1-models-noauth-virtual-injection` test pins this invariant.

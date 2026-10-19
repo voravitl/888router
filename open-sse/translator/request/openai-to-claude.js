@@ -1,6 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
+import { isClaudeOAuthCredential } from "../concerns/claudeCodeIdentity.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
@@ -132,8 +133,15 @@ Respond ONLY with the JSON object, no other text.`);
   // System with Claude Code prompt and cache_control
   // Only inject CLAUDE_SYSTEM_PROMPT for official Anthropic/Claude providers ("claude", "anthropic"),
   // not for generic or third-party anthropic-compatible providers (prevents context pollution).
+  //
+  // AND only with a subscription (OAuth) credential: the identity line is an
+  // entitlement claim, and api.anthropic.com refuses it with a 400 "credit
+  // balance is too low" when the same request is authenticated with an API key
+  // (see concerns/claudeCodeIdentity.js for the live proof). Injecting it on the
+  // api-key path is what made every `anthropic/*` request fail.
   const isOfficialClaude = !provider || provider === "claude" || provider === "anthropic";
-  const claudeCodePrompt = isOfficialClaude ? { type: CLAUDE_BLOCK.TEXT, text: CLAUDE_SYSTEM_PROMPT } : null;
+  const injectClaudeCodePrompt = isOfficialClaude && isClaudeOAuthCredential(credentials?.accessToken || credentials?.apiKey);
+  const claudeCodePrompt = injectClaudeCodePrompt ? { type: CLAUDE_BLOCK.TEXT, text: CLAUDE_SYSTEM_PROMPT } : null;
 
   if (systemParts.length > 0) {
     const systemText = systemParts.join("\n");

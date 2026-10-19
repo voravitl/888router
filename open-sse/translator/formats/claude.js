@@ -8,6 +8,7 @@ import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
+import { OFFICIAL_ANTHROPIC_PROVIDERS, isClaudeOAuthCredential, stripClaudeCodeIdentityFromBody } from "../concerns/claudeCodeIdentity.js";
 
 const CACHE_CONTROL_5M = { type: "ephemeral" };
 const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
@@ -391,6 +392,20 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
       }
     }
   }
+
+  // Strip the Claude Code identity line on API-key traffic after normalization,
+  // so every shape (client-sent or bridge-injected) is covered.
+  neutralizeIdentityForApiKey(body, provider, apiKey);
+
+// Anthropic refuses the Claude Code identity line when the request carries an
+// API key: 400 "Your credit balance is too low to access the Anthropic API",
+// raised before the model runs. The OAuth path is accepted. See
+// concerns/claudeCodeIdentity.js for the live proof and the string list.
+function neutralizeIdentityForApiKey(body, provider, apiKey) {
+  if (!OFFICIAL_ANTHROPIC_PROVIDERS.has(provider)) return;
+  if (isClaudeOAuthCredential(apiKey)) return;
+  stripClaudeCodeIdentityFromBody(body);
+}
 
 function normalizeClaudeContentBlock(block) {
   if (typeof block === "string") {
