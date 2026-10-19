@@ -1,3 +1,14 @@
+# v0.15.174 (2026-10-20)
+
+## Fix: opencode-go re-added max_tokens after the dedup, recreating the conflict
+
+- The free-model budget injection (`max_tokens = 2000` when absent) in
+  `open-sse/executors/opencode.js` fired even after chatCore's dedup had dropped
+  `max_tokens` in favour of `max_completion_tokens`, re-creating the
+  "max_tokens and max_completion_tokens cannot be set together" 400.
+- Guard the injection so it only fires when NEITHER field is set.
+
+# v0.15.173 (2026-10-19)
 # v0.15.173 (2026-10-19)
 
 ## Fix: anthropic provider still 400'd after the identity-line fix (beta header)
