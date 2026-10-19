@@ -1,3 +1,11 @@
+# v0.15.172 (2026-10-19)
+
+## Fix: opencode-go requests failed with "max_tokens and max_completion_tokens cannot be set together"
+
+- OpenAI-compatible upstreams (opencode-go's Go tier, OpenAI itself) reject a request carrying both `max_tokens` and `max_completion_tokens` with `400 invalid_request_error`. Verified live: `max_tokens` alone 200, `max_completion_tokens` alone 200, both 400.
+- Clients and `alignTranslatedOutputBudget` (which preserves whatever was present) can leave both set, so the gateway now drops `max_tokens` and keeps `max_completion_tokens` before the request leaves, for OpenAI-compatible targets only. Claude-format traffic uses `max_tokens` only and is untouched.
+- Boundary guard in `open-sse/handlers/chatCore.js`, applied after output-budget alignment.
+
 # v0.15.171 (2026-10-19)
 
 ## Fix: Anthropic API-key provider could never serve a request (Claude Code identity line)
