@@ -371,6 +371,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Preserve explicit reservations; constrain only gateway-generated defaults.
   alignTranslatedOutputBudget(translatedBody, clientOutputBudget, { provider, model: upstreamModel });
+  // OpenAI-compatible upstreams reject a body carrying both max_tokens and
+  // max_completion_tokens ("cannot be set together"). Clients and our own
+  // alignTranslatedOutputBudget (which preserves whatever was present) can
+  // leave both set, so keep the modern max_completion_tokens and drop the
+  // redundant max_tokens before the request leaves the gateway. Claude-format
+  // traffic uses max_tokens only and is left untouched.
+  if ((finalFormat === FORMATS.OPENAI || finalFormat === FORMATS.OPENAI_RESPONSES)
+      && translatedBody && typeof translatedBody === "object"
+      && translatedBody.max_tokens !== undefined
+      && translatedBody.max_completion_tokens !== undefined) {
+    delete translatedBody.max_tokens;
+  }
   // Generated Claude thinking must fit the preserved client reservation.
   // Explicit client thinking remains upstream-validated without alteration.
   if (finalFormat === FORMATS.CLAUDE && !clientThinkingBudget
