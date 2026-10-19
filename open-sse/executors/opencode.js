@@ -420,7 +420,8 @@ export class OpenCodeExecutor extends BaseExecutor {
     // Inject min max_tokens: 2000 when body.max_tokens is absent/undefined.
     const freeSuffix = baseModelId(model);
     const isFreeModel = freeSuffix.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.has(freeSuffix);
-    if (isFreeModel && (nextBody?.max_tokens === undefined || nextBody?.max_tokens === null)) {
+    if (isFreeModel && (nextBody?.max_tokens === undefined || nextBody?.max_tokens === null)
+        && (nextBody?.max_completion_tokens === undefined || nextBody?.max_completion_tokens === null)) {
       nextBody = { ...nextBody, max_tokens: 2000 };
     }
     if (freeGate) ensureChatFingerprintTools(nextBody);
