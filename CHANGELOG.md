@@ -1,3 +1,18 @@
+# v0.15.173 (2026-10-19)
+
+## Fix: anthropic provider still 400'd after the identity-line fix (beta header)
+
+- The body-level fix in v0.15.172 removed the Claude Code identity line from
+  `system`, but the provider still returned `400 "credit balance is too low"`.
+  Live bisect (2026-10-19) showed the remaining trigger is the
+  `Anthropic-Beta: claude-code-20250219` header: with it → 400, without it (or
+  with only `interleaved-thinking-2025-05-14`) → 200, on the same body.
+- Fix: drop `claude-code-20250219` from the `anthropic` (API-key) provider's
+  transport headers. The `claude` (OAuth) provider keeps its own header list.
+- With this, `anthropic/claude-sonnet-5-5` now returns 200 end to end through
+  the gateway (verified live after deploy).
+
+# v0.15.172 (2026-10-19)
 # v0.15.172 (2026-10-19)
 
 ## Fix: opencode-go requests failed with "max_tokens and max_completion_tokens cannot be set together"
