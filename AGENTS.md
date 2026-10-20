@@ -282,3 +282,25 @@ embeddingsCore, producing `[TOKEN] OPENCODE | refresh failed` +
 Rule: any new policy flag added to a registry entry must be copied in
 `buildTransport` (mirroring `hasFree`/`authType`/`maxTools`), and the
 `v1-models-noauth-virtual-injection` test pins this invariant.
+
+### A client format can be adapted OUTSIDE the translator layer (2026-10-21, v0.15.179)
+
+The Gemini client format (`/v1beta/models/...`) has **no** `openai → gemini`
+response translator registered, so `open-sse/` leaves the chunk OpenAI-shaped
+and the endpoint adapter in `src/app/api/v1beta/models/[...path]/route.js`
+(`transformOpenAISSEToGeminiSSE`, `convertOpenAIResponseToGemini`) does the
+conversion. That adapter only read `content`, so the 0.15.178 refusal fix
+never reached a Gemini client — a refusal-only answer arrived as
+`parts: [{"text": ""}]`. Fixed in 0.15.179.
+
+Rule: "the client format is handled" is only true when every layer between
+the provider response and the wire is checked. Before claiming a format is
+covered, grep for the shape you are emitting (`candidates:`, `parts:`,
+`text_delta`, `output_text`) — the converter may live in a route handler, not
+in `open-sse/translator/`. Test the adapter that actually runs, not the one
+that looks right.
+
+Known gap (recorded, not fixed): `open-sse/handlers/responsesHandler.js`
+(`handleResponsesCore`) is dead code — nothing imports it — and it still has
+the original whole-completion bug (reads only `choice.delta`). It cannot
+affect traffic today; delete it rather than fix it if it is ever revived.
