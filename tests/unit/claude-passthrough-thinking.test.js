@@ -241,6 +241,37 @@ describe("handleChatCore claude passthrough thinking", () => {
     expect(sentBody.thinking.budget_tokens).toEqual(expect.any(Number));
   });
 
+  it("haiku-5-5 keeps adaptive thinking — Anthropic rejects enabled for this model", async () => {
+    const { sentBody } = await runPassthrough("claude-haiku-5-5");
+    expect(sentBody.thinking).toEqual({ type: "adaptive" });
+    expect(sentBody.output_config).toEqual({ effort: "high" });
+  });
+
+  it("native-faithful haiku-5-5 rewrites an enabled thinking shape to adaptive", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    await handleChatCore({
+      body: {
+        model: "claude-haiku-5-5",
+        stream: false,
+        messages: [{ role: "user", content: "hi" }],
+        thinking: { type: "enabled", budget_tokens: 16000 },
+      },
+      modelInfo: { provider: "anthropic", model: "claude-haiku-5-5" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log,
+      connectionId: "test-conn",
+      sourceFormatOverride: "claude",
+      clientRawRequest: {
+        endpoint: "/v1/messages",
+        body: {},
+        headers: { "user-agent": "claude-cli/2.1.92 (external, cli)", "x-app": "cli" },
+      },
+    });
+    const sentBody = executeMock.mock.calls[0][0].body;
+    expect(log.debug).toHaveBeenCalledWith("PASSTHROUGH", expect.stringContaining("native faithful"));
+    expect(sentBody.thinking).toEqual({ type: "adaptive" });
+  });
+
   it("preserves Claude's native request by default despite enabled router transforms", async () => {
     const body = {
       model: "claude-sonnet-5",

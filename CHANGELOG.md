@@ -1,3 +1,28 @@
+# v0.15.176 (2026-10-20)
+
+## Fix: claude-haiku-5-5 rejected `thinking.type.enabled`
+
+- Anthropic `claude-haiku-5-5` returned `400 invalid_request_error`:
+  `"thinking.type.enabled" is not supported for this model. Use "thinking.type.adaptive" and "output_config.effort"`.
+  Extended-thinking docs confirm 4.7+/5.x reject `enabled`, while 4.6 still
+  accepts it (deprecated) and 4.5 and older are `enabled`-only.
+- `open-sse/providers/capabilities.js`: added an explicit `*claude*haiku-5*`
+  adaptive pattern (1M context / 128k output, matching models.dev) above the
+  generic haiku budget pattern. Haiku 4.5 and older stay on
+  `enabled + budget_tokens`.
+- `open-sse/translator/formats/claude.js`: thinking shape is now resolved
+  through capabilities instead of a hardcoded `/haiku/` regex. `enabled` is
+  rewritten to `adaptive` only for 4.7+/5.x models; the legacy Haiku ≤4.5
+  downgrade (and effort stripping) is preserved, with a generation parser that
+  does not read date suffixes as versions.
+- `open-sse/handlers/chatCore.js`: the native-faithful Claude passthrough now
+  also corrects an incompatible thinking shape (it previously skipped
+  normalization entirely), so a shape the target model rejects can no longer
+  reach the upstream.
+- Tests: capabilities resolution for haiku 5.x/4.x, passthrough shape
+  conversion (transformed and native-faithful), no widened downgrade for
+  Opus 4.5 / Sonnet 4.6, and `claude-3-5-haiku-20241022` date-suffix parsing.
+
 # v0.15.175 (2026-10-20)
 
 ## Fix: combo parked models for 1h on transient errors

@@ -499,7 +499,7 @@ export const PROVIDER_CAPABILITIES = {
  * a broad family pattern swallowing an exception (e.g. glm-4.6v vs glm-5).
  */
 export const PATTERN_CAPABILITIES = [
-  // ── Claude (4.5+ / 4.6+ = adaptive thinking 1M; older/3.5/haiku = budget 200k) ──
+  // ── Claude (4.5+ / 4.6+ / 5+ = adaptive thinking 1M; older 3.x / 4.x = budget 200k) ──
   { pattern: "*claude-3.5*",        caps: { vision: true, contextWindow: 200000 } },
   { pattern: "*claude-3-5*",        caps: { vision: true, contextWindow: 200000 } },
   { pattern: "*claude-3-opus*",     caps: { vision: true, contextWindow: 200000 } },
@@ -518,6 +518,12 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*claude*sonnet-4.6*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*sonnet-4.7*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*sonnet-5*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
+  // Haiku 5+ moved to adaptive thinking + 1M context (models.dev anthropic
+  // claude-haiku-5-5: context 1000000 / output 128000). Must stay ABOVE the
+  // generic haiku pattern, which keeps Haiku 4.5 and older on
+  // enabled+budget_tokens. Anthropic 400s haiku-5.x sent as enabled
+  // (2026-10-20: "thinking.type.enabled is not supported for this model").
+  { pattern: "*claude*haiku-5*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*haiku*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 200000 } },
   { pattern: "*claude*opus*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 200000 } },
   { pattern: "*claude*sonnet*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 200000 } },
