@@ -33,7 +33,49 @@ export function messageContentText(message) {
   let out = "";
   for (const part of content) {
     if (typeof part === "string") out += part;
-    else if (part && typeof part.text === "string") out += part.text;
+    else if (part && typeof part.text === "string"
+      && part.thought !== true
+      && part.type !== "thinking"
+      && part.type !== "reasoning"
+      && (!part.type || part.type === "text" || part.type === "output_text")) {
+      out += part.text;
+    }
+  }
+  return out;
+}
+
+/**
+ * Reasoning carried by a whole-completion `message` object. Kept separate from
+ * messageContentText() so a thinking-only frame is classified as reasoning
+ * (empty answer, retry) instead of being blessed as text.
+ */
+export function messageReasoningText(message) {
+  if (!message) return "";
+  let out = "";
+  const seen = new Set();
+  const add = (value) => {
+    if (typeof value === "string" && value && !seen.has(value)) {
+      seen.add(value);
+      out += value;
+    }
+  };
+
+  for (const key of ["reasoning_content", "reasoningContent", "reasoning"]) add(message[key]);
+  if (Array.isArray(message.reasoning_details)) {
+    for (const detail of message.reasoning_details) {
+      if (typeof detail === "string") add(detail);
+      else if (detail && typeof detail.text === "string") add(detail.text);
+      else if (detail && typeof detail.summary_text === "string") add(detail.summary_text);
+      else if (detail && typeof detail.summary === "string") add(detail.summary);
+    }
+  }
+  if (Array.isArray(message.content)) {
+    for (const part of message.content) {
+      if (!part || typeof part !== "object") continue;
+      if (part.type !== "thinking" && part.type !== "reasoning" && part.thought !== true) continue;
+      if (typeof part.text === "string") add(part.text);
+      else if (typeof part.thinking === "string") add(part.thinking);
+    }
   }
   return out;
 }
@@ -159,6 +201,7 @@ export function createComboStreamGuard() {
         // `message.content`, never `delta.content`. Reading only the delta judged
         // those real answers empty and made the combo discard them.
         const messageText = messageContentText(choice && choice.message);
+        const messageReasoning = messageReasoningText(choice && choice.message);
         // Anthropic SSE: delta.text or delta.partial_json inside content_block_delta
         const anthropicText = (json.delta && typeof json.delta.text === "string") ? json.delta.text
           : (json.delta && typeof json.delta.partial_json === "string") ? json.delta.partial_json
@@ -175,7 +218,9 @@ export function createComboStreamGuard() {
         // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE)
         // or Anthropic delta.thinking (Claude 3.7/Kiro thinking delta)
         const anthropicReasoning = (json.delta && typeof json.delta.thinking === "string") ? json.delta.thinking : "";
-        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent)) || anthropicReasoning;
+        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent))
+          || messageReasoning
+          || anthropicReasoning;
         if (typeof reasoningVal === "string" && reasoningVal.length > 0) sawReasoning = true;
 
         const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || (json.delta && json.delta.stop_reason) || null;

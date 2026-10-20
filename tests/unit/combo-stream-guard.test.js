@@ -245,6 +245,51 @@ describe("comboStreamGuard whole-completion frames (non-stream over SSE)", () =>
     g.feedEnd();
     expect(g.isEmpty()).toBe(true);
   });
+
+  it("classifies a thinking-only content part as reasoning, not text", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: { role: "assistant", content: [{ type: "thinking", text: "secret reasoning" }] },
+      }],
+    }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+    expect(g.sawReasoning()).toBe(true);
+  });
+
+  it("classifies a Gemini thought part as reasoning, not text", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: { role: "assistant", content: [{ text: "private thinking", thought: true }] },
+      }],
+    }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+    expect(g.sawReasoning()).toBe(true);
+  });
+
+  it("still sees the text when a message carries thinking and text parts", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", text: "secret reasoning" },
+            { type: "text", text: "the answer" },
+          ],
+        },
+      }],
+    }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+    expect(g.sawReasoning()).toBe(true);
+  });
 });
 
 describe("comboStreamGuard concatenated payloads on one line", () => {
