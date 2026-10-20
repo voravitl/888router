@@ -61,3 +61,4 @@
 
 7. **Step 7: Durable Knowledge Capture**
    - บันทึกบทเรียนลงวิกิ (`$HOME/wiki/...`), อัปเดต `index.md`, และรัน 12-Gate Audit Check (100% Green)
+   - บทเรียนจาก bug ล่าสุด (2026-10-21, v0.15.178 → v0.15.179): **client format อาจถูก adapt นอกชั้น translator** — Gemini client format (`/v1beta/models/...`) ไม่มี response translator `openai → gemini` ที่ลงทะเบียนไว้ ตัวแปลงจริงอยู่ที่ route handler `src/app/api/v1beta/models/[...path]/route.js` ซึ่งอ่านแค่ `content` เท่านั้น ทำให้ refusal-only answer หายไป ก่อนสรุปว่า "format นี้รองรับแล้ว" ต้อง grep หา shape ที่ตัวเอง emit (`candidates:`, `parts:`, `text_delta`, `output_text`) แล้วทดสอบ adapter ตัวที่รันจริง — ดูรายละเอียดใน `../AGENTS.md`
