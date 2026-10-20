@@ -17,10 +17,20 @@
 2. **Step 2: Automated Verification**
    - รัน Unit Tests (`npx vitest run --config tests/vitest.config.js`) ต้องผ่าน 100% ทั้งหมดก่อนดำเนินการต่อ
 
-3. **Step 3: Multi-Model Code Review (BEFORE MERGE GATE)**
+3. **Step 3: Self-Review by the Writing Agent (BEFORE MERGE GATE)**
    - **ห้าม Merge ลง master เด็ดขาดก่อนผ่าน Step 3!**
-   - ส่ง Code Diff ให้ AI ทบทวนผ่าน `9-opus` via 888router (`python3 ~/.hermes/scripts/888router-review.py --model 9-opus --file /tmp/pr.diff`) เป็นหลัก (เนื่องจาก Grok quota หมด), `/ollama-delegate`, หรือ 888router-review
-   - แก้ไขข้อผิดพลาด (Critical / High Findings) ให้เรียบร้อยและรัน Re-test จนผ่าน 100%
+   - **เปลี่ยนกฎ 2026-10-21: ให้ agent ที่เขียนโค้ดเองเป็นผู้ review diff ของตัวเอง ไม่ต้องส่งให้โมเดล/CLI/service อื่นตรวจ** (เลิกใช้ ladder ของ reviewer อิสระแล้ว)
+   - วิธี review เองที่บังคับ:
+     - อ่าน diff ใหม่ในฐานะ "คนที่ไม่เคยเห็นไฟล์เดิม" — ทุก hunk ถามว่ามันพังอะไร และ input แบบไหนทำให้มันผิด
+     - อ่าน **ไฟล์เต็ม** ของทุกไฟล์ที่แตะ ไม่ใช่แค่ hunk (อ่านแค่ diff คือต้นเหตุ false positive/negative ที่พบบ่อยที่สุด)
+     - **เขียนเทสต์ที่ fail ก่อน แล้วค่อยแก้** — เทสต์ต้อง fail บน base commit และ pass บน branch ถ้าเขียนเทสต์ที่ fail ไม่ได้ แปลว่ายังไม่เข้าใจบั๊ก
+     - พิสูจน์กับของจริง ไม่ใช่ตัวแทน — รัน path จริง อ่านค่าจริง ("คอมไพล์ผ่าน" กับ "CI เขียว" ไม่ใช่หลักฐาน)
+     - ไล่ boundary case เอง: null/ฟิลด์หาย/สตริงว่าง/อาร์เรย์ 1 ตัว/alias ซ้ำ/ขอบใหม่ท้าย stream/ค่าที่มาถึงตอนจบ stream พอดี
+     - เช็คว่าของเดิมที่เคยใช้ได้ยังใช้ได้ — รันเทสต์เต็ม `npx vitest run --config tests/vitest.config.js` (จาก repo root) ไม่ใช่แค่เทสต์ใหม่
+     - เช็คว่า claim ใน CHANGELOG ตรงกับ diff และไม่กว้างเกินจริง
+     - อ่าน diff สุดท้ายอีกครั้งหลังแก้ครั้งสุดท้าย (bump + snapshot + fix ต้องอยู่ PR เดียวกัน)
+   - เกณฑ์ severity: แก้ทุก CRITICAL/HIGH ก่อน merge; MEDIUM/LOW แก้ถ้าทำได้เล็กและปลอดภัย ถ้าไม่แก้ให้บันทึกไว้เป็น follow-up (ใน changelog หรือ PR description) ห้ามทิ้งเงียบ ๆ
+   - ถ้าเจอปัญหาที่แก้ไม่ได้ ให้รายงาน — ห้าม merge diff ที่ตัวเองรู้ว่าพัง
 
 ---
 
