@@ -1,3 +1,10 @@
+# v0.15.175 (2026-10-20)
+
+## Fix: combo parked models for 1h on transient errors
+
+- `COMBO_MODEL_ERROR_COOLDOWN_MS` default reduced from 1h to 1m. A falsely-classified permanent model error (e.g. a transient upstream "model is unavailable" during rate limiting) parked the model for 1h, making combos unusable for an hour even though direct calls worked. Now recovers in 1m. Still configurable via env (range 1m-6h).
+
+# v0.15.174 (2026-10-20)
 # v0.15.174 (2026-10-20)
 
 ## Fix: opencode-go re-added max_tokens after the dedup, recreating the conflict
