@@ -396,6 +396,11 @@ function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
     const parts = [];
     if (delta.reasoning_content) parts.push({ text: delta.reasoning_content, thought: true });
     if (delta.content) parts.push({ text: delta.content });
+    // A refusal is the model's answer ("I can't help with that"), not an error.
+    // The Gemini part shape has no refusal field, so the refusal text is
+    // delivered as a text part — dropping it leaves the client with an empty
+    // candidate.
+    if (delta.refusal) parts.push({ text: delta.refusal });
     if (choice?.finish_reason) {
       for (const call of toolCalls.values()) {
         let args;
@@ -487,6 +492,8 @@ async function convertOpenAIResponseToGemini(response, model) {
     parts.push({ text: message.reasoning_content, thought: true });
   }
   if (message.content) parts.push({ text: message.content });
+  // A refusal is the model's answer — see the streaming adapter above.
+  if (message.refusal) parts.push({ text: message.refusal });
   for (const call of message.tool_calls || []) {
     let args;
     try { args = JSON.parse(call.function?.arguments || "{}"); } catch {
