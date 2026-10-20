@@ -21,64 +21,13 @@
  * prefix are parsed as raw JSON so the application/x-ndjson content type is
  * actually supported.
  */
-/**
- * Text carried by a whole-completion `message` object, across the shapes an
- * upstream may use: a plain string, or an array of content parts (OpenAI
- * `{type:"text",text}` / Anthropic-style blocks). Returns "" when there is none.
- */
-export function messageContentText(message) {
-  const content = message && message.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  let out = "";
-  for (const part of content) {
-    if (typeof part === "string") out += part;
-    else if (part && typeof part.text === "string"
-      && part.thought !== true
-      && part.type !== "thinking"
-      && part.type !== "reasoning"
-      && (!part.type || part.type === "text" || part.type === "output_text")) {
-      out += part.text;
-    }
-  }
-  return out;
-}
+import { messageContentText, messageReasoningText, messageRefusalText } from "../translator/concerns/messageContent.js";
 
-/**
- * Reasoning carried by a whole-completion `message` object. Kept separate from
- * messageContentText() so a thinking-only frame is classified as reasoning
- * (empty answer, retry) instead of being blessed as text.
- */
-export function messageReasoningText(message) {
-  if (!message) return "";
-  let out = "";
-  const seen = new Set();
-  const add = (value) => {
-    if (typeof value === "string" && value && !seen.has(value)) {
-      seen.add(value);
-      out += value;
-    }
-  };
-
-  for (const key of ["reasoning_content", "reasoningContent", "reasoning"]) add(message[key]);
-  if (Array.isArray(message.reasoning_details)) {
-    for (const detail of message.reasoning_details) {
-      if (typeof detail === "string") add(detail);
-      else if (detail && typeof detail.text === "string") add(detail.text);
-      else if (detail && typeof detail.summary_text === "string") add(detail.summary_text);
-      else if (detail && typeof detail.summary === "string") add(detail.summary);
-    }
-  }
-  if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (!part || typeof part !== "object") continue;
-      if (part.type !== "thinking" && part.type !== "reasoning" && part.thought !== true) continue;
-      if (typeof part.text === "string") add(part.text);
-      else if (typeof part.thinking === "string") add(part.thinking);
-    }
-  }
-  return out;
-}
+// Re-exported for callers/tests that already import them from the guard.
+// The implementations live in translator/concerns/messageContent.js so the
+// guard and the whole-completion normalizer cannot drift apart on what counts
+// as answer text versus reasoning.
+export { messageContentText, messageReasoningText, messageRefusalText };
 
 /** A non-empty tool-call list on a delta or a whole-completion message. */
 export function hasToolCalls(node) {
@@ -209,6 +158,13 @@ export function createComboStreamGuard() {
 
         const textVal = ollamaText || deltaText || messageText || anthropicText;
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
+
+        // A refusal is the model's ANSWER ("I can't help with that"), not an
+        // empty stream. Treating it as empty made combo retry and throw the
+        // refusal away, so the client got another model's answer instead.
+        const refusalVal = (delta && typeof delta.refusal === "string" ? delta.refusal : "")
+          || messageRefusalText(choice && choice.message);
+        if (refusalVal.length > 0) sawText = true;
 
         // A tool-call-only turn carries no text but IS a usable answer — never
         // treat it as an empty stream. Covers both the streamed (delta) and

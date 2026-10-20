@@ -1,4 +1,5 @@
 import { FORMATS } from "../translator/formats.js";
+import { messageContentText, messageReasoningText, messageRefusalText } from "../translator/concerns/messageContent.js";
 
 // Parse SSE data line
 export function parseSSELine(line, format = null) {
@@ -38,6 +39,7 @@ export function hasValuableContent(chunk, format) {
     const delta = chunk.choices[0].delta;
     return delta.content && delta.content !== "" ||
            delta.reasoning_content && delta.reasoning_content !== "" ||
+           delta.refusal && delta.refusal !== "" ||
            delta.tool_calls && delta.tool_calls.length > 0 ||
            delta.function_call ||
            chunk.choices[0].finish_reason ||
@@ -58,75 +60,6 @@ export function hasValuableContent(chunk, format) {
   }
 
   return true; // Other formats: keep all chunks
-}
-
-function isTextContentPart(part) {
-  if (!part || typeof part !== "object") return false;
-  if (part.thought === true) return false;
-  if (part.type === "thinking" || part.type === "reasoning") return false;
-  return !part.type || part.type === "text" || part.type === "output_text";
-}
-
-function isReasoningContentPart(part) {
-  if (!part || typeof part !== "object") return false;
-  return part.type === "thinking" || part.type === "reasoning" || part.thought === true;
-}
-
-/**
- * Text carried by a whole-completion `message` object. Some OpenAI-compatible
- * upstreams answer a streaming request with the whole completion in
- * `choices[0].message` instead of a `delta`; the text can be a plain string or
- * an array of content parts.
- *
- * Only actual answer text counts. Thinking/reasoning parts are routed through
- * wholeCompletionReasoning() instead, so the guard and the normalizer agree on
- * what "empty" means.
- */
-function wholeCompletionText(message) {
-  const content = message && message.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  let out = "";
-  for (const part of content) {
-    if (typeof part === "string") out += part;
-    else if (isTextContentPart(part) && typeof part.text === "string") out += part.text;
-  }
-  return out;
-}
-
-/**
- * Reasoning carried by a whole-completion `message` object across the shapes
- * upstreams use: `reasoning_content`, `reasoning`, `reasoningContent`,
- * `reasoning_details`, or thinking/reasoning content parts.
- */
-function wholeCompletionReasoning(message) {
-  if (!message) return "";
-  let out = "";
-  const seen = new Set();
-  const add = (value) => {
-    if (typeof value === "string" && value && !seen.has(value)) {
-      seen.add(value);
-      out += value;
-    }
-  };
-
-  for (const key of ["reasoning_content", "reasoningContent", "reasoning"]) add(message[key]);
-  if (Array.isArray(message.reasoning_details)) {
-    for (const detail of message.reasoning_details) {
-      if (typeof detail === "string") add(detail);
-      else if (detail && typeof detail.text === "string") add(detail.text);
-      else if (detail && typeof detail.summary_text === "string") add(detail.summary_text);
-      else if (detail && typeof detail.summary === "string") add(detail.summary);
-    }
-  }
-  if (Array.isArray(message.content)) {
-    for (const part of message.content) {
-      if (!isReasoningContentPart(part)) continue;
-      if (typeof part.text === "string") add(part.text);
-      else if (typeof part.thinking === "string") add(part.thinking);
-    }
-  }
-  return out;
 }
 
 /** Tool calls carried by a whole-completion `message`, in streaming-delta shape. */
@@ -178,10 +111,11 @@ export function normalizeWholeCompletionChunk(chunk) {
     const existingDelta = choice.delta && typeof choice.delta === "object" && !Array.isArray(choice.delta)
       ? choice.delta
       : null;
-    const text = wholeCompletionText(message);
-    const reasoning = wholeCompletionReasoning(message);
+    const text = messageContentText(message);
+    const reasoning = messageReasoningText(message);
+    const refusal = messageRefusalText(message);
     const toolCalls = wholeCompletionToolCalls(message);
-    const canMove = Boolean(text || reasoning || toolCalls || message.function_call || message.role);
+    const canMove = Boolean(text || reasoning || refusal || toolCalls || message.function_call || message.role);
     // An all-empty message (e.g. a usage-only frame) must stay untouched so
     // hasValuableContent() still forwards it.
     if (!existingDelta && !canMove) continue;
@@ -196,6 +130,7 @@ export function normalizeWholeCompletionChunk(chunk) {
     let hasStreamField = Boolean(
       delta.content ||
       delta.reasoning_content ||
+      delta.refusal ||
       deltaToolCalls ||
       delta.function_call ||
       delta.role
@@ -207,6 +142,12 @@ export function normalizeWholeCompletionChunk(chunk) {
     }
     if (reasoning && !delta.reasoning_content) {
       delta.reasoning_content = reasoning;
+      hasStreamField = true;
+    }
+    // A refusal is a real answer the user must see. OpenAI streams it as its
+    // own field, so keep it separate from `content` and never drop it.
+    if (refusal && !delta.refusal) {
+      delta.refusal = refusal;
       hasStreamField = true;
     }
     if (toolCalls && !deltaToolCalls) {

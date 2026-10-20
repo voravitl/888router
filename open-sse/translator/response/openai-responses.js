@@ -8,7 +8,7 @@ import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId, accumulateToolName } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
-import { extractResponsesMessageText } from "../concerns/message.js";
+import { extractResponsesMessageText, extractResponsesMessageRefusal } from "../concerns/message.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 
 /**
@@ -100,6 +100,14 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     }
   }
 
+  // Handle a refusal. The Responses API has native refusal events
+  // (`response.refusal.delta` / `.done`) and a `refusal` content part, so the
+  // refusal is NOT smuggled in as text — a client that checks the part type
+  // must still see a refusal.
+  if (typeof delta.refusal === "string" && delta.refusal.length > 0) {
+    emitRefusalContent(state, emit, idx, delta.refusal);
+  }
+
   // Handle tool_calls (empty array is truthy; require a real call)
   if (delta.tool_calls && delta.tool_calls.length) {
     closeMessage(state, emit, idx);
@@ -186,6 +194,54 @@ function closeReasoning(state, emit) {
   }
 }
 
+/**
+ * Emit a refusal as a native Responses-API refusal content part.
+ *
+ * The Responses API models a refusal as its own content part
+ * (`{ type: "refusal", refusal }`) streamed via `response.refusal.delta` /
+ * `response.refusal.done`. Emitting it as output_text would hide the refusal
+ * from clients that switch on the part type.
+ */
+function emitRefusalContent(state, emit, idx, refusal) {
+  if (!state.msgItemAdded[idx]) {
+    state.msgItemAdded[idx] = true;
+    const msgId = `msg_${state.responseId}_${idx}`;
+
+    emit("response.output_item.added", {
+      type: "response.output_item.added",
+      output_index: idx,
+      item: { id: msgId, type: RESPONSES_ITEM.MESSAGE, content: [], role: ROLE.ASSISTANT }
+    });
+  }
+
+  if (!state.msgContentAdded[idx]) {
+    state.msgContentAdded[idx] = true;
+    // Remember the part type: the closing events must describe the SAME part
+    // that was opened, and a refusal part closes as a refusal — not as
+    // output_text.
+    state.msgPartType[idx] = RESPONSES_ITEM.REFUSAL;
+
+    emit("response.content_part.added", {
+      type: "response.content_part.added",
+      item_id: `msg_${state.responseId}_${idx}`,
+      output_index: idx,
+      content_index: 0,
+      part: { type: RESPONSES_ITEM.REFUSAL, refusal: "" }
+    });
+  }
+
+  emit("response.refusal.delta", {
+    type: "response.refusal.delta",
+    item_id: `msg_${state.responseId}_${idx}`,
+    output_index: idx,
+    content_index: 0,
+    delta: refusal
+  });
+
+  if (!state.msgTextBuf[idx]) state.msgTextBuf[idx] = "";
+  state.msgTextBuf[idx] += refusal;
+}
+
 function emitTextContent(state, emit, idx, content) {
   if (!state.msgItemAdded[idx]) {
     state.msgItemAdded[idx] = true;
@@ -200,7 +256,8 @@ function emitTextContent(state, emit, idx, content) {
 
   if (!state.msgContentAdded[idx]) {
     state.msgContentAdded[idx] = true;
-    
+    state.msgPartType[idx] = RESPONSES_ITEM.OUTPUT_TEXT;
+
     emit("response.content_part.added", {
       type: "response.content_part.added",
       item_id: `msg_${state.responseId}_${idx}`,
@@ -228,6 +285,40 @@ function closeMessage(state, emit, idx) {
     state.msgItemDone[idx] = true;
     const fullText = state.msgTextBuf[idx] || "";
     const msgId = `msg_${state.responseId}_${idx}`;
+    // A refusal part closes as a refusal: `response.refusal.done` plus a
+    // `content_part.done` carrying the refusal part. Closing it as
+    // output_text would tell the client the refusal was normal answer text.
+    const isRefusal = state.msgPartType?.[idx] === RESPONSES_ITEM.REFUSAL;
+
+    if (isRefusal) {
+      emit("response.refusal.done", {
+        type: "response.refusal.done",
+        item_id: msgId,
+        output_index: parseInt(idx),
+        content_index: 0,
+        refusal: fullText
+      });
+
+      emit("response.content_part.done", {
+        type: "response.content_part.done",
+        item_id: msgId,
+        output_index: parseInt(idx),
+        content_index: 0,
+        part: { type: RESPONSES_ITEM.REFUSAL, refusal: fullText }
+      });
+
+      emit("response.output_item.done", {
+        type: "response.output_item.done",
+        output_index: parseInt(idx),
+        item: {
+          id: msgId,
+          type: RESPONSES_ITEM.MESSAGE,
+          content: [{ type: RESPONSES_ITEM.REFUSAL, refusal: fullText }],
+          role: ROLE.ASSISTANT
+        }
+      });
+      return;
+    }
 
     emit("response.output_text.done", {
       type: "response.output_text.done",
@@ -449,6 +540,15 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   // Message item done — same compact-stream fallback at item granularity.
   if (eventType === "response.output_item.done" && data.item?.type === RESPONSES_ITEM.MESSAGE) {
     const idx = data.output_index ?? 0;
+    const refusal = extractResponsesMessageRefusal(data.item);
+    if (refusal && !state.respRefusalSeen?.[idx]) {
+      state.respRefusalSeen = state.respRefusalSeen || {};
+      state.respRefusalSeen[idx] = true;
+      return buildChunk(
+        { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+        { refusal }
+      );
+    }
     if (state.respTextDeltaIdx?.[idx]) return null;
     const text = extractResponsesMessageText(data.item);
     if (!text) return null;
@@ -457,6 +557,38 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
       { content: text }
+    );
+  }
+
+  // Refusal delta — the model refused ("I can't help with that"). The OpenAI
+  // chat shape has a first-class `delta.refusal` field, so it is carried
+  // there instead of being dropped.
+  if (eventType === "response.refusal.delta") {
+    const delta = data.delta || "";
+    if (!delta) return null;
+    state.respRefusalSeen = state.respRefusalSeen || {};
+    state.respRefusalSeen[data.output_index ?? 0] = true;
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { refusal: delta }
+    );
+  }
+
+  // Refusal done — a compact stream may carry the FULL refusal with NO
+  // preceding delta. Emit it only when no delta was seen for this output
+  // index, otherwise the client would get the refusal twice.
+  if (eventType === "response.refusal.done") {
+    const idx = data.output_index ?? 0;
+    if (state.respRefusalSeen?.[idx]) return null;
+    const refusal = typeof data.refusal === "string" && data.refusal.length > 0
+      ? data.refusal
+      : extractResponsesMessageRefusal(data.part);
+    if (!refusal) return null;
+    state.respRefusalSeen = state.respRefusalSeen || {};
+    state.respRefusalSeen[idx] = true;
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { refusal }
     );
   }
 

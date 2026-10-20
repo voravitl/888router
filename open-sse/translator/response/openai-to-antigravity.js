@@ -37,6 +37,14 @@ export function openaiToAntigravityResponse(chunk, state) {
     parts.push({ text: delta.content });
   }
 
+  // A refusal is the model's answer ("I can't help with that"), not an error.
+  // The Gemini part shape has no refusal field, so the refusal text is
+  // delivered as a text part — dropping it leaves the client with an empty
+  // candidate.
+  if (typeof delta.refusal === "string" && delta.refusal.length > 0) {
+    parts.push({ text: delta.refusal });
+  }
+
   // Accumulate tool calls silently (no emit until finish)
   if (delta.tool_calls) {
     for (const tc of delta.tool_calls) {

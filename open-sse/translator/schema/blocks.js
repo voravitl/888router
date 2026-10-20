@@ -37,6 +37,7 @@ export const RESPONSES_ITEM = {
   INPUT_TEXT: "input_text",
   INPUT_IMAGE: "input_image",
   SUMMARY_TEXT: "summary_text",
+  REFUSAL: "refusal",
 };
 
 // Valid OpenAI block types (used by filterToOpenAIFormat).

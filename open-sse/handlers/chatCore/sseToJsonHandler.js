@@ -6,6 +6,7 @@ import { openAICompletionToResponses } from "../../utils/completionToResponses.j
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./requestDetail.js";
+import { messageRefusalText, messageContentText } from "../../translator/concerns/messageContent.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -31,6 +32,23 @@ function pickAssistantMessageForChatCompletion(output) {
   }
   const last = messages[messages.length - 1];
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
+}
+
+/**
+ * Refusal carried by a Responses API output item. A refusal is its own
+ * content part (`{ type: "refusal", refusal }`), so it never shows up in the
+ * text parts — reading only `part.text` silently dropped it.
+ */
+function refusalFromResponsesOutput(output) {
+  if (!Array.isArray(output)) return "";
+  let out = "";
+  for (const item of output) {
+    if (!Array.isArray(item?.content)) continue;
+    for (const part of item.content) {
+      if (part?.type === "refusal" && typeof part.refusal === "string") out += part.refusal;
+    }
+  }
+  return out;
 }
 
 /**
@@ -62,6 +80,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const first = chunks[0];
   const contentParts = [];
   const reasoningParts = [];
+  const refusalParts = [];
   const toolCallMap = new Map(); // index -> { id, type, function: { name, arguments } }
   let finishReason = "stop";
   let usage = null;
@@ -69,8 +88,26 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   for (const chunk of chunks) {
     const choice = chunk?.choices?.[0];
     const delta = choice?.delta || {};
-    if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
+    // A refusal is the model's answer ("I can't help with that"). Carried on
+    // `delta.refusal` (streamed) and `message.refusal` (whole-completion).
+    const deltaRefusal = typeof delta.refusal === "string" && delta.refusal.length > 0
+      ? delta.refusal
+      : "";
+    const deltaContent = typeof delta.content === "string" && delta.content.length > 0
+      ? delta.content
+      : "";
+    if (deltaContent) contentParts.push(deltaContent);
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
+    if (deltaRefusal) refusalParts.push(deltaRefusal);
+    // A whole-completion frame carries the answer under `message` instead of
+    // `delta`. Read it only when THIS frame's delta carried no answer, so a
+    // frame carrying both is not counted twice.
+    if (choice?.message && typeof choice.message === "object" && !deltaContent && !deltaRefusal) {
+      const messageRefusal = messageRefusalText(choice.message);
+      if (messageRefusal) refusalParts.push(messageRefusal);
+      const messageText = messageContentText(choice.message);
+      if (messageText.length > 0) contentParts.push(messageText);
+    }
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
 
@@ -91,6 +128,10 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
 
   const message = { role: "assistant", content: contentParts.join("") || (toolCallMap.size > 0 ? null : "") };
   if (reasoningParts.length > 0) message.reasoning_content = reasoningParts.join("");
+  // The refusal travels on its own field, exactly like a streamed OpenAI
+  // completion. It must not be folded into `content` — a client that switches
+  // on the refusal field would never see it.
+  if (refusalParts.length > 0) message.refusal = refusalParts.join("");
   if (toolCallMap.size > 0) {
     message.tool_calls = [...toolCallMap.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
   }
@@ -167,7 +208,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }
       const usage = jsonResponse.usage || {};
       const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
-      const summary = { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" };
+      // A refusal is its own content part in the Responses API — it never
+      // shows up in the text parts, so it must be read separately.
+      const refusalContent = refusalFromResponsesOutput(jsonResponse.output);
+      const summary = { content: textContent || refusalContent || null, thinking: null, finish_reason: jsonResponse.status || "unknown" };
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -201,6 +245,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         // Foreign reasoning has no Anthropic signature; preserve it as text.
         // https://platform.claude.com/docs/en/build-with-claude/thinking
         if (thinking) content.push({ type: "text", text: thinking });
+        // The Claude message shape has no refusal field — deliver the refusal
+        // as assistant text so the user still sees the answer.
+        if (refusalContent) content.push({ type: "text", text: refusalContent });
         if (textContent) {
           content.push({ type: "text", text: textContent });
         }
@@ -236,7 +283,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           }
         };
       } else if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
+        // The Gemini part shape has no refusal field — deliver the refusal as
+        // a text part so the candidate is not empty.
         const parts = textContent ? [{ text: textContent }] : [];
+        if (refusalContent) parts.push({ text: refusalContent });
         for (const tc of toolCalls) {
           const args = parseExecutableToolArguments(tc.function.arguments, jsonResponse.status === "incomplete");
           if (args !== null) parts.push({ functionCall: { name: tc.function.name, args } });
@@ -260,6 +310,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         finalResp = sourceFormat === FORMATS.GEMINI ? geminiResponse : { response: geminiResponse };
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+        // OpenAI has a first-class refusal field on the message — keep it
+        // there instead of folding it into the content.
+        if (refusalContent) message.refusal = refusalContent;
         if (hasToolCalls) message.tool_calls = toolCalls;
         const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
         const finishReason = jsonResponse.status === "incomplete"
@@ -343,6 +396,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const content = [];
       // Foreign reasoning is unsigned and must remain replayable as text.
       if (msg.reasoning_content) content.push({ type: "text", text: msg.reasoning_content });
+      // A refusal is the model's answer. The Claude message shape has no
+      // refusal field, so it is delivered as assistant text.
+      if (msg.refusal) content.push({ type: "text", text: msg.refusal });
       if (msg.content) {
         content.push({ type: "text", text: msg.content });
       }

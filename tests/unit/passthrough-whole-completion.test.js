@@ -178,6 +178,94 @@ describe("normalizeWholeCompletionChunk", () => {
     expect(chunk.choices[0].message).toEqual({});
     expect(chunk.choices[0].delta).toBeUndefined();
   });
+
+  it("preserves a refusal-only message in delta.refusal", () => {
+    // Regression: `refusal` was not in the moved-field list, so a refusal-only
+    // completion (content: null) had its message deleted and the refusal text
+    // was dropped from the wire entirely.
+    const chunk = {
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: null, refusal: "I can't help with that." },
+        finish_reason: "stop",
+      }],
+    };
+    normalizeWholeCompletionChunk(chunk);
+    expect(chunk.choices[0].delta.refusal).toBe("I can't help with that.");
+    expect(chunk.choices[0].delta.content).toBeUndefined();
+    expect(chunk.choices[0].message).toBeUndefined();
+  });
+
+  it("keeps a refusal that arrives alongside content", () => {
+    const chunk = {
+      choices: [{
+        message: { role: "assistant", content: "partial", refusal: "I can't help with that." },
+      }],
+    };
+    normalizeWholeCompletionChunk(chunk);
+    expect(chunk.choices[0].delta.content).toBe("partial");
+    expect(chunk.choices[0].delta.refusal).toBe("I can't help with that.");
+  });
+
+  it("does not overwrite a refusal already present in the delta", () => {
+    const chunk = {
+      choices: [{
+        delta: { refusal: "streamed refusal" },
+        message: { role: "assistant", content: null, refusal: "message refusal" },
+      }],
+    };
+    normalizeWholeCompletionChunk(chunk);
+    expect(chunk.choices[0].delta.refusal).toBe("streamed refusal");
+  });
+
+  it("reads reasoning from reasoning_details[].content as well as [].text", () => {
+    // MiniMax reasoning_details carries `content` on some routes and `text`
+    // on others; the canonical extractor supports both.
+    const chunk = {
+      choices: [{
+        message: {
+          role: "assistant",
+          reasoning_details: [{ type: "reasoning.text", content: "via content" }],
+        },
+      }],
+    };
+    normalizeWholeCompletionChunk(chunk);
+    expect(chunk.choices[0].delta.reasoning_content).toBe("via content");
+  });
+
+  it("keeps repeated identical reasoning fragments instead of deduplicating them", () => {
+    // Two thinking blocks with the same text are TWO fragments. Deduplicating
+    // across array elements silently dropped real reasoning.
+    const chunk = {
+      choices: [{
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", text: "same" },
+            { type: "thinking", text: "same" },
+          ],
+        },
+      }],
+    };
+    normalizeWholeCompletionChunk(chunk);
+    expect(chunk.choices[0].delta.reasoning_content).toBe("samesame");
+  });
+
+  it("deduplicates the same value sent under two reasoning aliases", () => {
+    // Aliases are alternate names for ONE value — the same text must not be
+    // counted twice.
+    const chunk = {
+      choices: [{
+        message: {
+          role: "assistant",
+          reasoning_content: "once",
+          reasoning: "once",
+        },
+      }],
+    };
+    normalizeWholeCompletionChunk(chunk);
+    expect(chunk.choices[0].delta.reasoning_content).toBe("once");
+  });
 });
 
 describe("passthrough whole-completion frames", () => {
@@ -286,6 +374,18 @@ describe("passthrough whole-completion frames", () => {
     expect(payload.choices[0].message).toBeUndefined();
     expect(completed?.toolCalls?.[0]?.name).toBe("lookup");
   });
+
+  it("forwards a refusal-only completion instead of dropping the message", async () => {
+    // Regression: the refusal text was deleted from the wire with the message.
+    const input = 'data: {"id":"chatcmpl-test","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":null,"refusal":"I can\'t help with that."},"finish_reason":"stop"}]}\n\n';
+    const { output } = await runPassthrough(input);
+
+    const dataLine = output.split("\n").find((line) => line.includes('"delta"'));
+    expect(dataLine).toBeTruthy();
+    const payload = JSON.parse(dataLine.replace(/^data:\s*/, ""));
+    expect(payload.choices[0].delta.refusal).toBe("I can't help with that.");
+    expect(payload.choices[0].message).toBeUndefined();
+  });
 });
 
 describe("translate whole-completion frames (OpenAI upstream -> Claude client)", () => {
@@ -306,5 +406,21 @@ describe("translate whole-completion frames (OpenAI upstream -> Claude client)",
     expect(output).toContain("42");
     expect(output).toContain("content_block_delta");
     expect(completed?.content).toBe("42");
+  });
+
+  it("injects estimated usage into a finish chunk that only materialises at flush", async () => {
+    // Regression: the flush path formatted the translated residual chunk
+    // directly, skipping the usage injection the transform path performs. A
+    // client that only sees the final line was billed zero output tokens.
+    const content = 'data: {"id":"chatcmpl-test","object":"chat.completion","choices":[{"index":0,"delta":{"role":"assistant","content":"42"}}]}\n\n';
+    const finish = 'data: {"id":"chatcmpl-test","object":"chat.completion","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}';
+
+    const { output } = await runTranslate(content + finish);
+
+    const deltaLine = output.split("\n").find((line) => line.includes('"message_delta"'));
+    expect(deltaLine).toBeTruthy();
+    const payload = JSON.parse(deltaLine.replace(/^data:\s*/, ""));
+    expect(payload.usage?.output_tokens).toBeGreaterThan(0);
+    expect(payload.usage?.input_tokens).toBeGreaterThan(0);
   });
 });

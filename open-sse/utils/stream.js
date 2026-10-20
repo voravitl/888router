@@ -141,6 +141,14 @@ export function createSSEStream(options = {}) {
       totalContentLength += reasoning.length;
       accumulatedThinking += reasoning;
     }
+    // A refusal is the model's answer, not an empty stream. Counted as
+    // content so the turn is neither billed as zero output tokens nor logged
+    // as an empty stream.
+    const refusal = delta?.refusal;
+    if (refusal && typeof refusal === "string") {
+      totalContentLength += refusal.length;
+      accumulatedContent += refusal;
+    }
 
     const toolCalls = delta?.tool_calls;
     if (Array.isArray(toolCalls) && toolCalls.length > 0) {
@@ -233,6 +241,25 @@ export function createSSEStream(options = {}) {
     return { idFixed, fieldsInjected };
   }
 
+  // Translate-mode usage injection. The finish chunk is what the client bills
+  // against; when the upstream sent no usage, estimate it from the accumulated
+  // content. Shared by the transform path and the flush path so a finish chunk
+  // that only materialises at flush time is billed exactly like one that
+  // arrived mid-stream.
+  function injectTranslateUsage(item, sourceFormat) {
+    const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
+    if (!state.finishReason || !isFinishChunk) return;
+    if (!hasValidUsage(item.usage) && totalContentLength > 0) {
+      const estimated = estimateUsage(body, totalContentLength, sourceFormat);
+      item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
+      state.usage = estimated;
+    } else if (state.usage) {
+      // Add buffer and filter usage for client (but keep original in state.usage for logging)
+      const buffered = addBufferToUsage(state.usage);
+      item.usage = filterUsageForFormat(buffered, sourceFormat);
+    }
+  }
+
   // Shared translate-mode accounting. Kept in one place so a final buffered
   // line without a newline contributes content/tool calls/usage exactly like a
   // line that passed through transform().
@@ -267,6 +294,13 @@ export function createSSEStream(options = {}) {
     if (parsed.choices?.[0]?.delta?.reasoning_content) {
       totalContentLength += parsed.choices[0].delta.reasoning_content.length;
       accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+    }
+    // OpenAI format - refusal. The refusal IS the answer ("I can't help with
+    // that"), so it counts as content: a refusal-only turn must not be logged
+    // or billed as an empty response.
+    if (parsed.choices?.[0]?.delta?.refusal) {
+      totalContentLength += parsed.choices[0].delta.refusal.length;
+      accumulatedContent += parsed.choices[0].delta.refusal;
     }
     // OpenAI format - tool_calls (streaming: each delta has a partial
     // tool_call with index). Dedup by index so subsequent argument-only
@@ -368,6 +402,12 @@ export function createSSEStream(options = {}) {
     if (parsed.type === "response.reasoning_summary_text.delta" && typeof parsed.delta === "string") {
       totalContentLength += parsed.delta.length;
       accumulatedThinking += parsed.delta;
+    }
+    // OpenAI Responses format - refusal. A refusal is a real answer, so it
+    // counts as content: a refusal-only turn must not be recorded as empty.
+    if (parsed.type === "response.refusal.delta" && typeof parsed.delta === "string") {
+      totalContentLength += parsed.delta.length;
+      accumulatedContent += parsed.delta;
     }
     // OpenAI Responses format - tool_calls
     if (parsed.type === "response.output_item.added" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
@@ -586,16 +626,7 @@ export function createSSEStream(options = {}) {
             }
 
             // Inject estimated usage if finish chunk has no valid usage
-            const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
-              const estimated = estimateUsage(body, totalContentLength, sourceFormat);
-              item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
-              state.usage = estimated;
-            } else if (state.finishReason && isFinishChunk && state.usage) {
-              // Add buffer and filter usage for client (but keep original in state.usage for logging)
-              const buffered = addBufferToUsage(state.usage);
-              item.usage = filterUsageForFormat(buffered, sourceFormat);
-            }
+            injectTranslateUsage(item, sourceFormat);
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
@@ -745,6 +776,9 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 if (item === null || item === undefined) continue;
+                // Same usage injection as the transform path — a finish chunk
+                // that only materialises at flush is billed the same way.
+                injectTranslateUsage(item, sourceFormat);
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -765,6 +799,9 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             if (item === null || item === undefined) continue;
+            // The flush often produces the finish chunk (and carries
+            // state.finishReason), so it needs the same usage injection.
+            injectTranslateUsage(item, sourceFormat);
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));

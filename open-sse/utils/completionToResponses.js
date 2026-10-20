@@ -10,9 +10,19 @@ export function openAICompletionToResponses(parsed, usage = parsed.usage || {}) 
   if (message.reasoning_content) {
     output.push({ id: `rs_${responseId}`, type: "reasoning", summary: [{ type: "summary_text", text: message.reasoning_content }] });
   }
+  // A refusal is its own content part in the Responses API. Emitting it as
+  // output_text would hide the refusal from clients that switch on the part
+  // type — and a refusal-only turn would otherwise produce NO output at all.
+  const messageParts = [];
   if (message.content) {
+    messageParts.push({ type: "output_text", text: message.content, annotations: [] });
+  }
+  if (message.refusal) {
+    messageParts.push({ type: "refusal", refusal: message.refusal });
+  }
+  if (messageParts.length > 0) {
     output.push({ id: `msg_${responseId}`, type: "message", role: "assistant", status: itemStatus,
-      content: [{ type: "output_text", text: message.content, annotations: [] }] });
+      content: messageParts });
   }
   for (const [index, call] of (message.tool_calls || []).entries()) {
     const callId = call.id || `call_${responseId}_${index}`;
