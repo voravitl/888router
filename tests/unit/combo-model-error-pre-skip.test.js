@@ -119,7 +119,7 @@ describe("combo parks permanent model-error hops so the next request pre-skips t
   beforeEach(() => { clearComboHeadTimeoutCooldown(); clearComboKnownUnavailable(); });
   afterEach(() => { clearComboHeadTimeoutCooldown(); clearComboKnownUnavailable(); });
 
-  it("first request walks the dead hop and fails over; the hop is parked with a ~1h TTL", async () => {
+  it("first request walks the dead hop and fails over; the hop is parked with a ~1m TTL", async () => {
     const { result, handleSingleModel } = await runCombo(
       ["cx/gpt-6-sol", "ocg/muse-spark"],
       (m) => (m === "cx/gpt-6-sol"
@@ -133,8 +133,8 @@ describe("combo parks permanent model-error hops so the next request pre-skips t
     const parkedUntil = getComboKnownUnavailable("cx/gpt-6-sol");
     expect(parkedUntil).toBeGreaterThan(Date.now());
     const ttlMinutes = (parkedUntil - Date.now()) / 60_000;
-    expect(ttlMinutes).toBeGreaterThan(55);
-    expect(ttlMinutes).toBeLessThanOrEqual(61);
+    expect(ttlMinutes).toBeGreaterThan(0.9);
+    expect(ttlMinutes).toBeLessThanOrEqual(1.1);
   });
 
   it("second request pre-skips the parked hop instead of re-paying the 400", async () => {
@@ -181,9 +181,9 @@ describe("combo parks permanent model-error hops so the next request pre-skips t
 });
 
 describe("resolveModelErrorCooldownMs", () => {
-  it("defaults to 1h; clamps to the 1m–6h range; reads env per call", () => {
-    expect(resolveModelErrorCooldownMs({})).toBe(3_600_000);
-    expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "bogus" })).toBe(3_600_000);
+  it("defaults to 1m; clamps to the 1m–6h range; reads env per call", () => {
+    expect(resolveModelErrorCooldownMs({})).toBe(60_000);
+    expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "bogus" })).toBe(60_000);
     expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "1" })).toBe(60_000);
     expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "60000" })).toBe(60_000);
     expect(resolveModelErrorCooldownMs({ COMBO_MODEL_ERROR_COOLDOWN_MS: "3600000" })).toBe(3_600_000);

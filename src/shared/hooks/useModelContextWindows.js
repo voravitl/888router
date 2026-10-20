@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
 
 // Module-level cache so the whole app fetches /v1/models once, not per-row.
 // Shape: { "alias/model": contextWindow, ... } for the ~90% of models the
@@ -95,5 +95,5 @@ export function resolveContextWindow(contextByFullModel, fullModel) {
   const slash = fullModel.indexOf("/");
   const alias = fullModel.slice(0, slash);
   const model = fullModel.slice(slash + 1);
-  return getCapabilitiesForModel(alias, model)?.contextWindow;
+  return resolveKnownContextWindow(alias, model);
 }
