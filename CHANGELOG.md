@@ -1,3 +1,44 @@
+# v0.15.177 (2026-10-20)
+
+## Fix: empty streaming replies when an upstream sends a whole completion in `message`
+
+- OpenCode free models (`opencode/beam-free`, `opencode-go/beam-free`,
+  `opencode/deepseek-v4.1-flash-free`) sometimes answer a streaming request with
+  the whole completion under `choices[].message` instead of `choices[].delta`.
+  The combo stream guard counts `message.content` as text, so it did not fall
+  through, but the passthrough accumulator and OpenAI-compatible clients only
+  read `delta.content` — the client received a 200 with no usable text and
+  retried, while the gateway logged the attempt as `empty`.
+- `open-sse/utils/streamHelpers.js`: new `normalizeWholeCompletionChunk()` moves
+  `message` into `delta` (string/array text, tool calls, function calls,
+  reasoning content and role), routes thinking content parts and Gemini
+  `thought: true` parts to `delta.reasoning_content` instead of
+  `delta.content`, preserves empty/usage-only frames, and treats an empty
+  `delta.tool_calls` array as absent. Reasoning aliases are collected without
+  duplicating identical values. It returns whether it changed the frame and is
+  used by both the passthrough branch and the translate branch when the
+  upstream format is OpenAI, so Claude/Gemini clients get the same fix.
+- `open-sse/utils/stream.js`: OpenAI stream accounting is shared between the
+  passthrough loop and the final buffered line; translate-mode accounting is
+  shared with the translate flush as well. Tool calls and legacy
+  `function_call` deltas are recorded (a tool-only turn is no longer `empty`),
+  a final line with zero or one trailing newline is normalized and closed as
+  its own SSE event (so the following `[DONE]` cannot be merged into it), the
+  final finish chunk gets the same usage injection as a streamed finish chunk,
+  and a residual `[DONE]` is not forwarded twice.
+- `open-sse/services/comboStreamGuard.js`: only text content parts count as
+  answer text; whole-completion `reasoning_content`, `reasoning`,
+  `reasoningContent`, `reasoning_details`, thinking parts and Gemini
+  `thought: true` parts are classified as reasoning, so a thinking-only frame
+  still retries while a text+thinking frame succeeds.
+- Tests: `tests/unit/passthrough-whole-completion.test.js` and
+  `tests/unit/combo-stream-guard.test.js` cover whole-completion text, array
+  content, thinking parts, Gemini thought parts, reasoning aliases, tool calls,
+  legacy function_call, empty tool-call arrays, unchanged delta frames,
+  usage-only frames, a valid id/object/created frame with `finish_reason: null`,
+  final lines with zero, one and two trailing newlines, a `[DONE]` sentinel with
+  no blank line, and the OpenAI→Claude translate path.
+
 # v0.15.176 (2026-10-20)
 
 ## Fix: claude-haiku-5-5 rejected `thinking.type.enabled`
