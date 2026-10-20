@@ -863,7 +863,7 @@ const COMBO_HEAD_TIMEOUT_COOLDOWN_MS = 30 * 1000;
 // supported" × 407/24h on one combo). TTL-backed so an account/plan upgrade
 // self-heals; bounded so a stale entry cannot park a model forever.
 // COMBO_MODEL_ERROR_COOLDOWN_MS env, default 1h, range 1m–6h.
-const COMBO_MODEL_ERROR_COOLDOWN_DEFAULT_MS = 60 * 60 * 1000;
+const COMBO_MODEL_ERROR_COOLDOWN_DEFAULT_MS = 60 * 1000;
 const COMBO_MODEL_ERROR_COOLDOWN_MIN_MS = 60 * 1000;
 const COMBO_MODEL_ERROR_COOLDOWN_MAX_MS = 6 * 60 * 60 * 1000;
 
