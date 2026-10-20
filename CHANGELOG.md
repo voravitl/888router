@@ -1,3 +1,23 @@
+# v0.15.179 (2026-10-21)
+
+## Fix: the Gemini client format still dropped a refusal-only answer
+
+- 0.15.178 made a refusal survive the whole-completion normalizer, the combo
+  guard and every translator in `open-sse/`. The Gemini client format
+  (`/v1beta/models/...`) is adapted in a different layer — the route handler
+  `src/app/api/v1beta/models/[...path]/route.js` — and both of its adapters
+  only read `content`, so a refusal-only answer still arrived as an empty
+  candidate.
+- `src/app/api/v1beta/models/[...path]/route.js`: the streaming adapter
+  (`transformOpenAISSEToGeminiSSE`) and the non-streaming adapter
+  (`convertOpenAIResponseToGemini`) now deliver `delta.refusal` /
+  `message.refusal` as a text part. The Gemini part shape has no refusal
+  field, so the refusal text is delivered as text — dropping it left the
+  client with an empty candidate.
+- Tests: `tests/unit/gemini-refusal-delivery.test.js` (3 cases) covers the
+  streaming and non-streaming Gemini refusal delivery, plus a regression guard
+  that a normal answer is neither dropped nor duplicated.
+
 # v0.15.178 (2026-10-21)
 
 ## Fix: a refusal-only answer was dropped
