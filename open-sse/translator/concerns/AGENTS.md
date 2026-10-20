@@ -12,6 +12,7 @@ Shared translation logic reused by request/response translators so parsing is im
 | `toolCall.js` | Tool-call parse/build (+ `universalToolParser.js`, `universalToolPrompt.js`, `toolArgs.js`) |
 | `thinking.js` | Thinking-block handling (+ `thinkingUnified.js`, `reasoning.js`) |
 | `message.js` | Message normalization (+ `historyAdapter.js`) |
+| `messageContent.js` | Classifies a whole-completion `message` as text / reasoning / refusal (SSOT shared by the combo guard and the passthrough normalizer) |
 | `image.js` | Image block handling |
 | `usage.js` | Usage accounting |
 | `json.js` | JSON helpers (+ `jsonAutoRepair.js`) |

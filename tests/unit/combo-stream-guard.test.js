@@ -245,6 +245,76 @@ describe("comboStreamGuard whole-completion frames (non-stream over SSE)", () =>
     g.feedEnd();
     expect(g.isEmpty()).toBe(true);
   });
+
+  it("classifies a thinking-only content part as reasoning, not text", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: { role: "assistant", content: [{ type: "thinking", text: "secret reasoning" }] },
+      }],
+    }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+    expect(g.sawReasoning()).toBe(true);
+  });
+
+  it("classifies a Gemini thought part as reasoning, not text", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: { role: "assistant", content: [{ text: "private thinking", thought: true }] },
+      }],
+    }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(true);
+    expect(g.sawReasoning()).toBe(true);
+  });
+
+  it("still sees the text when a message carries thinking and text parts", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "thinking", text: "secret reasoning" },
+            { type: "text", text: "the answer" },
+          ],
+        },
+      }],
+    }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+    expect(g.sawReasoning()).toBe(true);
+  });
+
+  it("treats a refusal-only completion as a real answer, not an empty stream", () => {
+    // A refusal IS the model's answer ("I can't help with that"). Judging it
+    // empty made combo retry and throw the refusal away.
+    const g = createComboStreamGuard();
+    g.feed(enc(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: { role: "assistant", content: null, refusal: "I can't help with that." },
+      }],
+    }) + "\n"));
+    g.feedEnd();
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("treats a streamed refusal delta as a real answer", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("data: " + JSON.stringify({
+      choices: [{ delta: { role: "assistant", refusal: "I can't help with that." } }],
+    }) + "\n\n"));
+    g.feed(enc("data: " + JSON.stringify({
+      choices: [{ delta: {}, finish_reason: "stop" }],
+    }) + "\n\n"));
+    expect(g.isEmpty()).toBe(false);
+  });
 });
 
 describe("comboStreamGuard concatenated payloads on one line", () => {

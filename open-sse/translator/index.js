@@ -250,6 +250,10 @@ export function initState(sourceFormat) {
       msgItemAdded: {},
       msgContentAdded: {},
       msgItemDone: {},
+      // Content-part type per message index. A refusal is its own content
+      // part in the Responses API, so closeMessage() must close it as a
+      // refusal part — not as output_text.
+      msgPartType: {},
       reasoningId: "",
       reasoningIndex: -1,
       reasoningBuf: "",

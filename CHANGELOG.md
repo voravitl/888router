@@ -1,3 +1,81 @@
+# v0.15.178 (2026-10-21)
+
+## Fix: a refusal-only answer was dropped
+
+- A refusal ("I can't help with that") is the model's answer, not an error and
+  not an empty stream. The whole-completion normalizer did not carry it onto
+  `delta`, so a refusal-only completion was deleted from the wire, the combo
+  guard judged the stream empty and retried (so the client got a different
+  model's answer instead), and the gateway logged the turn as `empty`.
+- `open-sse/utils/streamHelpers.js`: a refusal is moved to `delta.refusal` and
+  counted as valuable content. `open-sse/services/comboStreamGuard.js`: a
+  refusal counts as text, so combo no longer discards it.
+- `open-sse/utils/stream.js`: `delta.refusal` and the Responses
+  `response.refusal.delta` event are counted as content, so a refusal-only turn
+  is no longer logged or billed as an empty response.
+- Per client format: OpenAI passthrough keeps the spec-native `delta.refusal`
+  field; Claude (`openai-to-claude.js`) delivers the refusal as assistant text;
+  Gemini/Antigravity (`openai-to-antigravity.js`) delivers it as a text part;
+  the Responses API (`openai-responses.js`) emits native `response.refusal.delta`
+  / `response.refusal.done` events and a `refusal` content part — never
+  smuggled in as `output_text`. The reverse direction (Responses provider →
+  OpenAI client) maps `response.refusal.delta` / `response.refusal.done` and a
+  `refusal` content part onto `delta.refusal`. The JSON paths follow the same
+  rule: `sseToJsonHandler.js` keeps `message.refusal`, `completionToResponses.js`
+  emits a `refusal` content part, and `nonStreamingHandler.js` reads the
+  refusal out of a Responses output item. The legacy
+  `responsesTransformer.js` converter gained the same native refusal handling.
+- Tests: `tests/unit/refusal-delivery-formats.test.js` (19 cases) covers
+  refusal delivery in every client format (OpenAI, Claude, Gemini/Antigravity,
+  Responses), the reverse direction, the JSON paths and the usage accounting.
+
+# v0.15.177 (2026-10-21)
+
+## Fix: empty streaming replies when an upstream sends a whole completion in `message`
+
+- OpenCode free models (`opencode/beam-free`, `opencode-go/beam-free`,
+  `opencode/deepseek-v4.1-flash-free`) sometimes answer a streaming request with
+  the whole completion under `choices[].message` instead of `choices[].delta`.
+  The combo stream guard counts `message.content` as text, so it did not fall
+  through, but the passthrough accumulator and OpenAI-compatible clients only
+  read `delta.content` — the client received a 200 with no usable text and
+  retried, while the gateway logged the attempt as `empty`.
+- `open-sse/translator/concerns/messageContent.js` (new): the single source of
+  truth for classifying a whole-completion `message` — answer text, reasoning
+  and refusal. The combo guard and the passthrough normalizer both import it,
+  so they can no longer disagree on what counts as an answer.
+- `open-sse/utils/streamHelpers.js`: new `normalizeWholeCompletionChunk()` moves
+  `message` into `delta` (string/array text, tool calls, function calls,
+  reasoning content, refusal and role), routes thinking content parts and Gemini
+  `thought: true` parts to `delta.reasoning_content` instead of
+  `delta.content`, preserves empty/usage-only frames, and treats an empty
+  `delta.tool_calls` array as absent. Reasoning aliases are deduplicated against
+  each other, but repeated fragments inside `reasoning_details[]` are kept;
+  `reasoning_details[].content` is read alongside `text`. It returns whether it
+  changed the frame and is used by both the passthrough branch and the translate
+  branch when the upstream format is OpenAI, so Claude/Gemini clients get the
+  same fix.
+- `open-sse/utils/stream.js`: OpenAI stream accounting is shared between the
+  passthrough loop and the final buffered line; translate-mode accounting is
+  shared with the translate flush as well. Tool calls and legacy
+  `function_call` deltas are recorded (a tool-only turn is no longer `empty`),
+  a final line with zero or one trailing newline is normalized and closed as
+  its own SSE event (so the following `[DONE]` cannot be merged into it), the
+  final finish chunk gets the same usage injection as a streamed finish chunk,
+  and a residual `[DONE]` is not forwarded twice.
+- `open-sse/services/comboStreamGuard.js`: only text content parts count as
+  answer text; whole-completion `reasoning_content`, `reasoning`,
+  `reasoningContent`, `reasoning_details`, thinking parts and Gemini
+  `thought: true` parts are classified as reasoning, so a thinking-only frame
+  still retries while a text+thinking frame succeeds.
+- Tests: `tests/unit/passthrough-whole-completion.test.js` and
+  `tests/unit/combo-stream-guard.test.js` cover whole-completion text, array
+  content, thinking parts, Gemini thought parts, reasoning aliases, tool calls,
+  legacy function_call, empty tool-call arrays, unchanged delta frames,
+  usage-only frames, a valid id/object/created frame with `finish_reason: null`,
+  final lines with zero, one and two trailing newlines, a `[DONE]` sentinel with
+  no blank line, and the OpenAI→Claude translate path.
+
 # v0.15.176 (2026-10-20)
 
 ## Fix: claude-haiku-5-5 rejected `thinking.type.enabled`

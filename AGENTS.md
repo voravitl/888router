@@ -26,7 +26,7 @@ inert reference, not a deploy target.
    All tests must pass. A version bump legitimately moves the
    `golden-url-header` snapshots — refresh them with `-u` and commit that as a
    separate, clearly-labelled commit.
-4. **Independent review.** See "Review is mandatory" below.
+4. **Self-review.** See "Review is mandatory — the reviewer is you" below.
 5. **Version + changelog.** Bump `package.json` **and** `package-lock.json`
    (regenerate via `npm install`, do not hand-edit the version strings) and add
    a `CHANGELOG.md` entry **before** tagging. Keep the changelog claim no
@@ -73,40 +73,87 @@ inert reference, not a deploy target.
 Nothing is "done" until `git log`, `/api/version` and the live compose container
 all agree.
 
-### Review is mandatory — the reviewer is not
+### Review is mandatory — the reviewer is you
 
-Every code change gets an independent review from a model that did **not** write
-it. Grok is the preferred first reviewer, but it is *not* a gate: if `grok` is
-unavailable (missing binary, auth failure, non-zero exit, timeout, empty output,
-`402` quota exhausted, `429`), **substitute the next reviewer of equal or higher
-capability — never skip the review and never merge unreviewed.**
+**Changed 2026-10-21 (owner decision): every code change is reviewed BY THE
+WRITING AGENT ITSELF. Do NOT dispatch the diff to another model, CLI, or
+service for review. The ladder below is retired.**
 
-> **Current status:** `grok` is currently unavailable (`402` quota exhausted).
-> **Active primary reviewer:** `9-opus` via 888router.
+The previous rule required an "independent" reviewer from another model. That
+is no longer the process. The agent that writes the diff also reviews it, and
+that review is the gate.
 
-Fallback ladder (top preferred; descend until one returns real findings):
+What "reviewing it yourself" means in practice — all of it is required:
 
-| Rank | Reviewer | How | Note |
-|------|----------|-----|------|
-| 1 | Grok 4.6 (`grok` CLI) | `cat /tmp/pr.diff \| grok -p "<review prompt>"` | *Quota exhausted (skip to Rank 2)* |
-| 2 | `9-opus` via 888router | `python3 ~/.hermes/scripts/888router-review.py --model 9-opus --file /tmp/pr.diff` | **Active primary reviewer** |
-| 3 | `cc/claude-opus-4-8` via 888router | same script, `--model cc/claude-opus-4-8` | |
-| 4 | Claude Opus Thinking (`agy` CLI) | `cat /tmp/pr.diff \| agy -p "<review prompt>"` | |
-| 5 | `codex` CLI | `codex exec "review this diff: ..."` | |
-| 6 | `kr/claude-opus-4-8-thinking` via 888router | same script | |
+- **Re-read the diff as a stranger.** `git diff <base>..HEAD` and read every
+  hunk as if you had never seen the base file. Ask: what does this change
+  break? What input makes this wrong?
+- **Re-read the FULL file for anything you touched**, not just the hunks. A
+  diff-only read is the classic source of "missing wiring" false positives
+  and false negatives.
+- **Write the failing test FIRST, then fix.** For every behavioural change,
+  add a regression test that fails on the base commit and passes on the branch.
+  If you cannot write a test that fails without your fix, you do not yet
+  understand the bug.
+- **Prove the fix on the real artifact**, not a proxy: run the actual path
+  (real request, real stream, real container), read the actual output value.
+  "It compiles" and "CI is green" are not proof.
+- **Hunt the boundary cases yourself.** Empty/null/missing field, zero-length
+  string, single-element array, duplicate aliases, trailing-newline framing,
+  the value that arrives at the exact end of the stream. These are where
+  every real bug in this repo has lived.
+- **Check for regressions in the OLD behaviour.** For each thing you changed,
+  ask what used to work that must still work. Run the FULL suite
+  (`npx vitest run --config tests/vitest.config.js` from the repo root), not
+  only your new tests.
+- **Verify the claim in the CHANGELOG matches the diff**, and no broader.
+- **Re-read the final diff after the last edit.** The version bump, the
+  snapshot refresh, and the source fix must all be in the same PR.
 
-- **Equal or better only.** Never drop to a weaker/cheaper model just to get a
-  faster green light. Opus/Grok tier is the floor.
-- **Disclose substitutions.** Write it in the PR comment: "grok unavailable
-  (402 quota exhausted) → reviewed by 9-opus instead." Silent substitution is a
-  process violation.
-- **Reviewer ≠ writer.** If the agent that wrote the diff is rank 1, drop to the
-  next distinct reviewer.
-- **Security/auth diffs need 3 reviewers** from the ladder, not 1.
-- **No reviewer reachable → do not merge.** Report the blocker instead.
-- Resolve every CRITICAL/HIGH finding before merge. Verify "missing wiring"
-  findings against the full file first — reviewers only see the diff hunks and
-  will false-positive on symbols already used in the base file.
+Severity gate, applied by you to your own diff:
+
+- Resolve every issue you find at CRITICAL or HIGH before merge.
+- MEDIUM and LOW: fix when the fix is small and safe; otherwise record them
+  explicitly (changelog or PR description) as a follow-up so the next agent
+  inherits them. Do not silently drop a known issue.
+- If you find a problem you cannot fix, report it — do not merge a diff you
+  know is broken.
+
+Keep the history of the old process for context, but it is **not** in force:
+
+<details>
+<summary>Retired: the independent-reviewer ladder (pre-2026-10-21)</summary>
+
+Every code change used to get an independent review from a model that did
+**not** write it, with this fallback ladder (top preferred; descend until one
+returns real findings):
+
+| Rank | Reviewer | How |
+|------|----------|-----|
+| 1 | Grok 4.6 (`grok` CLI) | `cat /tmp/pr.diff \| grok -p "<review prompt>"` |
+| 2 | `9-opus` via 888router | `python3 ~/.hermes/scripts/888router-review.py --model 9-opus --file /tmp/pr.diff` |
+| 3 | `cc/claude-opus-4-8` via 888router | same script, `--model cc/claude-opus-4-8` |
+| 4 | Claude Opus Thinking (`agy` CLI) | `cat /tmp/pr.diff \| agy -p "<review prompt>"` |
+| 5 | `codex` CLI | `codex exec "review this diff: ..."` |
+| 6 | `kr/claude-opus-4-8-thinking` via 888router | same script |
+
+The lessons that came out of that process are still worth keeping, because
+they are about the diff, not about who reviews it:
+
+- **Verify "missing wiring" findings against the full file first** — a
+  reviewer (or you, reading only the diff) will false-positive on symbols
+  already used in the base file.
+- **Security/auth diffs deserve extra scrutiny** — read the whole auth path,
+  not the hunk.
+- A blind "one more model says APPROVE" is not evidence. Neither is a clean
+  run of a suite you did not read. Read the code.
+
+</details>
+
+**What did NOT change:** the rest of the delivery pipeline is untouched. Branch
+first, evidence before edit, full test suite green, version bump + changelog in
+the same PR, deploy via docker compose only, and the squash-merge source-hunk
+check below. Those rules were not about the reviewer, and they still hold.
 
 ### Squash merges can silently drop hunks — verify the merge tree, not the exit code (2026-10-16, PRs #545/#546)
 

@@ -39,6 +39,11 @@ function openAICompletionToClaudeMessage(responseBody) {
   if (typeof message.content === "string" && message.content.length > 0) {
     content.push({ type: "text", text: message.content });
   }
+  // The Claude message shape has no refusal field — deliver the refusal as
+  // assistant text so the user still sees the answer.
+  if (typeof message.refusal === "string" && message.refusal.length > 0) {
+    content.push({ type: "text", text: message.refusal });
+  }
   for (const toolCall of message.tool_calls || []) {
     const fn = toolCall.function || {};
     content.push({
@@ -189,6 +194,15 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         ? textItem.content.map(c => c.text || "").join("")
         : (typeof textItem.content === "string" ? textItem.content : "");
     }
+    // A refusal is its own content part in the Responses API — it never
+    // appears in the text parts, so it must be read separately or it is lost.
+    let refusalContent = "";
+    for (const item of responseBody.output || []) {
+      if (!Array.isArray(item?.content)) continue;
+      for (const part of item.content) {
+        if (part?.type === "refusal" && typeof part.refusal === "string") refusalContent += part.refusal;
+      }
+    }
     const funcCalls = (responseBody.output || []).filter(item => item.type === "function_call");
     const toolCalls = funcCalls.map((fc, idx) => ({
       id: fc.call_id || `call_${fc.name}_${idx}`,
@@ -197,6 +211,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     }));
     const message = { role: "assistant" };
     if (textContent) message.content = textContent;
+    if (refusalContent) message.refusal = refusalContent;
     if (toolCalls.length > 0) message.tool_calls = toolCalls;
     if (!message.content && !message.tool_calls) message.content = "";
     const inTokens = responseBody.usage?.input_tokens || 0;

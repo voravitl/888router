@@ -21,22 +21,13 @@
  * prefix are parsed as raw JSON so the application/x-ndjson content type is
  * actually supported.
  */
-/**
- * Text carried by a whole-completion `message` object, across the shapes an
- * upstream may use: a plain string, or an array of content parts (OpenAI
- * `{type:"text",text}` / Anthropic-style blocks). Returns "" when there is none.
- */
-export function messageContentText(message) {
-  const content = message && message.content;
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  let out = "";
-  for (const part of content) {
-    if (typeof part === "string") out += part;
-    else if (part && typeof part.text === "string") out += part.text;
-  }
-  return out;
-}
+import { messageContentText, messageReasoningText, messageRefusalText } from "../translator/concerns/messageContent.js";
+
+// Re-exported for callers/tests that already import them from the guard.
+// The implementations live in translator/concerns/messageContent.js so the
+// guard and the whole-completion normalizer cannot drift apart on what counts
+// as answer text versus reasoning.
+export { messageContentText, messageReasoningText, messageRefusalText };
 
 /** A non-empty tool-call list on a delta or a whole-completion message. */
 export function hasToolCalls(node) {
@@ -159,6 +150,7 @@ export function createComboStreamGuard() {
         // `message.content`, never `delta.content`. Reading only the delta judged
         // those real answers empty and made the combo discard them.
         const messageText = messageContentText(choice && choice.message);
+        const messageReasoning = messageReasoningText(choice && choice.message);
         // Anthropic SSE: delta.text or delta.partial_json inside content_block_delta
         const anthropicText = (json.delta && typeof json.delta.text === "string") ? json.delta.text
           : (json.delta && typeof json.delta.partial_json === "string") ? json.delta.partial_json
@@ -166,6 +158,13 @@ export function createComboStreamGuard() {
 
         const textVal = ollamaText || deltaText || messageText || anthropicText;
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
+
+        // A refusal is the model's ANSWER ("I can't help with that"), not an
+        // empty stream. Treating it as empty made combo retry and throw the
+        // refusal away, so the client got another model's answer instead.
+        const refusalVal = (delta && typeof delta.refusal === "string" ? delta.refusal : "")
+          || messageRefusalText(choice && choice.message);
+        if (refusalVal.length > 0) sawText = true;
 
         // A tool-call-only turn carries no text but IS a usable answer — never
         // treat it as an empty stream. Covers both the streamed (delta) and
@@ -175,7 +174,9 @@ export function createComboStreamGuard() {
         // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE)
         // or Anthropic delta.thinking (Claude 3.7/Kiro thinking delta)
         const anthropicReasoning = (json.delta && typeof json.delta.thinking === "string") ? json.delta.thinking : "";
-        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent)) || anthropicReasoning;
+        const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent))
+          || messageReasoning
+          || anthropicReasoning;
         if (typeof reasoningVal === "string" && reasoningVal.length > 0) sawReasoning = true;
 
         const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || (json.delta && json.delta.stop_reason) || null;

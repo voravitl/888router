@@ -62,6 +62,9 @@ export function createResponsesApiTransformStream(logger = null) {
     msgItemAdded: {},
     msgContentAdded: {},
     msgItemDone: {},
+    // Content-part type per message index — a refusal part closes as a
+    // refusal, not as output_text.
+    msgPartType: {},
     reasoningId: "",
     reasoningIndex: -1,
     reasoningBuf: "",
@@ -163,6 +166,39 @@ export function createResponsesApiTransformStream(logger = null) {
       state.msgItemDone[idx] = true;
       const fullText = state.msgTextBuf[idx] || "";
       const msgId = `msg_${state.responseId}_${idx}`;
+
+      // A refusal part closes as a refusal (`response.refusal.done` + a
+      // `refusal` content part), never as output_text — a client that
+      // switches on the part type must still see a refusal.
+      if (state.msgPartType?.[idx] === "refusal") {
+        emit(controller, "response.refusal.done", {
+          type: "response.refusal.done",
+          item_id: msgId,
+          output_index: parseInt(idx),
+          content_index: 0,
+          refusal: fullText
+        });
+
+        emit(controller, "response.content_part.done", {
+          type: "response.content_part.done",
+          item_id: msgId,
+          output_index: parseInt(idx),
+          content_index: 0,
+          part: { type: "refusal", refusal: fullText }
+        });
+
+        emit(controller, "response.output_item.done", {
+          type: "response.output_item.done",
+          output_index: parseInt(idx),
+          item: {
+            id: msgId,
+            type: "message",
+            content: [{ type: "refusal", refusal: fullText }],
+            role: "assistant"
+          }
+        });
+        return;
+      }
 
       emit(controller, "response.output_text.done", {
         type: "response.output_text.done",
@@ -369,6 +405,48 @@ export function createResponsesApiTransformStream(logger = null) {
             if (!state.msgTextBuf[idx]) state.msgTextBuf[idx] = "";
             state.msgTextBuf[idx] += content;
           }
+        }
+
+        // Handle a refusal. The Responses API has native refusal events and a
+        // `refusal` content part, so the refusal is NOT smuggled in as text.
+        if (typeof delta.refusal === "string" && delta.refusal.length > 0) {
+          if (!state.msgItemAdded[idx]) {
+            state.msgItemAdded[idx] = true;
+            const msgId = `msg_${state.responseId}_${idx}`;
+
+            emit(controller, "response.output_item.added", {
+              type: "response.output_item.added",
+              output_index: idx,
+              item: { id: msgId, type: "message", content: [], role: "assistant" }
+            });
+          }
+
+          if (!state.msgContentAdded[idx]) {
+            state.msgContentAdded[idx] = true;
+            // Remember the part type: the closing events must describe the
+            // SAME part that was opened.
+            state.msgPartType = state.msgPartType || {};
+            state.msgPartType[idx] = "refusal";
+
+            emit(controller, "response.content_part.added", {
+              type: "response.content_part.added",
+              item_id: `msg_${state.responseId}_${idx}`,
+              output_index: idx,
+              content_index: 0,
+              part: { type: "refusal", refusal: "" }
+            });
+          }
+
+          emit(controller, "response.refusal.delta", {
+            type: "response.refusal.delta",
+            item_id: `msg_${state.responseId}_${idx}`,
+            output_index: idx,
+            content_index: 0,
+            delta: delta.refusal
+          });
+
+          if (!state.msgTextBuf[idx]) state.msgTextBuf[idx] = "";
+          state.msgTextBuf[idx] += delta.refusal;
         }
 
         // Handle tool_calls

@@ -2,7 +2,7 @@ import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, normalizeWholeCompletionChunk } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure, stripResponsesLifecycleEcho } from "./responsesStreamHelpers.js";
 import { restoreOpencodeToolNames } from "./opencodeToolSanitizer.js";
 import { extractResponsesMessageText } from "../translator/concerns/message.js";
@@ -125,6 +125,314 @@ export function createSSEStream(options = {}) {
     }
   }
 
+  // Shared OpenAI stream accounting for passthrough and the final buffered
+  // line in flush(). Keeps the gateway's content/tool/usage totals in sync with
+  // exactly what the client receives, including whole-completion frames that
+  // normalizeWholeCompletionChunk() moved onto `delta`.
+  function accumulateOpenAIChunk(parsed) {
+    const delta = parsed?.choices?.[0]?.delta;
+    const content = delta?.content;
+    const reasoning = delta?.reasoning_content;
+    if (content && typeof content === "string") {
+      totalContentLength += content.length;
+      accumulatedContent += content;
+    }
+    if (reasoning && typeof reasoning === "string") {
+      totalContentLength += reasoning.length;
+      accumulatedThinking += reasoning;
+    }
+    // A refusal is the model's answer, not an empty stream. Counted as
+    // content so the turn is neither billed as zero output tokens nor logged
+    // as an empty stream.
+    const refusal = delta?.refusal;
+    if (refusal && typeof refusal === "string") {
+      totalContentLength += refusal.length;
+      accumulatedContent += refusal;
+    }
+
+    const toolCalls = delta?.tool_calls;
+    if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+      if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+      for (const tc of toolCalls) {
+        if (accumulatedToolCalls.length >= MAX_TRACKED_TOOL_CALLS) break;
+        const index = Number(tc.index ?? accumulatedToolCalls.length);
+        const existing = accumulatedToolCalls.find((c) => c.index === index);
+        if (existing) {
+          if (tc.id && existing.id !== tc.id) existing.id = tc.id;
+          if (tc.function?.name && !existing.name) existing.name = tc.function.name;
+        } else {
+          accumulatedToolCalls.push({
+            id: tc.id || `tc_index_${index}`,
+            name: tc.function?.name || null,
+            index,
+          });
+        }
+      }
+    }
+
+    // Legacy function_call deltas carry no index. Keep one record and fill in
+    // the name when it arrives, otherwise a function-call-only turn is still
+    // recorded as empty.
+    const functionCall = delta?.function_call;
+    if (functionCall && typeof functionCall === "object") {
+      if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+      const existing = accumulatedToolCalls.find((c) => c.id === "legacy_function_call");
+      if (existing) {
+        if (functionCall.name && !existing.name) existing.name = functionCall.name;
+      } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+        accumulatedToolCalls.push({
+          id: "legacy_function_call",
+          name: functionCall.name || null,
+          index: 0,
+        });
+      }
+    }
+
+    const extracted = extractUsage(parsed);
+    if (extracted) usage = mergeUsage(usage, extracted);
+  }
+
+  // Shared field repair for passthrough frames, used by both the streaming
+  // loop and the final buffered line so flush() cannot emit a raw
+  // whole-completion frame after transform() normalized it.
+  function normalizePassthroughFields(parsed, normalized) {
+    let fieldsInjected = normalized;
+    const idFixed = fixInvalidId(parsed);
+
+    if (parsed.choices !== undefined) {
+      if (!parsed.object) {
+        parsed.object = "chat.completion.chunk";
+        fieldsInjected = true;
+      } else if (parsed.object === "chat.completion") {
+        // Whole-completion frames keep the non-stream object name; strict
+        // OpenAI stream parsers expect the chunk variant.
+        parsed.object = "chat.completion.chunk";
+        fieldsInjected = true;
+      }
+      if (!parsed.created) {
+        parsed.created = Math.floor(Date.now() / 1000);
+        fieldsInjected = true;
+      }
+    }
+
+    // Strip Azure-specific non-standard fields from streaming chunks.
+    if (parsed.prompt_filter_results !== undefined) {
+      delete parsed.prompt_filter_results;
+      fieldsInjected = true;
+    }
+    if (parsed?.choices) {
+      for (const choice of parsed.choices) {
+        if (choice.content_filter_results !== undefined) {
+          delete choice.content_filter_results;
+          fieldsInjected = true;
+        }
+        // Strip empty tool_calls arrays that break AI SDK reasoning tracking.
+        // Some providers (e.g. CodeBuddy CN) include `"tool_calls": []` in
+        // every streaming delta. @ai-sdk/openai-compatible checks
+        // `delta.tool_calls != null` — an empty array passes this check,
+        // causing premature `reasoning-end` on every chunk.
+        if (choice.delta?.tool_calls && Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length === 0) {
+          delete choice.delta.tool_calls;
+          fieldsInjected = true;
+        }
+      }
+    }
+
+    return { idFixed, fieldsInjected };
+  }
+
+  // Translate-mode usage injection. The finish chunk is what the client bills
+  // against; when the upstream sent no usage, estimate it from the accumulated
+  // content. Shared by the transform path and the flush path so a finish chunk
+  // that only materialises at flush time is billed exactly like one that
+  // arrived mid-stream.
+  function injectTranslateUsage(item, sourceFormat) {
+    const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
+    if (!state.finishReason || !isFinishChunk) return;
+    if (!hasValidUsage(item.usage) && totalContentLength > 0) {
+      const estimated = estimateUsage(body, totalContentLength, sourceFormat);
+      item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
+      state.usage = estimated;
+    } else if (state.usage) {
+      // Add buffer and filter usage for client (but keep original in state.usage for logging)
+      const buffered = addBufferToUsage(state.usage);
+      item.usage = filterUsageForFormat(buffered, sourceFormat);
+    }
+  }
+
+  // Shared translate-mode accounting. Kept in one place so a final buffered
+  // line without a newline contributes content/tool calls/usage exactly like a
+  // line that passed through transform().
+  function accumulateTranslateChunk(parsed) {
+    // Claude format - content
+    if (parsed.delta?.text) {
+      totalContentLength += parsed.delta.text.length;
+      accumulatedContent += parsed.delta.text;
+    }
+    // Claude format - thinking
+    if (parsed.delta?.thinking) {
+      totalContentLength += parsed.delta.thinking.length;
+      accumulatedThinking += parsed.delta.thinking;
+    }
+    // Claude format - tool_use block. The id/name arrive on
+    // content_block_start with type=tool_use; subsequent input_json_delta
+    // deltas carry no id. A single start is enough to mark the response as
+    // carrying a tool call.
+    if (parsed.content_block?.type === "tool_use" && (accumulatedToolCalls?.length ?? 0) < MAX_TRACKED_TOOL_CALLS) {
+      if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+      const id = parsed.content_block.id || `tool_${accumulatedToolCalls.length}`;
+      if (!accumulatedToolCalls.some((c) => c.id === id)) {
+        accumulatedToolCalls.push({ id, name: parsed.content_block.name || null });
+      }
+    }
+    // OpenAI format - content
+    if (parsed.choices?.[0]?.delta?.content) {
+      totalContentLength += parsed.choices[0].delta.content.length;
+      accumulatedContent += parsed.choices[0].delta.content;
+    }
+    // OpenAI format - reasoning
+    if (parsed.choices?.[0]?.delta?.reasoning_content) {
+      totalContentLength += parsed.choices[0].delta.reasoning_content.length;
+      accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+    }
+    // OpenAI format - refusal. The refusal IS the answer ("I can't help with
+    // that"), so it counts as content: a refusal-only turn must not be logged
+    // or billed as an empty response.
+    if (parsed.choices?.[0]?.delta?.refusal) {
+      totalContentLength += parsed.choices[0].delta.refusal.length;
+      accumulatedContent += parsed.choices[0].delta.refusal;
+    }
+    // OpenAI format - tool_calls (streaming: each delta has a partial
+    // tool_call with index). Dedup by index so subsequent argument-only
+    // deltas for the same call don't create a second entry. When a
+    // delta carries both id and index, store the id (it's the canonical
+    // client-facing identifier); otherwise fall back to the index key.
+    // Coerce index to Number — upstreams have been observed emitting
+    // either string or integer, and strict equality would miss matches.
+    const oaToolCallDeltas = parsed.choices?.[0]?.delta?.tool_calls;
+    if (Array.isArray(oaToolCallDeltas) && oaToolCallDeltas.length > 0) {
+      if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+      for (const tc of oaToolCallDeltas) {
+        if (accumulatedToolCalls.length >= MAX_TRACKED_TOOL_CALLS) break;
+        const index = Number(tc.index ?? accumulatedToolCalls.length);
+        const existing = accumulatedToolCalls.find((c) => c.index === index);
+        if (existing) {
+          if (tc.id && existing.id !== tc.id) existing.id = tc.id;
+          if (tc.function?.name && !existing.name) existing.name = tc.function.name;
+        } else {
+          accumulatedToolCalls.push({
+            id: tc.id || `tc_index_${index}`,
+            name: tc.function?.name || null,
+            index,
+          });
+        }
+      }
+    }
+    // Legacy OpenAI function_call deltas carry no index. Keep one record
+    // so a function-call-only turn is not recorded as empty.
+    const oaFunctionCall = parsed.choices?.[0]?.delta?.function_call;
+    if (oaFunctionCall && typeof oaFunctionCall === "object") {
+      if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+      const existing = accumulatedToolCalls.find((c) => c.id === "legacy_function_call");
+      if (existing) {
+        if (oaFunctionCall.name && !existing.name) existing.name = oaFunctionCall.name;
+      } else if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+        accumulatedToolCalls.push({
+          id: "legacy_function_call",
+          name: oaFunctionCall.name || null,
+          index: 0,
+        });
+      }
+    }
+
+    // Gemini format
+    if (parsed.candidates?.[0]?.content?.parts) {
+      for (const part of parsed.candidates[0].content.parts) {
+        if (part.text && typeof part.text === "string") {
+          totalContentLength += part.text.length;
+          // Check if this is thinking content
+          if (part.thought === true) {
+            accumulatedThinking += part.text;
+          } else {
+            accumulatedContent += part.text;
+          }
+        }
+        // Gemini functionCall (single non-streaming response carries the
+        // full call; mark it so the response isn't logged as empty).
+        if (part.functionCall && part.functionCall.name) {
+          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+          if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
+            accumulatedToolCalls.push({
+              id: part.functionCall.id || `gemini_fc_${accumulatedToolCalls.length}`,
+              name: part.functionCall.name,
+            });
+          }
+        }
+      }
+    }
+
+    // OpenAI Responses format - content
+    if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+      totalContentLength += parsed.delta.length;
+      accumulatedContent += parsed.delta;
+      respTextDeltaSeen[parsed.output_index ?? 0] = true;
+    }
+    // Compact-stream fallback: terminal events carrying full text with NO
+    // preceding deltas (mirrors the translator guard so server-side
+    // accounting matches what the client receives).
+    if (parsed.type === "response.output_text.done" && !respTextDeltaSeen[parsed.output_index ?? 0]) {
+      const doneText = typeof parsed.text === "string" && parsed.text.length > 0
+        ? parsed.text
+        : extractResponsesMessageText(parsed.part);
+      if (doneText) {
+        totalContentLength += doneText.length;
+        accumulatedContent += doneText;
+        respTextDeltaSeen[parsed.output_index ?? 0] = true;
+      }
+    }
+    if (parsed.type === "response.output_item.done" && parsed.item?.type === "message" && !respTextDeltaSeen[parsed.output_index ?? 0]) {
+      const itemText = extractResponsesMessageText(parsed.item);
+      if (itemText) {
+        totalContentLength += itemText.length;
+        accumulatedContent += itemText;
+        respTextDeltaSeen[parsed.output_index ?? 0] = true;
+      }
+    }
+    // OpenAI Responses format - reasoning
+    if (parsed.type === "response.reasoning_summary_text.delta" && typeof parsed.delta === "string") {
+      totalContentLength += parsed.delta.length;
+      accumulatedThinking += parsed.delta;
+    }
+    // OpenAI Responses format - refusal. A refusal is a real answer, so it
+    // counts as content: a refusal-only turn must not be recorded as empty.
+    if (parsed.type === "response.refusal.delta" && typeof parsed.delta === "string") {
+      totalContentLength += parsed.delta.length;
+      accumulatedContent += parsed.delta;
+    }
+    // OpenAI Responses format - tool_calls
+    if (parsed.type === "response.output_item.added" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
+      const itemId = parsed.item.id || parsed.item_id || null;
+      const callId = parsed.item.call_id || null;
+      const name = parsed.item.name || null;
+      trackResponsesToolCall(itemId, callId, name);
+    }
+    if (parsed.type === "response.output_item.done" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
+      const itemId = parsed.item.id || parsed.item_id || null;
+      const callId = parsed.item.call_id || null;
+      const name = parsed.item.name || null;
+      trackResponsesToolCall(itemId, callId, name);
+    }
+    if (parsed.type === "response.function_call_arguments.delta" || parsed.type === "response.custom_tool_call_input.delta") {
+      const itemId = parsed.item_id || parsed.id || null;
+      const callId = parsed.call_id || null;
+      trackResponsesToolCall(itemId, callId, null);
+    }
+
+    // Extract usage
+    const extracted = extractUsage(parsed);
+    if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+  }
+
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -135,6 +443,9 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  // True when the last passthrough line was not followed by a blank line, so
+  // flush must close the SSE frame before appending a synthesized [DONE].
+  let passthroughFrameOpen = false;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -165,68 +476,25 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.PASSTHROUGH) {
           let output;
           let injectedUsage = false;
+          const isDoneSentinel = trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]";
+          if (isDoneSentinel) streamDoneSent = true;
 
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+          if (trimmed.startsWith("data:") && !isDoneSentinel) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
-              const idFixed = fixInvalidId(parsed);
-
-              // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
-              let fieldsInjected = false;
-              if (parsed.choices !== undefined) {
-                if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
-                if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
-              }
-
-              // Strip Azure-specific non-standard fields from streaming chunks
-              if (parsed.prompt_filter_results !== undefined) {
-                delete parsed.prompt_filter_results;
-                fieldsInjected = true;
-              }
-              if (parsed?.choices) {
-                for (const choice of parsed.choices) {
-                  if (choice.content_filter_results !== undefined) {
-                    delete choice.content_filter_results;
-                    fieldsInjected = true;
-                  }
-                }
-              }
-
-              // Strip empty tool_calls arrays that break AI SDK reasoning tracking.
-              // Some providers (e.g. CodeBuddy CN) include `"tool_calls": []` in
-              // every streaming delta. @ai-sdk/openai-compatible checks
-              // `delta.tool_calls != null` — an empty array passes this check,
-              // causing premature `reasoning-end` on every chunk.
-              if (parsed?.choices) {
-                for (const choice of parsed.choices) {
-                  if (choice.delta?.tool_calls && Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length === 0) {
-                    delete choice.delta.tool_calls;
-                    fieldsInjected = true;
-                  }
-                }
-              }
+              // Some upstreams deliver a whole completion in
+              // `choices[].message` even on a streaming request. Normalize it
+              // to `choices[].delta` before the valuable-content gate so the
+              // client and the stream accumulator both see the answer.
+              const normalized = normalizeWholeCompletionChunk(parsed);
+              const { idFixed, fieldsInjected } = normalizePassthroughFields(parsed, normalized);
 
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
 
-              const delta = parsed.choices?.[0]?.delta;
-              const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
-              if (content && typeof content === "string") {
-                totalContentLength += content.length;
-                accumulatedContent += content;
-              }
-              if (reasoning && typeof reasoning === "string") {
-                totalContentLength += reasoning.length;
-                accumulatedThinking += reasoning;
-              }
-
-              const extracted = extractUsage(parsed);
-              if (extracted) {
-                usage = mergeUsage(usage, extracted);
-              }
+              accumulateOpenAIChunk(parsed);
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
@@ -260,6 +528,17 @@ export function createSSEStream(options = {}) {
             }
           }
 
+          if (trimmed === "") {
+            passthroughFrameOpen = false;
+          } else {
+            if (isDoneSentinel && passthroughFrameOpen) {
+              // The upstream omitted the blank line before [DONE]; close the
+              // previous event so the sentinel is not merged into its payload.
+              output = "\n" + output;
+            }
+            passthroughFrameOpen = true;
+          }
+
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
           continue;
@@ -270,6 +549,13 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+
+        // A whole-completion frame on an OpenAI-format upstream must become a
+        // delta before the translator runs, otherwise a Claude/Gemini client
+        // sees the same empty stream the passthrough path used to produce.
+        if (targetFormat === FORMATS.OPENAI) {
+          normalizeWholeCompletionChunk(parsed);
+        }
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -304,144 +590,7 @@ export function createSSEStream(options = {}) {
           continue;
         }
 
-        // Claude format - content
-        if (parsed.delta?.text) {
-          totalContentLength += parsed.delta.text.length;
-          accumulatedContent += parsed.delta.text;
-        }
-        // Claude format - thinking
-        if (parsed.delta?.thinking) {
-          totalContentLength += parsed.delta.thinking.length;
-          accumulatedThinking += parsed.delta.thinking;
-        }
-        // Claude format - tool_use block. The id/name arrive on
-        // content_block_start with type=tool_use; subsequent input_json_delta
-        // deltas carry no id. A single start is enough to mark the response as
-        // carrying a tool call.
-        if (parsed.content_block?.type === "tool_use" && (accumulatedToolCalls?.length ?? 0) < MAX_TRACKED_TOOL_CALLS) {
-          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-          const id = parsed.content_block.id || `tool_${accumulatedToolCalls.length}`;
-          if (!accumulatedToolCalls.some((c) => c.id === id)) {
-            accumulatedToolCalls.push({ id, name: parsed.content_block.name || null });
-          }
-        }
-        // OpenAI format - content
-        if (parsed.choices?.[0]?.delta?.content) {
-          totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
-        }
-        // OpenAI format - reasoning
-        if (parsed.choices?.[0]?.delta?.reasoning_content) {
-          totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
-        }
-        // OpenAI format - tool_calls (streaming: each delta has a partial
-        // tool_call with index). Dedup by index so subsequent argument-only
-        // deltas for the same call don't create a second entry. When a
-        // delta carries both id and index, store the id (it's the canonical
-        // client-facing identifier); otherwise fall back to the index key.
-        // Coerce index to Number — upstreams have been observed emitting
-        // either string or integer, and strict equality would miss matches.
-        const oaToolCallDeltas = parsed.choices?.[0]?.delta?.tool_calls;
-        if (Array.isArray(oaToolCallDeltas) && oaToolCallDeltas.length > 0) {
-          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-          for (const tc of oaToolCallDeltas) {
-            if (accumulatedToolCalls.length >= MAX_TRACKED_TOOL_CALLS) break;
-            const index = Number(tc.index ?? accumulatedToolCalls.length);
-            const existing = accumulatedToolCalls.find((c) => c.index === index);
-            if (existing) {
-              if (tc.id && existing.id !== tc.id) existing.id = tc.id;
-              if (tc.function?.name && !existing.name) existing.name = tc.function.name;
-            } else {
-              accumulatedToolCalls.push({
-                id: tc.id || `tc_index_${index}`,
-                name: tc.function?.name || null,
-                index,
-              });
-            }
-          }
-        }
-        
-        // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
-            if (part.text && typeof part.text === "string") {
-              totalContentLength += part.text.length;
-              // Check if this is thinking content
-              if (part.thought === true) {
-                accumulatedThinking += part.text;
-              } else {
-                accumulatedContent += part.text;
-              }
-            }
-            // Gemini functionCall (single non-streaming response carries the
-            // full call; mark it so the response isn't logged as empty).
-            if (part.functionCall && part.functionCall.name) {
-              if (accumulatedToolCalls === null) accumulatedToolCalls = [];
-              if (accumulatedToolCalls.length < MAX_TRACKED_TOOL_CALLS) {
-                accumulatedToolCalls.push({
-                  id: part.functionCall.id || `gemini_fc_${accumulatedToolCalls.length}`,
-                  name: part.functionCall.name,
-                });
-              }
-            }
-          }
-        }
-
-        // OpenAI Responses format - content
-        if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
-          totalContentLength += parsed.delta.length;
-          accumulatedContent += parsed.delta;
-          respTextDeltaSeen[parsed.output_index ?? 0] = true;
-        }
-        // Compact-stream fallback: terminal events carrying full text with NO
-        // preceding deltas (mirrors the translator guard so server-side
-        // accounting matches what the client receives).
-        if (parsed.type === "response.output_text.done" && !respTextDeltaSeen[parsed.output_index ?? 0]) {
-          const doneText = typeof parsed.text === "string" && parsed.text.length > 0
-            ? parsed.text
-            : extractResponsesMessageText(parsed.part);
-          if (doneText) {
-            totalContentLength += doneText.length;
-            accumulatedContent += doneText;
-            respTextDeltaSeen[parsed.output_index ?? 0] = true;
-          }
-        }
-        if (parsed.type === "response.output_item.done" && parsed.item?.type === "message" && !respTextDeltaSeen[parsed.output_index ?? 0]) {
-          const itemText = extractResponsesMessageText(parsed.item);
-          if (itemText) {
-            totalContentLength += itemText.length;
-            accumulatedContent += itemText;
-            respTextDeltaSeen[parsed.output_index ?? 0] = true;
-          }
-        }
-        // OpenAI Responses format - reasoning
-        if (parsed.type === "response.reasoning_summary_text.delta" && typeof parsed.delta === "string") {
-          totalContentLength += parsed.delta.length;
-          accumulatedThinking += parsed.delta;
-        }
-        // OpenAI Responses format - tool_calls
-        if (parsed.type === "response.output_item.added" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
-          const itemId = parsed.item.id || parsed.item_id || null;
-          const callId = parsed.item.call_id || null;
-          const name = parsed.item.name || null;
-          trackResponsesToolCall(itemId, callId, name);
-        }
-        if (parsed.type === "response.output_item.done" && (parsed.item?.type === "function_call" || parsed.item?.type === "custom_tool_call")) {
-          const itemId = parsed.item.id || parsed.item_id || null;
-          const callId = parsed.item.call_id || null;
-          const name = parsed.item.name || null;
-          trackResponsesToolCall(itemId, callId, name);
-        }
-        if (parsed.type === "response.function_call_arguments.delta" || parsed.type === "response.custom_tool_call_input.delta") {
-          const itemId = parsed.item_id || parsed.id || null;
-          const callId = parsed.call_id || null;
-          trackResponsesToolCall(itemId, callId, null);
-        }
-
-        // Extract usage
-        const extracted = extractUsage(parsed);
-        if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+        accumulateTranslateChunk(parsed);
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
@@ -477,16 +626,7 @@ export function createSSEStream(options = {}) {
             }
 
             // Inject estimated usage if finish chunk has no valid usage
-            const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
-              const estimated = estimateUsage(body, totalContentLength, sourceFormat);
-              item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
-              state.usage = estimated;
-            } else if (state.finishReason && isFinishChunk && state.usage) {
-              // Add buffer and filter usage for client (but keep original in state.usage for logging)
-              const buffered = addBufferToUsage(state.usage);
-              item.usage = filterUsageForFormat(buffered, sourceFormat);
-            }
+            injectTranslateUsage(item, sourceFormat);
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
@@ -508,11 +648,79 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.PASSTHROUGH) {
           if (buffer) {
             let output = buffer;
-            if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
-              output = "data: " + buffer.slice(5);
+            const residual = buffer.trim();
+            const isDataLine = residual.startsWith("data:");
+            const isDoneLine = isDataLine && residual.slice(5).trim() === "[DONE]";
+
+            if (isDoneLine) {
+              streamDoneSent = true;
+            } else if (isDataLine) {
+              try {
+                const parsed = JSON.parse(residual.slice(5).trim());
+                const normalized = normalizeWholeCompletionChunk(parsed);
+                const { idFixed, fieldsInjected } = normalizePassthroughFields(parsed, normalized);
+                // The final line can carry content/usage that never passed
+                // through transform() when the upstream omitted the trailing
+                // newline; account for it here too.
+                accumulateOpenAIChunk(parsed);
+
+                // Mirror transform()'s finish-chunk usage injection: a final
+                // finish line without usage must not reach the client bare.
+                const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+                let usageInjected = false;
+                if (isFinishChunk) {
+                  if (!hasValidUsage(parsed.usage)) {
+                    const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
+                    parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
+                    usage = estimated;
+                  } else if (usage) {
+                    const buffered = addBufferToUsage(usage);
+                    parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
+                  }
+                  usageInjected = true;
+                }
+
+                output = (normalized || idFixed || fieldsInjected || usageInjected)
+                  ? `data: ${JSON.stringify(parsed)}`
+                  : (buffer.startsWith("data:") && !buffer.startsWith("data: ") ? "data: " + buffer.slice(5) : buffer);
+              } catch {
+                // Keep the raw residual when it is not valid JSON.
+              }
             }
+
+            if (passthroughFrameOpen && residual) {
+              // A previous complete line left its event open (the upstream
+              // ended with a single newline). Close it before the residual so
+              // the two payloads cannot become one SSE event.
+              output = "\n" + output;
+              passthroughFrameOpen = false;
+            }
+
+            if (isDataLine) {
+              // A residual data line has no following blank line in the
+              // upstream buffer. Terminate the SSE frame explicitly, otherwise
+              // the later `data: [DONE]` is concatenated into the same event.
+              if (!output.endsWith("\n")) output += "\n\n";
+              else if (!output.endsWith("\n\n")) output += "\n";
+              passthroughFrameOpen = false;
+            } else {
+              if (!output.endsWith("\n")) output += "\n";
+              if (residual) passthroughFrameOpen = true;
+            }
+
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
+          }
+
+          // A stream that ends right after a single newline leaves the last
+          // event open: the transform consumed that newline as the line
+          // separator and never saw the blank line. Close it before the
+          // synthesized [DONE], otherwise both payloads become one SSE event.
+          if (passthroughFrameOpen) {
+            const frameEnd = "\n";
+            reqLogger?.appendConvertedChunk?.(frameEnd);
+            controller.enqueue(sharedEncoder.encode(frameEnd));
+            passthroughFrameOpen = false;
           }
 
           if (!hasValidUsage(usage) && totalContentLength > 0) {
@@ -548,8 +756,14 @@ export function createSSEStream(options = {}) {
         }
 
         if (buffer.trim()) {
-          const parsed = parseSSELine(buffer.trim());
+          const parsed = parseSSELine(buffer.trim(), targetFormat);
           if (parsed && !parsed.done) {
+            if (targetFormat === FORMATS.OPENAI) {
+              normalizeWholeCompletionChunk(parsed);
+            }
+            // The final line did not pass through transform(); account for it
+            // before translating so content/tool calls/usage are not lost.
+            accumulateTranslateChunk(parsed);
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
             if (translated?._openaiIntermediate) {
@@ -562,6 +776,9 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 if (item === null || item === undefined) continue;
+                // Same usage injection as the transform path — a finish chunk
+                // that only materialises at flush is billed the same way.
+                injectTranslateUsage(item, sourceFormat);
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -582,6 +799,9 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             if (item === null || item === undefined) continue;
+            // The flush often produces the finish chunk (and carries
+            // state.finishReason), so it needs the same usage injection.
+            injectTranslateUsage(item, sourceFormat);
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));

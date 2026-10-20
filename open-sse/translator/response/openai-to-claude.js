@@ -171,6 +171,12 @@ export function openaiToClaudeResponse(chunk, state) {
   // Handle regular content (supporting inline <think> tags statefully across SSE chunks)
   const { thinking: inlineThinking, text: cleanedText } = processStreamThinkingTags(delta?.content, state);
 
+  // A refusal is the model's answer ("I can't help with that"), not an error.
+  // The Claude SSE shape has no refusal field, so the refusal text is delivered
+  // as assistant text — dropping it leaves the client with an empty stream.
+  const refusalText = typeof delta?.refusal === "string" ? delta.refusal : "";
+  const textDelta = cleanedText + refusalText;
+
   if (inlineThinking) {
     stopTextBlock(state, results);
 
@@ -191,8 +197,8 @@ export function openaiToClaudeResponse(chunk, state) {
     });
   }
 
-  const hasText = typeof cleanedText === "string" && cleanedText.length > 0;
-  const hasNonWhitespaceText = hasText && cleanedText.trim().length > 0;
+  const hasText = typeof textDelta === "string" && textDelta.length > 0;
+  const hasNonWhitespaceText = hasText && textDelta.trim().length > 0;
 
   if (hasNonWhitespaceText) {
     stopThinkingBlock(state, results);
@@ -222,7 +228,7 @@ export function openaiToClaudeResponse(chunk, state) {
     results.push({
       type: "content_block_delta",
       index: state.textBlockIndex,
-      delta: { type: "text_delta", text: cleanedText }
+      delta: { type: "text_delta", text: textDelta }
     });
   } else if (hasText) {
     stopThinkingBlock(state, results);
@@ -232,7 +238,7 @@ export function openaiToClaudeResponse(chunk, state) {
       results.push({
         type: "content_block_delta",
         index: state.textBlockIndex,
-        delta: { type: "text_delta", text: cleanedText }
+        delta: { type: "text_delta", text: textDelta }
       });
     } else {
       // Buffer whenever no writable text block exists — before the first
@@ -241,7 +247,7 @@ export function openaiToClaudeResponse(chunk, state) {
       // truncating, so exact formatting is never lost without a signal.
       const MAX_LEADING_WHITESPACE = 64 * 1024;
       const current = state.leadingWhitespaceBuf || "";
-      const pending = current + cleanedText;
+      const pending = current + textDelta;
       if (pending.length > MAX_LEADING_WHITESPACE) {
         state.textBlockIndex = state.nextBlockIndex++;
         state.textBlockStarted = true;
