@@ -27,6 +27,26 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-thinking-agentic")).toMatchObject(claudeSonnet5Expected);
   });
 
+  it("reports Claude Haiku 5.x as a 1M adaptive-thinking model (not legacy haiku budget)", () => {
+    const haiku5Expected = {
+      contextWindow: 1000000,
+      maxOutput: 128000,
+      thinkingFormat: "claude-adaptive",
+      reasoning: true,
+      vision: true,
+      search: true,
+    };
+    expect(getCapabilitiesForModel("anthropic", "claude-haiku-5-5")).toMatchObject(haiku5Expected);
+    expect(getCapabilitiesForModel("anthropic", "claude-haiku-5.5")).toMatchObject(haiku5Expected);
+    expect(getCapabilitiesForModel("anthropic", "anthropic/claude-haiku-5-5")).toMatchObject(haiku5Expected);
+    // Haiku 4.5 and older stay on the legacy enabled+budget shape.
+    expect(getCapabilitiesForModel("anthropic", "claude-haiku-4-5")).toMatchObject({
+      contextWindow: 200000,
+      thinkingFormat: "claude-budget",
+    });
+    expect(getCapabilitiesForModel("anthropic", "claude-haiku-4-5-20251001").thinkingFormat).toBe("claude-budget");
+  });
+
   it("reports Claude Fable 5.1 as a permanent adaptive-thinking model", () => {
     expect(getCapabilitiesForModel("claude", "claude-fable-5-1")).toMatchObject({
       ...claudeSonnet5Expected,

@@ -99,8 +99,79 @@ export function fixToolUseOrdering(messages) {
   return merged;
 }
 
-// Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
-const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
+// Thinking wire shape is model-generation specific. Capabilities own the
+// forward direction (enabled → adaptive for Claude 5+), while the legacy
+// downgrade stays scoped to Haiku ≤4.5 exactly as before: widening it to every
+// claude-budget model would silently rewrite Opus 4.5 / Sonnet 4.5 and any
+// future model that still resolves through the generic *claude* fallback.
+function thinkingFormatFor(model) {
+  return getCapabilitiesForModel(null, model).thinkingFormat;
+}
+
+// Parse the Claude family generation from common id spellings:
+//   claude-haiku-5-5, claude-haiku-5.5, claude-haiku-4-5-20251001,
+//   claude-3-5-haiku-20241022, claude-4-5-haiku, provider-prefixed ids.
+// Date suffixes must never be read as a version (20241022 is not "generation
+// 20241022"), which is why one/two digits are required on each side.
+const CLAUDE_FAMILIES = "opus|sonnet|haiku|fable|mythos";
+function claudeGeneration(model) {
+  const id = String(model ?? "").toLowerCase().replace(/\./g, "-");
+  const familyFirst = id.match(new RegExp(`(?:${CLAUDE_FAMILIES})-(\\d{1,2})(?:-(\\d{1,2}))?(?:-|$)`));
+  if (familyFirst) {
+    return { major: Number(familyFirst[1]), minor: familyFirst[2] ? Number(familyFirst[2]) : 0 };
+  }
+  const versionFirst = id.match(new RegExp(`claude-(\\d{1,2})(?:-(\\d{1,2}))?-(?:${CLAUDE_FAMILIES})(?:-|$)`));
+  if (versionFirst) {
+    return { major: Number(versionFirst[1]), minor: versionFirst[2] ? Number(versionFirst[2]) : 0 };
+  }
+  return null;
+}
+
+// Per Anthropic docs (extended-thinking): 4.5 and older are enabled-only,
+// 4.6 still accepts enabled (deprecated), 4.7+ reject it and require adaptive.
+function isAdaptiveOnlyClaude(model) {
+  const gen = claudeGeneration(model);
+  if (!gen) return false;
+  return gen.major >= 5 || (gen.major === 4 && gen.minor >= 7);
+}
+
+// Haiku 4.5 and older reject adaptive + effort; Haiku 5+ moved to adaptive
+// (Anthropic 400, 2026-10-20: "thinking.type.enabled is not supported for
+// this model"). Unknown/alias names without a generation keep the historical
+// downgrade so older proxy spellings do not regress.
+function isLegacyHaiku(model) {
+  if (!/haiku/i.test(String(model))) return false;
+  const gen = claudeGeneration(model);
+  return gen ? gen.major < 5 : true;
+}
+
+// Fix only an incompatible thinking shape, leaving every other field alone.
+// Used by both the transformed and the native-faithful passthrough paths: a
+// shape the target model rejects is not fidelity, it is a guaranteed 400.
+export function normalizeClaudeThinkingShape(body, model = "") {
+  if (!body || typeof body !== "object") return body;
+
+  const format = thinkingFormatFor(model);
+  if (format === "claude-adaptive" && isAdaptiveOnlyClaude(model) && body.thinking?.type === "enabled") {
+    // 4.7+ / 5.x reject enabled; adaptive is the only switch they accept.
+    // Claude 4.6 still accepts enabled, so leave it untouched there.
+    // Drop the budget (invalid in this shape) and let the model pick its default.
+    body.thinking = { type: "adaptive" };
+    return body;
+  }
+
+  if (isLegacyHaiku(model)) {
+    if (body.thinking?.type === "adaptive") {
+      body.thinking = { type: "enabled", budget_tokens: 10000 };
+    }
+    if (body.output_config?.effort != null) {
+      delete body.output_config.effort;
+      if (Object.keys(body.output_config).length === 0) delete body.output_config;
+    }
+  }
+
+  return body;
+}
 
 function handlesThinkingBlocks(provider) {
   return provider === "claude" || provider?.startsWith("anthropic-compatible") || provider === "deepseek";
@@ -135,8 +206,8 @@ function hasForeignServerToolUseId(block) {
 
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
-// 1. thinking.type "adaptive" → unsupported on Haiku
-// 2. output_config.effort → unsupported on Haiku
+// 1. thinking shape the model generation rejects (adaptive vs enabled+budget)
+// 2. output_config.effort on models that don't support it
 // 3. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
 // 4. server_tool_use blocks carrying a foreign (non-srvtoolu_) id → rejected outright
 export function normalizeClaudePassthrough(body, model = "") {
@@ -145,16 +216,8 @@ export function normalizeClaudePassthrough(body, model = "") {
   delete body.reasoning_effort;
   delete body.reasoning;
 
-  // 1. Downgrade adaptive thinking for models that don't support it
-  if (body.thinking?.type === "adaptive" && ADAPTIVE_THINKING_UNSUPPORTED.test(model)) {
-    body.thinking = { type: "enabled", budget_tokens: 10000 };
-  }
-
-  // 2. Strip effort param for models that don't support it (keep other output_config fields)
-  if (ADAPTIVE_THINKING_UNSUPPORTED.test(model) && body.output_config?.effort != null) {
-    delete body.output_config.effort;
-    if (Object.keys(body.output_config).length === 0) delete body.output_config;
-  }
+  // 1 + 2. Coerce the thinking shape/effort for this model generation
+  normalizeClaudeThinkingShape(body, model);
 
   // Claude API allows at most one role:"system" (which is top-level).
   // Some clients (e.g. Cowork) emit role:"system" messages in messages array.

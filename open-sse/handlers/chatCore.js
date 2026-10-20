@@ -2,7 +2,7 @@ import { detectFormat, getTargetFormat, resolveTransport } from "../services/pro
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, captureThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
-import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
+import { normalizeClaudePassthrough, normalizeClaudeThinkingShape, anchorClaudeCache } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -252,9 +252,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       ? { ...structuredClone(body), model: stripThinkingSuffix(upstreamModel) }
       : { ...body, model: stripThinkingSuffix(upstreamModel) };
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
-    if (clientTool === "claude" && !preserveNativeClaudeRequest) {
-      normalizeClaudePassthrough(translatedBody, translatedBody.model);
-      applyThinking(FORMATS.CLAUDE, translatedBody.model, translatedBody, provider, captureThinking(body));
+    if (clientTool === "claude") {
+      if (preserveNativeClaudeRequest) {
+        // Native fidelity keeps the client body, but a thinking shape the
+        // target model rejects is not fidelity — coerce only that field
+        // (e.g. claude-haiku-5-5 requires adaptive, not enabled+budget).
+        normalizeClaudeThinkingShape(translatedBody, translatedBody.model);
+      } else {
+        normalizeClaudePassthrough(translatedBody, translatedBody.model);
+        applyThinking(FORMATS.CLAUDE, translatedBody.model, translatedBody, provider, captureThinking(body));
+      }
     }
   } else {
     try {
