@@ -106,7 +106,18 @@ describe("GOLDEN snapshot must not encode the machine that produced it", () => {
     const args = withCanary
       ? ["--require", CANARY, PROBE]
       : [PROBE];
-    const res = spawnSync(process.execPath, args, { encoding: "utf8", cwd: REPO_ROOT });
+    // spawnSync BLOCKS the event loop, so a hung child cannot be interrupted
+    // by vitest's test timeout — it would stall the whole CI job until the
+    // 30-minute workflow timeout with no useful error. Bound it here.
+    const res = spawnSync(process.execPath, args, {
+      encoding: "utf8",
+      cwd: REPO_ROOT,
+      timeout: 30_000,
+      killSignal: "SIGKILL",
+    });
+    if (res.error) {
+      throw new Error(`host probe failed to run (canary=${withCanary}): ${res.error.message}`);
+    }
     if (res.status !== 0) {
       throw new Error(`host probe failed (canary=${withCanary}): ${res.stderr || res.stdout}`);
     }
