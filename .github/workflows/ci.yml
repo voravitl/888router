@@ -25,9 +25,9 @@ permissions:
 
 jobs:
   test:
-    name: unit-smoke
+    name: full-suite
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -51,18 +51,66 @@ jobs:
         working-directory: tests
         run: npm install --no-audit --no-fund --legacy-peer-deps
 
-      # Focused smoke: new observability coverage + a small stable unit set.
-      # Full suite is not all-green on a plain checkout (known-fails baseline);
-      # do not use raw full vitest as a hard gate until known-fails is wired in CI.
-      - name: Run unit smoke tests
-        working-directory: tests
+      # FULL suite, not a smoke subset. The smoke list that used to live here
+      # covered 8 of 349 test files (2.3%) and was chosen back when the suite
+      # was not all-green on a plain checkout. It is green now (verified on a
+      # clean clone of master: 3613 passed / 0 failed / 70 skipped), and
+      # tests/__baseline__/known-fails.txt is empty by policy — so the reason
+      # the gate was narrow no longer holds.
+      #
+      # The cost of the narrow gate was concrete: the refusal-delivery suites
+      # added in #556 and #557 (22 cases across four client formats) were not
+      # in any smoke list, so CI stayed green on a build that shipped a
+      # regression in exactly those paths.
+      #
+      # Two details that are NOT optional:
+      #   - Run from the REPO ROOT. Running from tests/ breaks the suites that
+      #     resolve sources with path.resolve("src/...") — security-audit.test.js
+      #     alone failed 15 cases that way.
+      #   - Invoke tests/node_modules/.bin/vitest explicitly. `npx vitest` from
+      #     the repo root does NOT find the pinned vitest (it lives in
+      #     tests/node_modules, and the root package has no vitest dependency),
+      #     so npx would silently fetch a DIFFERENT major version from the
+      #     registry — the local machine resolved 5.0.5 against the pinned
+      #     4.1.10. A silently different test runner is a gate that does not
+      #     gate what it claims to.
+      - name: Run full test suite
         run: |
-          npx vitest run \
-            unit/request-detail-token-stats.test.js \
-            unit/capabilities.test.js \
-            unit/dashboard-guard.test.js \
-            unit/capabilities-grok-context.test.js \
-            unit/tool-cap.test.js \
-            unit/provider-variance-fixes.test.js \
-            unit/antigravity-mitm.test.js \
-            unit/antigravity-live-resolver.test.js
+          ./tests/node_modules/.bin/vitest run \
+            --config tests/vitest.config.js \
+            --reporter=json \
+            --outputFile=ci-test-results.json
+
+      # Regression gate: a test that used to pass and now fails is a
+      # regression, even when it is not in the known-fails list. The full-suite
+      # run above already fails the job on any failure; this step exists so
+      # the FAILURE is reported in the baseline's own vocabulary (file :: test
+      # name) instead of a raw vitest assertion dump — the same format an
+      # operator needs to add a known-fails entry.
+      - name: Check against known-fails baseline
+        run: |
+          node tests/__baseline__/verify-no-regression.mjs ci-test-results.json
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-test-results
+          path: ci-test-results.json
+          retention-days: 7
+
+      - name: Summarise test results
+        if: always()
+        run: |
+          {
+            echo "### Test results"
+            echo ""
+            node -e '
+              const fs = require("fs");
+              const r = JSON.parse(fs.readFileSync("./ci-test-results.json", "utf8"));
+              console.log(`- total: ${r.numTotalTests}`);
+              console.log(`- passed: ${r.numPassedTests}`);
+              console.log(`- failed: ${r.numFailedTests}`);
+              console.log(`- skipped: ${r.numPendingTests}`);
+            ' 2>/dev/null || echo "results file unavailable"
+          } >> "$GITHUB_STEP_SUMMARY"

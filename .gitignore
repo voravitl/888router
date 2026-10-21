@@ -64,6 +64,10 @@ PR/*
 # package-lock.json is committed (NOT ignored) so `npm ci` builds deterministically.
 # Removing it from ignore enables reproducible installs in CI + Dockerfile.
 
+# Vitest JSON report written by the CI full-suite gate (ci.yml / docker-publish.yml).
+# It is a build artifact, uploaded as a CI artifact, never committed.
+ci-test-results.json
+
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
