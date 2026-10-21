@@ -53,6 +53,24 @@ When the user needs a specific capability, fetch that skill's `SKILL.md` from it
 | Embeddings | /api/skills/raw/9router-embeddings |
 | Web search | /api/skills/raw/9router-web-search |
 | Web fetch (URL → markdown) | /api/skills/raw/9router-web-fetch |
+| Ponytail review (code review that also says what to cut) | /api/skills/raw/ponytail-review |
+| Ponytail audit (whole-repo audit, ranked) | /api/skills/raw/ponytail-audit |
+
+## Ponytail mode
+
+The gateway can inject a "lazy senior dev" system prompt into the request it
+forwards — Dashboard → Token Saver → *Lazy senior dev*. Three levels (lite /
+full / ultra).
+
+Two skills cover the review side of the same idea — they need a repository to
+read, so run them where the code is:
+
+- **Ponytail review** — the current changes. Fetch
+  `/api/skills/raw/ponytail-review`.
+- **Ponytail audit** — the whole repo, ranked. Fetch
+  `/api/skills/raw/ponytail-audit`.
+
+Adapted from https://github.com/DietrichGebert/ponytail (MIT).
 
 ## Errors
 

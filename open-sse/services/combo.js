@@ -1385,7 +1385,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
             return attachRouterDecisionHeader(responseWithHeaders, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
           }
         }
-        // ponytail: reasoning models (deepseek, kimi, ...) can exhaust max_tokens
+        // shortcut: reasoning models (deepseek, kimi, ...) can exhaust max_tokens
         // on the thinking phase and return content: "" with finish_reason: "length"
         // and reasoning_content filled. Retry once with a raised budget. Only the
         // non-stream (JSON body) case is handled — the stream:true SSE case needs

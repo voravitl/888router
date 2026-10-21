@@ -1,3 +1,66 @@
+# v0.15.183 (2026-10-21)
+
+## Ponytail: the injected prompt now matches upstream v5
+
+- The prompt the gateway injects (Dashboard → Token Saver → *Lazy senior dev*)
+  was an adaptation of the **pre-v5** upstream. Upstream rewrote the prompt
+  completely in v5, and the gateway was still sending the old text. It now
+  matches upstream `skills/ponytail/SKILL.md` + `AGENTS.md` (v5, verified
+  2026-10-21):
+
+  - a new **"Before you write"** scope step — read the code the change
+    touches, list every place it must reach (callers, tests, fixtures, config,
+    exports), and check what it could break for users;
+  - the ladder is reordered to upstream v5's order: **"already in this
+    codebase" now sits at rung 2, ahead of "standard library"**. The pre-v5
+    text led with stdlib; v5 leads with the house component;
+  - the rules v5 added and the pre-v5 text lacked: grep every caller before a
+    bug fix and root-cause it once in the shared code; moved or merged code
+    keeps its error handling and validation; between options of equal size
+    take the one correct on edge cases; comment only the why, in one line.
+- The shortcut marker is upstream's **`shortcut:`**, not `ponytail:`. Upstream's
+  `/ponytail-debt` harvests `shortcut:` comments into a ledger, so the old
+  word meant the ledger stayed empty. The gateway's own code comments now use
+  the same marker, so an agent working in this repo and an agent working
+  through the gateway agree on one word.
+
+## Ponytail: the system prompt is no longer injected twice
+
+- The system prompt is appended on **every** request. A client that sends the
+  same block back — its own ponytail plugin, a resumed session, or a client
+  that echoes the system block each turn — got it appended again. Observed
+  live on 2026-10-21: the outbound body carried the persona **twice** when
+  the client sent it once, and the duplicate grows every turn.
+- Injection is now idempotent per prompt, on an **exact** match. A fuzzy
+  match would swallow a different prompt that merely resembles ours, and
+  ponytail and caveman must both survive — they are different blocks and
+  both apply.
+
+## Dashboard: the ponytail blurb described the old ladder
+
+- The blurb and the three level descriptions still said "reuse stdlib" first.
+  They now describe what the model actually receives. The level **ids** were
+  already in sync — that is now pinned by a test, because a level the UI
+  offers but the engine has no prompt for fails **silently**
+  (`injectSystemPrompt` returns early on a falsy prompt, so the feature is
+  off with no error anywhere).
+
+## New skills: `ponytail-review` and `ponytail-audit`
+
+- Adapted from upstream `commands/ponytail-review.toml` and
+  `commands/ponytail-audit.toml`. The gateway can inject the prompt but
+  cannot read a repository, so the review half ships as skills an agent
+  fetches and runs where the code is. Served at
+  `/api/skills/raw/ponytail-review` and `/api/skills/raw/ponytail-audit`,
+  and listed in `skills/README.md` and the `9router` entry skill.
+- A `shortcut:` comment that names its limit is treated as a **decision, not
+  a finding** — the same rule upstream uses.
+
+Tests: three new files, 19 cases, pinning the v5 prompt structure, the
+dedupe (including the two cases that must NOT dedupe), and the
+dashboard↔engine level lists. Full suite: 3,677 passed / 0 failed / 70
+skipped.
+
 # v0.15.182 (2026-10-21)
 
 ## The opencode free catalogue no longer advertises models that are dead

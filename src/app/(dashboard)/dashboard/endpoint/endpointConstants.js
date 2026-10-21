@@ -25,8 +25,12 @@ export const CAVEMAN_LEVELS = [
   { id: "wenyan-ultra", label: "文 Ultra", desc: "Extreme classical compression", wenyan: true },
 ];
 
+// Descriptions mirror what the injected prompt actually says (upstream v5).
+// "full" leads with the codebase-reuse rung, not stdlib — upstream v5 moved
+// "already in this codebase" ahead of "standard library", and the label has
+// to match the prompt the model actually receives.
 export const PONYTAIL_LEVELS = [
-  { id: "lite", label: "Lite", desc: "Build asked, name lazier option" },
-  { id: "full", label: "Full", desc: "Ladder enforced: stdlib/native first" },
-  { id: "ultra", label: "Ultra", desc: "YAGNI extremist, deletion first" },
+  { id: "lite", label: "Lite", desc: "Build asked, name the smaller option" },
+  { id: "full", label: "Full", desc: "Ladder enforced: codebase first, then stdlib" },
+  { id: "ultra", label: "Ultra", desc: "YAGNI extremist, questions the request" },
 ];
