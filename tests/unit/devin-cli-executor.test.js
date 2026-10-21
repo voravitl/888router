@@ -390,9 +390,18 @@ describe("DevinCliExecutor ACP session/new", () => {
     }
   });
 
-  it("does not set XDG_CONFIG_HOME when DEVIN_MCP_SERVERS is absent", async () => {
+  it("does not OVERRIDE XDG_CONFIG_HOME when DEVIN_MCP_SERVERS is absent", async () => {
+    // The executor passes a SAFE_ENV_KEYS allowlist through to the child, and
+    // XDG_CONFIG_HOME is on that list — so when the host already defines it
+    // (Linux CI runners export /home/runner/.config; macOS usually does not),
+    // the child inherits the host value.
+    //
+    // The behaviour under test is that the executor does NOT point
+    // XDG_CONFIG_HOME at its own throwaway MCP config dir when there is no
+    // MCP config to write. Asserting `toBeUndefined()` tested the HOST
+    // environment, not the executor, and failed on the Linux CI runner.
     const { child } = await runExecute();
-    expect(child.opts.env.XDG_CONFIG_HOME).toBeUndefined();
+    expect(child.opts.env.XDG_CONFIG_HOME).toBe(process.env.XDG_CONFIG_HOME);
   });
 
   it("exposes body.tools as an MCP server (sets XDG_CONFIG_HOME + writes script)", async () => {
