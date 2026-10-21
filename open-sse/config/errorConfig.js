@@ -95,6 +95,35 @@ export const ERROR_RULES = [
   { text: "not available in", modelError: true, permanentModelError: true },
   { text: "endpoint is unavailable", modelError: true, permanentModelError: true },
   { text: "model is unavailable", modelError: true, permanentModelError: true },
+  // A retired model id upstream (opencode.ai answers 410 with
+  // {"type":"error","error":{"type":"ModelDeprecated","message":"Model X has
+  // been deprecated."}}). The model identity is dead; the transport is not.
+  //
+  // This rule is load-bearing beyond the single model: the opencode relay is
+  // SHARED by every `oc/*` model, so when a 410 fell through to the default
+  // transient rule (shouldFallback=true, 30s) markAccountUnavailable PARKED
+  // the shared pool — and every sibling model (beam-free, glm-5.3-flash-free,
+  // longcat, minimax) then failed with the same 410 body, naming a model the
+  // caller never asked for. One dead id took down the whole provider.
+  //
+  // The status rule below covers the same ground when the body does not carry
+  // the text (a bare 410, or a body that names the deprecation differently).
+  { text: "has been deprecated", modelError: true, permanentModelError: true },
+  { text: "modeldeprecated",     modelError: true, permanentModelError: true },
+  // The model does not speak the requested protocol/endpoint (opencode.ai
+  // answers 400 {"type":"ModelDeprecated"…} / ModelProtocolUnsupported for
+  // ids like jev-1.13-free and big-pickle on /chat/completions).
+  //
+  // Same blast radius as the 410 above: the opencode relay is shared by every
+  // `oc/*` model, so classifying this 400 as a transient failure parked the
+  // relay and every sibling model then answered 400 with a body about a
+  // protocol the caller never requested (observed live 2026-10-21 13:56).
+  //
+  // Matched on TEXT, never on the bare 400 status: a 400 is the most generic
+  // failure there is (bad request, malformed tool-call JSON, an unsupported
+  // request shape), and only the model-identity phrasing is safe to park on.
+  { text: "modelprotocolunsupported", modelError: true, permanentModelError: true },
+  { text: "does not support this protocol", modelError: true, permanentModelError: true },
   // Model-level transient overload (e.g. Kiro 500 "reason": "MODEL_TEMPORARILY_UNAVAILABLE").
   // Retrying with another account of the same provider is pointless — the model
   // is overloaded for everyone. Model-level: combo skips to next model, and a
@@ -156,6 +185,14 @@ export const ERROR_RULES = [
   { status: 403, cooldownMs: COOLDOWN.long },
   // 404 = model not found → don't cycle accounts, let combo skip to next model
   { status: 404, modelError: true, permanentModelError: true },
+  // 410 = Gone → the model identity is retired upstream (opencode.ai's
+  // ModelDeprecated). Same class as 404: the model is gone, the transport is
+  // healthy. This MUST NOT rotate accounts and MUST NOT park a proxy pool —
+  // the opencode relay is shared by every `oc/*` model, so parking it on one
+  // dead id killed every sibling model too (2026-10-21 incident: beam-free,
+  // glm-5.3-flash-free, longcat and minimax all failed with the same 410
+  // body naming a model the caller never requested).
+  { status: 410, modelError: true, permanentModelError: true },
   // 413 = payload too large: request-scoped, NOT permanent — never park.
   { status: 413, modelError: true },
   { status: 429, backoff: true },

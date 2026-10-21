@@ -17,6 +17,14 @@ const PERMANENT = [
   "Model is not available in your region",
   "endpoint is unavailable",
   "model is unavailable",
+  // 410 / ModelDeprecated (2026-10-21): a retired model id upstream. The
+  // model identity is dead, the transport is healthy — so it must never
+  // rotate accounts or park a shared proxy pool.
+  "Model muse-spark-1.3-contributor-free has been deprecated.",
+  '{"type":"error","error":{"type":"ModelDeprecated","message":"Model X has been deprecated."}}',
+  // 400 / ModelProtocolUnsupported: same class — the model cannot serve this
+  // endpoint, the relay can. Matched on text, never on the bare 400 status.
+  '{"type":"error","error":{"type":"ModelProtocolUnsupported","message":"Model does not support this protocol."}}',
 ];
 
 const REQUEST_SCOPED = [
@@ -38,6 +46,11 @@ const REQUEST_SCOPED = [
   "organization not found",
   "project not found",
   "Requested entity was not found.",
+  // A GENERIC 400 is not a model error. The ModelProtocolUnsupported rule is
+  // matched on text precisely so a plain bad request still rotates instead
+  // of parking a shared proxy pool on a request-shaped failure.
+  "Invalid request: missing required parameter 'messages'.",
+  "Invalid JSON in tool arguments",
 ];
 
 const COMPOUND_IDENTITY = [
@@ -82,5 +95,16 @@ describe("errorConfig: permanentModelError is identity death only", () => {
     const tooLarge = checkFallbackError(413, "Payload Too Large");
     expect(tooLarge.modelError).toBe(true);
     expect(tooLarge.permanentModelError).toBe(false);
+  });
+
+  it("status 410 parks (model retired upstream) and never rotates accounts", () => {
+    // A dead model id must not take the shared relay down with it: the
+    // opencode relay is shared by every `oc/*` model, so rotating/parking it
+    // on one retired id killed every sibling model too (2026-10-21).
+    const gone = checkFallbackError(410, "Gone");
+    expect(gone.modelError).toBe(true);
+    expect(gone.permanentModelError).toBe(true);
+    expect(gone.shouldFallback).toBe(false);
+    expect(gone.cooldownMs).toBe(0);
   });
 });
