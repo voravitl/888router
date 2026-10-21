@@ -578,8 +578,24 @@ describe("combo stream-head timeout cooldown", () => {
     const before = Date.now();
     markComboHeadTimeout("provider/model-a");
     const until = getComboHeadTimeoutCooldown("provider/model-a");
+    const after = Date.now();
     expect(until).toBeGreaterThan(before);
-    expect(until - before).toBeLessThanOrEqual(30 * 1000);
+    // `until` is an ABSOLUTE timestamp: markComboHeadTimeout() stored
+    // (its own Date.now() + 30s), and that clock read happened at or after
+    // `before`. So `until - before` is ALWAYS >= 30s — it can never be
+    // asserted with a 30s upper bound.
+    //
+    // The meaningful quantity is how much cooldown is LEFT when the test
+    // reads it back: `until - after`, which is at most 30s and at least
+    // 30s minus the (tiny) time the call itself took.
+    //
+    // This used to assert `until - before <= 30 * 1000` — zero slack. It
+    // passed on a fast machine and failed on a loaded one (the Linux CI
+    // runner under the full-suite gate): 1ms of scheduler delay between the
+    // two Date.now() reads made the difference 30_001 and the test failed.
+    // A wall-clock difference must never be asserted with zero tolerance.
+    expect(until - after).toBeLessThanOrEqual(30 * 1000);
+    expect(until - after).toBeGreaterThan(30 * 1000 - 5_000);
     expect(getComboHeadTimeoutCooldown("provider/model-b")).toBe(0);
   });
 

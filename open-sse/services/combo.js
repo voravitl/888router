@@ -1579,11 +1579,6 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
         });
       }
 
-      // Track earliest retryAfter across all combo models
-      if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
-        earliestRetryAfter = retryAfter;
-      }
-
       // Normalize error text to string (Worker-safe)
       if (typeof errorText !== "string") {
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
@@ -1601,6 +1596,18 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       // switch to a model that shares the same exhausted quota/pool.
       const quotaLimited = result.status === 429 ||
         /rate.?limit|usage.?limit|quota|too many requests|overloaded|capacity/i.test(errorText || "");
+
+      // Track the earliest retryAfter across all combo models — but ONLY for a
+      // genuine quota signal. A body-level `retryAfter` can ride along on a
+      // NON-quota failure (a Gemini 400 carrying RetryInfo, an upstream that
+      // stamps every error with a retry hint), and letting that set the
+      // earliest-retry clock made the all-failed verdict claim "All models
+      // quota-limited" (429) for a failure set where nothing was quota-
+      // limited. The verdict must name the real problem, or a client that
+      // trusts "quota" backs off for the wrong reason (or not at all).
+      if (quotaLimited && retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+        earliestRetryAfter = retryAfter;
+      }
       // Long quota windows (subscription/individual quota, "Resets in 80h…")
       // are account-level, not request-level: every remaining combo model on
       // the SAME provider shares the account, so trying them is a guaranteed
