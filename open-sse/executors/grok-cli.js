@@ -133,7 +133,7 @@ export { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 export function resolveGrokCliSessionId(credentials, body) {
   // If already captured upstream from original client body (e.g. Claude Code metadata.user_id), reuse it directly
   if (credentials?._clientSessionId) return credentials._clientSessionId;
-  // ponytail: clients without stable thread metadata share one connection session;
+  // shortcut: clients without stable thread metadata share one connection session;
   // split further when their wire format exposes a durable conversation id.
   const explicitSessionBody = {
     prompt_cache_key: body?.prompt_cache_key,

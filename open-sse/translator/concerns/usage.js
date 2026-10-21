@@ -39,7 +39,7 @@ const USAGE_EXTRACTORS = {
   },
   kiro(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);
-    // ponytail: Amazon Q (Kiro upstream) does not expose cache fields today,
+    // shortcut: Amazon Q (Kiro upstream) does not expose cache fields today,
     // but pass through any cache_read/cache_creation/cached_tokens if the
     // event shape grows them later so cost tracking keeps working without
     // a second pass.

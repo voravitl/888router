@@ -18,6 +18,8 @@ Drop-in skills for any AI agent (Claude, Cursor, ChatGPT, custom SDK). Just **co
 | Embeddings | /api/skills/raw/9router-embeddings |
 | Web search | /api/skills/raw/9router-web-search |
 | Web fetch (URL → markdown) | /api/skills/raw/9router-web-fetch |
+| **Ponytail review** (code review that also says what to cut) | /api/skills/raw/ponytail-review |
+| **Ponytail audit** (whole-repo audit, ranked) | /api/skills/raw/ponytail-audit |
 
 > **Production note:** the paths above are API-served only — fetch them from a
 > running gateway (`<host>/api/skills/raw/<id>`) or copy absolute URLs from the

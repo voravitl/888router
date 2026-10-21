@@ -200,7 +200,7 @@ export function createComboStreamGuard() {
       chunks.push(value);
       bufferBytes += sz;
       if (bufferBytes > MAX_BUFFER_BYTES) {
-        // ponytail: an extremely long reasoning preamble (no text within
+        // shortcut: an extremely long reasoning preamble (no text within
         // MAX_BUFFER_BYTES) decides "live" — the head is released as-is and
         // the empty-detection is skipped for this model only. The alternative
         // (waiting for text with no cap) could stall a genuine long-thinking

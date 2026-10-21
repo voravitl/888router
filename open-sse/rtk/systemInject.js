@@ -26,10 +26,29 @@ export function injectSystemPrompt(body, format, prompt) {
   }
 }
 
+// True when the exact prompt is already present in the text.
+//
+// Idempotence matters because the gateway injects on EVERY request of a
+// conversation while the client may send the same instruction block back each
+// turn (its own ponytail plugin, a resumed session, or a client that echoes
+// the system block). Appending again duplicated the whole prompt — observed
+// live 2026-10-21: the outbound body carried the persona twice when the
+// client sent it once. A doubled prompt doubles the system prefix (cache
+// cost) and reads as emphasis to the model.
+//
+// EXACT match on purpose: a fuzzy match would swallow a DIFFERENT prompt
+// that merely resembles ours. Ponytail and caveman inject different blocks
+// and both must survive; a client on a different ponytail level sent a
+// different prompt and must still get ours.
+function alreadyPresent(text, prompt) {
+  return typeof text === "string" && text.includes(prompt);
+}
+
 // OpenAI-shaped: messages[] (chat) or input[] (responses) or instructions (responses string)
 function injectMessagesSystem(body, prompt) {
   // OpenAI Responses API: top-level string field
   if (typeof body.instructions === "string") {
+    if (alreadyPresent(body.instructions, prompt)) return;
     body.instructions = body.instructions
       ? `${body.instructions}${SEP}${prompt}`
       : prompt;
@@ -51,9 +70,11 @@ function injectMessagesSystem(body, prompt) {
 
 function appendToOpenAIMessage(msg, prompt) {
   if (typeof msg.content === "string") {
+    if (alreadyPresent(msg.content, prompt)) return;
     msg.content = `${msg.content}${SEP}${prompt}`;
   } else if (Array.isArray(msg.content)) {
     // Responses-style array of parts {type:"input_text"|"text", text}
+    if (msg.content.some(part => part?.text === prompt)) return;
     msg.content.push({ type: "input_text", text: prompt });
   } else {
     msg.content = prompt;
@@ -64,10 +85,12 @@ function appendToOpenAIMessage(msg, prompt) {
 // Insert before the last cache_control block to keep injection inside the cached prefix.
 function injectClaudeSystem(body, prompt) {
   if (typeof body.system === "string" && body.system.length > 0) {
+    if (alreadyPresent(body.system, prompt)) return;
     body.system = `${body.system}${SEP}${prompt}`;
     return;
   }
   if (Array.isArray(body.system)) {
+    if (body.system.some(block => block?.text === prompt)) return;
     const block = { type: "text", text: prompt };
     let lastCacheIdx = -1;
     for (let i = body.system.length - 1; i >= 0; i--) {
@@ -91,6 +114,7 @@ function injectGeminiSystem(body, prompt) {
   const key = useSnake ? "system_instruction" : "systemInstruction";
   const sys = target[key];
   if (sys && Array.isArray(sys.parts)) {
+    if (sys.parts.some(part => part?.text === prompt)) return;
     sys.parts.push({ text: prompt });
     return;
   }

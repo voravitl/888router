@@ -545,7 +545,7 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
         }
       } else if (row.rtkBytesSaved != null) {
         // Columns-only path: filterHits live in the data blob (not selected).
-        // Dropped from the aggregate (ponytail: re-add via a targeted
+        // Dropped from the aggregate (shortcut: re-add via a targeted
         // SELECT data for rows WITH hits if the dashboard needs filter chips).
       }
       if (!byDay[dayKey]) {
