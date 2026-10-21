@@ -1,3 +1,52 @@
+# v0.15.181 (2026-10-21)
+
+## A dead model no longer takes the whole shared relay down with it
+
+- opencode.ai answers HTTP 410 `ModelDeprecated` for a retired model id. That
+  status matched no rule in `ERROR_RULES`, so it fell through to the default
+  transient rule (`shouldFallback: true`, 30 s) and `markAccountUnavailable`
+  **parked the shared proxy pool** for 30 s. That relay is shared by every
+  `oc/*` model, so one dead id killed all of them: `beam-free`,
+  `glm-5.3-flash-free`, `longcat-2.5-preview-free` and `minimax-m3.1-flash-free`
+  all answered with the same 410 body, naming `muse-spark-1.3-contributor-free`
+  — a model the caller never requested. Live evidence
+  (`docker logs 888route`, 2026-10-21 12:46):
+
+  ```
+  [AUTH] pool 811de521-… parked 30s [410] backoff=0
+  [AUTH] pool 602fdbbb-… parked 30s [410] backoff=0
+  [AUTH] opencode | all proxy pools parked [410], retry after reset after 26s
+  [CHAT] [opencode/beam-free] [410]: {"type":"error","error":{"type":"ModelDeprecated",…
+  ```
+
+- 410 is now a permanent **model** error (status rule), and the bodies
+  `"has been deprecated"` / `"modeldeprecated"` match on text. The model
+  identity is dead; the transport is healthy — so the combo skips to the next
+  model and no pool is parked. The same class of failure was live for 400
+  `ModelProtocolUnsupported` (`jev-1.13-free`, `big-pickle`): the 400 parked
+  the relay and `beam-free` then answered 400 with a protocol body the caller
+  never asked for (2026-10-21 13:56). That one is matched on **text only**,
+  never on the bare 400 status — a plain bad request must keep rotating.
+- The combo's "All models quota-limited" (429) verdict now requires an actual
+  quota signal. A body-level `retryAfter` riding on a non-quota failure used
+  to set the earliest-retry clock, so a failure set where nothing was
+  quota-limited was reported as a quota problem — the client backed off for a
+  quota that does not exist, and the real cause was hidden behind a fabricated
+  429.
+- The `9-free` combo gained two backup members on independent upstreams
+  (`nous/meituan/longcat-2.5-preview:free` via OpenRouter,
+  `ag/gemini-3.8-flash-high` via Antigravity). 4 of its 5 original members
+  rode the same opencode upstream, so that upstream going down took out the
+  whole combo regardless of the fix above.
+
+## Test fix: a wall-clock assertion had zero tolerance
+
+- `tests/unit/combo-routing.test.js` asserted `until - before <= 30_000` on the
+  stream-head-timeout cooldown. `until` is an absolute timestamp, so that
+  difference is always ≥ 30 s and failed on a loaded CI runner (1 ms of
+  scheduler delay was enough). It now asserts the *remaining* cooldown
+  (`until - after`), which is what the test means to check.
+
 # v0.15.180 (2026-10-21)
 
 ## CI: the test gate now runs the full suite, not a 3% smoke subset
