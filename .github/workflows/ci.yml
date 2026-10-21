@@ -54,7 +54,7 @@ jobs:
       # FULL suite, not a smoke subset. The smoke list that used to live here
       # covered 8 of 349 test files (2.3%) and was chosen back when the suite
       # was not all-green on a plain checkout. It is green now (verified on a
-      # clean clone of master: 3613 passed / 0 failed / 70 skipped), and
+      # clean clone of master: 3615 passed / 0 failed / 70 skipped), and
       # tests/__baseline__/known-fails.txt is empty by policy — so the reason
       # the gate was narrow no longer holds.
       #
