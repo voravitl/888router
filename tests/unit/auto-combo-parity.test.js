@@ -156,7 +156,12 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
       // [modelStr, mustBeFree]
       ["tokenrouter/moonshotai/kimi-k3-free", false], // :free suffix
       ["tokenrouter/z-ai/glm-5.3-free", false], // :free suffix
-      ["opencode/deepseek-v4-flash-free", true],
+      // opencode/deepseek-v4-flash-free was retired upstream (HTTP 400 "Model
+      // is unavailable" on every endpoint, verified live 2026-10-21) and left
+      // the free catalogue. Use a model that still serves so the spot-check
+      // keeps testing what it means to test: a free-catalog entry resolves to
+      // a chat-kind model in the registry.
+      ["opencode/glm-5.3-flash-free", true],
       ["chatgpt-web/gpt-5.6-luna-free", true],
       ["bazaarlink/auto:free", true],
       ["anthropic/claude-sonnet-4-20250514", false],

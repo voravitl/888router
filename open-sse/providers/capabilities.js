@@ -400,19 +400,19 @@ export const PROVIDER_CAPABILITIES = {
     "nemotron-3-super": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000,  maxOutput: 64000 },
     "gemma4:31b":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 128000, maxOutput: 64000 },
   },
+  // The opencode FREE tier. Retired ids were removed from this table along
+  // with their registry entries (verified live 2026-10-21: HTTP 410
+  // ModelDeprecated for muse-spark-1.2/1.3-contributor-free and
+  // space-bunny-free; HTTP 400 for ling-3.0-flash-fin-free). The remaining
+  // ids resolve through PATTERN_CAPABILITIES to the same limits, so nothing
+  // is lost. `opencode-go` (the PAID tier) is a different upstream and keeps
+  // its own entries — do not prune the two together.
   "opencode": {
-    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
-    "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
-    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
   },
   "oc": {
-    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
-    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
   },
   "opencode-go": {
     "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
@@ -456,27 +456,20 @@ export const PROVIDER_CAPABILITIES = {
     "hy4-preview":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
     "hy3":               { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
   },
+  // "opencode-zen" aliases the SAME free upstream as opencode/oc (registry
+  // aliases oc/opencode/opencode-zen/zen to one implementation), so the
+  // retired free ids are pruned here too. The remaining ids resolve through
+  // PATTERN_CAPABILITIES to the same limits.
   "opencode-zen": {
-    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
-    "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
-    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    // Same free upstream as opencode/oc (registry aliases oc/opencode/
-    // opencode-zen/zen to one implementation) — the live 2026-09-30 probe on
-    // the shared upstream showed `none` 400s, so the clamp applies here too.
-    // If zen-free ever splits to its own upstream, re-probe before trusting.
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
   },
   // "zen" is a bare alias of the same free upstream (registry aliases
   // oc/opencode/opencode-zen/zen to one implementation; there is no separate
   // "zen" executor key — but caps lookups use the raw provider id, so the
   // alias needs its own block or the clamp silently misses it).
   "zen": {
-    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
-    "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
-    "muse-spark-1.3-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false, thinkingCanDisable: false },
   },
   "openrouter": {
     "stealth/ox-alpha": OX_ALPHA_CAPABILITIES,

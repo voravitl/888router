@@ -18,15 +18,23 @@ describe("OpenCode Model Sync Support", () => {
   });
 
   it("should include all current free models in opencode static registry", () => {
+    // The catalogue lists only models that actually serve (verified live
+    // 2026-10-21). The retired ids — mimo-v2.5-free,
+    // muse-spark-1.2/1.3-contributor-free, space-bunny-free (HTTP 410) and
+    // deepseek-v4-flash-free / ling-3.0-flash-fin-free / jev-1.13-free
+    // (HTTP 400) — are pinned as ABSENT in
+    // tests/unit/opencode-free-catalogue.test.js.
     const modelIds = opencodeRegistry.models.map((m) => m.id);
-    expect(modelIds).toContain("mimo-v2.5-free");
-    expect(modelIds).toContain("ling-3.0-flash-fin-free");
     expect(modelIds).toContain("nemotron-3-ultra-free");
     expect(modelIds).toContain("nemotron-3.5-lightning-free");
-    expect(modelIds).toContain("muse-spark-1.2-contributor-free");
-    expect(modelIds).toContain("muse-spark-1.3-contributor-free");
+    expect(modelIds).toContain("nemotron-3.5-super-vl-free");
+    expect(modelIds).toContain("mimo-v2.6-flash-free");
+    expect(modelIds).toContain("beam-free");
+    expect(modelIds).toContain("deepseek-v4.1-flash-free");
+    expect(modelIds).toContain("glm-5.3-flash-free");
+    expect(modelIds).toContain("longcat-2.5-preview-free");
+    expect(modelIds).toContain("minimax-m3.1-flash-free");
     expect(modelIds).toContain("big-pickle");
-    expect(modelIds).toContain("deepseek-v4-flash-free");
   });
 
   it("should resolve capabilities correctly for new free models", () => {

@@ -61,10 +61,12 @@ describe("getCapabilitiesForModel", () => {
       contextWindow: 1048576,
       maxOutput: 64000,
     };
-    expect(getCapabilitiesForModel("opencode", "space-bunny-free")).toMatchObject(expected);
-    expect(getCapabilitiesForModel("oc", "space-bunny-free")).toMatchObject(expected);
+    // The opencode FREE tier (opencode / oc / opencode-zen / zen) retired
+    // space-bunny-free (HTTP 410 ModelDeprecated, verified live 2026-10-21),
+    // so those aliases no longer carry a dedicated capability entry — they
+    // fall through to the default limits. The PAID tier (opencode-go) still
+    // serves the id and keeps its entry, so that is where the 1M/reasoning
+    // contract is pinned.
     expect(getCapabilitiesForModel("opencode-go", "space-bunny-free")).toMatchObject(expected);
-    expect(getCapabilitiesForModel("opencode-zen", "space-bunny-free")).toMatchObject(expected);
-    expect(getCapabilitiesForModel("oc", "space-bunny-free")).toMatchObject(expected);
   });
 });
