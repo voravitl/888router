@@ -1,3 +1,47 @@
+# v0.15.182 (2026-10-21)
+
+## The opencode free catalogue no longer advertises models that are dead
+
+- opencode.ai retires free model ids over time, and the static registry kept
+  listing them. `/v1/models` therefore advertised dead models to every client
+  (Hermes included), which then picked one and failed. Verified live against
+  the running gateway on 2026-10-21 — two probes per model, identical results:
+
+  - **Retired upstream (HTTP 410 `ModelDeprecated`)**: `mimo-v2.5-free`,
+    `muse-spark-1.2-contributor-free`, `muse-spark-1.3-contributor-free`,
+    `space-bunny-free`
+  - **Upstream still lists them, but no endpoint serves them (HTTP 400)**:
+    `deepseek-v4-flash-free`, `ling-3.0-flash-fin-free`, `jev-1.13-free`
+  - **Kept, all serving (HTTP 200)**: `nemotron-3-ultra-free`,
+    `nemotron-3.5-lightning-free`, `nemotron-3.5-super-vl-free`,
+    `mimo-v2.6-flash-free`, `big-pickle`, `beam-free`,
+    `deepseek-v4.1-flash-free`, `glm-5.3-flash-free`,
+    `longcat-2.5-preview-free`, `minimax-m3.1-flash-free`
+
+- `nemotron-3-ultra-free` is **not** in the upstream `/v1/models` list but
+  still answers 200 — "absent from the list" is not evidence of death, so it
+  stays. That distinction is what stopped a blind prune from deleting a
+  working model.
+- The per-provider capability entries for the dead ids were pruned too (the
+  `opencode` / `oc` / `opencode-zen` / `zen` blocks), along with the two dead
+  `freeModelCatalog` entries. The surviving ids resolve through
+  `PATTERN_CAPABILITIES` to the same limits, so **no model's advertised
+  context window or output budget changed**.
+- The **paid** tier (`registry/opencode-go.js` and the `opencode-go`
+  capability block) is a different upstream and was **not** touched:
+  `ocg/muse-spark-1.3-contributor` and `ocg/space-bunny-free` were probed
+  separately and still serve there. Pruning the free tier must never prune the
+  paid one.
+- `tests/unit/opencode-free-catalogue.test.js` pins the dead ids as absent
+  and the serving ids as present, so a future upstream retirement cannot put
+  a dead model back into the advertised catalogue unnoticed.
+- Live data cleaned up alongside the code: the four dead `customModels` rows
+  for `oc` (`deepseek-v4-flash-free`, `space-bunny-free`,
+  `step-5-preview-free`, `ll-alpha-free` — the last two probed dead the same
+  way) and the dead members of the `9-opus` / `9-sonnet` / `9-haiku` combos.
+  The `customModels` scope is written add-only by the sync handler, so those
+  rows would otherwise have kept the dead models advertised forever.
+
 # v0.15.181 (2026-10-21)
 
 ## A dead model no longer takes the whole shared relay down with it
