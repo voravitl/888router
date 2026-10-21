@@ -16,6 +16,9 @@
 
 2. **Step 2: Automated Verification**
    - รัน Unit Tests (`npx vitest run --config tests/vitest.config.js`) ต้องผ่าน 100% ทั้งหมดก่อนดำเนินการต่อ
+   - **รันจาก repo root เท่านั้น** — ถ้ารันจาก `tests/` ชุดที่ใช้ `path.resolve("src/...")` จะพัง (`security-audit.test.js` พัง 15 เคสด้วยเหตุผลนี้)
+   - ใน CI ให้เรียกไบนารีที่ pin ไว้โดยเฉพาะ: `./tests/node_modules/.bin/vitest run --config tests/vitest.config.js` — `npx vitest` จาก repo root จะไปดึง major version อื่นจาก registry (เคยเจอ 5.0.5 ทั้งที่ pin ไว้ 4.1.10)
+   - **ตั้งแต่ 2026-10-21 CI รันเต็มชุด 3,613 เคส** (ไม่ใช่ smoke list เหลือแค่ 8-10 ไฟล์จาก 349) พร้อม `tests/__baseline__/verify-no-regression.mjs` — ไฟล์เทสต์ใหม่ได้รับการครอบคลุมทันทีที่ลง ไม่ต้องไปเพิ่มในรายการใด ๆ
 
 3. **Step 3: Self-Review by the Writing Agent (BEFORE MERGE GATE)**
    - **ห้าม Merge ลง master เด็ดขาดก่อนผ่าน Step 3!**
@@ -37,6 +40,7 @@
 ### 🟢 PHASE 2: AFTER MERGE (ทำเมื่อ Merge ลง master)
 4. **Step 4: Production & Docker Build Gate**
    - รัน `npm run build` (Next.js production build) ยืนยันว่าไม่มี Build Error
+   - *(CI รัน `npm run build` ให้แล้วตั้งแต่ 2026-10-21 ใน job `full-suite` ของ `docker-publish.yml` — ถ้าพังจะพังก่อนที่ image จะถูก build)*
    - *(ยกเลิกการ build image เข้า local daemon แล้ว 2026-09-30 — deploy เป็น docker compose, image มาจาก Docker Hub โดย CI publish)*
 
 5. **Step 5: Version Bumping, Release Tagging, Push & Merge**

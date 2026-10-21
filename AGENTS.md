@@ -304,3 +304,87 @@ Known gap (recorded, not fixed): `open-sse/handlers/responsesHandler.js`
 (`handleResponsesCore`) is dead code — nothing imports it — and it still has
 the original whole-completion bug (reads only `choice.delta`). It cannot
 affect traffic today; delete it rather than fix it if it is ever revived.
+
+### The CI gate is the FULL suite, run from the repo root with the PINNED vitest (2026-10-21)
+
+CI used to run a hand-picked smoke list — 8 of 349 test files in `ci.yml` and
+a *different* 10 in `docker-publish.yml` (2.3% / 3.4% coverage, and the two
+lists disagreed). The 22 refusal-delivery cases added in #556 and #557 were
+in neither, so CI stayed green on a build that shipped a regression in exactly
+those paths. Both workflows now run the full suite (3,615 passed / 0 failed /
+70 skipped — identical on macOS and on a Linux container) plus
+`tests/__baseline__/verify-no-regression.mjs`, and `docker-publish.yml` also
+runs `npm run build` before the image is built.
+
+Two non-obvious details that a future agent will otherwise undo:
+
+- **Run vitest from the REPO ROOT.** From `tests/`, the suites that resolve
+  sources with `path.resolve("src/...")` fail — `security-audit.test.js` alone
+  failed 15 cases that way. The suite is green only from the root.
+- **Invoke `./tests/node_modules/.bin/vitest`, not `npx vitest`.** The root
+  `package.json` has no vitest dependency; the pinned one (`4.x`) lives in
+  `tests/node_modules`. `npx vitest` from the root therefore resolves a
+  *different* major from the registry — verified locally: npx served 5.0.5
+  against the pinned 4.1.10. A gate that runs a different test runner than
+  the one you validated against is not a gate.
+
+Rule: a new test file needs no registration anywhere — the full-suite gate
+picks it up on the next run. If you ever re-introduce a smoke subset, it must
+be a *supplement* to the full run, never a replacement for it.
+
+### A golden snapshot must never encode the machine that produced it (2026-10-21, v0.15.180)
+
+Turning the full-suite gate on failed immediately on the Linux CI runner with
+5 failures the macOS box could not reproduce. Every one of them was a
+**test-side** portability bug, and every one of them had been invisible
+because the file was in no smoke list:
+
+- `tests/translator/golden-url-header.test.js` recorded the host's own
+  identity in the snapshot: `X-PLATFORM` (`process.platform`),
+  `X-PLATFORM-VERSION` (`process.version`), `X-Msh-Device-Model`
+  (`${process.platform} ${process.arch}`) and `X-Msh-Device-Name`
+  (`hostname()`). The snapshot said `darwin`; the runner produced `linux`
+  and its own hostname. Three separate rounds of failure — one per leak.
+- `tests/unit/devin-cli-executor.test.js` asserted `XDG_CONFIG_HOME` is
+  `undefined`, but the executor legitimately forwards a pre-existing
+  `XDG_CONFIG_HOME` through its `SAFE_ENV_KEYS` allowlist. The assertion
+  tested the HOST environment, not the executor. Linux runners export
+  `/home/runner/.config`; macOS usually exports nothing.
+
+Rules going forward:
+
+- **A golden/snapshot file records the gateway's behaviour, never the
+  machine's.** If a value comes from `process.platform`, `process.arch`,
+  `process.version`, `os.hostname()` or a path, it must be normalized before
+  it reaches the snapshot — the assertion that matters is the header's
+  PRESENCE, not its value.
+- **A test must assert the unit's behaviour, not the ambient environment.**
+  "The executor does not set X" is a statement about the executor; asserting
+  `toBeUndefined()` on a variable the parent process may already export
+  asserts the parent process instead. Read the source before writing the
+  assertion.
+- **The list of normalized fields cannot be trusted to stay complete.** A new
+  provider can start emitting a new host-derived header. So the guard is
+  structural, not a list: `golden-url-header.test.js` runs the header dump
+  TWICE in two processes — the real host, and one where every source of host
+  identity is replaced by a canary (`golden-url-header.host-canary.cjs`,
+  loaded with `--require` so it patches `os.*` BEFORE the application
+  modules are imported, because `shared.js` and `appConstants.js` capture
+  `os.platform()` / `os.arch()` / `os.hostname()` at MODULE LOAD time). Any
+  header whose value differs between the two runs is host-derived, and the
+  guard names the provider and the header.
+- **A perturbation beats a value-pattern.** The first version of the guard
+  compared header values against "looks like a platform" strings and
+  false-positived on `claude`'s `X-Stainless-Arch: arm64` — a HARDCODED
+  spoof constant that merely happened to equal the maintainer's real arch.
+  Perturbing the identity and comparing is exact.
+
+Proof that this works: injecting a brand-new host-derived header
+(`X-Msh-New-Leaky-Header`) into `open-sse/config/appConstants.js` makes the
+guard fail with the provider and the header named, before the snapshot ever
+gets a chance to disagree on somebody else's machine.
+
+Corollary: a local green run proves nothing about CI. The Linux container
+run (`node:22-bookworm`, Node 22.23.3 — the runtime CI uses) is what
+confirmed the suite is machine-independent: 3,615 passed / 0 failed / 70
+skipped, identical to macOS.
