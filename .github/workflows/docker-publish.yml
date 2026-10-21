@@ -89,13 +89,15 @@ jobs:
           done
           echo "tags resolve for both registries"
 
-  # Test gate: do not publish an image if unit smoke fails.
-  # (Same smoke set as .github/workflows/ci.yml — keep in sync.)
+  # Test gate: do not publish an image if the test suite or the production
+  # build fails. (Same full-suite gate as .github/workflows/ci.yml — keep in
+  # sync. This job is the LAST thing between a broken commit and a published
+  # image, so it runs the whole suite plus `next build`.)
   test:
-    name: unit-smoke
+    name: full-suite
     needs: tags
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -116,20 +118,73 @@ jobs:
         working-directory: tests
         run: npm install --no-audit --no-fund --legacy-peer-deps
 
-      - name: Run unit smoke tests
-        working-directory: tests
+      # FULL suite — same gate as ci.yml. This job is the last thing standing
+      # between a broken commit and a published image, so it runs everything,
+      # not a smoke subset. The two workflows previously ran DIFFERENT smoke
+      # lists (ci.yml had the antigravity pair, this one had the kiro/models-dev
+      # quartet), which meant a commit could be green in one and untested in
+      # the other.
+      #
+      # Two details that are NOT optional:
+      #   - Run from the REPO ROOT. Running from tests/ breaks the suites that
+      #     resolve sources with path.resolve("src/...") — security-audit.test.js
+      #     alone failed 15 cases that way.
+      #   - Invoke tests/node_modules/.bin/vitest explicitly. `npx vitest` from
+      #     the repo root does NOT find the pinned vitest (it lives in
+      #     tests/node_modules, and the root package has no vitest dependency),
+      #     so npx would silently fetch a DIFFERENT major version from the
+      #     registry — the local machine resolved 5.0.5 against the pinned
+      #     4.1.10. A silently different test runner is a gate that does not
+      #     gate what it claims to.
+      - name: Run full test suite
         run: |
-          npx vitest run \
-            unit/request-detail-token-stats.test.js \
-            unit/capabilities.test.js \
-            unit/dashboard-guard.test.js \
-            unit/capabilities-grok-context.test.js \
-            unit/tool-cap.test.js \
-            unit/provider-variance-fixes.test.js \
-            unit/kiro-models-context.test.js \
-            unit/models-dev-modality.test.js \
-            unit/retry-500-config.test.js \
-            unit/request-details-retention.test.js
+          ./tests/node_modules/.bin/vitest run \
+            --config tests/vitest.config.js \
+            --reporter=json \
+            --outputFile=ci-test-results.json
+
+      # Regression gate, same vocabulary as the baseline file: a failure is
+      # reported as "file :: test name", the format an operator needs to add a
+      # known-fails entry.
+      - name: Check against known-fails baseline
+        run: |
+          node tests/__baseline__/verify-no-regression.mjs ci-test-results.json
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-test-results
+          path: ci-test-results.json
+          retention-days: 7
+
+      - name: Summarise test results
+        if: always()
+        run: |
+          {
+            echo "### Test results"
+            echo ""
+            node -e '
+              const fs = require("fs");
+              const r = JSON.parse(fs.readFileSync("./ci-test-results.json", "utf8"));
+              console.log(`- total: ${r.numTotalTests}`);
+              console.log(`- passed: ${r.numPassedTests}`);
+              console.log(`- failed: ${r.numFailedTests}`);
+              console.log(`- skipped: ${r.numPendingTests}`);
+            ' 2>/dev/null || echo "results file unavailable"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Production build gate. `next build` is what the Dockerfile runs
+      # (RUN mkdir -p /app/data && npm run build), so a build error here is a
+      # build error in the image too — but only after a full amd64+arm64 build
+      # and a manifest publish. This step surfaces it in ~1 minute instead of
+      # ~45, and before anything public moves.
+      #
+      # This is the step .agents/AGENTS.md has required since Phase 2/Step 4
+      # ("run npm run build to confirm there is no build error") — no workflow
+      # actually ran it.
+      - name: Verify production build
+        run: npm run build
 
   # Per-architecture build on a NATIVE runner — no QEMU.
   #

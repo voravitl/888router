@@ -1,3 +1,67 @@
+# v0.15.180 (2026-10-21)
+
+## CI: the test gate now runs the full suite, not a 3% smoke subset
+
+- CI ran a hand-picked smoke list: 8 of 349 test files in `ci.yml` and a
+  *different* 10 in `docker-publish.yml` (2.3% / 3.4% coverage, and the two
+  lists disagreed with each other). The 22 refusal-delivery cases added in
+  0.15.178 and 0.15.179 were in neither list, so CI stayed green on a build
+  that shipped a regression in exactly those paths.
+- `.github/workflows/ci.yml` and `.github/workflows/docker-publish.yml` now
+  run the full suite (3,613 passed / 0 failed / 70 skipped, verified on a
+  clean clone of master) followed by
+  `tests/__baseline__/verify-no-regression.mjs`, so a failure is reported as
+  `file :: test name` — the format the known-fails file uses. A new test file
+  is covered the moment it lands; there is no list to remember to update.
+- `.github/workflows/docker-publish.yml` additionally runs `npm run build`
+  before the image is built. `next build` is what the Dockerfile runs, so a
+  build error was previously only discovered after a full multi-arch build and
+  a manifest publish; it now fails in about a minute, before anything public
+  moves. This is the step `.agents/AGENTS.md` has required since Phase 2 /
+  Step 4.
+- Two details that are load-bearing, not cosmetic: vitest runs from the
+  repository root (from `tests/`, the suites that resolve sources with
+  `path.resolve("src/...")` fail — `security-audit.test.js` alone failed 15
+  cases), and the pinned binary is invoked explicitly
+  (`./tests/node_modules/.bin/vitest`) because `npx vitest` from the root
+  resolves a different major from the registry — locally it served 5.0.5
+  against the pinned 4.1.10.
+
+## Test fixes: the golden snapshot and one devin test were pinned to one machine
+
+Turning the gate on immediately failed on the Linux CI runner with 5
+failures that the maintainer's macOS box could not reproduce. All five were
+**test-side** problems — the product behaviour was correct in every case:
+
+- `tests/translator/golden-url-header.test.js` — the golden snapshot recorded
+  the host's own identity: `X-PLATFORM` (`process.platform`),
+  `X-PLATFORM-VERSION` (`process.version`), `X-Msh-Device-Model`
+  (`${process.platform} ${process.arch}`) and `X-Msh-Device-Name`
+  (`hostname()`). The snapshot said `darwin`; the runner produced `linux` and
+  its own hostname. `sanitize()` now normalizes those four headers to
+  `<HOST>`, so the snapshot asserts the header is *present* without
+  asserting which machine produced it.
+  A new guard test now compares a real host run against a canary run
+  (every source of host identity replaced, in a separate process so the
+  `os.*` bindings captured at module-load time are covered too) and fails,
+  naming the provider and the header, if a *new* host-derived value ever
+  appears. Without it, the list of normalized headers could silently go
+  stale — the exact failure mode this PR fixes.
+- `tests/unit/devin-cli-executor.test.js` — "does not set XDG_CONFIG_HOME
+  when DEVIN_MCP_SERVERS is absent" asserted `toBeUndefined()`, but the
+  executor forwards a pre-existing `XDG_CONFIG_HOME` from the parent process
+  through its `SAFE_ENV_KEYS` allowlist. That is intended behaviour, and the
+  assertion was really about the *host* environment (macOS usually has no
+  `XDG_CONFIG_HOME`; the Linux runner exports `/home/runner/.config`). The
+  case now asserts the executor does not *override* it, and passes on both.
+- Verified on a real Linux container (`node:22-bookworm`, Node 22.23.3 —
+  the same runtime CI uses): 3,615 passed / 0 failed / 70 skipped, identical
+  to macOS. The full suite is now machine-independent.
+
+- No runtime behaviour changed: this release only affects the CI pipeline
+  and the test suite. The published image for 0.15.180 contains the same
+  application code as 0.15.179.
+
 # v0.15.179 (2026-10-21)
 
 ## Fix: the Gemini client format still dropped a refusal-only answer
