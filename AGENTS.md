@@ -388,3 +388,49 @@ Corollary: a local green run proves nothing about CI. The Linux container
 run (`node:22-bookworm`, Node 22.23.3 — the runtime CI uses) is what
 confirmed the suite is machine-independent: 3,615 passed / 0 failed / 70
 skipped, identical to macOS.
+
+### A model-identity error must never park a SHARED proxy pool (2026-10-21, v0.15.181)
+
+opencode.ai answers **410 `ModelDeprecated`** for a retired model id. 410
+matched no rule in `ERROR_RULES`, so it fell through to the default
+transient rule (`shouldFallback: true`, 30 s) and `markAccountUnavailable`
+**parked the shared relay pool** for 30 s. That relay is shared by every
+`oc/*` model, so one dead id killed all of them — each answering with the
+same 410 body, naming a model the caller never requested. Live proof
+(`docker logs 888route`):
+
+```
+[AUTH] pool 811de521-… parked 30s [410] backoff=0
+[AUTH] opencode | all proxy pools parked [410], retry after reset after 26s
+[CHAT] [opencode/beam-free] [410]: {"type":"error","error":{"type":"ModelDeprecated",…
+```
+
+The same class was live for **400 `ModelProtocolUnsupported`**.
+
+Rules going forward:
+
+- **A status that means "this model is gone" is a MODEL error, not a
+  transport failure.** 410 joins 404: `modelError: true,
+  permanentModelError: true`. The combo skips to the next model; no account
+  rotates and **no pool is parked**. A dead model must not take healthy
+  siblings down with it.
+- **A broad status must never be classified on the status alone.** 400 is the
+  most generic failure there is (bad request, malformed tool-call JSON), so
+  `ModelProtocolUnsupported` is matched on TEXT. A plain 400 must keep
+  rotating — pinned in `tests/unit/error-config-permanent-model-error.test.js`
+  (REQUEST_SCOPED).
+- **A shared pool can only be parked by an error that is the POOL's fault**
+  (402 dead relay, 429 quota, 5xx, suspend). A model-identity error is the
+  MODEL's fault.
+- **The all-failed verdict must name the real problem.** The combo's 429
+  "All models quota-limited" now requires an actual quota signal; a
+  body-level `retryAfter` on a non-quota failure no longer sets the
+  earliest-retry clock, so a failure set where nothing was quota-limited is
+  not reported as a quota problem.
+- **Redundancy must span upstreams, not models.** A combo whose members all
+  ride ONE upstream has no real redundancy: that upstream going down takes
+  out the whole combo no matter how the error is classified. `9-free` gained
+  backup members on OpenRouter and Antigravity for exactly this reason.
+  Corollary for a client: a Hermes `fallback_providers` chain should point
+  at independent upstreams too — `custom:888router` entries with different
+  model prefixes only help if the models sit on different providers.
