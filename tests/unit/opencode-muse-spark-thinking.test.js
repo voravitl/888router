@@ -18,8 +18,17 @@ const input = [{
 
 describe("OpenCode Free Muse Spark thinking", () => {
   it("advertises reasoning and the requested model limits", () => {
-    expect(PROVIDER_MODELS.oc?.some((model) => model.id === MODEL)).toBe(true);
-    expect(PROVIDER_MODELS.oc?.some((model) => model.id === "muse-spark-1.3-contributor-free")).toBe(true);
+    // The opencode FREE muse-spark ids were retired upstream (HTTP 410
+    // ModelDeprecated, verified live 2026-10-21) and left the free
+    // catalogue — so they are no longer in PROVIDER_MODELS.oc. The capability
+    // and targetFormat rules below are still the contract for the family
+    // (the paid opencode-go tier and other providers still carry
+    // muse-spark-*-contributor ids), so they are asserted directly.
+    //
+    // The free catalogue's own contents are pinned in
+    // tests/unit/opencode-free-catalogue.test.js.
+    expect(PROVIDER_MODELS.oc?.some((model) => model.id === MODEL)).toBe(false);
+    expect(PROVIDER_MODELS["opencode-go"]?.some((model) => model.id === "muse-spark-1.3-contributor")).toBe(true);
     for (const m of [MODEL, "muse-spark-1.3-contributor-free", "muse-spark-1.4-contributor-free", "muse-spark-2.0-contributor-free"]) {
       expect(getCapabilitiesForModel(PROVIDER, m)).toMatchObject({
         reasoning: true,
@@ -39,10 +48,16 @@ describe("OpenCode Free Muse Spark thinking", () => {
       // from the level picker and makes applyFormat clamp none → minimal.
       // Unprobed siblings (1.2/1.4/2.0, nara/*) keep `none` until their own
       // upstream is probed.
+      //
+      // The clamp lives on the PAID tier now: the opencode FREE ids were
+      // retired upstream (HTTP 410, verified live 2026-10-21) and left the
+      // free catalogue, so `opencode` no longer carries a dedicated entry for
+      // them and they fall through to the family pattern. opencode-go still
+      // serves the same ids and still clamps.
       const probed = m === "muse-spark-1.3-contributor-free";
-      // Unprobed siblings fall through to the family default (can disable).
-      expect(getCapabilitiesForModel(PROVIDER, m).thinkingCanDisable).toBe(probed ? false : true);
-      expect(getThinkingLevels(PROVIDER, m)).toEqual(
+      const clampProvider = "opencode-go";
+      expect(getCapabilitiesForModel(clampProvider, m).thinkingCanDisable).toBe(probed ? false : true);
+      expect(getThinkingLevels(clampProvider, m)).toEqual(
         probed
           ? ["minimal", "low", "medium", "high", "xhigh"]
           : ["none", "minimal", "low", "medium", "high", "xhigh"],
@@ -191,13 +206,28 @@ describe("OpenCode Free Muse Spark thinking", () => {
     expect(out.max_tokens).toBeUndefined();
   });
 
-  it("alias parity: oc and opencode-zen agree with opencode on the probed SKU", () => {
-    // oc / opencode-zen alias the same free upstream (registry aliases
-    // oc/opencode/opencode-zen/zen to one implementation). The clamp flag must
-    // not diverge across the alias — otherwise one provider id offers `none`
-    // and 400s on the probed SKU.
-    for (const p of ["opencode", "oc", "opencode-zen", "zen", "opencode-go"]) {
-      expect(getCapabilitiesForModel(p, "muse-spark-1.3-contributor-free").thinkingCanDisable).toBe(false);
+  it("alias parity: the opencode-go aliases agree on the probed SKU", () => {
+    // The clamp must not diverge across aliases of the SAME upstream —
+    // otherwise one provider id offers `none` and 400s on the probed SKU.
+    //
+    // The free aliases (opencode / oc / opencode-zen / zen) are NOT in this
+    // list: their muse-spark-*-contributor-free ids were retired upstream
+    // (HTTP 410, verified live 2026-10-21) and left the free catalogue, so
+    // they no longer carry a dedicated clamp entry. The paid tier still
+    // serves the id and still clamps.
+    //
+    // `ocg` is a routing alias (registry aliases), not a caps key —
+    // getCapabilitiesForModel looks up PROVIDER_CAPABILITIES[provider]
+    // verbatim, so `ocg` never had a dedicated block and still does not.
+    for (const p of ["opencode-go", "opencode-zen", "zen"]) {
+      const c = getCapabilitiesForModel(p, "muse-spark-1.3-contributor-free");
+      if (p === "opencode-go") {
+        expect(c.thinkingCanDisable).toBe(false);
+      } else {
+        // Free aliases: the id is retired, so it falls through to the family
+        // pattern (can disable) rather than a stale per-provider entry.
+        expect(c.thinkingCanDisable).toBe(true);
+      }
     }
     // Unprobed upstreams keep `none`.
     expect(getCapabilitiesForModel("nara", "muse-spark-1.3-contributor").thinkingCanDisable).toBe(true);

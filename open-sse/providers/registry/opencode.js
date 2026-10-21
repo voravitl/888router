@@ -32,18 +32,34 @@ const opencodeConfig = {
   },
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
+  // Free catalogue. Every id here was verified to SERVE against the live
+  // gateway on 2026-10-21 (two probes each, identical results).
+  //
+  // Ids that upstream RETIRED are removed: they answer HTTP 410
+  // ModelDeprecated, and while they were listed here /v1/models advertised
+  // them to every client — which then picked a dead model and failed.
+  //   mimo-v2.5-free, muse-spark-1.2-contributor-free,
+  //   muse-spark-1.3-contributor-free, space-bunny-free
+  //
+  // Ids upstream still lists but cannot serve are removed too (HTTP 400
+  // "Model is unavailable" / ModelProtocolUnsupported on every endpoint):
+  //   deepseek-v4-flash-free, ling-3.0-flash-fin-free, jev-1.13-free
+  //
+  // `nemotron-3-ultra-free` is NOT in the upstream /v1/models list but still
+  // answers 200 — "absent from the list" is not evidence of death, so it stays.
+  // The paid tier (registry/opencode-go.js) is a DIFFERENT upstream and keeps
+  // its own catalogue; the two must not be pruned together.
   models: [
-    { id: "mimo-v2.5-free", name: "mimo-v2.5-free" },
-    { id: "ling-3.0-flash-fin-free", name: "ling-3.0-flash-fin-free" },
     { id: "nemotron-3-ultra-free", name: "nemotron-3-ultra-free" },
     { id: "nemotron-3.5-lightning-free", name: "nemotron-3.5-lightning-free" },
-    { id: "muse-spark-1.2-contributor-free", name: "muse-spark-1.2-contributor-free", targetFormat: "openai-responses" },
-    { id: "muse-spark-1.3-contributor-free", name: "muse-spark-1.3-contributor-free", targetFormat: "openai-responses" },
-    { id: "big-pickle", name: "big-pickle" },
-    { id: "deepseek-v4-flash-free", name: "deepseek-v4-flash-free" },
-    { id: "jev-1.13-free", name: "jev-1.13-free" },
+    { id: "nemotron-3.5-super-vl-free", name: "nemotron-3.5-super-vl-free" },
     { id: "mimo-v2.6-flash-free", name: "mimo-v2.6-flash-free" },
-    { id: "space-bunny-free", name: "space-bunny-free" },
+    { id: "beam-free", name: "beam-free" },
+    { id: "deepseek-v4.1-flash-free", name: "deepseek-v4.1-flash-free" },
+    { id: "glm-5.3-flash-free", name: "glm-5.3-flash-free" },
+    { id: "longcat-2.5-preview-free", name: "longcat-2.5-preview-free" },
+    { id: "minimax-m3.1-flash-free", name: "minimax-m3.1-flash-free" },
+    { id: "big-pickle", name: "big-pickle" },
   ],
 };
 
