@@ -1,3 +1,60 @@
+# v0.15.184 (2026-10-22)
+
+## Ponytail: the duplicate-prompt guard now covers every request shape
+
+- The guard added in 0.15.183 only ran for a system message that is a plain
+  string. The three list shapes — OpenAI message parts, Claude system blocks,
+  Gemini `system_instruction` parts — asked "is this block **exactly** the
+  prompt?". In real traffic the prompt is never the whole block: the
+  OpenAI→Claude translator puts the client's entire system message into one
+  block, so it reads `You are helpful.\n\n<prompt>` and the check never
+  matched. Measured with the shipped code: OpenAI string → 1 copy, OpenAI
+  array → 2, Claude array → 2, Gemini parts → 2.
+- All three now use the same "contains" check, so a client that echoes the
+  system block back gets the prompt once on every provider. The 0.15.183 test
+  covered Claude with a plain string — a shape the translator never produces
+  — which is why the suite was green while the real path duplicated.
+- The 0.15.183 changelog and the code comment said the duplicate came from
+  "its own ponytail plugin". That was wrong: such a client sends **upstream's**
+  wording, not the gateway's, so an exact match cannot see it and both rule
+  sets still end up in the request (measured live: a 5,766-char system
+  prompt). What is fixed is a client that echoes the gateway's **own** block
+  back. The comments now say so, and name why the other case is not fixable
+  here: matching a text the gateway has never seen means guessing, and
+  guessing would swallow other prompts. **Pick one owner** — the gateway's
+  dashboard toggle or the client's plugin.
+
+## Ponytail: the dashboard text describes the ladder the model receives
+
+- The 0.15.183 blurb read "reuse what is already in the codebase, then
+  stdlib, then YAGNI", and the level description read "codebase first",
+  while the injected ladder starts with "1) Does it need to exist at all?".
+  The change had fixed the codebase-vs-stdlib order and left YAGNI in the
+  wrong place — the same defect 0.15.183 set out to fix. The blurb, the
+  level description and the prompt's own `Full:` line now name the rungs in
+  the order the model receives them, and a test pins that order so the two
+  cannot drift again.
+
+## Ponytail: the output contract matches upstream v5
+
+- "Code first. Then at most three short lines" was the pre-v5 wording, and
+  the 0.15.183 commit message presented it as a v5 feature. Upstream v5: "End
+  your reply with one or two lines: what you skipped or did not check, and
+  any risk the user must know." The prompt now uses upstream's line, and a
+  test pins it.
+
+## Housekeeping
+
+- One `ponytail:` comment marker was left behind in
+  `tests/unit/cached-token-usage.test.js` while 0.15.183 renamed six others
+  to `shortcut:`. Nothing breaks — upstream's debt ledger reads both words —
+  but the repo had two conventions for one thing.
+
+Tests: 7 new cases (3 request shapes, the ladder order, the output
+contract, and 2 that keep the dedupe honest — a list shape holding a
+different level's prompt must still get ours). Full suite: 3,683 passed /
+0 failed / 70 skipped.
+
 # v0.15.183 (2026-10-21)
 
 ## Ponytail: the injected prompt now matches upstream v5
