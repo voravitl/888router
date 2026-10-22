@@ -15,7 +15,7 @@ import {
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings, updateProviderConnection, getProviderConnections } from "@/lib/localDb";
 import { isAccountQualityFailure, updateHealthEma } from "open-sse/services/accountScoring.js";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, applyThinkingSuffixToMembers } from "../services/model.js";
 import { ensureModelContextLoaded } from "../services/modelContext.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { resolveUniversalToolsMode } from "open-sse/translator/concerns/universalToolPrompt.js";
@@ -27,6 +27,7 @@ import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { isRetiredProvider, retiredProviderMessage } from "open-sse/config/retiredProviders.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { splitThinkingSuffix } from "open-sse/translator/concerns/thinkingUnified.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -113,18 +114,27 @@ export async function handleChat(request, clientRawRequest = null) {
   await ensureModelContextLoaded(log);
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
+  //
+  // A thinking-level suffix on a combo name ("9-free(low)") addresses the
+  // COMBO, not one of its members: the lookup must use the bare name (the
+  // combo is registered under it) and the suffix is handed to every member.
+  // Without this the lookup misses, the request falls through to the normal
+  // model path and the client gets "No active credentials for provider:
+  // openai" — an error about credentials for a model nobody asked for.
+  const { base: comboName, suffix: thinkingSuffix } = splitThinkingSuffix(modelStr);
+  const comboModels = await getComboModels(comboName);
   if (comboModels) {
+    const members = applyThinkingSuffixToMembers(comboModels, thinkingSuffix);
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
-    const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-    const comboStrategy = normalizePersistedStrategy(comboSpecificStrategy || settings.comboStrategy || "fallback", modelStr);
+    const comboSpecificStrategy = comboStrategies[comboName]?.fallbackStrategy;
+    const comboStrategy = normalizePersistedStrategy(comboSpecificStrategy || settings.comboStrategy || "fallback", comboName);
 
     if (comboStrategy === "fusion") {
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+      log.info("CHAT", `Combo "${comboName}" with ${members.length} models (strategy: fusion)`);
       return handleFusionChat({
         body,
-        models: comboModels,
+        models: members,
         resolveModelInfo: getModelInfo,
         handleSingleModel: (b, m, isPanel, opts) => {
           let cleanRawReq = clientRawRequest;
@@ -135,22 +145,22 @@ export async function handleChat(request, clientRawRequest = null) {
           return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, 0, opts);
         },
         log,
-        comboName: modelStr,
-        judgeModel: comboStrategies[modelStr]?.judgeModel,
-        tuning: comboStrategies[modelStr]?.fusionTuning,
+        comboName,
+        judgeModel: comboStrategies[comboName]?.judgeModel,
+        tuning: comboStrategies[comboName]?.fusionTuning,
         signal: request?.signal,
       });
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("CHAT", `Combo "${comboName}" with ${members.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
+      models: members,
       resolveModelInfo: getModelInfo,
       handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, 0, opts),
       log,
-      comboName: modelStr,
+      comboName,
       comboStrategy,
       comboStickyLimit,
       getComboConnections: getProviderConnections,
