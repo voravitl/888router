@@ -419,6 +419,39 @@ run (`node:22-bookworm`, Node 22.23.3 — the runtime CI uses) is what
 confirmed the suite is machine-independent: 3,615 passed / 0 failed / 70
 skipped, identical to macOS.
 
+### A probe that greps one error string reports a blip as a pass (2026-10-22, v0.15.188)
+
+The first scope of the gemini-3.8 thinking floor was decided by a shell probe
+that did this:
+
+```bash
+case "$out" in *"MINIMAL"*) echo "REJECTS-MINIMAL";; *) echo "ok";; esac
+```
+
+Antigravity was returning `503 No capacity available` for half the models at
+that moment, and that body does not contain the word MINIMAL — so every one
+of them was reported as **"accepts minimal"**. The fix it produced covered
+two of four tiers; the other two were broken and nobody knew, because the
+evidence said they were fine.
+
+Rules going forward:
+
+- **A probe must read every response, not match one string.** Print the
+  error body and read it. A capacity blip, a 404 for a retired model and a
+  credit error are all "the model did not answer" — never "it worked".
+- **Retry a transient failure before concluding.** Antigravity's capacity
+  error says `reset after 0s`; three retries with a short backoff turned
+  twelve inconclusive models into twelve real answers.
+- **Check the whole family, and check the siblings.** The floor is per
+  FAMILY in the upstream's behaviour (all the gemini-3.8 flash tiers), and
+  the counter-examples live next door: the untiered `gemini-3.8-flash` still
+  accepts "minimal". A pattern that is one character too wide breaks it
+  (there is a regression guard for exactly that in
+  `tests/unit/antigravity-argon.test.js`).
+- **Verify the fix on the real artifact, not the table.** The table said
+  "low" and the request still 400'd for the tiers the pattern missed. Read
+  the response of a live call after the change.
+
 ### A model-identity error must never park a SHARED proxy pool (2026-10-21, v0.15.181)
 
 opencode.ai answers **410 `ModelDeprecated`** for a retired model id. 410

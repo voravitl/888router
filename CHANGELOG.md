@@ -1,3 +1,24 @@
+# v0.15.188 (2026-10-22)
+
+## The gemini-3.8 flash floor now covers every tier
+
+- 0.15.187 raised the thinking floor for `gemini-3.8-flash-high` and
+  `-low` only. **The probe that decided the scope was wrong**: it grepped
+  each response for the word `MINIMAL` and reported anything else as a pass —
+  including a capacity 503 from antigravity. Re-probed with every response
+  read, the whole tiered family rejects `"minimal"`:
+  - `ag/gemini-3.8-flash-high(none)` → 400 MINIMAL (fixed in 0.15.187)
+  - `ag/gemini-3.8-flash-low(none)` → 400 MINIMAL (fixed in 0.15.187)
+  - `ag/gemini-3.8-flash-medium(none)` → 400 MINIMAL (**fixed here**)
+  - `ag/gemini-3.8-flash-tiered(none)` → 400 MINIMAL (**fixed here**)
+  - `ag/gemini-3-flash(none)`, `ag/gemini-3.1-flash-lite(none)`,
+    `ag/gemini-3.5-flash-lite(none)`, `ag/gemini-2.5-flash(none)` → 200
+- One pattern now covers the family, `*gemini-3.8-flash-*`, with the trailing
+  dash on purpose: the antigravity ids are tiered
+  (`gemini-3.8-flash-high`), while the plain `gemini-3.8-flash` is the
+  untiered Google model and still accepts `"minimal"`. The pattern keeps the
+  two apart, which is what `tests/unit/antigravity-argon.test.js` guards.
+
 # v0.15.187 (2026-10-22)
 
 ## gemini-3.8-flash high/low no longer 400 on a client that turns thinking off
