@@ -100,6 +100,11 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Depth 2 so the previous master commit is present: the release-bump
+          # check below compares against it, and at depth 1 the parent is not
+          # in the checkout.
+          fetch-depth: 2
 
       - uses: actions/setup-node@v4
         with:
@@ -149,6 +154,24 @@ jobs:
       - name: Check against known-fails baseline
         run: |
           node tests/__baseline__/verify-no-regression.mjs ci-test-results.json
+
+      # Last line of defence before an image is published: a change to shipped
+      # code must have moved the version. The PR gate in ci.yml already caught
+      # it, but this job is what stands between a merged commit and a public
+      # tag — and a commit that reached master without a bump would ship an
+      # image whose code moved while /api/version did not (lesson #503).
+      - name: Require a version bump for shipped-code changes
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "no previous commit on this branch — nothing to compare against"
+            exit 0
+          fi
+          node scripts/check-release-bump.mjs --base "$BASE_SHA" --head "$HEAD_SHA"
 
       - name: Upload test results
         if: always()
