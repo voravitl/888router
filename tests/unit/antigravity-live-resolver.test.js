@@ -192,6 +192,9 @@ describe("Antigravity live model resolver in v1/models", () => {
     const body = await res.json();
     const ids = (body.data || []).map((m) => m.id);
 
-    expect(ids).toContain("ag/gemini-3.5-flash-low");
+    // The fallback list is the static registry, which no longer carries the
+    // models Antigravity retired (404) — see
+    // tests/unit/antigravity-dead-models.test.js.
+    expect(ids).toContain("ag/gemini-3.8-flash-high");
   }, 30000);
 });

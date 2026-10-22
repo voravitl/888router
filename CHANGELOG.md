@@ -1,3 +1,34 @@
+# v0.15.189 (2026-10-22)
+
+## Antigravity no longer advertises models it retired
+
+- Antigravity retires models **without removing them from its own live model
+  list**, so the gateway kept advertising models that cannot answer. Verified
+  live 2026-10-22 (every response read in full, with retries on the capacity
+  blips its pool returns while busy):
+  - `ag/gemini-3.6-flash-{high,medium,low,tiered}` → 404 *"Requested entity was
+    not found"*
+  - `ag/gemini-3.7-flash-{high,medium,low,tiered}` → 404 (same)
+  - `ag/gemini-3.1-pro-{high,low}` → 404 (same)
+  - `ag/gemini-3.5-flash-{low,extra-low}` → 404 (same)
+  - `ag/gemini-3-flash-agent`, `ag/gemini-pro-agent` → 404 (same)
+  - still answering: `gemini-3.8-flash-{high,medium,low,tiered}`,
+    `gemini-3-flash`, `gemini-3.1-flash-lite`, `gemini-3.1-flash-image`,
+    `gemini-3.5-flash-lite`, `gemini-2.5-flash`, `gemini-2.5-flash-lite`,
+    `gemini-2.5-flash-thinking`
+- The 14 retired ids are on the provider's disabled-models list, and the dead
+  entries are gone from the static registry so the fallback list (used when
+  Antigravity's live model list cannot be fetched) is honest too. The registry
+  removal alone is **not** enough: Google's live list still carries the
+  `-tiered` base ids and the catalogue expands those into
+  `-high/-medium/-low`, so those ids need the disabled list as well.
+- `gemini-4-argon-high` stays registered — Google has not rolled Arg out to
+  the Antigravity API yet, and the registry keeps the entry (with its "low"
+  thinking floor) ready for the rollout.
+
+Tests: 3 new cases pinning the retired ids out of the registry and the live
+ones still in it. Full suite: 3,711 passed / 0 failed / 70 skipped.
+
 # v0.15.188 (2026-10-22)
 
 ## The gemini-3.8 flash floor now covers every tier
