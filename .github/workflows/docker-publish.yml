@@ -394,6 +394,42 @@ jobs:
     steps:
       - uses: docker/setup-buildx-action@v3
 
+      # The version tag (:0.15.185) is published from THIS run, not from a
+      # separate tag-triggered run. Reason: release-tag.yml pushes the git tag
+      # with the default GITHUB_TOKEN, and GitHub does NOT start workflows for
+      # pushes made with GITHUB_TOKEN — so a tag-triggered publish would never
+      # run and the version image would never appear. The git tag still
+      # records the release commit; the IMAGE comes from here.
+      #
+      # The tag is only attached when the version actually moved against the
+      # previous master commit, so a docs-only or test-only push does not
+      # re-publish a released version onto a different build.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # the previous master commit, for the version compare
+
+      - name: Resolve the version tag
+        id: ver
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          # The previous commit is the reference, not github.event.before: a
+          # manual dispatch has no "before", and comparing against the parent
+          # works for both. A squash merge's parent IS the previous master.
+          prev_commit=$(git rev-parse HEAD^ 2>/dev/null || echo "")
+          prev=""
+          if [ -n "$prev_commit" ]; then
+            prev=$(git show "$prev_commit:package.json" 2>/dev/null | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version" 2>/dev/null || echo "")
+          fi
+          if [ -n "$version" ] && [ "$version" != "$prev" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "  version $prev -> $version : publishing the version tag"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "  version $version unchanged (previous $prev) : no version tag"
+          fi
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
@@ -428,6 +464,11 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             # Traceability for branch/master builds
             type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
+            # The release itself: :0.15.185, attached only when this push moved
+            # the version. This is what makes "roll back to the previous
+            # version" possible — without it only :latest and :sha-<short>
+            # existed, and 19 releases shipped with no versioned image at all.
+            type=raw,value=${{ steps.ver.outputs.version }},enable=${{ steps.ver.outputs.publish == 'true' && github.ref == 'refs/heads/master' }}
 
       # Validate the SOURCES before any public tag moves. Checking only that two
       # non-empty files exist is not enough: if the arm64 artifact carried an

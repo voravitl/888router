@@ -47,15 +47,22 @@ inert reference, not a deploy target.
      that disagrees with `package.json`. It runs on every PR and again on the
      master push, before the image is published. Docs, tests, CI config and
      repo scripts are exempt — they never reach the running image.
-   - **The version tag is made by CI, not by hand.** `release-tag.yml` tags
-     the master commit `v<version>` whenever `package.json`'s version changes,
-     and `docker-publish.yml` publishes `:<version>` from that tag. Manual
-     tagging stopped after v0.15.164 (2026-10-06) and **19 releases then
-     shipped with no versioned image at all** — `voravitl/888router:0.15.183`
-     did not exist, so "roll back to the previous release tag" could not be
-     followed. Those 19 tags were backfilled from the matching `:sha-<short>`
-     images (same digest); from 0.15.185 on, the workflow does it. Do not tag
-     by hand, and never skip the bump.
+   - **The release image and the release tag are made by CI, not by hand.**
+     The `:<version>` image is published by the **master push** in
+     `docker-publish.yml` (attached only when `package.json`'s version moved),
+     and `release-tag.yml` tags that commit `v<version>` so the release is
+     marked in the history. Manual tagging stopped after v0.15.164
+     (2026-10-06) and **19 releases then shipped with no versioned image at
+     all** — `voravitl/888router:0.15.183` did not exist, so "roll back to the
+     previous release tag" could not be followed. Those 19 tags were
+     backfilled from the matching `:sha-<short>` images (same digest); from
+     0.15.185 on, the pipeline does it. Do not tag by hand, and never skip
+     the bump.
+   - **A push made with `GITHUB_TOKEN` does not start workflows.** That is why
+     the version image is published by the master push and not by the tag
+     push: `release-tag.yml` pushes the tag with the default token, so a
+     tag-triggered publish would never run. If a workflow ever needs to
+     trigger another workflow, it needs a PAT, not `GITHUB_TOKEN`.
 6. **Deploy: docker compose, and nothing else.**
    - CI (`docker-publish.yml`) **publishes the image only** — it has no deploy
      job. The `deploy-local-kubernetes` job was removed 2026-09-30 (issue #501)
@@ -473,10 +480,16 @@ Two failure modes, and both are now closed:
 - **The tag is made by CI.** `release-tag.yml` runs on a master push that
   touches `package.json`, refuses a version that is not above the newest tag,
   and tags the commit `v<version>`. It holds `contents: write` and **no
-  registry secret** — it cannot publish anything by itself; the privileged
-  publish stays in `docker-publish.yml`, which decides which tags it may
-  move. Because master is protected, the only commits it can tag are
-  CI-green ones.
+  registry secret** — it cannot publish anything by itself. Because master is
+  protected, the only commits it can tag are CI-green ones.
+- **The version IMAGE is published by the master push, not by the tag push.**
+  A push made with `GITHUB_TOKEN` does not start workflows, so the tag push
+  (which uses that token) would never trigger a publish — the image would
+  never appear. `docker-publish.yml` therefore attaches `:<version>` in the
+  master-push run, and only when the version actually moved against the
+  previous master commit (so a docs-only push does not re-point a released
+  version at a different build). The semver rule still covers a hand-made
+  tag.
 - **The bump is enforced.** `scripts/check-release-bump.mjs` fails a change to
   shipped code that did not move the version (the #503 lesson: a merged fix
   whose `/api/version` did not move), a CHANGELOG that does not lead with the

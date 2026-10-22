@@ -1,3 +1,20 @@
+# v0.15.186 (2026-10-22)
+
+## The version image is published by the master push, not by the tag push
+
+- 0.15.185 added `release-tag.yml`, which pushes the `v<version>` git tag. It
+  works — the tag exists — but **a push made with `GITHUB_TOKEN` does not
+  start workflows**, so the tag-triggered publish never ran and the
+  `:<version>` image still did not appear. The 0.15.185 release shipped only
+  `:latest` and `:sha-<short>`, exactly like the 19 releases before it.
+- `docker-publish.yml` now attaches `:<version>` in the **master-push** run,
+  and only when the version actually moved against the previous master commit
+  — so a docs-only or test-only push does not re-point a released version at a
+  different build. The comparison uses the previous commit (`HEAD^`), which
+  works for a push and for a manual dispatch alike.
+- The `v<version>` git tag stays: it marks the release commit in the history.
+  The semver rule in the publish workflow still covers a hand-made tag.
+
 # v0.15.185 (2026-10-22)
 
 ## Releases get a version tag again — and CI makes them
@@ -15,11 +32,12 @@
   CI run. `voravitl/888router:0.15.136` … `:0.15.184` now all exist (the two
   gaps in that range are versions that were never released).
 - New `.github/workflows/release-tag.yml`: a master push that changes
-  `package.json`'s version tags the commit `v<version>`, and the existing
-  publish workflow turns that tag into the `:<version>` image. It refuses a
-  version that is not above the newest tag. It holds `contents: write` and
-  **no registry secret** — it cannot publish anything by itself, and the
-  privileged publish stays in `docker-publish.yml`.
+  `package.json`'s version tags the commit `v<version>`, so the release is
+  marked in the history. It refuses a version that is not above the newest
+  tag. It holds `contents: write` and **no registry secret** — it cannot
+  publish anything by itself. (The `:<version>` IMAGE is attached by the
+  master-push run in `docker-publish.yml`, because a push made with
+  `GITHUB_TOKEN` does not start workflows — see 0.15.186.)
 
 ## CI now fails a code change that did not bump the version
 
