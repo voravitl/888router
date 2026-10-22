@@ -57,7 +57,8 @@ vi.mock("open-sse/services/accountScoring.js", () => ({
   updateHealthEma: mocks.updateHealthEma,
 }));
 
-vi.mock("@/sse/services/model.js", () => ({
+vi.mock("@/sse/services/model.js", async (importOriginal) => ({
+  ...await importOriginal(),
   getModelInfo: mocks.getModelInfo,
   getComboModels: mocks.getComboModels,
 }));

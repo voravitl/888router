@@ -23,9 +23,21 @@ const FORMAT_TO_NATIVE = {
 
 // Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
 export function stripThinkingSuffix(model) {
-  if (typeof model !== "string") return model;
-  const m = model.match(/^(.*)\([^()]+\)\s*$/);
-  return m ? m[1].trim() : model;
+  return splitThinkingSuffix(model).base;
+}
+
+// Split a model string into its base id and its thinking suffix:
+// "9-free(low)" → { base: "9-free", suffix: "(low)" }.
+//
+// A suffix on a COMBO name addresses the combo, not one of its members, so the
+// lookup must use the base and the suffix is re-applied to every member —
+// otherwise "9-free(low)" misses the combo entirely and falls through to a
+// provider the gateway has no credentials for.
+export function splitThinkingSuffix(model) {
+  if (typeof model !== "string") return { base: model, suffix: "" };
+  const m = model.match(/^(.*)\(([^()]+)\)\s*$/);
+  if (!m) return { base: model, suffix: "" };
+  return { base: m[1].trim(), suffix: `(${m[2]})` };
 }
 
 // Parse model-name suffix "model(value)" → { cleanModel, override }.

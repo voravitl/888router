@@ -1,6 +1,7 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
+import { splitThinkingSuffix } from "open-sse/translator/concerns/thinkingUnified.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
@@ -101,6 +102,16 @@ export async function getModelInfo(modelStr) {
 // and does not reset the factory's hydration flag. Two dynamic imports per
 // request avoid a circular dependency with open-sse/...; the runtime cost is
 // a single resolved promise per call.
+// Apply a thinking suffix to every member of a combo.
+//
+// A suffix on a combo name ("9-free(low)") addresses the COMBO, so each member
+// has to receive it. Any suffix a member already carries is replaced, not
+// stacked — "cc/claude-opus-4-8(high)(low)" is not a thing.
+export function applyThinkingSuffixToMembers(members, suffix) {
+  if (!suffix || !Array.isArray(members)) return members;
+  return members.map((m) => `${splitThinkingSuffix(m).base}${suffix}`);
+}
+
 export async function getComboModels(modelStr) {
   if (modelStr && modelStr.startsWith("auto/")) {
     const { resolveVirtualAutoCombo, setDynamicCapabilitiesHydrator } = await import(
