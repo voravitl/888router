@@ -52,17 +52,15 @@ const antigravityConfig = {
     { id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)" },
     { id: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)" },
     { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)" },
-    { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)" },
-    { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)" },
-    { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)" },
-    { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)" },
-    { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)" },
-    { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)" },
-    { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
-    { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
-    { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
-    { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },
-    { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)" },
+    // The 3.6 / 3.7 flash tiers, the 3.5 flash tiers, the 3.1 pro tiers and
+    // the 3-flash agent were removed 2026-10-22: Google retired the models and
+    // every one of them answers 404 "Requested entity was not found" (verified
+    // live, each read in full — see tests/unit/antigravity-dead-models.test.js).
+    // They were still being advertised, which sent clients to models that
+    // cannot answer. Note that removing them from the registry is NOT enough on
+    // its own: Google's own live model list still carries the "-tiered" base
+    // ids, and the catalogue expands those into -high/-medium/-low — so those
+    // ids are hidden through the disabled-models list as well.
     { id: "claude-sonnet-5-5-high", name: "Claude Sonnet 5.5 (High)", thinking: true },
     { id: "claude-sonnet-5-5-medium", name: "Claude Sonnet 5.5 (Medium)", thinking: true },
     { id: "claude-sonnet-5-5-low", name: "Claude Sonnet 5.5 (Low)", thinking: true },
