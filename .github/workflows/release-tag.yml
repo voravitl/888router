@@ -1,0 +1,81 @@
+name: Release tag
+
+# Publishes the versioned image by tagging the release commit.
+#
+# WHY: docker-publish.yml resolves its semver tag from a `v*` GIT TAG
+# (`type=semver,pattern={{version}}`). Nobody created those tags after
+# v0.15.164 (2026-10-06), so 19 releases shipped without a versioned image:
+# `voravitl/888router:0.15.183` did not exist, and the rollback path in
+# AGENTS.md ("repoint 888route.image at the previous release tag") could not
+# be followed — only :latest and :sha-<short> were published.
+#
+# WHAT: when package.json's version changes on master, tag that commit
+# `v<version>`. The tag push triggers docker-publish.yml, whose semver rule
+# publishes `:<version>` — and only that, because :latest and :sha- are
+# gated on the default branch, so the master-push run and the tag run publish
+# disjoint tag sets.
+#
+# SAFETY: this workflow only ever runs on master, which is protected (the PR
+# gate is a required check), and it only tags a commit that is ALREADY on
+# master. It holds `contents: write` and NO registry secret: it cannot
+# publish an image by itself, and the privileged publish still happens in
+# docker-publish.yml, which decides which tags it may move.
+on:
+  push:
+    branches: [master]
+    paths:
+      - package.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One tag at a time. Never cancel a run mid-push: a half-created tag would
+# make the publish run resolve a version that does not exist.
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: tag the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve and create the version tag
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          echo "  package.json version: $version"
+
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version '$version' is not a plain semver — refusing to tag"
+            exit 1
+          fi
+
+          # Already tagged? Then this push is not a new release (a dependency
+          # bump that touched package.json, or a re-run).
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+            echo "v$version already exists — nothing to do"
+            exit 0
+          fi
+
+          # Never move the release line backwards: a version below the newest
+          # tag makes the versioned images non-monotonic and breaks "roll
+          # back to the previous version".
+          latest=$(git ls-remote --tags origin 'refs/tags/v*' \
+            | sed 's#.*refs/tags/v##' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -1 || true)
+          if [ -n "$latest" ] \
+            && [ "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | head -1)" != "$latest" ]; then
+            echo "::error::version $version is not above the newest tag v$latest"
+            exit 1
+          fi
+
+          # Lightweight tag, like the v0.15.x tags before it.
+          git tag "v$version" "$GITHUB_SHA"
+          git push origin "refs/tags/v$version"
+          echo "  tagged $GITHUB_SHA as v$version — docker-publish.yml publishes :$version"

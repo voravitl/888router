@@ -41,6 +41,21 @@ inert reference, not a deploy target.
      `k8s/` image references (`k8s/base/888router.yaml` + `overlays/local` +
      `overlays/prd`) are **not** part of the ship path any more — k8s is not
      deployed (issue #501). Leave them alone; do not bump them.
+   - **CI now enforces the bump** (2026-10-22). `scripts/check-release-bump.mjs`
+     fails a change to shipped code that did not move the version, and also
+     fails a CHANGELOG that does not lead with the new version or a lockfile
+     that disagrees with `package.json`. It runs on every PR and again on the
+     master push, before the image is published. Docs, tests, CI config and
+     repo scripts are exempt — they never reach the running image.
+   - **The version tag is made by CI, not by hand.** `release-tag.yml` tags
+     the master commit `v<version>` whenever `package.json`'s version changes,
+     and `docker-publish.yml` publishes `:<version>` from that tag. Manual
+     tagging stopped after v0.15.164 (2026-10-06) and **19 releases then
+     shipped with no versioned image at all** — `voravitl/888router:0.15.183`
+     did not exist, so "roll back to the previous release tag" could not be
+     followed. Those 19 tags were backfilled from the matching `:sha-<short>`
+     images (same digest); from 0.15.185 on, the workflow does it. Do not tag
+     by hand, and never skip the bump.
 6. **Deploy: docker compose, and nothing else.**
    - CI (`docker-publish.yml`) **publishes the image only** — it has no deploy
      job. The `deploy-local-kubernetes` job was removed 2026-09-30 (issue #501)
@@ -60,9 +75,17 @@ inert reference, not a deploy target.
       `docker compose pull 888route && docker compose up -d 888route`
    - **NEVER `kubectl apply`.** It deploys nothing compose serves, and `k8s/`
      drifting away from the running image is a silent trap.
-   - **Rollback:** repoint `888route.image` at the previous release tag (or pin
-     via the local `docker-compose.override.yml`), then
-     `docker compose up -d 888route`.
+   - **Rollback:** the versioned images exist again (0.15.136 → 0.15.184, every
+     release except the two versions that were never shipped). Repoint the
+     **live** service at the version you want and recreate it:
+     `888route.image: voravitl/888router:0.15.183` — in the local
+     `docker-compose.override.yml` under the **`888route`** service (the
+     `888router` service in compose is defined but never run; a pin there does
+     nothing) — then `docker compose up -d 888route`. Watchtower tracks the
+     container's own image reference, so a pinned version is not pulled forward
+     to `:latest`; remove the pin when you want to resume tracking `:latest`.
+     `voravitl/888router:sha-<short>` is the fallback for any build that never
+     got a version tag.
    - **SQLite is single-writer per volume.** `888route-data` is the live DB —
      never mount it into a second gateway container. The `888router` service
      entry in compose is defined but NOT run; if it is ever started it must
@@ -434,3 +457,49 @@ Rules going forward:
   Corollary for a client: a Hermes `fallback_providers` chain should point
   at independent upstreams too — `custom:888router` entries with different
   model prefixes only help if the models sit on different providers.
+
+### A release needs a version tag, and CI makes it (2026-10-22, v0.15.185)
+
+`docker-publish.yml` resolves the semver image tag from a **`v*` git tag**
+(`type=semver,pattern={{version}}`). Manual tagging stopped after `v0.15.164`
+(2026-10-06) and nobody noticed for 19 releases: every one of them shipped a
+`:latest` and a `:sha-<short>`, and **no `:<version>` image at all**. The
+consequence was silent — the release looked fine, the deploy worked, and the
+documented rollback ("repoint `888route.image` at the previous release tag")
+had nothing to point at. `voravitl/888router:0.15.183` did not exist.
+
+Two failure modes, and both are now closed:
+
+- **The tag is made by CI.** `release-tag.yml` runs on a master push that
+  touches `package.json`, refuses a version that is not above the newest tag,
+  and tags the commit `v<version>`. It holds `contents: write` and **no
+  registry secret** — it cannot publish anything by itself; the privileged
+  publish stays in `docker-publish.yml`, which decides which tags it may
+  move. Because master is protected, the only commits it can tag are
+  CI-green ones.
+- **The bump is enforced.** `scripts/check-release-bump.mjs` fails a change to
+  shipped code that did not move the version (the #503 lesson: a merged fix
+  whose `/api/version` did not move), a CHANGELOG that does not lead with the
+  new version, or a lockfile that disagrees with `package.json`. It runs on
+  every PR and again on the master push before anything is published.
+
+The 19 missing tags were backfilled on Docker Hub by re-tagging the matching
+`:sha-<short>` image — `docker buildx imagetools create -t <image>:<version>
+<image>:sha-<short>` copies the manifest, so the version tag points at the
+**same digest** as the build that shipped that version. No rebuild, no CI
+run, and the rollback path works again.
+
+Rules going forward:
+
+- **Never tag by hand.** The workflow does it, and a hand-made tag can
+  publish a version the pipeline never built.
+- **A version tag is an immutable claim**: "this image is version X". A
+  rebuild of the same commit is fine (same source), but do not point a
+  released version at a DIFFERENT commit — that makes "which build is running"
+  unanswerable, which is the whole problem the version exists to solve.
+- **Docs, tests, CI config and repo scripts do not need a bump** — they never
+  reach the running image. `skills/` DOES: the gateway serves those files to
+  agents at `/api/skills/raw/<id>`, so a skills change is a product change.
+- **The live service is `888route`, not `888router`.** A rollback pin in the
+  local `docker-compose.override.yml` belongs under `888route`; the
+  `888router` service is defined but never run, so a pin there does nothing.

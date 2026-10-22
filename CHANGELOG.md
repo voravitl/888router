@@ -1,3 +1,49 @@
+# v0.15.185 (2026-10-22)
+
+## Releases get a version tag again — and CI makes them
+
+- `docker-publish.yml` resolves the semver image tag from a **`v*` git tag**.
+  Manual tagging stopped after `v0.15.164` (2026-10-06) and **19 releases
+  then shipped with no `:<version>` image at all** — only `:latest` and
+  `:sha-<short>`. Nothing looked broken: the release looked fine, the deploy
+  worked, and the documented rollback ("repoint `888route.image` at the
+  previous release tag") had nothing to point at. `voravitl/888router:0.15.183`
+  did not exist.
+- The 19 missing tags are backfilled on Docker Hub by re-tagging the matching
+  `:sha-<short>` image — the manifest is copied, so each version tag points at
+  the **same digest** as the build that shipped that version. No rebuild, no
+  CI run. `voravitl/888router:0.15.136` … `:0.15.184` now all exist (the two
+  gaps in that range are versions that were never released).
+- New `.github/workflows/release-tag.yml`: a master push that changes
+  `package.json`'s version tags the commit `v<version>`, and the existing
+  publish workflow turns that tag into the `:<version>` image. It refuses a
+  version that is not above the newest tag. It holds `contents: write` and
+  **no registry secret** — it cannot publish anything by itself, and the
+  privileged publish stays in `docker-publish.yml`.
+
+## CI now fails a code change that did not bump the version
+
+- New `scripts/check-release-bump.mjs`: a change to shipped code must move the
+  version, the `CHANGELOG.md` must lead with that version, and
+  `package-lock.json` must agree with `package.json`. It runs on every PR and
+  again on the master push, before the image is published. This is the #503
+  lesson enforced by the pipeline instead of by memory: a merged fix whose
+  `/api/version` did not move ships an image that is undeployable and
+  unverifiable.
+- Docs, tests, CI config and repo scripts are exempt — they never reach the
+  running image. `skills/` is **not** exempt: the gateway serves those files
+  to agents at `/api/skills/raw/<id>`, so a skills change is a product change.
+
+## Branch protection on `master`
+
+- `master` now requires a pull request and a green `full-suite` check, force
+  pushes and deletions are blocked, and admins are included. A squash merge
+  that drops source hunks can no longer pass: the tests it added would fail,
+  and the required check would be red.
+
+Tests: 12 new cases for the bump rule (`tests/unit/check-release-bump.test.js`).
+Full suite: 3,695 passed / 0 failed / 70 skipped.
+
 # v0.15.184 (2026-10-22)
 
 ## Ponytail: the duplicate-prompt guard now covers every request shape

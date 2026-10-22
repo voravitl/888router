@@ -81,6 +81,30 @@ jobs:
             --reporter=json \
             --outputFile=ci-test-results.json
 
+      # A change to shipped code must move the version. The gateway reports
+      # /api/version from package.json, so a merged fix without a bump ships an
+      # image whose CODE moved but whose VERSION did not — undeployable and
+      # unverifiable, and "roll back to the previous version" is ambiguous.
+      # That is lesson #503: merged at 0.15.141 with new code.
+      #
+      # The base is the PR's base commit and the head is the PR's head commit,
+      # so the diff is exactly what this PR changes. Inside the script the
+      # merge base is the fork point, so a branch that forked before the last
+      # release still has to bump past it.
+      - name: Require a version bump for shipped-code changes
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # The default checkout is the merge commit at depth 1, so the PR's
+          # base and head are not in it. Fetch both with enough history for
+          # the merge base to be found; the script falls back to a two-dot
+          # diff and says so if it is not.
+          git fetch --no-tags --depth=100 origin "$BASE_SHA" "$HEAD_SHA" || true
+          node scripts/check-release-bump.mjs --base "$BASE_SHA" --head "$HEAD_SHA"
+
       # Regression gate: a test that used to pass and now fails is a
       # regression, even when it is not in the known-fails list. The full-suite
       # run above already fails the job on any failure; this step exists so
