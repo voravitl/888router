@@ -1,3 +1,38 @@
+# v0.15.187 (2026-10-22)
+
+## gemini-3.8-flash high/low no longer 400 on a client that turns thinking off
+
+- A client that disables thinking ("none") is translated to thinkingLevel
+  `"minimal"` for gemini — it has no `"none"` tier, so `"minimal"` is how
+  thinking is turned down. Two models do not accept it, and the request died
+  with a 400 the client could not act on:
+  - `ag/gemini-3.8-flash-high(none)` → 400 *"Thinking level MINIMAL is not
+    supported for this model"*
+  - `ag/gemini-3.8-flash-low(none)` → 400 (same)
+  - `ag/gemini-3.8-flash-medium(none)` → 200, `ag/gemini-3.8-flash-tiered(none)`
+    → 200, `ag/gemini-3.5-flash(none)` → 200
+- `open-sse/providers/thinkingLevels.js` already had the same floor for
+  Gemini 4 ("LOW is the floor"), and the clamp reads that table — so two
+  pattern entries for the 3.8-flash high/low tiers fix it, and the clamp now
+  sends `"low"` instead of `"minimal"`. Every other gemini is untouched: the
+  3.8 medium/tiered tiers and the 3.x line keep `"minimal"`, and the 2.5 line
+  keeps its budget format (`"none"`).
+
+## A thinking suffix on a combo name no longer misses the combo
+
+- `"9-free(minimal)"` looked up a combo registered under its bare name,
+  missed, and fell through to the normal model path, where the client got
+  `"No active credentials for provider: openai"` — an error about credentials
+  for a provider nobody asked for.
+- A suffix on a combo addresses the **combo**, so the lookup now uses the bare
+  name and every member receives the suffix. A suffix a member already carries
+  is replaced, never stacked.
+- The combo name is also the strategy and round-robin key, so it now uses the
+  bare name too — `"9-free(low)"` and `"9-free"` share one rotation state.
+
+Tests: 11 new cases (the gemini floors, the suffix split, the member mapping).
+Full suite: 3,706 passed / 0 failed / 70 skipped.
+
 # v0.15.186 (2026-10-22)
 
 ## The version image is published by the master push, not by the tag push
