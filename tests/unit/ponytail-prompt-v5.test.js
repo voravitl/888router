@@ -93,6 +93,20 @@ describe("ponytail prompt structure (upstream v5)", () => {
     }
   });
 
+  it("ends with the v5 output contract", () => {
+    // Upstream v5: "End your reply with one or two lines: what you skipped or
+    // did not check, and any risk the user must know." The pre-v5 text said
+    // "at most three short lines" and prefixed "Code first." — neither is in
+    // upstream v5, and the commit message claimed the three-line contract as a
+    // v5 feature.
+    for (const level of ALL) {
+      const p = promptFor(level);
+      expect(p).toMatch(/one or two lines/i);
+      expect(p).not.toMatch(/at most three short lines/i);
+      expect(p).not.toMatch(/Code first\./);
+    }
+  });
+
   it("names the shortcut comment format upstream's /ponytail-debt harvests", () => {
     // Upstream: `shortcut: <the limit>, <when to upgrade>`. The pre-v5 text
     // said `ponytail:` — a word /ponytail-debt does not look for, so the

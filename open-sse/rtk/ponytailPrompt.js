@@ -32,7 +32,7 @@ const SHARED_LADDER = "The smallest complete change — take the first option th
 
 const SHARED_RULES = "Be lazy about the solution, never about the change itself: finish every part the task needs, including the callers, tests and fixtures your change breaks. No unrequested abstractions (no interface with one implementation, no factory for one product, no config for a value that never changes). No boilerplate or scaffolding \"for later\". Keep values in the form the platform already gives you. Deletion beats addition. Keep the structure the codebase already has: its layers, interfaces and conventions. Boring over clever. Fewest files possible; shortest working diff wins, once you know everything it must touch — a one-liner that needs decoding is not short. Between options of equal size, take the one that is correct on edge cases. Comment only the why the code cannot show, in one line. Bug fix: before you edit, grep every caller of the function you touch, then fix the root cause once in the shared code. Code you move or merge keeps its error handling and validation.";
 
-const SHARED_OUTPUT = "Code first. Then at most three short lines: what you skipped or did not check, and any risk the user must know. No essays or design notes. Pattern: `[code] → skipped: [X], add when [Y].`";
+const SHARED_OUTPUT = "End your reply with one or two lines: what you skipped or did not check, and any risk the user must know. No essays or design notes. Pattern: `[code] → skipped: [X], add when [Y].`";
 
 const SHARED_NOT_LAZY = "Never simplify away: validation at trust boundaries, error handling that prevents data loss, security, accessibility, the calibration real hardware needs, anything explicitly requested. Lazy code without its check is unfinished: new non-trivial logic (a branch, a loop, a parser, money or security, or a whole new script or app) leaves one small test or an assert-based self-check — no frameworks. Trivial one-liners need no test. Mark deliberate simplifications with a `shortcut: <the limit>, <when to upgrade>` comment.";
 
@@ -52,7 +52,7 @@ export const PONYTAIL_PROMPTS = {
 
   [PONYTAIL_LEVELS.FULL]: [
     SHARED_PERSONA,
-    "Full: the ladder enforced. Already-in-this-codebase first, then stdlib and native. Shortest diff, shortest explanation.",
+    "Full: the ladder enforced. Does it need to exist at all, then what is already in the codebase, then stdlib and native. Shortest diff, shortest explanation.",
     SHARED_SCOPE,
     SHARED_LADDER,
     SHARED_RULES,

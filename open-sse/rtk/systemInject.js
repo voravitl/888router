@@ -26,20 +26,27 @@ export function injectSystemPrompt(body, format, prompt) {
   }
 }
 
-// True when the exact prompt is already present in the text.
+// True when the prompt is already present in the text.
 //
 // Idempotence matters because the gateway injects on EVERY request of a
 // conversation while the client may send the same instruction block back each
-// turn (its own ponytail plugin, a resumed session, or a client that echoes
-// the system block). Appending again duplicated the whole prompt — observed
-// live 2026-10-21: the outbound body carried the persona twice when the
-// client sent it once. A doubled prompt doubles the system prefix (cache
-// cost) and reads as emphasis to the model.
+// turn (a resumed session, or a client that echoes the system block). Appending
+// again duplicated the whole prompt — observed live 2026-10-21: the outbound
+// body carried the persona twice when the client sent it once. A doubled
+// prompt doubles the system prefix (cache cost) and reads as emphasis to the
+// model.
 //
 // EXACT match on purpose: a fuzzy match would swallow a DIFFERENT prompt
 // that merely resembles ours. Ponytail and caveman inject different blocks
 // and both must survive; a client on a different ponytail level sent a
 // different prompt and must still get ours.
+//
+// What it does NOT catch: a client that brings its OWN ponytail plugin. That
+// plugin sends upstream's wording, not the gateway's, so the text differs and
+// the gateway appends its block on top — two rule sets in one request. The
+// gateway cannot match a text it has never seen without guessing, and guessing
+// would swallow other prompts. Pick one owner: the gateway's dashboard toggle
+// or the client's plugin.
 function alreadyPresent(text, prompt) {
   return typeof text === "string" && text.includes(prompt);
 }
@@ -74,7 +81,7 @@ function appendToOpenAIMessage(msg, prompt) {
     msg.content = `${msg.content}${SEP}${prompt}`;
   } else if (Array.isArray(msg.content)) {
     // Responses-style array of parts {type:"input_text"|"text", text}
-    if (msg.content.some(part => part?.text === prompt)) return;
+    if (msg.content.some(part => alreadyPresent(part?.text, prompt))) return;
     msg.content.push({ type: "input_text", text: prompt });
   } else {
     msg.content = prompt;
@@ -90,7 +97,7 @@ function injectClaudeSystem(body, prompt) {
     return;
   }
   if (Array.isArray(body.system)) {
-    if (body.system.some(block => block?.text === prompt)) return;
+    if (body.system.some(block => alreadyPresent(block?.text, prompt))) return;
     const block = { type: "text", text: prompt };
     let lastCacheIdx = -1;
     for (let i = body.system.length - 1; i >= 0; i--) {
@@ -114,7 +121,7 @@ function injectGeminiSystem(body, prompt) {
   const key = useSnake ? "system_instruction" : "systemInstruction";
   const sys = target[key];
   if (sys && Array.isArray(sys.parts)) {
-    if (sys.parts.some(part => part?.text === prompt)) return;
+    if (sys.parts.some(part => alreadyPresent(part?.text, prompt))) return;
     sys.parts.push({ text: prompt });
     return;
   }

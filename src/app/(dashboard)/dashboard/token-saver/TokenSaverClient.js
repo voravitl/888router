@@ -740,8 +740,8 @@ export default function TokenSaverClient() {
               </a>
             </p>
             <p className="text-sm text-text-muted">
-              Bias the model toward minimal code: reuse what is already in the
-              codebase, then stdlib, then YAGNI — deletion over addition
+              Bias the model toward minimal code: does it need to exist at all,
+              then reuse the codebase, then stdlib — deletion over addition
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
