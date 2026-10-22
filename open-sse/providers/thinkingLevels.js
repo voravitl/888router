@@ -38,14 +38,17 @@ const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 const PATTERN_THINKING = [
   // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
-  // Gemini 3.8 flash, high/low tiers only, also rejects "minimal" with 400
-  // ("Thinking level MINIMAL is not supported for this model"). Verified live
-  // 2026-10-22 on antigravity: gemini-3.8-flash-high(none) and
-  // gemini-3.8-flash-low(none) both 400, while gemini-3.8-flash-medium(none),
-  // gemini-3.8-flash-tiered(none) and every other gemini accept it. LOW is
-  // the floor for these two, so the clamp never sends "minimal" to them.
-  { pattern: "*gemini-3.8-flash-high*", levels: ["low", "medium", "high"] },
-  { pattern: "*gemini-3.8-flash-low*", levels: ["low", "medium", "high"] },
+  // Gemini 3.8 flash rejects "minimal" with 400 ("Thinking level MINIMAL is
+  // not supported for this model") — every TIER of it, verified live
+  // 2026-10-22 on antigravity: gemini-3.8-flash-high(none), -low(none),
+  // -medium(none) and -tiered(none) all 400. LOW is the floor, so the clamp
+  // must never send "minimal" to that family.
+  //
+  // The pattern carries the trailing dash on purpose: the antigravity ids are
+  // tiered ("gemini-3.8-flash-high"), while the plain "gemini-3.8-flash" is
+  // the untiered Google model and still accepts "minimal" — pinning that
+  // difference is what tests/unit/antigravity-argon.test.js guards.
+  { pattern: "*gemini-3.8-flash-*", levels: ["low", "medium", "high"] },
   { provider: "codex", pattern: "*gpt-6-astra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-6-sol*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-6-luna*", levels: CODEX_GPT_5_6_LEVELS },
