@@ -51,4 +51,19 @@ describe("ponytail levels: dashboard and engine agree", () => {
     const engineIds = new Set(Object.values(ENGINE_LEVELS));
     expect(engineIds.has("full")).toBe(true);
   });
+
+  it("describes the ladder in the same order everywhere", () => {
+    // The ladder starts with "does it need to exist at all?" (YAGNI), then
+    // "already in this codebase", then stdlib. The dashboard blurb and the
+    // prompt's own level line used to say "codebase first" and put YAGNI last
+    // — the user-visible text described a ladder the model never receives.
+    const full = PONYTAIL_PROMPTS.full;
+    const levelLine = full.slice(0, full.indexOf("The smallest complete change"));
+    expect(levelLine.indexOf("need to exist")).toBeGreaterThan(-1);
+    expect(levelLine.indexOf("need to exist")).toBeLessThan(levelLine.indexOf("codebase"));
+
+    const desc = DASHBOARD_LEVELS.find((l) => l.id === "full").desc;
+    expect(desc.indexOf("exist")).toBeGreaterThan(-1);
+    expect(desc.indexOf("exist")).toBeLessThan(desc.indexOf("codebase"));
+  });
 });

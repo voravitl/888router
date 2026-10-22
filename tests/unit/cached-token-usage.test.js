@@ -174,7 +174,7 @@ describe("Kiro usage pass-through", () => {
   });
 
   it("forward-compat: surfaces cache fields if Kiro event shape grows them", () => {
-    // ponytail: Amazon Q upstream doesn't expose cache today, but if it starts
+    // shortcut: Amazon Q upstream doesn't expose cache today, but if it starts
     // sending cache_read_input_tokens / cache_creation_input_tokens / cachedTokens,
     // cost tracking should pick them up automatically without another change.
     const out = toOpenAIUsage(

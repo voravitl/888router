@@ -26,11 +26,11 @@ export const CAVEMAN_LEVELS = [
 ];
 
 // Descriptions mirror what the injected prompt actually says (upstream v5).
-// "full" leads with the codebase-reuse rung, not stdlib — upstream v5 moved
-// "already in this codebase" ahead of "standard library", and the label has
-// to match the prompt the model actually receives.
+// The ladder starts with "does it need to exist at all?", then "already in
+// this codebase", then stdlib — the label has to match the order the model
+// actually receives, not a paraphrase of it.
 export const PONYTAIL_LEVELS = [
   { id: "lite", label: "Lite", desc: "Build asked, name the smaller option" },
-  { id: "full", label: "Full", desc: "Ladder enforced: codebase first, then stdlib" },
+  { id: "full", label: "Full", desc: "Does it need to exist, then codebase, then stdlib" },
   { id: "ultra", label: "Ultra", desc: "YAGNI extremist, questions the request" },
 ];
