@@ -1,3 +1,32 @@
+# v0.15.190 (2026-10-25)
+
+## A combo no longer aborts a healthy member at 10 s, and one provider's 401 no longer parks the shared relay
+
+- **Combo connect timeout was a floor, not a ceiling.** Inside a combo every
+  member's declared `timeoutMs` was capped at a flat 10 s, which is *below*
+  the request policy's own connect budget. `ollama` declares 30 s (a cloud
+  model needs that long to prefill), so a healthy member was aborted at 10.2 s
+  with `502 fetch connect timeout` while the same upstream answered in
+  1.4–7.7 s from the same container. The cap is now a ceiling on the
+  provider's value and never below the request policy
+  (`COMBO_CONNECT_TIMEOUT_CAP_MS`, default 20 s, env-overridable).
+- **A 401/403 no longer parks the shared proxy pool.** One relay serves every
+  provider. openrouter has no credential in this deployment, so its
+  `401 Missing Authentication header` parked relay1 and cloudflare for 2 min
+  through the pool branch of `markAccountUnavailable`; opencode then had no
+  eligible pool and repeated openrouter's 401 as its own cause. A 401/403 is
+  a verdict about the caller's credentials for *one* provider, so the pool
+  row is left untouched and the request rotates. Relay-scoped faults
+  (402 dead deployment, 429 quota, 5xx, suspend) still park it.
+- **`Using <provider> proxy pool: undefined` is gone.** When every pool is
+  parked, `pickVirtualNoAuthConnection` returns an `allRateLimited` verdict,
+  not a connection; it was logged as one. The verdict is now handed up
+  untouched (429 + `Retry-After`).
+- **`minimax-m3.1-flash-free` removed from the opencode catalogue.** Upstream
+  answers `410 ModelDeprecated` ("Use deepseek-v4.1-flash-free instead",
+  verified live 2026-10-25), so `/v1/models` was still advertising a dead id
+  to every client, including the `9-free` combo.
+
 # v0.15.189 (2026-10-22)
 
 ## Antigravity no longer advertises models it retired
