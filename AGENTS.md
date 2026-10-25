@@ -407,6 +407,13 @@ Rules:
 - **Measure the upstream before blaming the transport.** A 12 ms connect with
   a 5.6 s header wait is a slow provider, not a network fault. The same
   measurement took one `node -e` fetch.
+- **No limit may be tighter than the limit meant to bound it.** The combo's
+  per-member cap was 20 s while the deadline that actually bounds a member is
+  120 s and the combo's total budget is 180 s — so a member was killed by a
+  stricter limit than the one bounding it, and the upstream it was waiting on
+  was measured answering headers at 32–37 s under 8-way concurrency. The cap
+  is now the standalone default (60 s): still short of the 180 s budget, and
+  no longer the thing that breaks a healthy member.
 
 ## graphify
 

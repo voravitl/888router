@@ -82,7 +82,10 @@ describe("combo connect timeout — the cap applies to the member's standalone w
   });
 
   it("caps a provider that declares more than the combo budget", async () => {
-    const ex = new BaseExecutor("slow", { baseUrl: "https://x/api", timeoutMs: 30000 });
+    // The cap is a CEILING on the member's standalone wait. A provider that
+    // declares MORE than the cap is cut down to the cap; one that declares
+    // less keeps its own (pinned in the next case).
+    const ex = new BaseExecutor("slow", { baseUrl: "https://x/api", timeoutMs: COMBO_CONNECT_TIMEOUT_CAP_MS + 30000 });
     fetchMock.mockResolvedValue(res(200));
     const { delays } = captureTimeouts();
 
@@ -90,6 +93,19 @@ describe("combo connect timeout — the cap applies to the member's standalone w
 
     expect(delays).toContain(COMBO_CONNECT_TIMEOUT_CAP_MS);
     expect(delays).not.toContain(10000);
+  });
+
+  it("does not GROW a provider that declares less than the combo budget", async () => {
+    // The declared value is the provider's own ceiling — the combo must not
+    // hand it MORE patience than it asked for.
+    const ex = new BaseExecutor("slow", { baseUrl: "https://x/api", timeoutMs: 30000 });
+    fetchMock.mockResolvedValue(res(200));
+    const { delays } = captureTimeouts();
+
+    await ex.execute({ model: "m", body: smallBody, stream: false, credentials: creds, isCombo: true });
+
+    expect(delays).toContain(30000);
+    expect(delays).not.toContain(COMBO_CONNECT_TIMEOUT_CAP_MS);
   });
 
   it("honours a provider that declares a short timeout (no forced growth)", async () => {

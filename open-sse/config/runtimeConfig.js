@@ -51,11 +51,21 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
 // Inside a combo, one member must not be able to stall the whole request, so
-// its connect wait is capped. The cap is applied to what the provider gets
+// its HEADER wait is capped. The cap is applied to what the provider gets
 // STANDALONE (its declared timeoutMs, or the 60s provider default), never to
 // the request policy: a flat 10s cut a healthy ollama member that gets 60s on
 // a direct call (2026-10-25, 9-free → "502 fetch connect timeout").
-export const COMBO_CONNECT_TIMEOUT_CAP_MS = envMs("COMBO_CONNECT_TIMEOUT_CAP_MS", 20 * 1000);
+//
+// The cap must not be tighter than the deadline that already bounds the
+// member. The combo's own head deadline is 120 s and its total budget 180 s
+// (requestTimeout.js), so a member aborted at 20 s was killed by a limit
+// STRICTER than the one meant to bound it — while the upstream it was
+// waiting on was measured answering headers at 32–37 s under 8-way
+// concurrency (2026-10-25). The cap now equals the standalone default
+// (FETCH_CONNECT_TIMEOUT_MS): it still stops a member from stalling the
+// combo for the full 180 s budget, and it is no longer the thing that
+// breaks a healthy member.
+export const COMBO_CONNECT_TIMEOUT_CAP_MS = envMs("COMBO_CONNECT_TIMEOUT_CAP_MS", FETCH_CONNECT_TIMEOUT_MS);
 
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
