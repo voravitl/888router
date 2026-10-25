@@ -1,3 +1,31 @@
+# v0.15.196 (2026-10-25)
+
+## Ollama Cloud quota card read an API shape that no longer exists
+
+- **Symptom:** the Quota Tracker showed Ollama Cloud `used = $0.00,
+  remaining = 100%` on a Pro plan while the account had real spend.
+- **Root cause (verified live against ollama.com):** `GET /api/usage` no
+  longer returns `{ activity, limits: { monthly: { usage } } }` — the shape
+  this parser was built on (v0.15.131). The live response is
+  `{ range, from, until, totals: { usage_usd, ... }, buckets }` with **no
+  `limits` object at all**, so `usageData?.limits?.monthly?.usage ?? 0`
+  silently produced 0 every call.
+- **Fix:** parse `totals.usage_usd` (USD actually spent) from
+  `?range=30d` — the widest window the API accepts (`from`/`until` params
+  are ignored upstream; `range=month` is rejected). Paid plans (Pro $60 /
+  Max $300 / Team $1000, resolved from `POST /api/me` `Plan` as before)
+  render `used / total / remaining%` with remaining clamped at 0 when spend
+  exceeds the credit allocation (live key: $90.57 spent / 30d on a $60 Pro).
+  Free tier renders a real-spend `Used (USD)` row marked unlimited instead
+  of a percentage of a ceiling that does not exist.
+- **Guard:** a usage payload whose `totals.usage_usd` is missing or
+  non-numeric now SKIPS the quota row with a "usage data unavailable"
+  message. It never renders `$0 used / 100% remaining` again — missing data
+  must not lie (same rule as the v0.15.131 review finding).
+- `tests/unit/ollama-quota-usage.test.js` rewritten against the live shape:
+  the old file pinned the dead `limits.monthly.usage` contract and passed
+  while production showed a fake full balance.
+
 # v0.15.195 (2026-10-25)
 
 ## The combo member's cap was tighter than the deadline meant to bound it
