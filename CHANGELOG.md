@@ -1,3 +1,27 @@
+# v0.15.195 (2026-10-25)
+
+## The combo member's cap was tighter than the deadline meant to bound it
+
+- **Found while verifying 0.15.194 live**, under 6-way concurrency: the combo
+  member still aborted at 20 s with `502 fetch connect timeout` while the
+  **direct** call to the same provider answered in 3–8 s (all 6 × 200).
+  0.15.194 fixed the standalone path; the combo path had its own, tighter
+  limit.
+- **`COMBO_CONNECT_TIMEOUT_CAP_MS` was 20 s, while the deadline that actually
+  bounds a combo member is 120 s** (`headDeadlineMs`) and the combo's total
+  budget is 180 s. The member was killed by a limit *stricter* than the one
+  meant to bound it. The upstream it was waiting on was measured answering
+  headers at **32–37 s under 8-way concurrency** (4–6 s at 3-way) — so the
+  20 s cap aborted a healthy provider and the combo reported "All models
+  failed" with a working model in it.
+- **The cap is now the standalone default** (`FETCH_CONNECT_TIMEOUT_MS`,
+  60 s): it still stops a member from stalling the combo for the full 180 s
+  budget, and it is no longer the thing that breaks a healthy member. A
+  provider that **declares** a shorter `timeoutMs` keeps it — the cap is a
+  ceiling, and the declared value is the provider's own ceiling too (pinned
+  in `executor-combo-timeout.test.js`, which caught the change while it was
+  being written).
+
 # v0.15.194 (2026-10-25)
 
 ## The "connect timeout" was a first-byte deadline, and it aborted healthy providers
