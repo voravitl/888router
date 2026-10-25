@@ -2,23 +2,29 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Regression guard for the 2026-10-25 combo outage.
 //
-// A combo capped every member's own `timeoutMs` at a flat 10s:
+// Inside a combo the connect wait was a flat 10s AND it replaced the provider
+// default with the request policy's 10s:
 //
-//   isCombo ? Math.min(this.config.timeoutMs, 10000) : this.config.timeoutMs
+//   combo, provider declared 30s → min(30000, 10000) = 10s
+//   combo, provider declared none → policy connectTimeoutMs = 10s
+//   standalone, provider declared none → FETCH_CONNECT_TIMEOUT_MS = 60s
 //
-// ollama declares 30s (a cloud model needs that long to prefill). The cap
-// silently overrode that, so a HEALTHY member aborted at 10.2s:
+// ollama declares NO top-level timeoutMs (the 30s in its registry entry is the
+// web-fetch config), so a direct call gets 60s and a combo member got 10s — a
+// sixth of its standalone patience. A HEALTHY member aborted at 10.2s:
 //
 //   [PENDING] END (ERROR) | provider=ollama | model=minimax-m3.1-flash
 //   [ERROR] [502]: fetch connect timeout
 //
-// while the same upstream answered 1.4–7.7s from the same container (measured
-// with 6 concurrent calls; 1.4s idle). The 9-free combo reported
-// "All models failed" with a working model in it.
+// while the same upstream answered 1.4–7.7s idle and longer under 6 concurrent
+// calls. The 9-free combo reported "All models failed" with a working model in
+// it. Confirmed again on 0.15.190, whose cap fix only touched DECLARED
+// timeouts: ollama still aborted at exactly 10s, so the provider-default half
+// of the bug is the one that mattered.
 //
-// The cap must remain a CEILING on provider-declared timeouts (a stuck member
-// may not stall the whole combo) but never a FLOOR under the request policy,
-// which already decides how long this request may wait.
+// The cap must stay a CEILING on the member's standalone wait (a stuck member
+// may not stall the whole combo), and long-context requests keep their larger
+// policy budget.
 
 const fetchMock = vi.fn();
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
@@ -26,7 +32,7 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 }));
 
 const { BaseExecutor } = await import("../../open-sse/executors/base.js");
-const { COMBO_CONNECT_TIMEOUT_CAP_MS } = await import("../../open-sse/config/runtimeConfig.js");
+const { COMBO_CONNECT_TIMEOUT_CAP_MS, FETCH_CONNECT_TIMEOUT_MS } = await import("../../open-sse/config/runtimeConfig.js");
 
 function res(status) {
   return { status, headers: { get: () => "" }, text: async () => "" };
@@ -52,10 +58,10 @@ const longBody = { messages: [{ role: "user", content: "a".repeat(500_000) }] };
 beforeEach(() => { fetchMock.mockReset(); });
 afterEach(() => { vi.restoreAllMocks(); });
 
-describe("combo connect timeout — provider timeoutMs is a ceiling, not a floor", () => {
-  it("gives a 30s provider 20s inside a combo, not 10s", async () => {
-    // ollama's declared timeoutMs is 30000.
-    const ex = new BaseExecutor("ollama", { baseUrl: "https://x/api", timeoutMs: 30000 });
+describe("combo connect timeout — the cap applies to the member's standalone wait", () => {
+  it("gives a provider that declares no timeout its capped default inside a combo", async () => {
+    // ollama's shape: no top-level timeoutMs.
+    const ex = new BaseExecutor("ollama", { baseUrl: "https://x/api" });
     fetchMock.mockResolvedValue(res(200));
     const { delays } = captureTimeouts();
 
@@ -65,20 +71,39 @@ describe("combo connect timeout — provider timeoutMs is a ceiling, not a floor
     expect(delays).not.toContain(10000);
   });
 
-  it("does not shrink a provider timeout below the request policy floor", async () => {
+  it("gives the same provider its full default outside a combo", async () => {
+    const ex = new BaseExecutor("ollama", { baseUrl: "https://x/api" });
+    fetchMock.mockResolvedValue(res(200));
+    const { delays } = captureTimeouts();
+
+    await ex.execute({ model: "m", body: smallBody, stream: false, credentials: creds });
+
+    expect(delays).toContain(FETCH_CONNECT_TIMEOUT_MS);
+  });
+
+  it("caps a provider that declares more than the combo budget", async () => {
+    const ex = new BaseExecutor("slow", { baseUrl: "https://x/api", timeoutMs: 30000 });
+    fetchMock.mockResolvedValue(res(200));
+    const { delays } = captureTimeouts();
+
+    await ex.execute({ model: "m", body: smallBody, stream: false, credentials: creds, isCombo: true });
+
+    expect(delays).toContain(COMBO_CONNECT_TIMEOUT_CAP_MS);
+    expect(delays).not.toContain(10000);
+  });
+
+  it("honours a provider that declares a short timeout (no forced growth)", async () => {
     const ex = new BaseExecutor("quick", { baseUrl: "https://x/api", timeoutMs: 4000 });
     fetchMock.mockResolvedValue(res(200));
     const { delays } = captureTimeouts();
 
     await ex.execute({ model: "m", body: smallBody, stream: false, credentials: creds, isCombo: true });
 
-    // 4000 is under the cap → honoured as-is; the floor (10s policy) wins
-    // because waiting less than the policy allows is never useful.
-    expect(delays).toContain(10000);
+    expect(delays).toContain(4000);
   });
 
-  it("honours the provider's full timeout outside a combo", async () => {
-    const ex = new BaseExecutor("ollama", { baseUrl: "https://x/api", timeoutMs: 30000 });
+  it("honours the provider's full declared timeout outside a combo", async () => {
+    const ex = new BaseExecutor("slow", { baseUrl: "https://x/api", timeoutMs: 30000 });
     fetchMock.mockResolvedValue(res(200));
     const { delays } = captureTimeouts();
 
@@ -88,7 +113,7 @@ describe("combo connect timeout — provider timeoutMs is a ceiling, not a floor
   });
 
   it("still gives long-context requests their larger budget", async () => {
-    const ex = new BaseExecutor("ollama", { baseUrl: "https://x/api", timeoutMs: 30000 });
+    const ex = new BaseExecutor("ollama", { baseUrl: "https://x/api" });
     fetchMock.mockResolvedValue(res(200));
     const { delays } = captureTimeouts();
 
@@ -96,15 +121,5 @@ describe("combo connect timeout — provider timeoutMs is a ceiling, not a floor
 
     // Policy longWait is >= 180s and must win over the 20s combo cap.
     expect(Math.max(...delays)).toBeGreaterThanOrEqual(180000);
-  });
-
-  it("still falls back to the request policy when the provider declares no timeout", async () => {
-    const ex = new BaseExecutor("plain", { baseUrl: "https://x/api" });
-    fetchMock.mockResolvedValue(res(200));
-    const { delays } = captureTimeouts();
-
-    await ex.execute({ model: "m", body: smallBody, stream: false, credentials: creds, isCombo: true });
-
-    expect(delays).toContain(10000);
   });
 });

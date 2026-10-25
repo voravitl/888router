@@ -1,15 +1,29 @@
+# v0.15.191 (2026-10-25)
+
+## A combo now gives a member the same uphill it gets standalone (the 10 s abort, fixed for real)
+
+- **0.15.190's cap fix was inert for the member that mattered.** It only
+  raised the ceiling on a *declared* `timeoutMs`. `ollama` declares none at the
+  top level (the `30s` in its registry entry belongs to web-fetch), so inside a
+  combo the member still fell through to the request policy's 10 s — a sixth of
+  the 60 s `FETCH_CONNECT_TIMEOUT_MS` the same provider gets on a direct call.
+  Verified live on 0.15.190: `[PENDING] START … provider=ollama` →
+  `END (ERROR) … [502]: fetch connect timeout` at exactly 10 s, six concurrent
+  requests, while the upstream answers in 1.4–7.7 s idle.
+- The combo cap now applies to the member's **standalone** wait — its declared
+  `timeoutMs` or the 60 s provider default — and is `COMBO_CONNECT_TIMEOUT_CAP_MS`
+  (default 20 s, env-overridable). A provider that declares a shorter timeout
+  keeps it (the cap is a ceiling, not forced growth), and long-context requests
+  keep their 180 s+ budget.
+
 # v0.15.190 (2026-10-25)
 
-## A combo no longer aborts a healthy member at 10 s, and one provider's 401 no longer parks the shared relay
+## One provider's 401 no longer parks the shared relay; retired opencode model removed
 
-- **Combo connect timeout was a floor, not a ceiling.** Inside a combo every
-  member's declared `timeoutMs` was capped at a flat 10 s, which is *below*
-  the request policy's own connect budget. `ollama` declares 30 s (a cloud
-  model needs that long to prefill), so a healthy member was aborted at 10.2 s
-  with `502 fetch connect timeout` while the same upstream answered in
-  1.4–7.7 s from the same container. The cap is now a ceiling on the
-  provider's value and never below the request policy
-  (`COMBO_CONNECT_TIMEOUT_CAP_MS`, default 20 s, env-overridable).
+- **Combo members: a declared `timeoutMs` above 10 s was cut to 10 s.** The cap
+  is now a ceiling applied to the declared value (`COMBO_CONNECT_TIMEOUT_CAP_MS`,
+  default 20 s, env-overridable) and never below the request policy. This half
+  did **not** fix the ollama member, which declares no timeout — see 0.15.191.
 - **A 401/403 no longer parks the shared proxy pool.** One relay serves every
   provider. openrouter has no credential in this deployment, so its
   `401 Missing Authentication header` parked relay1 and cloudflare for 2 min

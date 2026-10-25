@@ -156,18 +156,21 @@ export class BaseExecutor {
       const connectCtrl = new AbortController();
       const timeoutPolicy = credentials?.requestTimeoutPolicy || getRequestTimeoutPolicy(body);
       const defaultTimeout = isCombo ? timeoutPolicy.connectTimeoutMs : FETCH_CONNECT_TIMEOUT_MS;
-      // In a combo the provider's own timeout is capped so one slow member
-      // cannot stall the request — but the cap is a CEILING, never a floor:
-      // the request policy (10s normal, 180s+ for long context) already says
-      // how long this request may wait, and shrinking below it aborts a
-      // healthy upstream mid-prefill (ollama: declared 30s, capped to 10s).
-      const comboMemberTimeout = Math.max(
-        Math.min(this.config?.timeoutMs, COMBO_CONNECT_TIMEOUT_CAP_MS),
-        timeoutPolicy.connectTimeoutMs,
+      // In a combo the per-member connect wait is capped so one slow member
+      // cannot stall the whole request. The cap applies to what the provider
+      // gets STANDALONE — its declared timeoutMs, or FETCH_CONNECT_TIMEOUT_MS
+      // when it declares none. It used to be a flat 10s AND it replaced the
+      // 60s provider default with the request policy's 10s, so a member got a
+      // sixth of its standalone patience: ollama declares no timeout, was
+      // measured at 1.4–7.7s, and aborted at 10.2s with "502 fetch connect
+      // timeout" while healthy (2026-10-25, 9-free).
+      const comboMemberTimeout = Math.min(
+        this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS,
+        COMBO_CONNECT_TIMEOUT_CAP_MS,
       );
       const timeoutMs = timeoutPolicy.longContext
         ? Math.max(defaultTimeout, this.config?.timeoutMs || 0, timeoutPolicy.connectTimeoutMs)
-        : (this.config?.timeoutMs ? (isCombo ? comboMemberTimeout : this.config.timeoutMs) : defaultTimeout);
+        : (isCombo ? comboMemberTimeout : (this.config?.timeoutMs || defaultTimeout));
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
