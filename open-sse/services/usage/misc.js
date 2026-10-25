@@ -46,16 +46,24 @@ export async function getIflowUsage(accessToken) {
 
 /**
  * Ollama Cloud Usage
- * Calls https://ollama.com/api/usage and https://ollama.com/api/me.
+ * Calls https://ollama.com/api/usage?range=30d and https://ollama.com/api/me.
  *
- * KEY: limits.monthly.usage is a FRACTION (0.0–1.0), NOT a USD amount.
- *   - Pro  ($20/mo) = $60  credits → used = 0.315 * 60  = $18.90
- *   - Max  ($100/mo) = $300 credits → used = fraction * 300
- *   - Team ($500/mo) = $1000 credits → used = fraction * 1000
- *   - Free (pay-as-you-go): no ceiling; fraction * 0 → show fraction% as a progress indicator
+ * REAL /api/usage shape (verified live 2026-10-25):
+ *   { range, from, until,
+ *     totals: { request_count, usage_usd, input_tokens,
+ *               cached_input_tokens, output_tokens },
+ *     buckets: [...] }
+ *   - range accepts "7d" (default) and "30d"; from/until params are ignored.
+ *   - totals.usage_usd is the USD actually spent in the window. The old
+ *     { activity, limits.monthly.usage } shape is GONE upstream — parsing it
+ *     silently yielded 0 and the quota card showed a fake 100% remaining
+ *     while the account had real spend (90.57 USD/30d observed live).
  *
- * Plan map (from /api/me response.Plan field):
- *   "pro" → $60, "max" → $300, "team" → $1000, else → 0 (free)
+ * Credit ceilings (from /api/me response.Plan field):
+ *   "pro" → $60, "max" → $300, "team" → $1000, else → 0 (free, pay-as-you-go)
+ *
+ * The 30-day window is the closest proxy for the monthly credit cycle the
+ * API offers. Missing spend data must SKIP the row, never render $0 used.
  */
 export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) {
   const token = apiKey || accessToken;
@@ -69,7 +77,7 @@ export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) 
   try {
     // Fetch usage + user plan in parallel
     const [usageRes, meRes] = await Promise.all([
-      proxyAwareFetch("https://ollama.com/api/usage", {
+      proxyAwareFetch("https://ollama.com/api/usage?range=30d", {
         method: "GET",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       }),
@@ -95,47 +103,38 @@ export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) 
     else if (planRaw.includes("max")) { monthlyCredits = 300;  planLabel = "Max ($100/mo)"; }
     else if (planRaw.includes("pro")) { monthlyCredits = 60;   planLabel = "Pro ($20/mo)"; }
 
-    if (!usageData) {
-      // No live data — fall back to plan-only display
-      const quotas = {};
-      if (monthlyCredits > 0) {
-        quotas["Monthly Credits"] = {
-          name: "Monthly Credits", used: 0, total: monthlyCredits,
-          remainingPercentage: 100, unit: "USD", resetAt,
-        };
-      }
-      return {
-        plan: planLabel,
-        message: monthlyCredits === 0 ? "Ollama Cloud Free Tier: Pay-as-you-go per token." : undefined,
-        quotas,
-      };
+    // totals.usage_usd = USD actually spent in the window (a plain number)
+    const usageUsd = Number(usageData?.totals?.usage_usd);
+    if (!usageData || !Number.isFinite(usageUsd)) {
+      // Shape drifted again → say so. A 0 default here renders a fake
+      // "100% remaining" — the exact bug this fix removes (2026-10-25).
+      return { plan: planLabel, message: "Ollama Cloud usage data unavailable.", quotas: {} };
     }
 
-    // limits.monthly.usage is a 0.0–1.0 FRACTION of the monthly credit ceiling
-    const usageFraction = parseFloat(usageData?.limits?.monthly?.usage ?? 0) || 0;
+    const usedUsd = Math.round(usageUsd * 100) / 100;
     const quotas = {};
 
     if (monthlyCredits > 0) {
-      // Convert fraction → actual USD
-      const usedUsd  = Math.round(usageFraction * monthlyCredits * 100) / 100;
       const remaining = Math.max(0, monthlyCredits - usedUsd);
       quotas["Monthly Credits"] = {
         name: "Monthly Credits",
-        used:  usedUsd,
+        used: usedUsd,
         total: monthlyCredits,
+        remaining: Math.round(remaining * 100) / 100,
         remainingPercentage: Math.round((remaining / monthlyCredits) * 100),
         unit: "USD",
         resetAt,
       };
     } else {
-      // Free tier: show the fraction as a percentage (no dollar ceiling)
-      quotas["Monthly Usage"] = {
-        name: "Monthly Usage",
-        used:  Math.round(usageFraction * 100 * 100) / 100,   // convert to percent
-        total: 100,
-        remainingPercentage: Math.round((1 - usageFraction) * 100),
-        unit: "%",
-        resetAt,
+      // Free tier has no ceiling: show real spend without inventing a
+      // percentage (same unlimited-row pattern as Vercel AI Gateway).
+      quotas["Used (USD)"] = {
+        name: "Used (USD)",
+        used: usedUsd,
+        total: 0,
+        remaining: 0,
+        remainingPercentage: 100,
+        unlimited: true,
       };
     }
 

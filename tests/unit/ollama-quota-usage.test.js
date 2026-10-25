@@ -9,19 +9,37 @@ vi.mock("open-sse/utils/proxyFetch.js", () => ({
 
 const { getOllamaUsage } = await import("open-sse/services/usage/misc.js");
 
-// Ollama /api/usage response: limits.monthly.usage is a FRACTION (0–1), NOT USD
-function makeUsageRes(fraction = 0.315) {
+// REAL /api/usage response shape, verified live against ollama.com on
+// 2026-10-25 (GET ?range=30d with a Bearer key):
+//   { range, from, until,
+//     totals: { request_count, usage_usd, input_tokens,
+//               cached_input_tokens, output_tokens },
+//     buckets: [...] }
+// The pre-2026-10 shape ({ activity, limits: { monthly: { usage } } }) no
+// longer exists upstream — parsing it silently yields 0, which rendered as a
+// fake "100% remaining" while the account had real spend (90.57 USD/30d
+// observed on the live key).
+function makeUsageRes(usageUsd = 38.96) {
   return {
     ok: true, status: 200,
     json: async () => ({
-      activity: { cost: "0.00000", period: { type: "last_4_weeks" }, models: [] },
-      limits: { monthly: { usage: fraction, models: [] } },
+      range: "30d",
+      from: "2026-09-25T00:00:00Z",
+      until: "2026-10-25T13:05:06Z",
+      totals: {
+        request_count: 14675,
+        usage_usd: usageUsd,
+        input_tokens: 2311817523,
+        cached_input_tokens: 2249912100,
+        output_tokens: 26318416,
+      },
+      buckets: [],
     }),
     text: async () => "",
   };
 }
 
-// Ollama /api/me POST response
+// Ollama /api/me POST response — Plan field drives the credit ceiling
 function makeMeRes(plan = "pro") {
   return {
     ok: true, status: 200,
@@ -46,7 +64,7 @@ function mockBoth(usageRes, meRes) {
   });
 }
 
-describe("Ollama Cloud Quota — fraction-to-USD mapping", () => {
+describe("Ollama Cloud Quota — real /api/usage shape (totals.usage_usd)", () => {
   afterEach(() => vi.clearAllMocks());
 
   it("returns missing-key message when no API key provided", async () => {
@@ -60,28 +78,37 @@ describe("Ollama Cloud Quota — fraction-to-USD mapping", () => {
     expect(result.message).toMatch(/invalid or expired/i);
   });
 
-  it("Pro plan: 0.315 fraction → $18.90 used of $60", async () => {
-    // This is the exact case from the user's Ollama dashboard
-    mockBoth(makeUsageRes(0.315), makeMeRes("pro"));
+  it("requests the 30-day window, not the 7d default", async () => {
+    mockBoth(makeUsageRes(38.96), makeMeRes("pro"));
+    await getOllamaUsage(null, {}, "real-key");
+    const usageUrl = mockFetch.mock.calls.map(c => c[0]).find(u => String(u).includes("/api/usage"));
+    expect(String(usageUrl)).toContain("range=30d");
+  });
+
+  it("Pro plan: $38.96 spent → used 38.96 of $60", async () => {
+    mockBoth(makeUsageRes(38.96), makeMeRes("pro"));
     const result = await getOllamaUsage(null, {}, "real-key");
     expect(result.plan).toContain("Pro");
     const q = result.quotas["Monthly Credits"];
     expect(q).toBeDefined();
-    expect(q.used).toBe(18.9);       // 0.315 * 60 = 18.90
+    expect(q.used).toBe(38.96);
     expect(q.total).toBe(60);
-    expect(q.remainingPercentage).toBe(69); // Math.round((41.1/60)*100) = 69
+    expect(q.remainingPercentage).toBe(35); // round((60-38.96)/60*100)
     expect(q.unit).toBe("USD");
   });
 
-  it("Pro plan: 0.0 fraction → $0.00 used (empty month)", async () => {
-    mockBoth(makeUsageRes(0.0), makeMeRes("pro"));
+  it("Pro plan: spend exceeding the credit ceiling clamps remaining to 0", async () => {
+    // Live case: 90.57 USD spent in 30 days on a $60 Pro allocation
+    mockBoth(makeUsageRes(90.57), makeMeRes("pro"));
     const result = await getOllamaUsage(null, {}, "real-key");
-    expect(result.quotas["Monthly Credits"].used).toBe(0);
-    expect(result.quotas["Monthly Credits"].remainingPercentage).toBe(100);
+    const q = result.quotas["Monthly Credits"];
+    expect(q.used).toBe(90.57);
+    expect(q.remaining).toBe(0);
+    expect(q.remainingPercentage).toBe(0);
   });
 
-  it("Max plan: 0.5 fraction → $150 used of $300", async () => {
-    mockBoth(makeUsageRes(0.5), makeMeRes("max"));
+  it("Max plan: $150 spent → 150 of $300", async () => {
+    mockBoth(makeUsageRes(150), makeMeRes("max"));
     const result = await getOllamaUsage(null, {}, "real-key");
     expect(result.plan).toContain("Max");
     const q = result.quotas["Monthly Credits"];
@@ -90,8 +117,8 @@ describe("Ollama Cloud Quota — fraction-to-USD mapping", () => {
     expect(q.remainingPercentage).toBe(50);
   });
 
-  it("Team plan: 0.25 fraction → $250 used of $1000", async () => {
-    mockBoth(makeUsageRes(0.25), makeMeRes("team"));
+  it("Team plan: $250 spent → 250 of $1000", async () => {
+    mockBoth(makeUsageRes(250), makeMeRes("team"));
     const result = await getOllamaUsage(null, {}, "real-key");
     expect(result.plan).toContain("Team");
     const q = result.quotas["Monthly Credits"];
@@ -101,10 +128,33 @@ describe("Ollama Cloud Quota — fraction-to-USD mapping", () => {
   });
 
   it("plan detected from /api/me even when providerSpecificData has no plan", async () => {
-    mockBoth(makeUsageRes(0.1), makeMeRes("pro"));
+    mockBoth(makeUsageRes(10), makeMeRes("pro"));
     const result = await getOllamaUsage(null, {}, "real-key"); // no providerSpecificData.plan
     expect(result.plan).toContain("Pro");
     expect(result.quotas["Monthly Credits"].total).toBe(60);
+  });
+
+  it("free tier surfaces real spend without inventing a percentage ceiling", async () => {
+    mockBoth(makeUsageRes(12.34), makeMeRes("free"));
+    const result = await getOllamaUsage(null, {}, "real-key");
+    const q = result.quotas["Used (USD)"];
+    expect(q).toBeDefined();
+    expect(q.used).toBe(12.34);
+    expect(q.unlimited).toBe(true);
+  });
+
+  it("usage payload without totals is skipped, NEVER rendered as $0 used / 100% left", async () => {
+    // Regression guard for the 2026-10-25 incident: when the response shape
+    // drifts (limits.monthly.usage vanished), a 0 default rendered a fake
+    // full balance. Missing data must skip, not lie.
+    mockBoth({
+      ok: true, status: 200,
+      json: async () => ({ range: "30d", totals: {} , buckets: [] }),
+      text: async () => "",
+    }, makeMeRes("pro"));
+    const result = await getOllamaUsage(null, {}, "real-key");
+    expect(result.quotas).toEqual({});
+    expect(result.message).toMatch(/unavailable/i);
   });
 
   it("parseQuotaData parses Ollama Monthly Credits for ProviderLimits UI", () => {
@@ -113,18 +163,19 @@ describe("Ollama Cloud Quota — fraction-to-USD mapping", () => {
       quotas: {
         "Monthly Credits": {
           name: "Monthly Credits",
-          used: 18.9,
+          used: 38.96,
           total: 60,
-          remainingPercentage: 69,
+          remaining: 21.04,
+          remainingPercentage: 35,
           unit: "USD",
-          resetAt: "2026-10-01T00:00:00.000Z",
+          resetAt: "2026-11-01T00:00:00.000Z",
         },
       },
     };
     const parsed = parseQuotaData("ollama", mockData);
     expect(parsed).toHaveLength(1);
     expect(parsed[0].name).toBe("Monthly Credits");
-    expect(parsed[0].used).toBe(18.9);
+    expect(parsed[0].used).toBe(38.96);
     expect(parsed[0].total).toBe(60);
     expect(parsed[0].unit).toBe("USD");
   });
