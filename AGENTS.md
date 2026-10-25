@@ -254,6 +254,39 @@ and the deploy target still pinned the poisoned tag, so the next deploy re-pulle
 - Fast incident mitigation is `docker compose up -d 888route` on the previous
   release tag (`docker compose pull` that tag first).
 
+### A combo member's connect budget must be its STANDALONE budget, capped (2026-10-25, v0.15.190 → v0.15.191)
+
+The `9-free` combo failed with "All models failed" while a direct call to the
+same ollama model answered. Inside a combo, `BaseExecutor.execute` replaced the
+provider's default with the request policy's 10 s **and** hard-capped a declared
+`timeoutMs` at 10 s:
+
+```js
+const defaultTimeout = isCombo ? timeoutPolicy.connectTimeoutMs : FETCH_CONNECT_TIMEOUT_MS;
+this.config?.timeoutMs ? (isCombo ? Math.min(this.config.timeoutMs, 10000) : ...) : defaultTimeout
+```
+
+So a member that declares nothing (ollama — the `30s` in its registry entry is
+**web-fetch** config, not chat) got 10 s inside a combo and 60 s standalone, and
+aborted at 10.2 s with `502 fetch connect timeout` while healthy. Rules:
+
+- The combo cap is a **ceiling on the member's standalone wait** —
+  `min(declared timeoutMs || FETCH_CONNECT_TIMEOUT_MS, COMBO_CONNECT_TIMEOUT_CAP_MS)`
+  — never a replacement for it and never a floor under a shorter declaration.
+  `COMBO_CONNECT_TIMEOUT_CAP_MS` (default 20 s) is env-overridable.
+- Read the registry entry before claiming what a provider declares: `timeoutMs`
+  nested under `fetchConfig` belongs to web-fetch, not chat.
+- **A cap fix that only touches declared timeouts is not the fix for a provider
+  that declares none.** 0.15.190 shipped that half and the live member still
+  aborted at exactly 10 s; the second release only moved the default. Watch the
+  member's own START/END pair in `docker logs`, not the client's total time.
+- Prove it on the artifact: `docker exec 888route` and read the compiled chunk
+  (`grep -rl "fetch connect timeout" /app/.next/server/chunks`) to confirm the
+  expression and the constants it references (`FETCH_CONNECT_TIMEOUT_MS` 6e4,
+  `COMBO_CONNECT_TIMEOUT_CAP_MS` 2e4) are the ones you wrote, then re-run the
+  failing load pattern (here: 6+ concurrent combo calls) and check that no
+  member dies at the old boundary.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
