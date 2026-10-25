@@ -62,14 +62,18 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
       };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel, parkScope: rule.parkScope || "provider" };
       }
       // parkMs (optional, see errorConfig POOL_SUSPEND_PARK_MS): how long the
       // failing account/pool should be held OUT of rotation, as opposed to
       // cooldownMs which only paces the hop to the next candidate in THIS
       // request. Only suspend-class rules set it; callers fall back to
       // cooldownMs when absent.
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs, parkMs: rule.parkMs };
+      // parkScope tells the caller whether a parked virtual pool connection
+      // may leave rotation for EVERY provider ("pool") or only for the one
+      // that failed ("provider"). Default provider: the relay is shared, so
+      // the narrow claim is the safe one.
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs, parkMs: rule.parkMs, parkScope: rule.parkScope || "provider" };
     }
 
     // Status-based rule: match HTTP status code
@@ -82,14 +86,16 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
       };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel, parkScope: rule.parkScope || "provider" };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs, parkMs: rule.parkMs };
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs, parkMs: rule.parkMs, parkScope: rule.parkScope || "provider" };
     }
   }
 
-  // Default: transient cooldown for any unmatched error
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+  // Default: transient cooldown for any unmatched error. An unmatched 5xx is
+  // treated as the relay's fault (pre-split behaviour); everything else is
+  // this provider's.
+  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS, parkScope: status >= 500 ? "pool" : "provider" };
 }
 
 /**

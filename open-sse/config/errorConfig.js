@@ -78,6 +78,14 @@ export const POOL_SUSPEND_PARK_MS = 30 * 60 * 1000;
  *     supported / not found). Safe to park across requests. Request-scoped
  *     modelError (context length, 413, transient overload) must NOT set
  *     this: locking on those bans a healthy model for one bad request.
+ *   - parkScope: "pool" | "provider" (default "provider"). "pool" means the
+ *     RELAY itself is at fault, so it leaves rotation for every provider.
+ *     "provider" means this provider's quota/credentials through that relay
+ *     are at fault — the relay is healthy for its siblings, so only
+ *     (pool, provider) may be parked. One relay serves every noAuth provider;
+ *     before the split, opencode's 429 took the relay away from mimo-free and
+ *     mimo-free's 402 took it away from opencode (both observed live
+ *     2026-10-25). checkFallbackError returns it as `parkScope`.
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
@@ -167,8 +175,16 @@ export const ERROR_RULES = [
   // escalating rate limit instead. cooldownMs stays SHORT on purpose — it only
   // paces the hop to the next pool within one request; the long quarantine that
   // keeps a dead relay out of later rotations is POOL_SUSPEND_PARK_MS.
-  { text: "usage_exceeded",           cooldownMs: COOLDOWN.short, parkMs: POOL_SUSPEND_PARK_MS },
-  { text: "is suspended",             cooldownMs: COOLDOWN.short, parkMs: POOL_SUSPEND_PARK_MS },
+  { text: "usage_exceeded",           cooldownMs: COOLDOWN.short, parkMs: POOL_SUSPEND_PARK_MS, parkScope: "pool" },
+  { text: "is suspended",             cooldownMs: COOLDOWN.short, parkMs: POOL_SUSPEND_PARK_MS, parkScope: "pool" },
+  // Vercel answers 402 "Payment required / DEPLOYMENT_DISABLED" for a relay
+  // whose deployment was disabled. Observed live every 2 minutes on
+  // vercel-relay2: with only the status-402 rule (COOLDOWN.long) it re-entered
+  // rotation on a 120s clock forever, burning a request and returning a bogus
+  // 402 to whichever provider was unlucky. A disabled deployment does not come
+  // back in two minutes — same class as a suspended relay.
+  { text: "deployment_disabled",      cooldownMs: COOLDOWN.short, parkMs: POOL_SUSPEND_PARK_MS, parkScope: "pool" },
+  { text: "deployment disabled",      cooldownMs: COOLDOWN.short, parkMs: POOL_SUSPEND_PARK_MS, parkScope: "pool" },
   { text: "usage limit",              backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
@@ -203,9 +219,9 @@ export const ERROR_RULES = [
   // cooldownMs (5s), so a Vercel relay that needed ~20s to recover was handed
   // straight back within seconds — combo burned the wait then fell through to
   // the next provider while the relay was still down.
-  { status: 503, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
-  { status: 502, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
-  { status: 504, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS },
+  { status: 503, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS, parkScope: "pool" },
+  { status: 502, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS, parkScope: "pool" },
+  { status: 504, cooldownMs: COOLDOWN.short, parkMs: TRANSIENT_COOLDOWN_MS, parkScope: "pool" },
 ];
 
 // Invariant: a park window must always EXCEED the hop cooldown of the same
@@ -221,6 +237,18 @@ for (const rule of ERROR_RULES) {
     );
   }
 }
+
+/**
+ * Who owns the fault behind a fallback: the relay ("pool") or the provider
+ * behind it ("provider")? Returned by checkFallbackError, resolved from the
+ * same `parkScope` field on the matched rule so the two classifications cannot
+ * drift.
+ *
+ * A virtual pool connection is a bare relay hop: it holds no credentials of
+ * its own. That makes the distinction load-bearing — a relay parked for a
+ * provider-scoped verdict is a relay taken away from every other provider
+ * sharing it (see the `parkScope` note in the rules above).
+ */
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
 export const COOLDOWN_MS = {
