@@ -42,6 +42,21 @@ export const RETIRED_ANTIGRAVITY_MODELS = [
   "gemini-3.7-flash-tiered",
   "gemini-3-flash-agent",
   "gemini-pro-agent",
+  // Added 2026-10-25 — not retired, NEVER ROLLED OUT. The entry was ported
+  // from upstream 9router on 2026-10-17 while Google's fetchAvailableModels
+  // did not list Argon yet, and it still does not: the live list for the
+  // gateway's account (verified 2026-10-25, token valid, 200 OK) carries 26
+  // model keys and none of them is argon or any gemini-4 id — while every
+  // other antigravity model answered 12/12 the same day. The gateway's own
+  // history agrees: gemini-4-argon-high is 0/5 successful since it was
+  // added, all five attempts being 404 "Requested entity was not found".
+  // Antigravity answers a model it has not rolled out with the same 404
+  // body it uses for retired models, and advertising it sent clients
+  // (and the combo picker) into that 404. When Google's rollout lands,
+  // the id returns through the dynamic model sync (fetchAvailableModels →
+  // parseGeminiCliModels) — and the quota parser already accepts the bare
+  // argon key (open-sse/services/usage/google.js).
+  "gemini-4-argon-high",
 ];
 
 describe("antigravity registry", () => {
@@ -66,10 +81,11 @@ describe("antigravity registry", () => {
     }
   });
 
-  it("keeps gemini-4-argon-high registered (not in Antigravity's list yet)", () => {
-    // Google has not rolled Arg out to the Antigravity API, so the id is not
-    // advertised — but the registry keeps the entry (and its thinking level
-    // floor) ready for the rollout. See tests/unit/antigravity-argon.test.js.
-    expect(registryIds.has("gemini-4-argon-high")).toBe(true);
+  it("does not carry gemini-4-argon-high (never rolled out, 404s on every call)", () => {
+    // Supersedes the old "keeps gemini-4-argon-high registered" decision
+    // (2026-10-17): eight days later Argon is still absent from Google's
+    // live fetchAvailableModels, and the advertised entry 404s on every
+    // call. See the evidence note on RETIRED_ANTIGRAVITY_MODELS above.
+    expect(registryIds.has("gemini-4-argon-high")).toBe(false);
   });
 });

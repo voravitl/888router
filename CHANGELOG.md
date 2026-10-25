@@ -1,3 +1,37 @@
+# v0.15.197 (2026-10-25)
+
+## Antigravity's gemini-4-argon-high was advertising a model Google never rolled out
+
+- **Symptom:** the combo picker offered exactly one Argon tier
+  (`ag/gemini-4-argon-high`) and every call to it died with
+  `404 "Requested entity was not found"` (NOT_FOUND).
+- **Root cause (verified live 2026-10-25):** the entry was ported from
+  upstream 9router on 2026-10-17 **before** Google's Argon rollout, and the
+  rollout still has not reached this account — a live
+  `fetchAvailableModels` call with the account's own (valid) token returns
+  **26 model keys, none of them argon or any gemini-4 id**, while every
+  other antigravity model answered 12/12 the same day (so the account and
+  its IDE session were healthy — the 404 is the same body Google uses for
+  retired models, but here it means "never rolled out"). The gateway's own
+  history agrees: 0/5 successful calls since the entry was added.
+- **Fix:** prune `gemini-4-argon-high` from the antigravity registry
+  (precedent: the 3.6/3.7 tier removal of 2026-10-22 — "still being
+  advertised, which sent clients to models that cannot answer"). The other
+  families keep their declared tiers; Argon never had low/medium variants
+  upstream, which is why the picker only ever offered "high".
+- **Nothing is lost for the rollout:** Antigravity's dynamic model sync
+  (`fetchAvailableModels` → `parseGeminiCliModels`) re-surfaces the id the
+  day Google lists it, the quota parser already accepts the bare argon key
+  (`services/usage/google.js`), and the `*gemini-4*` capabilities pattern
+  (always-on reasoning, levels low/medium/high) is id-based — a client that
+  sends the explicit `gemini-4-argon-high(high)` tier still gets the full
+  thinking machinery (pinned by test).
+- `tests/unit/antigravity-dead-models.test.js` gains the id with the full
+  evidence note (superseding the old "keeps it registered for the rollout"
+  decision, whose cost — a picker entry that 404s — had now materialized);
+  `tests/unit/antigravity-argon.test.js` pins the pruned-registry fallback
+  and the explicit-suffix machinery path.
+
 # v0.15.196 (2026-10-25)
 
 ## Ollama Cloud quota card read an API shape that no longer exists
