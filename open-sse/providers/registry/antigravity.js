@@ -48,7 +48,19 @@ const antigravityConfig = {
     clientSecret: "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",
   },
   models: [
-    { id: "gemini-4-argon-high", name: "Gemini 4 Argon (High)", upstreamModelId: "gemini-4-argon-high(high)" },
+    // gemini-4-argon-high was removed 2026-10-25: the entry was ported from
+    // upstream 9router on 2026-10-17 BEFORE Google rolled Argon out, and the
+    // rollout still has not reached this account — the live
+    // fetchAvailableModels (200 OK, verified 2026-10-25) lists 26 model keys
+    // with no argon / no gemini-4 id, while every other antigravity model
+    // answered the same day. The gateway never served it once (0/5, all 404
+    // "Requested entity was not found"), and advertising it put the combo
+    // picker one click away from a guaranteed 404. When Google's rollout
+    // lands, the id returns through the dynamic model sync
+    // (fetchAvailableModels → parseGeminiCliModels) and the quota parser
+    // already accepts the bare argon key (services/usage/google.js); re-add
+    // a static entry only if the thinking-level mapping needs the explicit
+    // upstreamModelId "gemini-4-argon-high(high)".
     { id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)" },
     { id: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)" },
     { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)" },

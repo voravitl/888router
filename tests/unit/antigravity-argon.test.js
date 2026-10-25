@@ -100,13 +100,22 @@ describe("Gemini 4 Argon thinking clamp", () => {
 });
 
 describe("Gemini 4 Argon Antigravity tier", () => {
-  it("maps the high tier to the wire model with a high thinking level", async () => {
+  it("no longer maps through the registry (entry pruned 2026-10-25); explicit (high) suffix still drives thinking", async () => {
     const { getModelUpstreamId } = await import("../../open-sse/config/providerModels.js");
     const { AntigravityExecutor } = await import("../../open-sse/executors/antigravity.js");
     const { applyThinking, stripThinkingSuffix } = await import("../../open-sse/translator/concerns/thinkingUnified.js");
 
-    const upstreamModel = getModelUpstreamId("ag", "gemini-4-argon-high");
-    expect(upstreamModel).toBe("gemini-4-argon-high(high)");
+    // The registry entry was pruned on 2026-10-25 — Google never rolled Argon
+    // out to this account and the advertised id 404s on every call (evidence:
+    // tests/unit/antigravity-dead-models.test.js). The lookup falls back to
+    // the bare id; nothing maps it to "(high)" anymore.
+    expect(getModelUpstreamId("ag", "gemini-4-argon-high")).toBe("gemini-4-argon-high");
+
+    // The *gemini-4* capabilities pattern (always-on reasoning, levels
+    // low/medium/high) is id-based, not registry-based — so a client that
+    // sends the parenthesized tier explicitly still gets the full machinery.
+    // This is the path that comes alive the day Google's rollout lands.
+    const upstreamModel = "gemini-4-argon-high(high)";
 
     const body = {
       model: stripThinkingSuffix(upstreamModel),
