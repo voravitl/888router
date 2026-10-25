@@ -1,4 +1,4 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS, COMBO_CONNECT_TIMEOUT_CAP_MS } from "../config/runtimeConfig.js";
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
@@ -156,9 +156,18 @@ export class BaseExecutor {
       const connectCtrl = new AbortController();
       const timeoutPolicy = credentials?.requestTimeoutPolicy || getRequestTimeoutPolicy(body);
       const defaultTimeout = isCombo ? timeoutPolicy.connectTimeoutMs : FETCH_CONNECT_TIMEOUT_MS;
+      // In a combo the provider's own timeout is capped so one slow member
+      // cannot stall the request — but the cap is a CEILING, never a floor:
+      // the request policy (10s normal, 180s+ for long context) already says
+      // how long this request may wait, and shrinking below it aborts a
+      // healthy upstream mid-prefill (ollama: declared 30s, capped to 10s).
+      const comboMemberTimeout = Math.max(
+        Math.min(this.config?.timeoutMs, COMBO_CONNECT_TIMEOUT_CAP_MS),
+        timeoutPolicy.connectTimeoutMs,
+      );
       const timeoutMs = timeoutPolicy.longContext
         ? Math.max(defaultTimeout, this.config?.timeoutMs || 0, timeoutPolicy.connectTimeoutMs)
-        : (this.config?.timeoutMs ? (isCombo ? Math.min(this.config.timeoutMs, 10000) : this.config.timeoutMs) : defaultTimeout);
+        : (this.config?.timeoutMs ? (isCombo ? comboMemberTimeout : this.config.timeoutMs) : defaultTimeout);
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 

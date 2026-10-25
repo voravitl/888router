@@ -50,6 +50,13 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Inside a combo, one member must not be able to stall the whole request, so a
+// provider's own `timeoutMs` is capped. It must never be capped BELOW what the
+// request policy already allows: ollama declares 30s (a cloud model needs that
+// long to prefill), and a flat 10s cap made a healthy member time out at 10.2s
+// while the same call answered in 1.4–7.7s (2026-10-25, 9-free → 502).
+export const COMBO_CONNECT_TIMEOUT_CAP_MS = envMs("COMBO_CONNECT_TIMEOUT_CAP_MS", 20 * 1000);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 

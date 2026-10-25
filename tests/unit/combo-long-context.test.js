@@ -97,17 +97,24 @@ describe("large request bounded waits", () => {
     expect(response.status).toBe(200);
     expect(single).toHaveBeenCalledTimes(3);
   });
-  it("retains ordinary combo connect timeout and extends large prefill to 180 seconds", async () => {
+  it("gives an ordinary combo the request policy's 10s and a large prefill 180 seconds", async () => {
     vi.useFakeTimers();
     let requestSignal;
     fetchMock.mockImplementation((_url, options) => {
       requestSignal = options.signal;
       return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
     });
+    // A provider that declares a SHORT timeout: inside a combo the provider
+    // value is a ceiling, never a floor under the request policy, so the
+    // ordinary request still gets the 10s the policy allows (and a 30s
+    // provider gets the 20s combo cap instead of the old flat 10s).
     const executor = new BaseExecutor("test", { baseUrl: "https://upstream.invalid", timeoutMs: 1000 });
     const ordinary = executor.execute({ body: {}, credentials: {}, isCombo: true });
     const ordinaryError = expect(ordinary).rejects.toThrow("fetch connect timeout");
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(9999);
+    expect(requestSignal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(requestSignal.aborted).toBe(true);
     await ordinaryError;
     estimateMock.mockReturnValue(500000);
     const large = executor.execute({ body: {}, credentials: {}, isCombo: true });

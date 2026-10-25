@@ -23,7 +23,8 @@ describe("OpenCode Model Sync Support", () => {
     // muse-spark-1.2/1.3-contributor-free, space-bunny-free (HTTP 410) and
     // deepseek-v4-flash-free / ling-3.0-flash-fin-free / jev-1.13-free
     // (HTTP 400) — are pinned as ABSENT in
-    // tests/unit/opencode-free-catalogue.test.js.
+    // tests/unit/opencode-free-catalogue.test.js, as is
+    // minimax-m3.1-flash-free (HTTP 410 ModelDeprecated, retired 2026-10-25).
     const modelIds = opencodeRegistry.models.map((m) => m.id);
     expect(modelIds).toContain("nemotron-3-ultra-free");
     expect(modelIds).toContain("nemotron-3.5-lightning-free");
@@ -33,7 +34,6 @@ describe("OpenCode Model Sync Support", () => {
     expect(modelIds).toContain("deepseek-v4.1-flash-free");
     expect(modelIds).toContain("glm-5.3-flash-free");
     expect(modelIds).toContain("longcat-2.5-preview-free");
-    expect(modelIds).toContain("minimax-m3.1-flash-free");
     expect(modelIds).toContain("big-pickle");
   });
 

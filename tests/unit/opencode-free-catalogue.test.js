@@ -42,6 +42,10 @@ const DEAD = [
   "deepseek-v4-flash-free",            // 400 Model is unavailable
   "ling-3.0-flash-fin-free",           // 400 Model is unavailable
   "jev-1.13-free",                     // 400 ModelProtocolUnsupported
+  // Retired 2026-10-25: 410 ModelDeprecated, "Use deepseek-v4.1-flash-free
+  // instead". It kept being advertised for two more days, and the 9-free
+  // combo kept carrying it as a member.
+  "minimax-m3.1-flash-free",           // 410 ModelDeprecated
 ];
 
 // Verified serving on 2026-10-21. Every one of these must stay in the
@@ -57,7 +61,6 @@ const ALIVE = [
   "deepseek-v4.1-flash-free",          // 200
   "glm-5.3-flash-free",                // 200
   "longcat-2.5-preview-free",          // 200
-  "minimax-m3.1-flash-free",           // 200
   "nemotron-3.5-super-vl-free",        // 200
 ];
 

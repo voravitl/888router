@@ -4,6 +4,7 @@ import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { isPairBlocked, isQuotaTrackedProvider } from "./providerQuota.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 import { isRetiredProvider } from "open-sse/config/retiredProviders.js";
 import { partitionByQuotaHealth, QUOTA_AVOID_THRESHOLD_PCT, QUOTA_SNAPSHOT_MAX_AGE_MS } from "open-sse/services/quotaSnapshot.js";
@@ -304,6 +305,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           log.warn("AUTH", `${provider} | all proxy pools exhausted (or none eligible)`);
           return null;
         }
+        // pickVirtualNoAuthConnection returns two shapes: a virtual connection,
+        // or the all-parked VERDICT ({allRateLimited:true}). Logging the verdict
+        // as a pool printed "Using opencode proxy pool: undefined" — a lie that
+        // hid the real cause (2026-10-25). Hand it up untouched; chat.js turns
+        // it into 429 + Retry-After.
+        if (chosen.allRateLimited) return chosen;
         log.info("AUTH", `Using ${provider} proxy pool: ${chosen.connectionName}`);
         return chosen;
       }
@@ -542,6 +549,16 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     const { shouldFallback: shouldRotate, cooldownMs, parkMs: rulePark, newBackoffLevel, modelError } = checkFallbackError(status, errorText, poolBackoff);
     if (shouldRotate) {
       if (!poolId) return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
+      // 401/403 are identity verdicts about the CALLER's credentials for THIS
+      // provider, not the relay's health — one relay serves every provider, so
+      // parking it on openrouter's "Missing Authentication header" took the
+      // opencode free models offline for 2min and then reported that 401 as
+      // opencode's own cause (2026-10-25).
+      // The relay's own faults (402/429 quota, 5xx, suspend) still park it.
+      if (status === HTTP_STATUS.UNAUTHORIZED || status === HTTP_STATUS.FORBIDDEN) {
+        log.debug("AUTH", `pool ${poolId} not parked [${status}] — caller credential verdict, relay untouched`);
+        return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
+      }
       // Persist the failure on the pool row so pickVirtualNoAuthConnection
       // skips it for the cooldown window (relay-suspend rotation bug: without
       // this, the pool that just 503'd is picked again on the next request).

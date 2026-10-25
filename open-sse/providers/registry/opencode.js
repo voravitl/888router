@@ -45,6 +45,12 @@ const opencodeConfig = {
   // "Model is unavailable" / ModelProtocolUnsupported on every endpoint):
   //   deepseek-v4-flash-free, ling-3.0-flash-fin-free, jev-1.13-free
   //
+  // Retired since that sweep (verified live on the running gateway):
+  //   minimax-m3.1-flash-free → 410 ModelDeprecated, "Use
+  //   deepseek-v4.1-flash-free instead" (2026-10-25). It stayed in the
+  //   catalogue for two more days after upstream killed it, so /v1/models
+  //   offered a dead id to every client — including the 9-free combo.
+  //
   // `nemotron-3-ultra-free` is NOT in the upstream /v1/models list but still
   // answers 200 — "absent from the list" is not evidence of death, so it stays.
   // The paid tier (registry/opencode-go.js) is a DIFFERENT upstream and keeps
@@ -58,7 +64,6 @@ const opencodeConfig = {
     { id: "deepseek-v4.1-flash-free", name: "deepseek-v4.1-flash-free" },
     { id: "glm-5.3-flash-free", name: "glm-5.3-flash-free" },
     { id: "longcat-2.5-preview-free", name: "longcat-2.5-preview-free" },
-    { id: "minimax-m3.1-flash-free", name: "minimax-m3.1-flash-free" },
     { id: "big-pickle", name: "big-pickle" },
   ],
 };
