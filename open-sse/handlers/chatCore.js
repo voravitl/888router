@@ -9,7 +9,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, parseUpstreamError, formatProviderError, isLocalProviderError } from "../utils/error.js";
 import { isClientAbort } from "../utils/abort.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
@@ -515,7 +515,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    const localResult = createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    // A LOCAL failure (missing configuration) never reached the upstream, so
+    // it says nothing about the relay and cannot be fixed by trying another
+    // one. Flag it so the caller neither parks the pool nor rotates.
+    if (error?.localProviderError || isLocalProviderError(error?.message)) {
+      localResult.localProviderError = true;
+    }
+    return localResult;
   }
 
   // Handle 401/403 - try token refresh (skip for noAuth providers)

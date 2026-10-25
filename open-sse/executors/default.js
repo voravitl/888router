@@ -155,7 +155,15 @@ export class DefaultExecutor extends BaseExecutor {
     const url = this.config.baseUrl;
     if (url?.includes("{accountId}")) {
       const accountId = credentials?.providerSpecificData?.accountId;
-      if (!accountId) throw new Error(`${this.provider} requires accountId in providerSpecificData`);
+      if (!accountId) {
+        // Flagged as a LOCAL error: the request never leaves the machine, so
+        // it must not park the shared proxy pool (which would take every other
+        // provider down with it) and must not be retried against another
+        // relay (it would fail identically). See isLocalProviderError.
+        const err = new Error(`${this.provider} requires accountId in providerSpecificData`);
+        err.localProviderError = true;
+        throw err;
+      }
       return url.replace("{accountId}", accountId);
     }
     return url;
