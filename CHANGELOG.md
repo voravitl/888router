@@ -1,3 +1,38 @@
+# v0.15.194 (2026-10-25)
+
+## The "connect timeout" was a first-byte deadline, and it aborted healthy providers
+
+- **Found while running the final concurrency verification** of 0.15.193, and
+  pre-existing (the 10 s value was never touched by the 0.15.190/191 cap
+  work). Measured live against the ollama upstream, through the gateway's own
+  key:
+
+  ```
+  connect (TCP+TLS)   : 12 ms
+  headers arrived at  : 5 631 ms
+  first body chunk at : 5 633 ms
+  ```
+
+  The upstream BUFFERS the whole answer and then sends the headers, so "time
+  to headers" is "time to first token" and nothing like a connect.
+- **`connectTimeoutMs` measures time to HEADERS, not time to connect.** The
+  AbortController that enforces it is cleared only after `proxyAwareFetch`
+  resolves, and a fetch resolves when the headers arrive. So the flat 10 s
+  budget aborted providers that were perfectly healthy, and reported it as
+  `502 fetch connect timeout` — a verdict about the network for a provider
+  that was merely thinking. Under 6-way concurrency the same upstream answered
+  at 8.0 / 9.4 / 10.6 / 11.5 / 12.5 / 13.9 s, so **four of six requests were
+  aborted** and the combo reported "All models failed" with a working model in
+  it.
+- **The header wait is now the provider's own patience**
+  (`FETCH_CONNECT_TIMEOUT_MS`, 60 s) instead of a flat 10 s, and it is named
+  for what it measures. The socket connect stays bounded by the fetch's own
+  timeout, so a dead host still fails fast. A provider that **declares** a
+  `timeoutMs` keeps it — the declared value is the provider's ceiling, not a
+  floor to be grown (the `executor-combo-timeout` suite pins both), and the
+  combo path still caps a member's wait at
+  `COMBO_CONNECT_TIMEOUT_CAP_MS` so one slow member cannot stall the combo.
+
 # v0.15.193 (2026-10-25)
 
 ## A local configuration error no longer takes the whole relay pool offline

@@ -369,6 +369,45 @@ the shared pool. Rules:
   configuration fault on the provider's side: the caller cannot fix it by
   retrying, and the relay never saw the request.
 
+### A "connect timeout" that waits for HEADERS is a FIRST-BYTE deadline (2026-10-25, v0.15.194)
+
+Found while running the final concurrency verification of 0.15.193, and
+pre-existing. Measured live against the ollama upstream through the gateway's
+own key:
+
+```
+connect (TCP+TLS)   : 12 ms
+headers arrived at  : 5 631 ms
+first body chunk at : 5 633 ms
+```
+
+The upstream BUFFERS the whole answer and then sends the headers, so "time to
+headers" is "time to first token" and nothing like a connect.
+
+`connectTimeoutMs` is enforced by an AbortController that is cleared only
+after `proxyAwareFetch` RESOLVES — and a fetch resolves when the headers
+arrive. So the flat 10 s budget aborted healthy providers and reported it as
+`502 fetch connect timeout`: a verdict about the network for a provider that
+was merely thinking. Under 6-way concurrency the same upstream answered at
+8.0 / 9.4 / 10.6 / 11.5 / 12.5 / 13.9 s, so **four of six requests were
+aborted** and the combo reported "All models failed" with a working model in
+it.
+
+Rules:
+
+- **Name the deadline for what it measures.** The wait for the upstream's
+  response HEADERS is a first-byte deadline. The socket connect is bounded
+  separately by the fetch's own timeout, so a dead host still fails fast.
+- **The header wait is the provider's patience** (`FETCH_CONNECT_TIMEOUT_MS`),
+  not a flat number that silently outlives every real provider.
+- **A provider that DECLARES a `timeoutMs` keeps it** — the declared value is
+  the provider's ceiling, not a floor to be grown. The combo path caps a
+  member's wait at `COMBO_CONNECT_TIMEOUT_CAP_MS` (a ceiling, not a
+  replacement).
+- **Measure the upstream before blaming the transport.** A 12 ms connect with
+  a 5.6 s header wait is a slow provider, not a network fault. The same
+  measurement took one `node -e` fetch.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
