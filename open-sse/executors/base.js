@@ -152,11 +152,18 @@ export class BaseExecutor {
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
-      // Abort if upstream doesn't return response headers within connection timeout
+      // Abort if the upstream doesn't send RESPONSE HEADERS within the header
+      // wait. This is a FIRST-BYTE deadline, not a connect timeout: the fetch
+      // resolves when the headers arrive, and a provider that buffers its
+      // whole answer (ollama: headers at 5.6 s idle, 8–14 s under 6-way
+      // concurrency) would be aborted while healthy and reported as a
+      // connect failure (2026-10-25).
       const connectCtrl = new AbortController();
       const timeoutPolicy = credentials?.requestTimeoutPolicy || getRequestTimeoutPolicy(body);
-      const defaultTimeout = isCombo ? timeoutPolicy.connectTimeoutMs : FETCH_CONNECT_TIMEOUT_MS;
-      // In a combo the per-member connect wait is capped so one slow member
+      // The standalone wait is the provider's own patience: its declared
+      // timeoutMs, or FETCH_CONNECT_TIMEOUT_MS when it declares none.
+      const defaultTimeout = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      // In a combo the per-member header wait is capped so one slow member
       // cannot stall the whole request. The cap applies to what the provider
       // gets STANDALONE — its declared timeoutMs, or FETCH_CONNECT_TIMEOUT_MS
       // when it declares none. It used to be a flat 10s AND it replaced the
@@ -168,16 +175,23 @@ export class BaseExecutor {
         this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS,
         COMBO_CONNECT_TIMEOUT_CAP_MS,
       );
+      // The request policy's header wait is the DEFAULT for a provider that
+      // declares none (it may be RAISED by a long-context request). A provider
+      // that DECLARES a timeout keeps it — the declared value is a ceiling
+      // for the provider, not a floor to be grown. The combo path caps the
+      // member's standalone wait.
       const timeoutMs = timeoutPolicy.longContext
-        ? Math.max(defaultTimeout, this.config?.timeoutMs || 0, timeoutPolicy.connectTimeoutMs)
-        : (isCombo ? comboMemberTimeout : (this.config?.timeoutMs || defaultTimeout));
+        ? Math.max(defaultTimeout, timeoutPolicy.connectTimeoutMs)
+        : (isCombo
+          ? Math.min(comboMemberTimeout, timeoutPolicy.connectTimeoutMs)
+          : (this.config?.timeoutMs || timeoutPolicy.connectTimeoutMs));
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
-        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
+        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | headerWait=${timeoutMs}ms`);
         const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,

@@ -14,6 +14,7 @@ beforeEach(() => clearComboKnownUnavailable());
 afterEach(() => clearComboKnownUnavailable());
 import { BaseExecutor } from "../../open-sse/executors/base.js";
 import { getRequestTimeoutPolicy } from "../../open-sse/utils/requestTimeout.js";
+import { FETCH_CONNECT_TIMEOUT_MS } from "../../open-sse/config/runtimeConfig.js";
 
 const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() };
 const answer = () => new Response(JSON.stringify({ choices: [{ message: { content: "complete" } }] }), {
@@ -141,7 +142,12 @@ describe("large request bounded waits", () => {
   });
   it("bounds operator long-context overrides and leaves normal requests unchanged", () => {
     process.env.LONG_CONTEXT_TIMEOUT_MS = "999999999";
-    expect(getRequestTimeoutPolicy({}).connectTimeoutMs).toBe(10000);
+    // The override must not leak into a normal request. The normal header
+    // wait is the provider's default patience (FETCH_CONNECT_TIMEOUT_MS),
+    // NOT the operator's override and not a flat 10 s — it is a first-byte
+    // deadline (2026-10-25: the ollama upstream sends its headers at 5.6 s
+    // idle and 8–14 s under concurrency).
+    expect(getRequestTimeoutPolicy({}).connectTimeoutMs).toBe(FETCH_CONNECT_TIMEOUT_MS);
     estimateMock.mockReturnValue(100000);
     expect(getRequestTimeoutPolicy({}).connectTimeoutMs).toBe(300000);
     process.env.LONG_CONTEXT_TIMEOUT_MS = "invalid";
