@@ -1,3 +1,51 @@
+# v0.15.192 (2026-10-25)
+
+## A shared relay is no longer taken away from one provider because of another
+
+- **One relay serves every noAuth provider, but the park was transport-wide.**
+  `markAccountUnavailable` wrote every parkable failure to the `proxyPools`
+  row, so a provider's own 429 or 402 removed that relay from *every* other
+  provider's rotation — and the verdict then reported *someone else's* error
+  as the caller's cause. Observed live on 0.15.191: `mmf` got
+  `402 DEPLOYMENT_DISABLED` on vercel-relay2, the relay was parked for 120 s,
+  and the next `mimo-free` request came back
+  `mimo-free | all proxy pools parked [400]` — a status `mimo-free` never
+  received. The reverse happened too: `opencode`'s free-tier 429 parked
+  cloudflare-relay for 5 s while `mimo-free` was waiting to use it.
+- **A park is now scoped to whoever is at fault.** `ERROR_RULES` gained
+  `parkScope` (`"pool"` = the relay itself is down, out for everyone;
+  `"provider"` = this provider's quota or credentials through that relay are
+  exhausted, the relay stays healthy for its siblings), returned by
+  `checkFallbackError`. A provider-scoped park is written to
+  `data.providerParks[providerId]` on the pool row (no schema migration — the
+  blob already holds arbitrary fields) and only that provider skips that
+  relay. A transport fault (dead deployment, suspended relay, 5xx) still
+  parks the relay for everyone, and the backoff level escalates per scope: a
+  provider's repeated 429s raise *its* level, never the relay's.
+- **The provider park is per MODEL.** The quota wall is per model — on one
+  opencode account `muse-spark` answered `FreeUsageLimitError` on every
+  request while `space-bunny` served normally (the evidence already recorded
+  in `providerQuota.js`). A provider-scoped park is therefore written to
+  `data.providerParks[providerId].models[model]`: a dead model no longer
+  takes its healthy siblings on the same relay down with it, and a success
+  clears only the model that succeeded. A credential-level failure (no model
+  in hand) is the account-wide entry and any success of that provider clears
+  it.
+- **The upstream `Retry-After` is no longer dropped.** opencode's free tier
+  answers `429` with `retry-after: 76074` (its whole daily window) and a body
+  that names no reset at all; the gateway read only the body, fell back to the
+  5 s hop cooldown, and told the client "(reset after 4s)" — a retry storm
+  into the same wall. `parseUpstreamError` now reads the header (delta-seconds
+  and HTTP-date), and the park uses that window, capped at
+  `MAX_RATE_LIMIT_COOLDOWN_MS` so a bad header cannot park a provider for a
+  year.
+- **`402 DEPLOYMENT_DISABLED` now parks for the long window.** Vercel answers
+  402 that way for a relay whose deployment was disabled; only the status-402
+  rule existed, so it was parked for the generic 120 s and came straight back
+  — burning a request every two minutes on a relay that stays down. It now
+  carries `parkMs: POOL_SUSPEND_PARK_MS` (30 min) and `parkScope: "pool"`,
+  the same class as a suspended relay.
+
 # v0.15.191 (2026-10-25)
 
 ## A combo now gives a member the same uphill it gets standalone (the 10 s abort, fixed for real)

@@ -287,6 +287,51 @@ aborted at 10.2 s with `502 fetch connect timeout` while healthy. Rules:
   failing load pattern (here: 6+ concurrent combo calls) and check that no
   member dies at the old boundary.
 
+### A shared relay's park must be scoped to whoever is at fault (2026-10-25, v0.15.192)
+
+One proxy pool = one relay hop, and it serves EVERY noAuth provider. The park
+record was transport-wide: `markAccountUnavailable` wrote every parkable
+failure to the `proxyPools` row, so a provider's own 429 or 402 removed that
+relay from every other provider's rotation — and the verdict then reported
+*someone else's* error as the caller's cause. Observed live on 0.15.191:
+
+```
+[AUTH] pool f9c8c4cd parked 120s [402]      ← mmf's dead relay deployment
+[AUTH] mimo-free | all proxy pools parked [400]   ← a status mimo-free never got
+```
+
+and the reverse: opencode's free-tier 429 parked cloudflare-relay for 5 s
+while `mimo-free` was waiting to use it.
+
+Rules going forward:
+
+- **A park has an owner.** `ERROR_RULES` carries `parkScope`: `"pool"` = the
+  relay itself is down (dead deployment, suspended host, 5xx) and leaves
+  rotation for everyone; `"provider"` = this provider's quota/credentials
+  through that relay are exhausted, so only that provider skips it.
+  `checkFallbackError` returns it — never classify the scope in a second
+  place, or the two will drift.
+- **The provider park is per MODEL.** The quota wall is per model (the
+  evidence in `providerQuota.js`: `muse-spark` dead while `space-bunny`
+  served on the same account). A provider-scoped park is written to
+  `data.providerParks[providerId].models[model]`; a credential-level failure
+  (no model) is the account-wide entry. The JSON blob needs no migration.
+- **The backoff level escalates per scope.** A provider's repeated 429s raise
+  *its* level, never the relay's — the relay may be healthy and in use by
+  another provider right now.
+- **The upstream `Retry-After` is the honest park window.** opencode's free
+  tier answers `429` with `retry-after: 76074` (its whole daily window) and a
+  body that names no reset at all; the gateway read only the body, fell back
+  to the 5 s hop cooldown and told the client "(reset after 4s)" — a retry
+  storm into the same wall. `parseUpstreamError` reads the header (delta
+  seconds and HTTP-date), and the park uses it, capped at
+  `MAX_RATE_LIMIT_COOLDOWN_MS`.
+- **A relay fault is not a credential fault.** Vercel answers `402
+  DEPLOYMENT_DISABLED` for a relay whose deployment was disabled; the
+  status-402 rule parked it for 120 s and it came straight back, burning a
+  request every two minutes on a relay that stays down. It now carries
+  `parkMs: POOL_SUSPEND_PARK_MS` and `parkScope: "pool"`.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

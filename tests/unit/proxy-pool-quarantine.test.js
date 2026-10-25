@@ -149,14 +149,32 @@ describe("pool quarantine on failure", () => {
     // The backoff level lives on the pool row: a virtual noauth: connection has
     // no providerConnections row to hold it. Passing a hardcoded 0 (the bug)
     // pinned every failure to level 1 forever.
+    //
+    // A rate limit is a PROVIDER fault (the relay forwarded the request and
+    // the upstream answered a well-formed 429), so the escalation lives on
+    // that provider's park — the relay's own transport level must not climb
+    // because one provider kept hitting a wall.
     resetPools({ id: "poolA", name: "A" });
     const levels = [];
     for (let i = 0; i < 3; i++) {
       await markAccountUnavailable("noauth:poolA", 429, "rate limit exceeded", "opencode");
       await vi.waitFor(() => expect(poolWrites.length).toBe(i + 1));
-      levels.push(poolWrites.at(-1).backoffLevel);
+      levels.push(poolWrites.at(-1).providerParks.opencode.backoffLevel);
     }
     expect(levels).toEqual([1, 2, 3]);
+  });
+
+  it("escalates the transport level across repeated relay failures", async () => {
+    // Same invariant for the relay's own fault: a 5xx is the relay's, so the
+    // level on the pool row must escalate instead of staying at 1.
+    resetPools({ id: "poolA", name: "A" });
+    const levels = [];
+    for (let i = 0; i < 3; i++) {
+      await markAccountUnavailable("noauth:poolA", 503, DENO_SUSPEND, "opencode");
+      await vi.waitFor(() => expect(poolWrites.length).toBe(i + 1));
+      levels.push(poolWrites.at(-1).backoffLevel);
+    }
+    expect(levels).toEqual([0, 0, 0]); // suspend rule: no escalation by design
   });
 
   it("ignores a malformed 'noauth:' id instead of writing to every pool", async () => {

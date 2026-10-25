@@ -15,6 +15,48 @@ import * as log from "../utils/logger.js";
 let selectionMutex = Promise.resolve();
 
 /**
+ * A proxy pool carries two kinds of park, and they are not interchangeable:
+ *
+ *   transport  (pool row `unavailableUntil`)     — the relay itself is down
+ *                                                  (dead deployment, suspended
+ *                                                  host, 5xx). Out for everyone.
+ *   provider   (`data.providerParks[providerId]`) — this provider's quota or
+ *                                                  credentials through that
+ *                                                  relay are exhausted. The
+ *                                                  relay is healthy for its
+ *                                                  siblings, so only this
+ *                                                  provider skips it.
+ *
+ * One relay hop serves every noAuth provider. Before the split a provider's
+ * 429 parked the row, which removed the relay from every other provider's
+ * rotation and then reported SOMEONE ELSE's error as that provider's cause
+ * (observed live 2026-10-25: `mimo-free | all proxy pools parked [400]` after
+ * opencode's 429s, and vice versa).
+ *
+ * Inside a provider's park the models are tracked separately: the evidence
+ * says the quota wall is per MODEL (on one opencode account
+ * `muse-spark-1.3-contributor-free` answered FreeUsageLimitError on every
+ * request while `space-bunny-free` served normally — see the note in
+ * providerQuota.js). A model-less entry means "every model of this provider
+ * is parked here" — that is what a credential-level failure is.
+ *
+ * Returns the entry when the provider is still parked on this pool, else null.
+ */
+function providerParkOf(pool, providerId, model = null) {
+  if (!providerId) return null;
+  const entry = pool?.providerParks?.[providerId];
+  if (!entry) return null;
+  const now = Date.now();
+  const alive = (e) => e?.until && new Date(e.until).getTime() > now;
+  // Most specific first: the model this request wants.
+  const modelEntry = model ? entry.models?.[model] : null;
+  if (alive(modelEntry)) return { ...modelEntry, until: new Date(modelEntry.until).getTime() };
+  // Then the account-wide park (a credential-level failure blocks every model).
+  if (alive(entry)) return { ...entry, until: new Date(entry.until).getTime() };
+  return null;
+}
+
+/**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
  * @param {string} provider - Provider name
@@ -52,6 +94,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         return {
           id: "noauth",
           connectionId: "noauth",
+          provider: providerId,
           connectionName: "Local Bridge",
           isActive: true,
           accessToken: "public",
@@ -72,6 +115,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         return {
           id: "noauth",
           connectionId: "noauth",
+          provider: providerId,
           connectionName: "Direct Connection",
           isActive: true,
           accessToken: "public",
@@ -115,6 +159,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         return {
           id: "noauth",
           connectionId: "noauth",
+          provider: providerId,
           connectionName: "Public",
           isActive: true,
           accessToken: "public",
@@ -147,7 +192,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       for (const pool of pools) {
         const pid = pool?.id;
         if (!pid || exclude.has(`noauth:${pid}`)) continue;
-        const parkedUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
+        // A provider-scoped park skips this pool for THIS provider only; the
+        // transport park (unavailableUntil) skips it for everyone.
+        const provPark = providerParkOf(pool, providerId, model);
+        const transportUntil = pool.unavailableUntil ? new Date(pool.unavailableUntil).getTime() : 0;
+        const parkedUntil = Math.max(provPark?.until || 0, transportUntil);
         // Strike breaker (providerQuota): a pool that tripped the quota
         // breaker is cache-blocked for the requested MODEL for its window
         // even when its DB park has lapsed — without this the pool is
@@ -167,12 +216,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           log.debug("AUTH", `Skipping pool ${pid}: strike-blocked until ${new Date(strikeBlock).toISOString()}`);
           continue;
         }
+        if (parkedUntil > now) {
+          const who = provPark && provPark.until >= transportUntil ? ` for ${providerId}` : "";
+          log.debug("AUTH", `Skipping pool ${pid}${who}: parked until ${new Date(parkedUntil).toISOString()}`);
+          continue;
+        }
         if (pool.testStatus === "unavailable") {
-          if (parkedUntil > now) {
-            log.debug("AUTH", `Skipping pool ${pid}: parked until ${pool.unavailableUntil}`);
-          } else {
-            stale.push(pool); // window lapsed, not yet seen working again
-          }
+          stale.push(pool); // transport window lapsed, not yet seen working again
           continue;
         }
         healthy.push(pool);
@@ -191,6 +241,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         return {
           id: `noauth:${pid}`,
           connectionId: `noauth:${pid}`,
+          provider: providerId,
+          model: model || null,
           connectionName: `Public:${pool.name || pid.slice(0, 8)}`,
           isActive: true,
           accessToken: "public",
@@ -222,6 +274,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         return {
           id: "noauth",
           connectionId: "noauth",
+          provider: providerId,
           connectionName: "Public",
           isActive: true,
           accessToken: "public",
@@ -243,6 +296,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // real status, not a misleading 429.
       let earliestReset = null;
       let earliestPoolError = null;
+      let earliestStatus = null;
       for (const pool of pools) {
         // A strike-blocked pool carries a real window even with no DB park.
         // Both key shapes — see the skip branch above for why.
@@ -252,7 +306,18 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           if (strikeBlock && strikeBlock > now && (!earliestReset || strikeBlock < earliestReset)) {
             earliestReset = strikeBlock;
             earliestPoolError = pool.lastError || null;
+            earliestStatus = null;
           }
+        }
+        // This provider's own park on this pool, carrying ITS status/error —
+        // the previous code fell through to the transport fields and reported
+        // whichever OTHER provider's failure last touched the row (live:
+        // `mimo-free | all proxy pools parked [400]`).
+        const provPark = providerParkOf(pool, providerId, model);
+        if (provPark && (!earliestReset || provPark.until < earliestReset)) {
+          earliestReset = provPark.until;
+          earliestPoolError = provPark.lastError || null;
+          earliestStatus = provPark.status || null;
         }
         if (!pool.unavailableUntil) continue;
         const until = new Date(pool.unavailableUntil).getTime();
@@ -260,13 +325,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           if (!earliestReset || until < earliestReset) {
             earliestReset = until;
             earliestPoolError = pool.lastError || null;
+            earliestStatus = null;
           }
         }
       }
       if (earliestReset) {
         const retryAfter = new Date(earliestReset).toISOString();
+        // The status comes from the park itself when it carries one (a
+        // provider-scoped park stores the status it was written with); the
+        // transport park only has the "[NNN]: ..." text to parse.
         const statusMatch = earliestPoolError && earliestPoolError.match(/\[(\d{3})\]/);
-        const errorCode = statusMatch ? Number(statusMatch[1]) : 429;
+        const errorCode = earliestStatus || (statusMatch ? Number(statusMatch[1]) : 429);
         log.warn("AUTH", `${providerId} | all proxy pools parked [${errorCode}], retry after ${formatRetryAfter(retryAfter)}`);
         return {
           allRateLimited: true,
@@ -487,6 +556,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     return {
       authType: connection.authType,
+      provider: providerId,
+      model: model || null,
       apiKey: connection.apiKey,
       accessToken: connection.accessToken,
       refreshToken: connection.refreshToken,
@@ -540,13 +611,24 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     // value (2s) forever, so a failing relay re-entered rotation seconds later
     // no matter how many times it had already failed.
     let poolBackoff = 0;
+    let pool = null;
     if (poolId) {
       try {
-        const pool = await getProxyPoolById(poolId);
+        pool = await getProxyPoolById(poolId);
+        // The escalation level is per-SCOPE. A provider-scoped fault escalates
+        // the PROVIDER's level (the relay's own level must not climb because
+        // one provider kept hitting a wall — another provider is using that
+        // relay right now); a transport fault escalates the relay's level.
+        // Inside a provider the level is per MODEL (the quota wall is).
+        const prevEntry = provider ? pool?.providerParks?.[provider] : null;
+        const providerLevel = model
+          ? (prevEntry?.models?.[model]?.backoffLevel || 0)
+          : (prevEntry?.backoffLevel || 0);
         poolBackoff = pool?.backoffLevel || 0;
+        if (providerLevel > poolBackoff && provider) poolBackoff = providerLevel;
       } catch { /* unreadable row → treat as first failure */ }
     }
-    const { shouldFallback: shouldRotate, cooldownMs, parkMs: rulePark, newBackoffLevel, modelError } = checkFallbackError(status, errorText, poolBackoff);
+    const { shouldFallback: shouldRotate, cooldownMs, parkMs: rulePark, newBackoffLevel, modelError, parkScope } = checkFallbackError(status, errorText, poolBackoff);
     if (shouldRotate) {
       if (!poolId) return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
       // 401/403 are identity verdicts about the CALLER's credentials for THIS
@@ -565,7 +647,16 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       // Suspend-class errors carry their own long parkMs — a relay whose host
       // suspended it for quota stays down for hours, so parking it for the
       // 5s hop cooldown would hand it straight back on the next request.
-      const parkMs = rulePark ?? cooldownMs ?? TRANSIENT_COOLDOWN_MS;
+      //
+      // A provider-reported wait wins over the hop cooldown when no rule
+      // declares one: opencode's free tier states its whole daily window in
+      // `retry-after` (76074s, observed live), and using the 5s cooldown made
+      // the client retry into the same wall every few seconds. Capped so a
+      // hostile or buggy header cannot park the provider indefinitely.
+      const headerParkMs = resetsAtMs && resetsAtMs > Date.now()
+        ? Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS)
+        : 0;
+      const parkMs = rulePark ?? (headerParkMs || (cooldownMs ?? TRANSIENT_COOLDOWN_MS));
       // Suspend-class rules return no newBackoffLevel, so the stored level is
       // carried over unchanged. That is intended: a quota window resets on the
       // host's own schedule, so a fixed park is the honest wait — doubling it
@@ -573,21 +664,88 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       // still belongs on the row so a later rate limit resumes escalating from
       // where it left off.
       const nextLevel = newBackoffLevel ?? poolBackoff;
+      const parkError = typeof errorText === "string"
+        ? (errorText.length > 300 ? errorText.slice(0, 297) + "…" : errorText)
+        : String(status);
       // Awaited, not fire-and-forget: the caller rotates to the next pool the
       // moment this returns, and the park must be visible to that lookup. It
       // also keeps the log honest — announcing "parked" before the write lands
       // would report a park that may never have happened.
+      // Unspecified scope parks the relay globally (pre-split behaviour): a
+      // classifier that does not state its scope must not silently widen the
+      // blast radius the other way.
       try {
-        await updateProxyPool(poolId, {
-          testStatus: "unavailable",
-          lastError: typeof errorText === "string"
-            ? (errorText.length > 300 ? errorText.slice(0, 297) + "…" : errorText)
-            : String(status),
-          unavailableUntil: new Date(Date.now() + parkMs).toISOString(),
-          backoffLevel: nextLevel,
-          updatedAt: new Date().toISOString(),
-        });
-        log.warn("AUTH", `pool ${poolId} parked ${Math.round(parkMs / 1000)}s [${status}] backoff=${nextLevel}`);
+        if (parkScope === "provider" && provider) {
+          // The relay is healthy; THIS provider's quota/credentials through it
+          // are not. Park the pair so the other providers sharing the relay
+          // keep rotating (see providerParkOf).
+          const parks = {};
+          const nowMs = Date.now();
+          for (const [pid, entry] of Object.entries(pool?.providerParks || {})) {
+            // Drop lapsed entries so the JSON blob cannot grow forever. An
+            // entry survives if EITHER its account-wide window or one of its
+            // model windows is still open.
+            const models = {};
+            for (const [mid, mEntry] of Object.entries(entry.models || {})) {
+              if (mEntry?.until && new Date(mEntry.until).getTime() > nowMs) models[mid] = mEntry;
+            }
+            const accountAlive = entry?.until && new Date(entry.until).getTime() > nowMs;
+            if (!accountAlive && Object.keys(models).length === 0) continue;
+            parks[pid] = { ...entry, models };
+          }
+          // The escalation level belongs to the PROVIDER's park, not to the
+          // relay's transport backoff: the relay may be perfectly healthy and
+          // another provider may be using it right now, so the relay's own
+          // level must not climb because one provider kept hitting a wall.
+          const prev = parks[provider] || {};
+          const prevModels = prev.models || {};
+          const prevProviderLevel = prev.backoffLevel || 0;
+          const providerLevel = newBackoffLevel ?? prevProviderLevel;
+          const until = new Date(nowMs + parkMs).toISOString();
+          if (model) {
+            // Model-scoped: the quota wall is per MODEL (see providerQuota.js).
+            // A sibling model on the same relay keeps serving, so the
+            // ACCOUNT-wide fields stay as they were — the provider entry is
+            // only the container for the per-model entries.
+            const prevModelLevel = prevModels[model]?.backoffLevel || 0;
+            parks[provider] = {
+              until: prev.until,
+              status: prev.status,
+              lastError: prev.lastError,
+              backoffLevel: prevProviderLevel,
+              models: {
+                ...prevModels,
+                [model]: {
+                  until,
+                  status,
+                  lastError: parkError,
+                  backoffLevel: newBackoffLevel ?? prevModelLevel,
+                },
+              },
+            };
+          } else {
+            // No model (a credential-level failure): the whole provider is out
+            // on this relay.
+            parks[provider] = {
+              until,
+              status,
+              lastError: parkError,
+              backoffLevel: providerLevel,
+              models: prevModels,
+            };
+          }
+          await updateProxyPool(poolId, { providerParks: parks, updatedAt: new Date().toISOString() });
+          log.warn("AUTH", `pool ${poolId} parked ${Math.round(parkMs / 1000)}s for ${provider}${model ? `/${model}` : ""} [${status}] — relay left in rotation for other providers`);
+        } else {
+          await updateProxyPool(poolId, {
+            testStatus: "unavailable",
+            lastError: parkError,
+            unavailableUntil: new Date(Date.now() + parkMs).toISOString(),
+            backoffLevel: nextLevel,
+            updatedAt: new Date().toISOString(),
+          });
+          log.warn("AUTH", `pool ${poolId} parked ${Math.round(parkMs / 1000)}s [${status}] backoff=${nextLevel}`);
+        }
       } catch (e) {
         // Logged at error, not warn: an unparked pool is handed straight back
         // on the next request, which is exactly the rotation loop this whole
@@ -663,12 +821,44 @@ export async function clearAccountError(connectionId, currentConnection, model =
     try {
       const pool = await getProxyPoolById(poolId);
       if (!pool) return;
-      if (pool.testStatus === "active" && !pool.lastError && !pool.unavailableUntil && !pool.backoffLevel) return;
+      // A success through this relay proves BOTH its transport health and this
+      // provider's quota/credential health through it — so clear both. Other
+      // providers' parks on the same relay are untouched: one provider
+      // answering does not prove anything about a different provider's quota.
+      // Within the provider, only the model that succeeded is cleared: the
+      // quota wall is per model. An account-wide park (no model entries) is
+      // cleared by any success of that provider.
+      const provider = currentConnection?.provider || null;
+      const parks = { ...(pool.providerParks || {}) };
+      let hadProviderPark = false;
+      const entry = provider ? parks[provider] : null;
+      if (entry) {
+        const modelEntries = entry.models || {};
+        const hasModelEntries = Object.keys(modelEntries).length > 0;
+        if (hasModelEntries) {
+          // Per-model park: only the model that succeeded is cleared. The
+          // account-wide window (if any) stays until it lapses on its own.
+          if (model && modelEntries[model]) {
+            const models = { ...modelEntries };
+            delete models[model];
+            hadProviderPark = true;
+            const accountAlive = entry.until && new Date(entry.until).getTime() > Date.now();
+            if (Object.keys(models).length === 0 && !accountAlive) delete parks[provider];
+            else parks[provider] = { ...entry, models };
+          }
+        } else {
+          // Account-wide park: any success of this provider clears it.
+          delete parks[provider];
+          hadProviderPark = true;
+        }
+      }
+      const hadTransportPark = !!(pool.testStatus === "unavailable" || pool.lastError || pool.unavailableUntil || pool.backoffLevel);
+      if (!hadProviderPark && !hadTransportPark) return;
       await updateProxyPool(poolId, {
-        testStatus: "active",
-        lastError: null,
-        unavailableUntil: null,
-        backoffLevel: 0,
+        ...(hadTransportPark
+          ? { testStatus: "active", lastError: null, unavailableUntil: null, backoffLevel: 0 }
+          : {}),
+        ...(hadProviderPark ? { providerParks: parks } : {}),
         updatedAt: new Date().toISOString(),
       });
     } catch (e) {
