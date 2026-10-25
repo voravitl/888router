@@ -162,7 +162,12 @@ export class CursorExecutor extends BaseExecutor {
     const ghostMode = credentials.providerSpecificData?.ghostMode !== false;
 
     if (!machineId) {
-      throw new Error("Machine ID is required for Cursor API");
+      // Local failure: the connection has no machineId. The request never
+      // left the machine, so it must not park the shared proxy pool. See
+      // isLocalProviderError.
+      const err = new Error("Machine ID is required for Cursor API");
+      err.localProviderError = true;
+      throw err;
     }
 
     return buildCursorHeaders(accessToken, machineId, ghostMode);

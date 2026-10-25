@@ -50,6 +50,30 @@ export async function writeStreamError(writer, statusCode, message) {
 }
 
 /**
+ * Is this a LOCAL failure — the request never left the machine because a
+ * piece of configuration is missing — rather than an upstream failure?
+ *
+ * The distinction is load-bearing. The catch-all in chatCore turns any thrown
+ * error into a 502, and the 502 rule parks the shared proxy pool for 30 s.
+ * A local error therefore used to park the relay for every other provider and
+ * then be retried against every other relay, failing identically each time
+ * (observed live 2026-10-25: `cloudflare-ai requires accountId in
+ * providerSpecificData` parked relay1 AND cloudflare-relay and took the whole
+ * pool out of rotation for half a minute).
+ *
+ * Matched on the error's own text, not on the status — a 502 from the wire and
+ * a 502 thrown locally are the same status and completely different facts.
+ */
+export function isLocalProviderError(errorText) {
+  const text = typeof errorText === "string" ? errorText : String(errorText || "");
+  if (!text) return false;
+  // Tight patterns only. A broad one ("not connected", "required") would
+  // catch genuine upstream failures and stop the relay from being parked when
+  // it should be.
+  return /requires \w+ in providerSpecificData|Machine ID is required for the Cursor API|bridge is disabled by default|AiPASS Chrome extension not connected/i.test(text);
+}
+
+/**
  * Epoch ms from an upstream Retry-After header, or null when absent/unusable.
  * Delta-seconds is the form every provider observed so far sends (opencode's
  * free tier states its whole daily window this way: `retry-after: 76074`);

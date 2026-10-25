@@ -332,6 +332,43 @@ Rules going forward:
   request every two minutes on a relay that stays down. It now carries
   `parkMs: POOL_SUSPEND_PARK_MS` and `parkScope: "pool"`.
 
+### A local failure must never park a relay, and never rotate (2026-10-25, v0.15.193)
+
+Found while verifying 0.15.192 live, and pre-existing — the 502 rule already
+parked the pool. Observed:
+
+```
+[AUTH] Using cloudflare-ai account: Public:vercel-relay1
+[ERROR] [502]: cloudflare-ai requires accountId in providerSpecificData
+[AUTH] pool 602fdbbb parked 30s [502]
+[AUTH] Using cloudflare-ai account: Public:cloudflare-relay
+[ERROR] [502]: cloudflare-ai requires accountId in providerSpecificData
+[AUTH] pool 811de521 parked 30s [502]
+[AUTH] cloudflare-ai | all proxy pools parked [502], retry after reset after 30s
+```
+
+The upstream was never contacted. `DefaultExecutor.buildUrl` throws before the
+fetch because the connection has no `accountId` — a LOCAL configuration error
+that the catch-all in `chatCore` dresses up as a 502, and the 502 rule parks
+the shared pool. Rules:
+
+- **A local failure is flagged at its source** (`error.localProviderError`),
+  not detected later by status. A 502 from the wire and a 502 thrown locally
+  are the same status and completely different facts.
+- **A local failure parks nothing** — not the relay, not `(pool, provider)` —
+  and **is not rotated**: the next relay fails identically, and every one of
+  those attempts would park another relay. One unconfigured provider took the
+  whole relay pool out of rotation for 30 s.
+- **The matcher must stay tight.** `isLocalProviderError` matches a short
+  list of exact local-only failures (missing `accountId`, missing Cursor
+  `machineId`, the disabled Devin CLI bridge, an unconnected AiPASS
+  extension). A broad pattern ("not connected", "required") would catch
+  genuine upstream failures and stop the relay from being parked when it
+  should be.
+- **A local failure is not a request-validation failure.** It is a
+  configuration fault on the provider's side: the caller cannot fix it by
+  retrying, and the relay never saw the request.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

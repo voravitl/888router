@@ -109,9 +109,14 @@ export class AipassExecutor extends BaseExecutor {
       return this.executeViaBridgeHub({ model, body, stream, signal, log });
     }
 
-    throw new Error(
+    // Local failure: the bridge is not connected. The request never left the
+    // machine, so it must not park the shared proxy pool and must not be
+    // retried against another relay. See isLocalProviderError.
+    const err = new Error(
       "AiPASS Chrome extension not connected — open de.aipass.net/chat and check the bridge popup (no standalone fallback: port 8787 belongs to headroom)"
     );
+    err.localProviderError = true;
+    throw err;
   }
 
   async executeViaBridgeHub({ model, body, stream, signal, log }) {

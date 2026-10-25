@@ -1,3 +1,37 @@
+# v0.15.193 (2026-10-25)
+
+## A local configuration error no longer takes the whole relay pool offline
+
+- **Found while verifying 0.15.192 live**, and pre-existing (the 502 rule
+  already parked the pool before this change):
+
+  ```
+  [AUTH] Using cloudflare-ai account: Public:vercel-relay1
+  [ERROR] [502]: cloudflare-ai requires accountId in providerSpecificData
+  [AUTH] pool 602fdbbb parked 30s [502]
+  [AUTH] Using cloudflare-ai account: Public:cloudflare-relay
+  [ERROR] [502]: cloudflare-ai requires accountId in providerSpecificData
+  [AUTH] pool 811de521 parked 30s [502]
+  [AUTH] cloudflare-ai | all proxy pools parked [502], retry after reset after 30s
+  ```
+
+  The upstream was never contacted. `DefaultExecutor.buildUrl` throws before
+  the fetch because the connection has no `accountId` — a **local**
+  configuration error that the catch-all in `chatCore` dressed up as a 502.
+- **The consequences were not local.** The shared relay was parked for 30 s,
+  so every other provider lost it; the same request was then retried against
+  every other relay, failing identically each time and parking each one — so
+  one unconfigured provider took the whole relay pool out of rotation for half
+  a minute. The client was told "all proxy pools parked [502]", a relay
+  verdict for something that never left the machine.
+- **A local failure is now recognised as local** (`isLocalProviderError`) and
+  is flagged at its source (`error.localProviderError`). It parks nothing —
+  not the relay, not `(pool, provider)` — and it is not rotated: the next
+  relay would fail identically. The client gets the real error instead of a
+  relay verdict. The same flag now covers the other local-only failures:
+  a missing Cursor `machineId`, the disabled Devin CLI bridge, and an
+  unconnected AiPASS browser extension.
+
 # v0.15.192 (2026-10-25)
 
 ## A shared relay is no longer taken away from one provider because of another

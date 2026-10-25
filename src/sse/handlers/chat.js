@@ -409,6 +409,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       continue;
     }
 
+    // A LOCAL failure (missing configuration) cannot be fixed by trying
+    // another account or another relay — the next attempt fails identically
+    // and would take the shared relay out of rotation on the way. Surface it.
+    if (result.localProviderError) {
+      log.warn("AUTH", `Account ${credentials.connectionName} has a local configuration error — not retrying`);
+      return result.response;
+    }
+
     return result.response;
   }
 }

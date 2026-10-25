@@ -291,9 +291,14 @@ export class DevinCliExecutor extends BaseExecutor {
 
   async execute({ model, body, credentials, signal, log }) {
     if (process.env.DEVIN_CLI_ENABLE !== "1" && process.env.DEVIN_CLI_ENABLE !== "true") {
-      throw new Error(
+      // Local failure: the bridge is switched off. The request never left the
+      // machine, so it must not park the shared proxy pool and must not be
+      // retried against another relay. See isLocalProviderError.
+      const err = new Error(
         "Devin CLI bridge is disabled by default for security. Set DEVIN_CLI_ENABLE=1 in the environment to allow local agent execution."
       );
+      err.localProviderError = true;
+      throw err;
     }
 
     const b = body ?? {};

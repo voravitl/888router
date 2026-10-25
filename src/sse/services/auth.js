@@ -4,6 +4,7 @@ import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { isPairBlocked, isQuotaTrackedProvider } from "./providerQuota.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { isLocalProviderError } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
 import { isRetiredProvider } from "open-sse/config/retiredProviders.js";
@@ -641,6 +642,17 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
         log.debug("AUTH", `pool ${poolId} not parked [${status}] — caller credential verdict, relay untouched`);
         return { shouldFallback: true, cooldownMs: cooldownMs || 0 };
       }
+      // A LOCAL failure never reached the upstream: the connection is missing
+      // a piece of configuration. The relay is healthy, the next relay would
+      // fail identically, and the client must not be told "all proxy pools
+      // parked". Nothing is parked and nothing is rotated (observed live
+      // 2026-10-25: `cloudflare-ai requires accountId in providerSpecificData`
+      // parked relay1 AND cloudflare-relay for 30 s and took the whole pool
+      // out of rotation).
+      if (isLocalProviderError(errorText)) {
+        log.warn("AUTH", `pool ${poolId} not parked [${status}] — local configuration error, relay untouched`);
+        return { shouldFallback: false, cooldownMs: 0, localProviderError: true };
+      }
       // Persist the failure on the pool row so pickVirtualNoAuthConnection
       // skips it for the cooldown window (relay-suspend rotation bug: without
       // this, the pool that just 503'd is picked again on the next request).
@@ -763,6 +775,15 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+
+  // A LOCAL failure (missing configuration) never reached the upstream. The
+  // account is not unhealthy and the next one would fail identically, so
+  // nothing is locked and nothing is rotated. Same rule as the pool branch
+  // above — see isLocalProviderError.
+  if (isLocalProviderError(errorText)) {
+    log.warn("AUTH", `account not locked [${status}] — local configuration error`);
+    return { shouldFallback: false, cooldownMs: 0, localProviderError: true };
+  }
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel, modelError;
