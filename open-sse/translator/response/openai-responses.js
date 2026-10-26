@@ -457,10 +457,69 @@ function flushEvents(state) {
   return events;
 }
 
-// currentToolCallId is intentionally sticky for the current turn so flush/completion
-  // can still finalize as tool_calls even if the tool call was emitted before stream end.
+// Responses identities and Chat tool indices are separate namespaces.
+function responsesTool(state, data, item = {}) {
+  state.responsesTools ||= [];
+  const itemId = item.id ?? data.item_id;
+  const callId = item.call_id ?? data.call_id;
+  const outputIndex = data.output_index;
+  let tool = state.responsesTools.find(t => itemId && t.itemId === itemId)
+    || state.responsesTools.find(t => callId && t.callId === callId)
+    || state.responsesTools.find(t => outputIndex != null && t.outputIndex === outputIndex
+      && (!itemId || !t.itemId || itemId === t.itemId)
+      && (!callId || !t.callId || callId === t.callId));
+  if (!tool) {
+    // Legacy single-call streams omit routing metadata. Only infer identity
+    // when exactly one call exists; parallel streams must identify their call.
+    if (!itemId && !callId && outputIndex == null) {
+      return state.responsesTools.length === 1 ? state.responsesTools[0] : null;
+    }
+    tool = { index: state.responsesTools.length, args: "", started: false, terminal: false };
+    state.responsesTools.push(tool);
+  }
+  tool.itemId ??= itemId;
+  tool.callId ??= callId;
+  tool.outputIndex ??= outputIndex;
+  tool.name ||= item.name ?? data.name ?? "";
+  tool.id ||= callId || fallbackToolCallId();
+  return tool;
+}
+
+function responsesToolDelta(tool, value, terminal = false) {
+  if (!tool) return null;
+  let args = "";
+  if (!tool.terminal && typeof value === "string") {
+    if (terminal) {
+      // Chat is append-only: a conflicting terminal value cannot retract an
+      // emitted prefix. Keep the delivered prefix rather than concatenate two
+      // incompatible JSON documents. A matching full value emits only its tail.
+      if (value.startsWith(tool.args)) args = value.slice(tool.args.length);
+      tool.terminal = true;
+    } else {
+      args = value;
+    }
+    tool.args += args;
+  }
+  if (!tool.started) {
+    tool.started = true;
+    return { index: tool.index, id: tool.id, type: OPENAI_BLOCK.FUNCTION,
+      function: { name: tool.name, arguments: args } };
+  }
+  if (!args) return null;
+  return { index: tool.index, function: { arguments: args } };
+}
+
+function isResponsesTool(item) {
+  return item?.type === RESPONSES_ITEM.FUNCTION_CALL || item?.type === "custom_tool_call";
+}
+
+function responsesToolValue(item) {
+  return item?.type === "custom_tool_call" ? item.input : item?.arguments;
+}
+
+// A call at index zero also finishes as tool_calls.
 function computeFinishReason(state) {
-   return state.toolCallIndex > 0 || state.currentToolCallId
+  return state.responsesTools?.length > 0 || state.toolCallIndex > 0 || state.currentToolCallId
     ? OPENAI_FINISH.TOOL_CALLS
     : OPENAI_FINISH.STOP;
 }
@@ -592,43 +651,38 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     );
   }
 
-  // Function call started (standard function_call or custom_tool_call)
-  if (eventType === "response.output_item.added" && (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL || data.item?.type === "custom_tool_call")) {
-    const item = data.item;
-    state.currentToolCallId = item.call_id || fallbackToolCallId();
-
-    return buildChunk(
+  // Resolve each event by its own identity, never by the last active call.
+  const toolItemEvent = (eventType === "response.output_item.added"
+    || eventType === "response.output_item.done") && isResponsesTool(data.item);
+  const toolDeltaEvent = eventType === "response.function_call_arguments.delta"
+    || eventType === "response.custom_tool_call_input.delta";
+  const toolDoneEvent = eventType === "response.function_call_arguments.done"
+    || eventType === "response.custom_tool_call_input.done";
+  if (toolItemEvent || toolDeltaEvent || toolDoneEvent) {
+    if (state.finishReasonSent) return null;
+    const tool = responsesTool(state, data, data.item);
+    const terminal = toolDoneEvent || eventType === "response.output_item.done";
+    const value = toolItemEvent ? (terminal ? responsesToolValue(data.item) : undefined)
+      : toolDoneEvent ? (eventType === "response.custom_tool_call_input.done" ? data.input : data.arguments)
+      : data.delta;
+    const delta = responsesToolDelta(tool, value, terminal);
+    return delta ? buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
-      {
-        tool_calls: [{
-          index: state.toolCallIndex,
-          id: state.currentToolCallId,
-          type: OPENAI_BLOCK.FUNCTION,
-          function: { name: item.name || "", arguments: "" }
-        }]
-      }
-    );
-  }
-
-  // Function call arguments delta (standard or custom_tool_call variant)
-  if (eventType === "response.function_call_arguments.delta" || eventType === "response.custom_tool_call_input.delta") {
-    const argsDelta = data.delta || "";
-    if (!argsDelta) return null;
-
-    return buildChunk(
-      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
-      { tool_calls: [{ index: state.toolCallIndex, function: { arguments: argsDelta } }] }
-    );
-  }
-
-  // Function call done (standard or custom_tool_call variant)
-  if (eventType === "response.output_item.done" && (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL || data.item?.type === "custom_tool_call")) {
-    state.toolCallIndex++;
-    return null;
+      { tool_calls: [delta] }
+    ) : null;
   }
 
   // Response completed
   if (eventType === "response.completed" || eventType === "response.done") {
+    if (state.finishReasonSent) return null;
+    // Direct callers expect ONE chunk. Recover all calls in its delta before
+    // the finish marker, rather than returning an unsupported chunk array.
+    const recoveredTools = [];
+    for (const [output_index, item] of (data.response?.output || []).entries()) {
+      if (!isResponsesTool(item)) continue;
+      const delta = responsesToolDelta(responsesTool(state, { output_index }, item), responsesToolValue(item), true);
+      if (delta) recoveredTools.push(delta);
+    }
     // Extract usage from response.completed event
     const responseUsage = data.response?.usage;
     if (responseUsage && typeof responseUsage === "object") {
@@ -649,7 +703,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       
       const finalChunk = buildChunk(
         { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
-        {},
+        recoveredTools.length ? { tool_calls: recoveredTools } : {},
         finishReason
       );
 

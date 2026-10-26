@@ -1,3 +1,17 @@
+# v0.15.198 (2026-10-26)
+
+## Preserve terminal Responses tool arguments in Chat streams
+- Recover function arguments and custom tool input from terminal argument,
+  output-item, and completed-response events when token deltas are absent.
+- Track each call by item/call identity and explicit output index so interleaved
+  tools keep stable Chat indices. Matching terminal values append only the
+  missing suffix; repeated finals do not duplicate arguments.
+- Keep completed-only recovery in a single Chat chunk with `tool_calls` finish
+  reason and usage. Conflicting terminal values cannot retract already streamed
+  text, so they do not append a second incompatible argument document.
+- Add compact, interleaved, custom-input, partial-delta, identity-fallback and
+  duplicate-terminal regressions.
+
 # v0.15.197 (2026-10-25)
 
 ## Antigravity's gemini-4-argon-high was advertising a model Google never rolled out
