@@ -1,3 +1,22 @@
+# v0.15.199 (2026-10-26)
+
+## Antigravity: backport Hub 2.24.0 transport and restore Gemini 4 Argon tiers
+- Backport upstream `decolua/9router` commit `f172c3c4` (PR #5017) updating
+  `ANTIGRAVITY_IDE_USER_AGENT` to `antigravity/hub/2.24.0 darwin/arm64` and
+  version `2.24.0` across request headers, MITM rewriting, connection probes,
+  and live model resolvers.
+- Restore `gemini-4-argon-high`, `gemini-4-argon-medium`, and
+  `gemini-4-argon-low` in the Antigravity registry with tiered thinking-level
+  mapping and quota tracking.
+- Correct the earlier v0.15.197 rollout diagnosis: discovery depends on the
+  client surface. Isolated Docker acceptance lists all three Argon tiers;
+  one High generation request returned `429 Individual quota reached` instead
+  of 404. Successful Argon completion and tool calls remain unverified until
+  quota is available; no CLI bridge or sidecar is introduced.
+- Flash controls still return usable output. Missing SSE `[DONE]` was reproduced
+  on both baseline and candidate images; it is an existing follow-up, not fixed
+  by this release. Authenticated dashboard acceptance was not exercised.
+
 # v0.15.198 (2026-10-26)
 
 ## Preserve terminal Responses tool arguments in Chat streams
