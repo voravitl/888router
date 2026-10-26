@@ -183,6 +183,8 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       const importantModels = [
         'gemini-2.5-pro',
         'gemini-4-argon-high',
+        'gemini-4-argon-medium',
+        'gemini-4-argon-low',
         'gemini-3.8-flash-tiered',
         'gemini-3.8-flash-high',
         'gemini-3.8-flash-medium',

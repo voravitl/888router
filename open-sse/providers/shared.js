@@ -66,11 +66,12 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
-// Antigravity IDE version and user agent (from upstream decolua/9router v0.5.91 —
-// 2.11.0 required for gemini-3.8 flash tier models; older markers get 404
-// "Requested entity was not found" even with a correct model id)
-export const ANTIGRAVITY_IDE_VERSION = "2.11.0";
-export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
+// Backport of decolua/9router f172c3c4 (PR #5017). Retain exported names for compatibility.
+// Official Antigravity Hub Desktop 2.24.0 fingerprint captured from macOS arm64.
+// Keep this static even when 888router runs on Linux: the provider profile is
+// intentionally matching the Hub client, not the server host.
+export const ANTIGRAVITY_IDE_VERSION = "2.24.0";
+export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/hub/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
 
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)
 export const ANTIGRAVITY_OAUTH_CLIENT = {

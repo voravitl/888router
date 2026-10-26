@@ -20,7 +20,7 @@ import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { OllamaService } from "@/lib/oauth/services/ollama";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials, refreshGoogleToken } from "@/sse/services/tokenRefresh";
-import { ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
+import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
 import { PROVIDERS } from "open-sse/config/providers.js";
 import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow, resolveKnownLimits } from "open-sse/providers/capabilities.js";
 import { MODELS_LIVE_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
@@ -220,9 +220,9 @@ const LIVE_MODEL_RESOLVERS = {
             headers: {
               "Content-Type": "application/json",
               Authorization: `Bearer ${tk}`,
-              "User-Agent": "antigravity/1.107.0 darwin/arm64",
+              "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
               "X-Client-Name": "antigravity",
-              "X-Client-Version": "2.1.1",
+              "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
             },
             body: JSON.stringify(body),
           });
@@ -234,9 +234,9 @@ const LIVE_MODEL_RESOLVERS = {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${tk}`,
-          "User-Agent": "antigravity/1.107.0 darwin/arm64",
+          "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
           "X-Client-Name": "antigravity",
-          "X-Client-Version": "2.1.1",
+          "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
         },
         body: JSON.stringify(body),
       });
