@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { parseCloudflareModelsResponse } from "@/lib/cloudflareAiModels";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isPublicModelsProvider } from "@/shared/constants/providers.js";
@@ -787,7 +788,7 @@ export async function GET(request, { params }) {
       const body = projectId ? { project: projectId } : {};
 
       const userAgent = connection.provider === "antigravity"
-        ? "antigravity/1.107.0 darwin/arm64"
+        ? ANTIGRAVITY_IDE_USER_AGENT
         : "google-api-nodejs-client/9.15.1";
       const clientId = connection.provider === "antigravity"
         ? ANTIGRAVITY_CONFIG.clientId
@@ -803,7 +804,7 @@ export async function GET(request, { params }) {
           "User-Agent": userAgent,
           ...(connection.provider === "antigravity" && {
             "X-Client-Name": "antigravity",
-            "X-Client-Version": "2.1.1",
+            "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
           }),
         };
         const urls = connection.provider === "antigravity"

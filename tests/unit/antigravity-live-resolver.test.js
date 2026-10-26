@@ -89,6 +89,7 @@ describe("Antigravity live model resolver in v1/models", () => {
     expect(ids).toContain("ag/gemini-3.5-flash-low");
     expect(ids).toContain("ag/gemini-3-flash-agent");
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch.mock.calls[0][1].headers["User-Agent"]).toBe("antigravity/hub/2.24.0 darwin/arm64");
   }, 30000);
 
   it("refreshes Google token on 401 and retries the fetch with new token", async () => {
