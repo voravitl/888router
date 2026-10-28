@@ -1168,19 +1168,20 @@ Published images (multi-platform `linux/amd64` + `linux/arm64`):
 git clone https://github.com/voravitl/888router.git
 cd 888router
 
-# 2. Copy and configure .env
-cp .env.example .env
+# 2. Copy and configure the gateway's env file
+cp .env.example .env.route
 
-# Edit .env — set required secrets:
+# Edit .env.route — set required secrets:
 # JWT_SECRET, INITIAL_PASSWORD, and SEARXNG_SECRET
 # (SearXNG secret required: openssl rand -hex 32)
 
-# 3. Start the stack
+# 3. Start the stack (compose reads SEARXNG_SECRET from the shell or .env)
+export SEARXNG_SECRET="$(grep '^SEARXNG_SECRET=' .env.route | cut -d= -f2-)"
 docker compose up -d
 ```
 
-→ Open `http://localhost:20129` (live `888route` gateway; the `888router`
-service entry on 20128 is defined but not run)
+→ Open `http://localhost:20129` (the `888route` gateway — the only gateway
+the compose file runs; the app inside the container listens on 20128)
 
 **Updating:** the `888route` service carries a watchtower label, so a newly
 published `:latest` is pulled and recreated on the host automatically. To update

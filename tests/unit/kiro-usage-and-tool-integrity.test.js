@@ -174,6 +174,32 @@ function usageFrom(body) {
   return usages[usages.length - 1];
 }
 
+// Reassemble the tool calls a client would see, keyed by their delta index.
+function toolCallsFrom(body) {
+  const calls = [];
+  for (const line of body.split("\n")) {
+    if (!line.startsWith("data: ")) continue;
+    const data = line.slice(6).trim();
+    if (!data || data === "[DONE]") continue;
+    for (const tc of JSON.parse(data).choices?.[0]?.delta?.tool_calls || []) {
+      const call = (calls[tc.index] ||= { id: null, name: "", arguments: "" });
+      if (tc.id) call.id = tc.id;
+      if (tc.function?.name) call.name += tc.function.name;
+      if (typeof tc.function?.arguments === "string") call.arguments += tc.function.arguments;
+    }
+  }
+  return calls;
+}
+
+function finishReasonFrom(body) {
+  const reasons = body
+    .split("\n")
+    .filter(line => line.startsWith("data: ") && line.includes('"finish_reason":"'))
+    .map(line => JSON.parse(line.slice(6)).choices?.[0]?.finish_reason)
+    .filter(Boolean);
+  return reasons[reasons.length - 1];
+}
+
 beforeEach(() => {
   fetchMock.mockReset();
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -373,5 +399,170 @@ describe("E: the translator valid-guard is defence-in-depth", () => {
     expect(out.errors).toEqual([]);
     expect(out.currentMessage.userInputMessage.content).toBe("continue");
     expect(out.history[0].userInputMessage).toBeDefined();
+  });
+});
+
+/**
+ * F. A tool call made without arguments was dropped as "missing input".
+ *    Kiro streams tool input as optional string fragments, concatenated until
+ *    a frame with `stop: true`, and a call made without arguments can carry no
+ *    input at all -- e.g. the oh-my-claudecode plugin's list_omc_skills, whose
+ *    only parameter is optional. The executor required at least one input
+ *    fragment, so the call never reached the client: a tool-only turn spent
+ *    its repair retry, and a turn that also had text ended as "stop" without
+ *    the call.
+ */
+describe("F: a tool call made without arguments is still a call", () => {
+  const NO_ARG_TOOL = "mcp__plugin_oh-my-claudecode_t__list_omc_skills";
+
+  it("forwards it with {} arguments once Kiro closes it with stop", async () => {
+    const body = await run([
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_noarg", name: NO_ARG_TOOL }),
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_noarg", name: NO_ARG_TOOL, stop: true })
+    ]);
+
+    expect(toolCallsFrom(body)).toEqual([
+      { id: "toolu_bdrk_noarg", name: NO_ARG_TOOL, arguments: "{}" }
+    ]);
+    expect(finishReasonFrom(body)).toBe("tool_calls");
+    // The first answer was usable, so no repair retry spent a second request.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards it beside text and an argument-bearing call on a tool_use stop", async () => {
+    const body = await run([
+      frame("assistantResponseEvent", { content: "Checking the skills first." }),
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_noarg", name: NO_ARG_TOOL }),
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_read", name: "read_file", input: "{\"path\":\"a.md\"}" }),
+      frame("metadataEvent", { stopReason: "tool_use" })
+    ]);
+
+    expect(body).toContain("Checking the skills first.");
+    expect(toolCallsFrom(body)).toEqual([
+      { id: "toolu_bdrk_noarg", name: NO_ARG_TOOL, arguments: "{}" },
+      { id: "toolu_bdrk_read", name: "read_file", arguments: "{\"path\":\"a.md\"}" }
+    ]);
+    expect(finishReasonFrom(body)).toBe("tool_calls");
+  });
+
+  it("treats a null input like an absent one", async () => {
+    const body = await run([
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_null", name: NO_ARG_TOOL, input: null, stop: true })
+    ]);
+
+    expect(toolCallsFrom(body)).toEqual([
+      { id: "toolu_bdrk_null", name: NO_ARG_TOOL, arguments: "{}" }
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats an empty input string on a closed call like no input", async () => {
+    const body = await run([
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_empty", name: NO_ARG_TOOL, input: "" }),
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_empty", name: NO_ARG_TOOL, stop: true })
+    ]);
+
+    expect(toolCallsFrom(body)).toEqual([
+      { id: "toolu_bdrk_empty", name: NO_ARG_TOOL, arguments: "{}" }
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reaches a Claude client as a tool_use block with empty input", async () => {
+    const body = await run([
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_noarg", name: NO_ARG_TOOL }),
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_noarg", name: NO_ARG_TOOL, stop: true })
+    ]);
+
+    const state = {};
+    const events = [];
+    for (const line of body.split("\n")) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data || data === "[DONE]") continue;
+      events.push(...(kiroToClaudeResponse(JSON.parse(data), state) || []));
+    }
+
+    const toolBlocks = events.filter(e => e.type === "content_block_start" && e.content_block?.type === "tool_use");
+    expect(toolBlocks.map(e => e.content_block)).toEqual([
+      { type: "tool_use", id: "toolu_bdrk_noarg", name: NO_ARG_TOOL, input: {} }
+    ]);
+    const partialJson = events
+      .filter(e => e.type === "content_block_delta" && e.delta?.type === "input_json_delta")
+      .map(e => e.delta.partial_json)
+      .join("");
+    expect(partialJson).toBe("{}");
+    expect(events.find(e => e.type === "message_delta")?.delta.stop_reason).toBe("tool_use");
+  });
+
+  it("never completes a call as {} after one of its fragments was rejected", async () => {
+    // The rejected fragment may have carried the real arguments; {} would
+    // silently replace them.
+    const body = await runNoRepair([
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_bad", name: "read_file", input: 42 }),
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_bad", name: "read_file", stop: true })
+    ]);
+
+    expect(toolCallsFrom(body)).toEqual([]);
+    expect(body).toContain("invalid_kiro_tool_call");
+  });
+
+  it("still drops an input-less call on a turn Kiro never closed", async () => {
+    // A truncated turn may simply have lost the arguments: {} would be a guess.
+    const body = await run([
+      frame("assistantResponseEvent", { content: "Partial but usable answer." }),
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_cut", name: "read_file" }),
+      frame("metadataEvent", { stopReason: "max_tokens" })
+    ]);
+
+    expect(body).toContain("Partial but usable answer.");
+    expect(toolCallsFrom(body)).toEqual([]);
+    expect(finishReasonFrom(body)).toBe("length");
+  });
+
+  it("still rejects a tool_call wrapper that arrives with no input", async () => {
+    const body = await runNoRepair([
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_wrap", name: "tool_call", stop: true })
+    ]);
+
+    expect(toolCallsFrom(body)).toEqual([]);
+    expect(body).toContain("invalid_kiro_tool_call");
+  });
+
+  it("does not invent a call from a closing frame that lost its toolUseId", async () => {
+    // A fragment without toolUseId opens a new call under an id we make up, so
+    // its {} would be a phantom second call next to the real one.
+    const body = await run([
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_read", name: "read_file", input: "{\"path\":\"a.md\"}" }),
+      frame("toolUseEvent", { name: "read_file", stop: true }),
+      frame("metadataEvent", { stopReason: "tool_use" })
+    ]);
+
+    expect(toolCallsFrom(body)).toEqual([
+      { id: "toolu_bdrk_read", name: "read_file", arguments: "{\"path\":\"a.md\"}" }
+    ]);
+  });
+
+  it.each(["   \n\t", "{\"path\":", "null", "[]"])("distinguishes whitespace from invalid nonempty input (%j)", async (input) => {
+    const body = await runNoRepair([
+      frame("toolUseEvent", { toolUseId: "toolu_boundary", name: "read_file", input, stop: true })
+    ]);
+    if (!input.trim()) {
+      expect(toolCallsFrom(body)).toEqual([{ id: "toolu_boundary", name: "read_file", arguments: "{}" }]);
+    } else {
+      expect(toolCallsFrom(body)).toEqual([]);
+      expect(body).toContain("invalid_kiro_tool_call");
+    }
+  });
+
+  it("does not treat end_turn as closing an input-less call", async () => {
+    const body = await run([
+      frame("assistantResponseEvent", { content: "Done." }),
+      frame("toolUseEvent", { toolUseId: "toolu_bdrk_open", name: NO_ARG_TOOL }),
+      frame("metadataEvent", { stopReason: "end_turn" })
+    ]);
+
+    expect(body).toContain("Done.");
+    expect(toolCallsFrom(body)).toEqual([]);
   });
 });

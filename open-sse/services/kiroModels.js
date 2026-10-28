@@ -21,7 +21,7 @@
 
 import { v4 as uuidv4 } from "uuid";
 import { createHash } from "crypto";
-import { refreshKiroToken } from "./tokenRefresh.js";
+import { refreshProviderCredentials, shouldRefreshCredentials } from "./oauthCredentialManager.js";
 
 const KIRO_RUNTIME_SDK_VERSION = "1.0.0";
 const KIRO_AGENT_OS = "windows";
@@ -223,14 +223,16 @@ function cacheKey(credentials) {
  * On any error (network, 4xx, 5xx), returns `null` so callers can fall back
  * to the static catalog without taking down the dashboard or `/v1/models`.
  *
- * @param {object} credentials Connection record (accessToken, refreshToken,
+ * @param {object} credentials Connection record (connectionId, authType,
+ *   accessToken, refreshToken, expiresAt/tokenExpiresAt,
  *   providerSpecificData {profileArn, authMethod, clientId, clientSecret, region})
  * @param {object} [options]
  * @param {boolean} [options.forceRefresh] Bypass the per-credential cache.
  * @param {object}  [options.log] Logger.
  * @param {function} [options.onCredentialsRefreshed] Persist refreshed token
- *   back to your credential store. Called with `{ accessToken, refreshToken,
- *   expiresIn }` whenever a 401 triggers a token refresh.
+ *   back to your credential store before fetching with it. Receives merged
+ *   tokens, expiry and providerSpecificData on proactive expiry or one 401.
+ *   Throw or return false on persistence failure to use the static fallback.
  * @returns {Promise<{ models: object[], rawModels: object[] } | null>}
  */
 export async function resolveKiroModels(credentials, options = {}) {
@@ -248,42 +250,39 @@ export async function resolveKiroModels(credentials, options = {}) {
     }
   }
 
+  // Static API keys have no OAuth lifecycle, even if stale refresh metadata
+  // remains on an imported connection. Unknown legacy authType stays compatible.
+  const canRefresh = !!credentials.refreshToken
+    && !["apikey", "api_key"].includes(String(credentials.authType || "").toLowerCase())
+    && credentials.providerSpecificData?.authMethod !== "api_key";
+  let refreshedOnce = false;
+  const refresh = async () => {
+    refreshedOnce = true;
+    // Reuse the shared connection-scoped lock and expiry/PSD merge semantics.
+    const refreshed = await refreshProviderCredentials("kiro", credentials, options.log);
+    if (!refreshed?.accessToken) throw new Error("Token refresh did not return accessToken");
+    if (typeof options.onCredentialsRefreshed === "function") {
+      const persisted = await options.onCredentialsRefreshed(refreshed);
+      if (persisted === false) throw new Error("Could not persist refreshed Kiro credentials");
+    }
+    Object.assign(credentials, refreshed);
+  };
+
   let raw;
   try {
-    raw = await fetchKiroCatalogRaw(credentials, options.signal);
-  } catch (err) {
-    if (err && err.status === 401 && credentials.refreshToken) {
-      options.log?.info?.("KIRO_MODELS", "Got 401 from Kiro; refreshing token");
-      const refreshed = await refreshKiroToken(
-        credentials.refreshToken,
-        credentials.providerSpecificData,
-        options.log
-      );
-      if (refreshed?.accessToken) {
-        const next = { ...credentials, ...refreshed };
-        if (typeof options.onCredentialsRefreshed === "function") {
-          try { await options.onCredentialsRefreshed(refreshed); } catch (e) {
-            options.log?.warn?.("KIRO_MODELS", `onCredentialsRefreshed failed: ${e?.message || e}`);
-          }
-        }
-        try {
-          raw = await fetchKiroCatalogRaw(next, options.signal);
-          // Update the in-memory credential reference too so retry logic uses
-          // the fresh token consistently.
-          credentials.accessToken = next.accessToken;
-          if (next.refreshToken) credentials.refreshToken = next.refreshToken;
-        } catch (err2) {
-          options.log?.warn?.("KIRO_MODELS", `Retry after refresh failed: ${err2?.message || err2}`);
-          return null;
-        }
-      } else {
-        options.log?.warn?.("KIRO_MODELS", "Token refresh did not return accessToken");
-        return null;
-      }
-    } else {
-      options.log?.warn?.("KIRO_MODELS", `ListAvailableModels failed: ${err?.message || err}`);
-      return null;
+    if (canRefresh && shouldRefreshCredentials("kiro", credentials)) await refresh();
+    try {
+      raw = await fetchKiroCatalogRaw(credentials, options.signal);
+    } catch (err) {
+      // Preserve the existing 401 recovery, but never refresh twice per resolve
+      // or interpret a generic 403 (subscription/profile denial) as expiry.
+      if (err?.status !== 401 || !canRefresh || refreshedOnce) throw err;
+      await refresh();
+      raw = await fetchKiroCatalogRaw(credentials, options.signal);
     }
+  } catch (err) {
+    options.log?.warn?.("KIRO_MODELS", `ListAvailableModels failed: ${err?.message || err}`);
+    return null;
   }
 
   const expanded = [];

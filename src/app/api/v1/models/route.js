@@ -66,10 +66,20 @@ function firstKnownNumber(...candidates) {
 const LIVE_MODEL_RESOLVERS = {
   kiro: async (conn) => {
     const result = await resolveKiroModels({
+      connectionId: conn.id,
+      authType: conn.authType,
       accessToken: conn.accessToken,
       refreshToken: conn.refreshToken,
+      expiresAt: conn.expiresAt,
+      tokenExpiresAt: conn.tokenExpiresAt,
       providerSpecificData: conn.providerSpecificData || {}
-    }, { log: console });
+    }, {
+      log: console,
+      onCredentialsRefreshed: (refreshed) => updateProviderCredentials(conn.id, {
+        ...refreshed,
+        existingProviderSpecificData: conn.providerSpecificData || {},
+      }),
+    });
     return result?.models?.length ? { models: result.models } : null;
   },
   qoder: async (conn) => {

@@ -1,3 +1,56 @@
+# v0.15.200 (2026-10-28)
+
+## Kiro: forward tool calls made without arguments
+- Kiro streams a tool call's input as optional string fragments and marks the
+  call complete with `stop: true`. A call made without arguments, such as the
+  oh-my-claudecode plugin's `list_omc_skills` (its only parameter is
+  optional), can arrive with no input fragment at all. The executor required
+  at least one fragment, so it dropped the call with
+  `Kiro tool call is missing input`. A turn whose only output was that call
+  was retried once with a repair instruction and failed if the retry made the
+  same call. A turn that also streamed text, but made no other call, ended
+  with `finish_reason: "stop"`, and the client never received the call.
+- An input-less call is now forwarded with `{}` arguments when Kiro closed it
+  under its own `toolUseId`, either with `stop: true` or with a `tool_use`
+  stop reason. A `null` input or an empty input string counts as no input.
+- The call is still dropped when `{}` could replace arguments that were lost:
+  the call was never closed (for example, the turn was truncated or ended with
+  `end_turn`), it had no upstream `toolUseId`, or one of its fragments was
+  rejected. A `tool_call` wrapper with no input is still rejected.
+- Regression tests cover the OpenAI-format stream, the Claude `tool_use` block
+  with `{}` input, and each case that still drops the call.
+
+## Kiro: preserve the model-list OAuth lifecycle
+- `/v1/models` now passes connection identity, auth type and token expiry to
+  the Kiro catalog resolver and persists refreshed credentials through the
+  existing credential writer, including rotated refresh tokens and merged
+  provider-specific data.
+- On a cache miss, refreshable OAuth credentials nearing expiry are refreshed
+  before the catalog request. Missing-expiry credentials retain one bounded
+  401 refresh/retry; generic 403 responses do not trigger refresh, and API-key
+  or non-refreshable connections are never refreshed.
+- Refresh or persistence failure uses the static catalog rather than sending
+  the known-stale token or caching a claimed recovery. Mocked caller-to-resolver
+  regressions cover persistence across requests and concurrent refresh dedup.
+  Live upstream acceptance has not been verified.
+
+## Compose: one gateway, `888route` on host port 20129
+- `docker-compose.yml` defined two gateways: `888route` (host port 20129, the
+  one in use) and `888router` (host port 20128, not running when inspected).
+  A dry run of bare `docker compose up -d` showed that it would start
+  `888router` next to `888route`, using the separate `888router-data` DB.
+- The `888router` service and its volume declaration are removed. The
+  `888route` service settings and compose config hash are unchanged. No
+  container was recreated and the Docker volume `888router-data` is retained.
+  An unchanged config hash does not rule out recreation for other reasons;
+  check the dry run before applying compose.
+- `tests/unit/compose-single-gateway.test.js` keeps exactly one gateway in the
+  file, published as `20129:20128`, with no host port 20128 and no
+  `888router-data` volume.
+- `.env.example`, `README.md`, `AGENTS.md`, the GitBook Docker deployment page
+  and a comment in `docker-publish.yml` now describe the single gateway: the
+  env file is `.env.route`, and URLs use host port 20129.
+
 # v0.15.199 (2026-10-26)
 
 ## Antigravity: backport Hub 2.24.0 transport and restore Gemini 4 Argon tiers

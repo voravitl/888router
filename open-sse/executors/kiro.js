@@ -734,7 +734,9 @@ export class KiroExecutor extends BaseExecutor {
       throw error;
     };
     const appendToolInput = (tool, input) => {
-      if (input === undefined) return;
+      // An absent (or null) input is not a fragment. Input is optional on every
+      // toolUseEvent frame, so a call made without arguments may carry none.
+      if (input === undefined || input === null) return;
       if (typeof input === "string") {
         if (tool.inputKind && tool.inputKind !== "string") throw new Error("Kiro tool input changed fragment type");
         tool.inputKind = "string";
@@ -753,11 +755,24 @@ export class KiroExecutor extends BaseExecutor {
       }
       assertToolBufferBound();
     };
+    // Kiro streams a call's input as optional fragments and marks the call
+    // finished with `stop: true`. A `tool_use` stop reason also closes every
+    // call still open in the turn.
+    const callIsClosed = (tool) => tool.closed || state.stopReason === "tool_use";
     const parsedToolInput = (tool) => {
-      if (!tool.inputKind) throw new Error("Kiro tool call is missing input");
+      const raw = tool.inputKind === "string" ? tool.inputChunks.join("") : null;
+      if (!tool.inputKind || (raw !== null && !raw.trim())) {
+        // No argument bytes. That is an argument-less call only when Kiro
+        // closed it under its own id and no fragment of it was rejected;
+        // otherwise the arguments may have been lost and {} would be a guess.
+        if (tool.rejectedFragment) throw new Error("Kiro tool call is missing input after a rejected fragment");
+        if (tool.generatedId) throw new Error("Kiro tool call is missing input and has no upstream toolUseId");
+        if (!callIsClosed(tool)) throw new Error("Kiro tool call is missing input and was never closed");
+        return {};
+      }
       if (tool.inputKind === "object") return tool.inputObject;
       try {
-        const input = JSON.parse(tool.inputChunks.join(""));
+        const input = JSON.parse(raw);
         if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("not an object");
         return input;
       } catch (error) {
@@ -889,14 +904,22 @@ export class KiroExecutor extends BaseExecutor {
           }
           let tool = state.tools.get(id);
           if (!tool) {
-            tool = { id, name };
+            tool = { id, name, generatedId: value.toolUseId == null };
             state.tools.set(id, tool);
             state.bufferedToolBytes += encoder.encode(id).byteLength + encoder.encode(name).byteLength + 32;
             assertToolBufferBound();
           } else if (tool.name !== name) {
+            // The rejected fragment may have carried this call's arguments.
+            tool.rejectedFragment = true;
             throw new Error("Kiro tool name changed between fragments");
           }
-          appendToolInput(tool, value.input);
+          try {
+            appendToolInput(tool, value.input);
+          } catch (error) {
+            tool.rejectedFragment = true;
+            throw error;
+          }
+          if (value.stop === true) tool.closed = true;
         }
       } else if (eventType === "messageStopEvent") {
         state.explicitStop = true;
