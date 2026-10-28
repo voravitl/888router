@@ -1,77 +1,25 @@
 services:
-  888router:
-    # Published by CI (.github/workflows/docker-publish.yml): every master push
-    # builds :latest, releases tag semver (v0.14.11 → 0.14.11), plus sha-<hash>.
-    # The image is multi-arch (linux/amd64 + linux/arm64).
-    #
-    # DEFINED BUT NOT RUN — the live gateway is the `888route` service below
-    # (host port 20129). This entry stays so its port/volume mapping is
-    # documented, but do not `up` it next to 888route without thinking:
-    # each gateway needs its own volume (SQLite is single-writer).
-    #
-    # To build from this repo instead of pulling the published image (e.g. a
-    # fork or a local change), uncomment `build:` — compose then builds from
-    # ./Dockerfile and tags it locally. If both image: and build: are set,
-    # compose builds the image and tags it as the image: name (no pull needed).
-    image: voravitl/888router:latest
-    # build:
-    #   context: .
-    container_name: 888router
-    restart: "no"
-    ports:
-      - "20128:20128"
-    labels:
-      - "dev.orbstack.http-port=20128"
-      # Watchtower re-pulls this container when the published image changes.
-      # Only 888router opts in — headroom/searxng stay pinned to avoid
-      # third-party breaking changes dropping in unannounced.
-      - "com.centurylinklabs.watchtower.enable=true"
-    volumes:
-      - 888router-data:/app/data
-    env_file:
-      - .env
-    environment:
-      DATA_DIR: /app/data
-      PORT: "20128"
-      HOSTNAME: "0.0.0.0"
-      NODE_ENV: production
-      RTK_HARD_CAP_BYTES: "65536"
-      HEADROOM_URL: http://headroom:8787
-      # Public origin used to absolutize skill markdown links. Set it in .env
-      # (see .env.example) — e.g. NINEROUTER_PUBLIC_URL=http://localhost:20128
-      # for localhost access, or https://gateway.example.com behind a
-      # proxy/tunnel. Empty default: when unset the raw route FAILS CLOSED
-      # (no rewrite) in production rather than embedding a wrong origin.
-      NINEROUTER_PUBLIC_URL: "${NINEROUTER_PUBLIC_URL:-}"
-      # Point SearXNG provider at the compose service (internal port 8080),
-      # not localhost — the gateway is a container and localhost = itself.
-      SEARXNG_BASE_URL: http://searxng:8080/search
-    depends_on:
-      - headroom
-      - searxng
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    # Liveness via the version API — tells orchestration when the gateway is
-    # actually serving (not just the container started).
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:20128/api/version').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-
-  # Live gateway (host port 20129). Holds its own volume (`888route-data`,
-  # seeded once from the retired k8s PVC — no sync since; the two DBs are
-  # independent). SQLite is single-writer per volume, so each gateway service
-  # keeps its own.
+  # The gateway: the only one this file runs. Host port 20129 maps to the
+  # app's container port 20128.
+  #
+  # Published by CI (.github/workflows/docker-publish.yml): every master push
+  # builds :latest and sha-<hash>; a version bump also publishes :<version>.
+  # The image is multi-arch (linux/amd64 + linux/arm64).
+  #
+  # To build from this repo instead of pulling the published image (e.g. a
+  # fork or a local change), uncomment `build:` — compose then builds from
+  # ./Dockerfile and tags it locally. If both image: and build: are set,
+  # compose builds the image and tags it as the image: name (no pull needed).
+  #
+  # The volume `888route-data` holds the gateway DB. SQLite is single-writer:
+  # never mount it into a second gateway container.
   #
   # Watchtower tracks THIS service (label below + `888route` name filter), so a
   # new published :latest is pulled and recreated automatically.
   888route:
     image: voravitl/888router:latest
+    # build:
+    #   context: .
     container_name: 888route
     restart: "no"
     ports:
@@ -89,14 +37,15 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - 888route-data:/app/data
-    # Generated from the live k8s secret + configmap by
+    # Copy .env.example to .env.route and fill in the secrets. This instance's
+    # copy was generated from the retired k8s secret + configmap by
     # scripts/k8s-sync-secret.sh --pull. gitignored, never committed.
     env_file:
       - .env.route
     environment:
       # Container-internal invariants and compose-network service names. The
       # public origin (BASE_URL / NINEROUTER_PUBLIC_URL) comes from .env.route
-      # and points at http://localhost:20129, not the k8s ingress host.
+      # and points at http://localhost:20129.
       DATA_DIR: /app/data
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
@@ -235,11 +184,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
 volumes:
-  888router-data:
-    name: 888router-data
-  # `888route-data` holds the live gateway DB (owns its creation via normal
-  # compose volume lifecycle). `888router-data` belongs to the not-run
-  # `888router` service entry above — kept defined so its mapping is
-  # documented, but nothing is mounted from it while that service stays down.
+  # `888route-data` holds the gateway DB (owns its creation via normal compose
+  # volume lifecycle).
   888route-data:
     name: 888route-data

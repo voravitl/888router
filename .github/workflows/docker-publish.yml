@@ -623,7 +623,7 @@ jobs:
   # The local `deploy-local-kubernetes` job was removed 2026-09-30 (issue #501):
   # deployment moved back to docker compose. This workflow now PUBLISHES the
   # image only — it never touches a running workload. The host's compose
-  # project picks the new release up via the `888router` service's watchtower
+  # project picks the new release up via the `888route` service's watchtower
   # label (`com.centurylinklabs.watchtower.enable=true`).
   #
   # If a deploy job is ever reintroduced, it must not be able to race a manual

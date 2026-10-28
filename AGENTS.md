@@ -86,17 +86,20 @@ inert reference, not a deploy target.
      release except the two versions that were never shipped). Repoint the
      **live** service at the version you want and recreate it:
      `888route.image: voravitl/888router:0.15.183` — in the local
-     `docker-compose.override.yml` under the **`888route`** service (the
-     `888router` service in compose is defined but never run; a pin there does
-     nothing) — then `docker compose up -d 888route`. Watchtower tracks the
-     container's own image reference, so a pinned version is not pulled forward
-     to `:latest`; remove the pin when you want to resume tracking `:latest`.
+     `docker-compose.override.yml` under the **`888route`** service, the only
+     gateway in compose (an override block under any other service name
+     creates that service) — then `docker compose up -d 888route`. Watchtower
+     tracks the container's own image reference, so a pinned version is not
+     pulled forward to `:latest`; remove the pin when you want to resume
+     tracking `:latest`.
      `voravitl/888router:sha-<short>` is the fallback for any build that never
      got a version tag.
    - **SQLite is single-writer per volume.** `888route-data` is the live DB —
-     never mount it into a second gateway container. The `888router` service
-     entry in compose is defined but NOT run; if it is ever started it must
-     keep its own `888router-data` volume.
+     never mount it into a second gateway container. `docker-compose.yml`
+     defines exactly one gateway (`888route`, host port 20129); the old
+     `888router` service (host port 20128, volume `888router-data`) was removed
+     on 2026-10-28 and `tests/unit/compose-single-gateway.test.js` keeps it
+     out. The old Docker volume is left on the host, unused.
 7. **Capture.** Record the lesson in the wiki/skill so the next agent does not
    repeat the mistake.
 
@@ -708,5 +711,6 @@ Rules going forward:
   reach the running image. `skills/` DOES: the gateway serves those files to
   agents at `/api/skills/raw/<id>`, so a skills change is a product change.
 - **The live service is `888route`, not `888router`.** A rollback pin in the
-  local `docker-compose.override.yml` belongs under `888route`; the
-  `888router` service is defined but never run, so a pin there does nothing.
+  local `docker-compose.override.yml` belongs under `888route`, the only
+  gateway in compose; a block under the old `888router` name would create a
+  second gateway instead of pinning the live one.
