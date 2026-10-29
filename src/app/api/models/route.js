@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
-import { getProviderAlias } from "@/shared/constants/providers";
+import { getProviderAlias, resolveProviderId } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
 // GET /api/models - Get models with aliases
@@ -19,7 +19,8 @@ export async function GET() {
       })
       .map((m) => {
         const fullModel = `${m.provider}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
+        const providerId = resolveProviderId(m.provider) || m.provider;
+        const c = getCapabilitiesForModel(providerId, m.model);
         return {
           ...m,
           fullModel,

@@ -23,6 +23,7 @@
 // 2.0+, Grok, Perplexity). Verify with: curl -s https://models.dev/api.json
 
 import { matchPattern } from "./pricing.js";
+import { resolveProviderAlias } from "../services/model.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -138,11 +139,23 @@ const _loggedRejections = new Set();
 function scopedCacheKeys(providerId, modelId) {
   if (typeof providerId !== "string" || providerId.length === 0) return null;
   if (typeof modelId !== "string" || modelId.length === 0) return null;
+  const canonical = resolveProviderAlias(providerId);
   const baseModel = modelId.includes("/") ? modelId.split("/").pop() : modelId;
-  const p = sanitizeSegment(providerId);
+  const p = sanitizeSegment(canonical);
   const fullId = `${p}:${sanitizeSegment(modelId)}`;
   const baseId = `${p}:${sanitizeSegment(baseModel)}`;
-  return fullId === baseId ? { primary: fullId, aliases: [] } : { primary: baseId, aliases: [fullId] };
+  const aliases = [];
+  if (fullId !== baseId) {
+    aliases.push(fullId);
+  }
+  if (canonical !== providerId) {
+    const rawP = sanitizeSegment(providerId);
+    const rawBaseId = `${rawP}:${sanitizeSegment(baseModel)}`;
+    const rawFullId = `${rawP}:${sanitizeSegment(modelId)}`;
+    if (rawBaseId !== baseId && !aliases.includes(rawBaseId)) aliases.push(rawBaseId);
+    if (rawFullId !== baseId && !aliases.includes(rawFullId)) aliases.push(rawFullId);
+  }
+  return { primary: baseId, aliases };
 }
 
 function coerceContextWindow(value) {
@@ -918,10 +931,16 @@ export function getCapabilitiesForModel(provider, model) {
   const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
   const catalogueCaps = catalogueCapabilitiesFor(normalizedModel, baseModel);
   const baseWithoutReview = baseModel.endsWith("-review") ? baseModel.slice(0, -7) : null;
+  const canonicalProvider = provider ? resolveProviderAlias(provider) : provider;
 
   // Provider-specific overrides are applied LAST — above dynamic caps, not below.
   const providerCaps = (provider && (
-    PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
+    (canonicalProvider ? (
+      PROVIDER_CAPABILITIES[canonicalProvider]?.[normalizedModel]
+      || PROVIDER_CAPABILITIES[canonicalProvider]?.[baseModel]
+      || (baseWithoutReview ? PROVIDER_CAPABILITIES[canonicalProvider]?.[baseWithoutReview] : null)
+    ) : null)
+    || PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
     || PROVIDER_CAPABILITIES[provider]?.[baseModel]
     || (baseWithoutReview ? PROVIDER_CAPABILITIES[provider]?.[baseWithoutReview] : null)
   )) || null;
@@ -930,9 +949,14 @@ export function getCapabilitiesForModel(provider, model) {
   // the fields they carry, and leave every catalogue field the sync omitted intact.
   const hasProvider = typeof provider === "string" && provider.length > 0;
   const scopedCaps = hasProvider
-    ? (DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
-        || (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseWithoutReview}`) : null)
-        || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`))
+    ? ((canonicalProvider ? (
+        DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${canonicalProvider}:${baseModel}`)
+        || (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${canonicalProvider}:${baseWithoutReview}`) : null)
+        || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${canonicalProvider}:${normalizedModel}`)
+      ) : null)
+      || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
+      || (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseWithoutReview}`) : null)
+      || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`))
     : null;
   const bareCaps = DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
     ?? (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE.get(baseWithoutReview) : null)
@@ -990,6 +1014,7 @@ function computeKnownLimits(provider, model) {
   const normalizedModel = stripThinkingSuffix(model);
   const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
   const baseWithoutReview = baseModel.endsWith("-review") ? baseModel.slice(0, -7) : null;
+  const canonicalProvider = provider ? resolveProviderAlias(provider) : provider;
 
   // Sources in exactly the order getCapabilitiesForModel layers them, and a
   // PER-FIELD merge — not a chain that returns on the first source that knows
@@ -1007,7 +1032,12 @@ function computeKnownLimits(provider, model) {
   // whenever loose took it from a source rather than the floor — and undefined
   // only when no source carried it (the one case where loose floors).
   const providerCaps = (provider && (
-    PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
+    (canonicalProvider ? (
+      PROVIDER_CAPABILITIES[canonicalProvider]?.[normalizedModel]
+      || PROVIDER_CAPABILITIES[canonicalProvider]?.[baseModel]
+      || (baseWithoutReview ? PROVIDER_CAPABILITIES[canonicalProvider]?.[baseWithoutReview] : null)
+    ) : null)
+    || PROVIDER_CAPABILITIES[provider]?.[normalizedModel]
     || PROVIDER_CAPABILITIES[provider]?.[baseModel]
     || (baseWithoutReview ? PROVIDER_CAPABILITIES[provider]?.[baseWithoutReview] : null)
   )) || null;
@@ -1016,8 +1046,14 @@ function computeKnownLimits(provider, model) {
   // cross-provider bleed is impossible.
   const hasProvider = typeof provider === "string" && provider.length > 0;
   const scopedDyn = hasProvider && (
-    DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
+    (canonicalProvider ? (
+      DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${canonicalProvider}:${baseModel}`)
+      || (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${canonicalProvider}:${baseWithoutReview}`) : null)
+      || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${canonicalProvider}:${normalizedModel}`)
+    ) : null)
+    || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseModel}`)
     || (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${baseWithoutReview}`) : null)
+    || DYNAMIC_CAPABILITIES_CACHE_SCOPED.get(`${provider}:${normalizedModel}`)
   );
   const bareDyn = DYNAMIC_CAPABILITIES_CACHE.get(baseModel)
     ?? (baseWithoutReview ? DYNAMIC_CAPABILITIES_CACHE.get(baseWithoutReview) : null)
