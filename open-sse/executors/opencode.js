@@ -9,28 +9,36 @@ import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { detectClientTool } from "../utils/clientDetector.js";
 import { sanitizeOpencodeTools } from "../utils/opencodeToolSanitizer.js";
+import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
+import { opencodeTlsFetch } from "../services/opencodeTlsClient.js";
 
 // Ported from upstream decolua/9router#4105: OpenCode Console validates the
 // free-tier client identity server-side. `Authorization: Bearer public`
 // requests need BOTH a versioned UA (opencode/<version>, version >= 1.17.0)
 // AND a canonical session id; bare "opencode" UA or UUID-style sessions get
 // 403 FreeTierError ("only be used from within OpenCode").
+// Paid Zen / opencode-go identity (unchanged). The Zen FREE lane uses the v2
+// identity below instead.
 const OPENCODE_UA = "opencode/1.18.31";
+// OpenCode v2 CLI identity (opencode/<channel>/<version>/<client>), ported from
+// upstream decolua/9router ce060c79b. Live probe 2026-10-29 (scratch
+// probe/report.md): over the same impersonated TLS session the free tier
+// answered 200 to this identity + body contract and 429 FreeUsageLimitError
+// to the v1 one (opencode/1.18.31, `desktop`, x-opencode-request, stub tools).
+const OPENCODE_V2_UA = "opencode/latest/2.0.26/cli";
+const OPENCODE_V2_CLIENT = "cli";
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-// Upstream free-tier gate (verified live 2026-09-18, cf. decolua/9router#4132):
-// /zen/v1/chat/completions and /zen/v1/responses with
-// `Authorization: Bearer public` reject requests that do not look like the
-// official OpenCode agentic client, even when User-Agent/session shape are
-// valid. Concretely enforced:
-// - stream must be true (stream:false → 403 FreeTierError);
-// - tools must include the file-search quartet {bash, glob, grep, read}
-//   (0–3 of them → 403; extras are allowed). Plain chat callers send no
-//   tools, so without injection every such request 403s.
-const OPENCODE_FINGERPRINT_TOOLS = ["bash", "glob", "grep", "read"];
+// Upstream free-tier gate: /zen/v1 rejects anonymous requests that do not
+// look like the official OpenCode client. Enforced:
+// - stream must be true (stream:false → 403 FreeTierError, 2026-09-18);
+// - the v2 CLI body contract: OpenCode's exact `read` + `shell` tool
+//   definitions AND the `<env>` system marker (utils/opencodeFingerprint.js;
+//   the earlier bash/glob/grep/read stub quartet now answers 429);
+// - the TLS ClientHello (services/opencodeTlsClient.js, wreq-js).
 
 export function hasValidOpencodeVersion(ua) {
   const m = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
@@ -38,6 +46,12 @@ export function hasValidOpencodeVersion(ua) {
   const major = parseInt(m[1], 10);
   const minor = parseInt(m[2], 10);
   return major > 1 || (major === 1 && minor >= 17);
+}
+
+// A downstream that is itself a v2 OpenCode CLI keeps its own UA on the free lane.
+function hasValidOpencodeV2Version(ua) {
+  const m = String(ua || "").match(/^opencode\/[a-z0-9-]+\/(\d+)\.\d+\.\d+\/[a-z0-9-]+$/i);
+  return !!m && parseInt(m[1], 10) >= 2;
 }
 const KNOWN_FREE_OPENCODE_MODELS = new Set(["big-pickle"]);
 
@@ -202,66 +216,30 @@ function normalizeSession(value) {
   return normalized;
 }
 
-function toolNameOf(tool) {
-  if (!tool || typeof tool !== "object" || Array.isArray(tool)) return "";
-  const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
-  const raw = typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : "");
-  return raw.trim();
+// Apply the free-lane body contract to a SHALLOW COPY of `body` (the caller's
+// object is never mutated, so an executor retry re-runs on the same input).
+// Returns the alias map (sent name -> caller's name) for caller tools that had
+// to move off `read`/`shell`; the executor feeds it into `_toolNameMap`.
+function applyFreeLaneContract(body, shape) {
+  const next = { ...body };
+  const map = applyFingerprintTools(next, shape);
+  return { body: next, map };
 }
 
-// Merge the upstream-mandated file-search quartet into Chat Completions
-// bodies. Caller tools are preserved verbatim (extras are allowed upstream);
-// only the missing fingerprint names are appended as no-op declarations the
-// model may ignore. Without this, plain chat callers that send no tools get
-// 403 FreeTierError on every request.
-function ensureChatFingerprintTools(body) {
-  if (!body || typeof body !== "object") return;
-  const present = new Set();
-  if (Array.isArray(body.tools)) {
-    for (const tool of body.tools) {
-      const name = toolNameOf(tool);
-      if (name) present.add(name);
-    }
-  } else {
-    body.tools = [];
+// Merge the fingerprint alias map into the sanitizer's map so the existing
+// `_toolNameMap` restore (chatCore → restoreOpencodeToolNames) handles both.
+function attachToolNameMap(body, sanitizerMap, aliasMap) {
+  const sanitized = sanitizerMap?.size > 0;
+  if (!sanitized && !aliasMap?.size) return body;
+  const out = sanitized ? (sanitizerMap.body || body) : body;
+  if (!aliasMap?.size) {
+    out._toolNameMap = sanitizerMap;
+    return out;
   }
-  for (const name of OPENCODE_FINGERPRINT_TOOLS) {
-    if (present.has(name)) continue;
-    body.tools.push({
-      type: "function",
-      function: {
-        name,
-        description: `OpenCode built-in ${name} tool`,
-        parameters: { type: "object", properties: {} },
-      },
-    });
-    present.add(name);
-  }
-}
-
-// Same fingerprint for the Responses flat tool shape
-// ({type:"function", name, ...}).
-function ensureResponsesFingerprintTools(body) {
-  if (!body || typeof body !== "object") return;
-  const present = new Set();
-  if (Array.isArray(body.tools)) {
-    for (const tool of body.tools) {
-      const name = toolNameOf(tool);
-      if (name) present.add(name);
-    }
-  } else {
-    body.tools = [];
-  }
-  for (const name of OPENCODE_FINGERPRINT_TOOLS) {
-    if (present.has(name)) continue;
-    body.tools.push({
-      type: "function",
-      name,
-      description: `OpenCode built-in ${name} tool`,
-      parameters: { type: "object", properties: {} },
-    });
-    present.add(name);
-  }
+  const merged = new Map(sanitized ? sanitizerMap : []);
+  for (const [sent, original] of aliasMap) merged.set(sent, original);
+  out._toolNameMap = merged;
+  return out;
 }
 
 function nativeSession(headers) {
@@ -403,14 +381,10 @@ export class OpenCodeExecutor extends BaseExecutor {
       // Claude Code `/model` probes send max_tokens: 1, which Anthropic accepts.
       clampResponsesMaxOutputTokens(body);
       normalizeOpencodeReasoning(model, body, this.provider);
-      if (freeGate) ensureResponsesFingerprintTools(body);
-      let injected = injectReasoningContent({ provider: this.provider, model, body });
-      const toolMap = sanitizeOpencodeTools(injected);
-      if (toolMap?.size > 0) {
-        injected = toolMap.body || injected;
-        injected._toolNameMap = toolMap;
-      }
-      return injected;
+      let aliasMap = null;
+      if (freeGate) ({ body, map: aliasMap } = applyFreeLaneContract(body, "flat"));
+      const injected = injectReasoningContent({ provider: this.provider, model, body });
+      return attachToolNameMap(injected, sanitizeOpencodeTools(injected), aliasMap);
     }
 
     let nextBody = injectReasoningContent({ provider: this.provider, model, body });
@@ -424,17 +398,38 @@ export class OpenCodeExecutor extends BaseExecutor {
         && (nextBody?.max_completion_tokens === undefined || nextBody?.max_completion_tokens === null)) {
       nextBody = { ...nextBody, max_tokens: 2000 };
     }
-    if (freeGate) ensureChatFingerprintTools(nextBody);
-    const chatToolMap = sanitizeOpencodeTools(nextBody);
-    if (chatToolMap?.size > 0) {
-      nextBody = chatToolMap.body || nextBody;
-      nextBody._toolNameMap = chatToolMap;
+    let aliasMap = null;
+    if (freeGate) {
+      // Claude-format models post to /messages, where the system text lives in
+      // top-level `system` and tools use `input_schema` (same test as buildUrl).
+      const shape = MESSAGES_MODELS.has(model) ? "claude" : "chat";
+      ({ body: nextBody, map: aliasMap } = applyFreeLaneContract(nextBody, shape));
     }
-    return nextBody;
+    return attachToolNameMap(nextBody, sanitizeOpencodeTools(nextBody), aliasMap);
   }
 
   async execute(args) {
-    return super.execute({ ...args, credentials: this.prepareRequestCredentials(args) });
+    const credentials = this.prepareRequestCredentials(args);
+    if (!isZenFreeModel(this.provider, args?.model)) {
+      return super.execute({ ...args, credentials });
+    }
+    // Zen free lane only: the gate keys on the TLS ClientHello, so Node's
+    // native fetch is refused however faithful the body is. Route through the
+    // impersonated client on the direct path AND through HTTP proxies
+    // (directFetchProxy: the proxy URL is handed to the TLS client). A
+    // vercel/cloudflare/deno relay originates its own TLS and cannot carry this
+    // lane — routing keeps the free lane off relays (sse/services/auth.js).
+    // Fail-open: without wreq-js proxyAwareFetch logs and uses native fetch.
+    return super.execute({
+      ...args,
+      credentials,
+      directFetch: (url, options, { proxyUrl } = {}) => opencodeTlsFetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+      }, { signal: options.signal, proxyUrl }),
+      directFetchProxy: true,
+    });
   }
 
   buildUrl(model, stream = true, urlIndex = 0, credentials = null) {
@@ -475,18 +470,37 @@ export class OpenCodeExecutor extends BaseExecutor {
     const rtAuth = credentials?.runtimeTransport?.auth;
     const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD];
 
-    const headers = {
-      "Content-Type": "application/json",
-      "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
-      "x-opencode-client": lower["x-opencode-client"] || "desktop",
-      "x-opencode-session": session,
-      "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
-      "x-opencode-project": lower["x-opencode-project"] || "global",
-      // Live-verified: Console serves the free tier on streaming requests
-      // only. Non-stream chat completions (and /responses without
-      // "stream": true) get 403 FreeTierError with identical identity.
-      "Accept": stream ? "text/event-stream" : "*/*",
-    };
+    // Zen free lane: the OpenCode v2 CLI header set. Upstream needs
+    // x-opencode-session-id (+ affinity/session-id) next to x-opencode-session
+    // and rejects the v1-only x-opencode-request. Go / paid Zen keep the v1 set.
+    // Same predicate as transformRequest/execute: a BYOK Zen key on a -free
+    // model still meets the free gate, so it gets the v2 identity too (its
+    // Authorization stays the user's key, below).
+    const freeLane = isZenFreeModel(this.provider, effectiveModel);
+    const headers = freeLane
+      ? {
+        "Content-Type": "application/json",
+        "User-Agent": hasValidOpencodeV2Version(downstreamUa) ? downstreamUa : OPENCODE_V2_UA,
+        "x-opencode-client": lower["x-opencode-client"] || OPENCODE_V2_CLIENT,
+        "x-opencode-session": session,
+        "x-opencode-session-id": session,
+        "x-session-affinity": session,
+        "x-session-id": session,
+        "x-opencode-project": lower["x-opencode-project"] || "global",
+        "Accept": stream ? "text/event-stream" : "*/*",
+      }
+      : {
+        "Content-Type": "application/json",
+        "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
+        "x-opencode-client": lower["x-opencode-client"] || "desktop",
+        "x-opencode-session": session,
+        "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
+        "x-opencode-project": lower["x-opencode-project"] || "global",
+        // Live-verified: Console serves the free tier on streaming requests
+        // only. Non-stream chat completions (and /responses without
+        // "stream": true) get 403 FreeTierError with identical identity.
+        "Accept": stream ? "text/event-stream" : "*/*",
+      };
 
     if (rtAuth && key) {
       if (rtAuth.header === "x-api-key" || rtAuth.scheme === "raw") {
@@ -517,5 +531,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     return headers;
   }
 }
+
+export const __test__ = { applyFreeLaneContract };
 
 export default OpenCodeExecutor;

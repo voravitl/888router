@@ -52,6 +52,12 @@ COPY --from=builder /app/node_modules/next ./node_modules/next
 # sql.js loads dist/sql-wasm.wasm by path at runtime; tracing only follows JS imports,
 # so the last-resort DB driver would abort with ENOENT on the missing binary.
 COPY --from=builder /app/node_modules/sql.js ./node_modules/sql.js
+# wreq-js (OpenCode Free TLS client) is loaded lazily at runtime, so standalone
+# tracing omits it. `npm ci` in the builder (same NODE_IMAGE, so same libc) has
+# installed it plus the native binding for this build's arch/libc
+# (@wreq-js/binding-linux-<arch>-musl on alpine). Copy both.
+COPY --from=builder /app/node_modules/wreq-js ./node_modules/wreq-js
+COPY --from=builder /app/node_modules/@wreq-js ./node_modules/@wreq-js
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
