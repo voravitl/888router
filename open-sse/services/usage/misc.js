@@ -45,14 +45,68 @@ export async function getIflowUsage(accessToken) {
 }
 
 /**
+ * Billing day of month (1–31) stored on an Ollama connection, or null.
+ * Accepts an integer or an all-digit string; anything else is ignored so a
+ * malformed value falls back to the rolling window instead of a wrong cycle.
+ */
+export function parseOllamaBillingDay(value) {
+  const n = typeof value === "string" && /^\d+$/.test(value.trim()) ? Number(value) : value;
+  return Number.isInteger(n) && n >= 1 && n <= 31 ? n : null;
+}
+
+// The billing day in a given month, clamped to that month's last day (31 → Feb 28).
+function billingDateInMonth(year, month, billingDay) {
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(billingDay, lastDay)));
+}
+
+/**
+ * Current Ollama billing cycle for a billing day: { start, end } at 00:00 UTC.
+ * The usage API reports whole UTC days, so the cycle is resolved per UTC day;
+ * on the billing day itself the new cycle has already begun.
+ */
+export function getOllamaBillingCycle(billingDay, now = new Date()) {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const thisMonth = billingDateInMonth(year, month, billingDay);
+  const start = now >= thisMonth ? thisMonth : billingDateInMonth(year, month - 1, billingDay);
+  const end = billingDateInMonth(start.getUTCFullYear(), start.getUTCMonth() + 1, billingDay);
+  return { start, end };
+}
+
+/**
+ * USD spent since `start`, summed from the daily /api/usage buckets.
+ * Returns NaN when the buckets cannot prove the whole cycle: missing or
+ * malformed buckets, a bucket that straddles the cycle start, or buckets that
+ * do not reach back to it. A partial sum would understate spend and show
+ * credit that is already gone.
+ */
+export function sumOllamaCycleUsage(buckets, start) {
+  if (!Array.isArray(buckets) || buckets.length === 0) return NaN;
+  const startMs = start.getTime();
+  let earliest = Infinity;
+  let total = 0;
+  for (const bucket of buckets) {
+    const from = Date.parse(bucket?.from);
+    const until = Date.parse(bucket?.until);
+    const usd = Number(bucket?.usage_usd);
+    if (!Number.isFinite(from) || !Number.isFinite(until) || !Number.isFinite(usd)) return NaN;
+    if (from < startMs && until > startMs) return NaN;
+    earliest = Math.min(earliest, from);
+    if (from >= startMs) total += usd;
+  }
+  return earliest <= startMs ? total : NaN;
+}
+
+/**
  * Ollama Cloud Usage
  * Calls https://ollama.com/api/usage?range=30d and https://ollama.com/api/me.
  *
- * REAL /api/usage shape (verified live 2026-10-25):
+ * REAL /api/usage shape (verified live 2026-10-25, re-read 2026-10-29):
  *   { range, from, until,
  *     totals: { request_count, usage_usd, input_tokens,
  *               cached_input_tokens, output_tokens },
- *     buckets: [...] }
+ *     buckets: [{ from, until, usage_usd, ... }, ...] }   // one per UTC day
  *   - range accepts "7d" (default) and "30d"; from/until params are ignored.
  *   - totals.usage_usd is the USD actually spent in the window. The old
  *     { activity, limits.monthly.usage } shape is GONE upstream — parsing it
@@ -62,17 +116,20 @@ export async function getIflowUsage(accessToken) {
  * Credit ceilings (from /api/me response.Plan field):
  *   "pro" → $60, "max" → $300, "team" → $1000, else → 0 (free, pay-as-you-go)
  *
- * The 30-day window is the closest proxy for the monthly credit cycle the
- * API offers. Missing spend data must SKIP the row, never render $0 used.
+ * Billing cycle: included credits refresh monthly on the day the
+ * subscription started (https://ollama.com/pricing), NOT on the 1st, and the
+ * API exposes no reset date. When the connection stores that day as
+ * providerSpecificData.resetDay (1–31), usage is the sum of the daily buckets
+ * since the current cycle began and resetAt is the next billing day. Without
+ * it, the rolling 30-day total is the only proxy and no reset date is
+ * invented. Missing spend data must SKIP the row, never render $0 used.
  */
 export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) {
   const token = apiKey || accessToken;
   if (!token) return { message: "Ollama API key not available." };
 
-  // Calculate month-end reset (1st of next month UTC)
-  const now = new Date();
-  const nextMonthReset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0));
-  const resetAt = nextMonthReset.toISOString();
+  const billingDay = parseOllamaBillingDay(providerSpecificData?.resetDay);
+  const cycle = billingDay ? getOllamaBillingCycle(billingDay, new Date()) : null;
 
   try {
     // Fetch usage + user plan in parallel
@@ -103,12 +160,18 @@ export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) 
     else if (planRaw.includes("max")) { monthlyCredits = 300;  planLabel = "Max ($100/mo)"; }
     else if (planRaw.includes("pro")) { monthlyCredits = 60;   planLabel = "Pro ($20/mo)"; }
 
-    // totals.usage_usd = USD actually spent in the window (a plain number)
-    const usageUsd = Number(usageData?.totals?.usage_usd);
-    if (!usageData || !Number.isFinite(usageUsd)) {
+    // totals.usage_usd = USD actually spent in the rolling window
+    const windowUsd = Number(usageData?.totals?.usage_usd);
+    if (!usageData || !Number.isFinite(windowUsd)) {
       // Shape drifted again → say so. A 0 default here renders a fake
       // "100% remaining" — the exact bug this fix removes (2026-10-25).
       return { plan: planLabel, message: "Ollama Cloud usage data unavailable.", quotas: {} };
+    }
+
+    // With a known billing day, count only the current cycle's spend.
+    const usageUsd = cycle ? sumOllamaCycleUsage(usageData.buckets, cycle.start) : windowUsd;
+    if (!Number.isFinite(usageUsd)) {
+      return { plan: planLabel, message: "Ollama Cloud billing-cycle usage data unavailable.", quotas: {} };
     }
 
     const usedUsd = Math.round(usageUsd * 100) / 100;
@@ -123,7 +186,7 @@ export async function getOllamaUsage(accessToken, providerSpecificData, apiKey) 
         remaining: Math.round(remaining * 100) / 100,
         remainingPercentage: Math.round((remaining / monthlyCredits) * 100),
         unit: "USD",
-        resetAt,
+        resetAt: cycle ? cycle.end.toISOString() : null,
       };
     } else {
       // Free tier has no ceiling: show real spend without inventing a
