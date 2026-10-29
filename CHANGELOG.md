@@ -1,3 +1,25 @@
+# v0.15.201 (2026-10-29)
+
+## Ollama: count Quota Tracker usage within the billing cycle
+- Ollama Cloud plan credits refresh on the subscription's start day each
+  month, not on the 1st. The usage API provides daily buckets but no reset
+  date, and the tracker charged the full rolling 30-day total against one
+  month's credits. Usage from the previous cycle therefore appeared in this
+  cycle. On 2026-10-28 the connection snapshot read 0% remaining while the
+  live account still had credit, and that snapshot is also used for account
+  selection.
+- When the connection stores a billing day (`providerSpecificData.resetDay`,
+  1–31), usage is now the sum of daily buckets since the current cycle began.
+  The reset date is the next billing day; a day past the end of a short month
+  uses that month's last day. On the live account, this changed the
+  2026-10-29 reading from $51.98 used (13% left) to $49.31 used (18% left),
+  with reset on 2026-11-17 instead of 2026-11-01.
+- The tracker never reports a partial sum: if the buckets do not cover the
+  start of the cycle, or a bucket is malformed or crosses the start boundary,
+  it reports cycle usage as unavailable. Without a valid billing day, it keeps
+  the rolling 30-day total and leaves the reset date blank instead of showing
+  the 1st.
+
 # v0.15.200 (2026-10-28)
 
 ## Kiro: forward tool calls made without arguments
