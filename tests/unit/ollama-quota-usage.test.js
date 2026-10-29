@@ -157,6 +157,109 @@ describe("Ollama Cloud Quota — real /api/usage shape (totals.usage_usd)", () =
     expect(result.message).toMatch(/unavailable/i);
   });
 
+  it("without a billing day, the rolling 30-day total is not given an invented reset date", async () => {
+    mockBoth(makeUsageRes(38.96), makeMeRes("pro"));
+    const result = await getOllamaUsage(null, {}, "real-key");
+    expect(result.quotas["Monthly Credits"].resetAt).toBeNull();
+  });
+
+  describe("billing cycle from providerSpecificData.resetDay", () => {
+    afterEach(() => vi.useRealTimers());
+
+    // Daily UTC buckets, as /api/usage?range=30d returns them.
+    function dailyBuckets(startIso, days, usdForDay) {
+      const start = Date.parse(startIso);
+      return Array.from({ length: days }, (_, i) => {
+        const from = new Date(start + i * 86_400_000);
+        return {
+          from: from.toISOString().replace(".000Z", "Z"),
+          until: new Date(from.getTime() + 86_400_000).toISOString().replace(".000Z", "Z"),
+          usage_usd: usdForDay(from),
+        };
+      });
+    }
+
+    function usageWithBuckets(buckets) {
+      const total = buckets.reduce((sum, b) => sum + b.usage_usd, 0);
+      return {
+        ok: true, status: 200,
+        json: async () => ({ range: "30d", totals: { usage_usd: total }, buckets }),
+        text: async () => "",
+      };
+    }
+
+    it("counts only spend since the current cycle start and resets on the next billing day", async () => {
+      // Live shape on 2026-10-29: $51.98 over 30 days, $49.31 since Oct 17.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-29T01:31:26Z"));
+      const buckets = dailyBuckets("2026-09-29T00:00:00Z", 31, (d) =>
+        d < new Date("2026-10-17T00:00:00Z") ? 0.25 : d.getUTCDate() === 29 ? 0 : 4.10917,
+      );
+      mockBoth(usageWithBuckets(buckets), makeMeRes("pro"));
+
+      const result = await getOllamaUsage(null, { resetDay: 17 }, "real-key");
+      const q = result.quotas["Monthly Credits"];
+      expect(q.used).toBe(49.31);
+      expect(q.remaining).toBe(10.69);
+      expect(q.remainingPercentage).toBe(18);
+      expect(q.resetAt).toBe("2026-11-17T00:00:00.000Z");
+    });
+
+    it("before this month's billing day, the cycle started on last month's billing day", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-10T12:00:00Z"));
+      const buckets = dailyBuckets("2026-09-10T00:00:00Z", 31, (d) =>
+        d < new Date("2026-09-17T00:00:00Z") ? 5 : 1,
+      );
+      mockBoth(usageWithBuckets(buckets), makeMeRes("pro"));
+
+      const result = await getOllamaUsage(null, { resetDay: "17" }, "real-key");
+      const q = result.quotas["Monthly Credits"];
+      expect(q.used).toBe(24); // Sep 17 .. Oct 10 = 24 days at $1
+      expect(q.resetAt).toBe("2026-10-17T00:00:00.000Z");
+    });
+
+    it("on the billing day itself, a new cycle has started", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-17T06:00:00Z"));
+      const buckets = dailyBuckets("2026-09-17T00:00:00Z", 31, (d) => (d.getUTCDate() === 17 && d.getUTCMonth() === 9 ? 2 : 3));
+      mockBoth(usageWithBuckets(buckets), makeMeRes("pro"));
+
+      const q = (await getOllamaUsage(null, { resetDay: 17 }, "real-key")).quotas["Monthly Credits"];
+      expect(q.used).toBe(2);
+      expect(q.resetAt).toBe("2026-11-17T00:00:00.000Z");
+    });
+
+    it("a billing day past the end of a short month clamps to that month's last day", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2027-02-20T00:00:00Z"));
+      const buckets = dailyBuckets("2027-01-21T00:00:00Z", 31, (d) => (d < new Date("2027-01-31T00:00:00Z") ? 9 : 1));
+      mockBoth(usageWithBuckets(buckets), makeMeRes("pro"));
+
+      const q = (await getOllamaUsage(null, { resetDay: 31 }, "real-key")).quotas["Monthly Credits"];
+      expect(q.used).toBe(21); // Jan 31 .. Feb 20
+      expect(q.resetAt).toBe("2027-02-28T00:00:00.000Z");
+    });
+
+    it("buckets that do not reach back to the cycle start are not reported as cycle usage", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-29T01:00:00Z"));
+      const buckets = dailyBuckets("2026-10-20T00:00:00Z", 10, () => 1);
+      mockBoth(usageWithBuckets(buckets), makeMeRes("pro"));
+
+      const result = await getOllamaUsage(null, { resetDay: 17 }, "real-key");
+      expect(result.quotas).toEqual({});
+      expect(result.message).toMatch(/unavailable/i);
+    });
+
+    it.each([0, 32, "abc", 17.5])("an invalid billing day (%s) falls back to the rolling 30-day total", async (resetDay) => {
+      mockBoth(makeUsageRes(38.96), makeMeRes("pro"));
+      const q = (await getOllamaUsage(null, { resetDay }, "real-key")).quotas["Monthly Credits"];
+      expect(q.used).toBe(38.96);
+      expect(q.resetAt).toBeNull();
+    });
+  });
+
   it("parseQuotaData parses Ollama Monthly Credits for ProviderLimits UI", () => {
     const mockData = {
       plan: "Pro ($20/mo)",
