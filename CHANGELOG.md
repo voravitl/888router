@@ -1,3 +1,24 @@
+# v0.15.202 (2026-10-29)
+
+## OpenCode Free: use the accepted TLS fingerprint and request contract
+- OpenCode Free (`oc/*-free`) requests use the wreq-js TLS client fingerprint and
+  the v2 request headers/body contract. `opencode-go` and paid Zen retain their
+  existing request path.
+- OpenCode Free is kept off Vercel, Cloudflare and Deno relay pools, which
+  terminate TLS before the upstream; direct connections and HTTP proxy pools
+  remain eligible.
+- Bundle wreq-js and its native bindings in the runner image so the free-lane
+  TLS client is available at runtime.
+
+### Known limits
+- The wreq-js request timeout is 120 seconds; whether it bounds a complete
+  streamed response has not been verified.
+- wreq-js through an HTTP proxy pool is unit-tested but has not been exercised
+  live.
+- wreq-js 3.2.0 binds a session to one proxy URL; the implementation caches at
+  most 16 sessions.
+- The amd64 image build has not been run locally; CI performs that build.
+
 # v0.15.201 (2026-10-29)
 
 ## Ollama: count Quota Tracker usage within the billing cycle
