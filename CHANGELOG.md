@@ -1,3 +1,15 @@
+# v0.15.203 (2026-10-29)
+
+## Capabilities: normalize provider alias for dynamic capabilities and /api/models
+- Normalize provider aliases (e.g. `oc` → `opencode`, `ag` → `antigravity`, `th` → `tokenharbor`)
+  when registering and querying scoped dynamic capabilities and known limits in
+  `open-sse/providers/capabilities.js`.
+- Fix `/api/models` route in `src/app/api/models/route.js` to resolve `m.provider`
+  via `resolveProviderId(m.provider)` before querying capabilities, preventing
+  models with provider aliases from bypassing dynamic capabilities and falling back
+  to generic catalogue patterns (e.g. `oc/deepseek-v4.1-flash-free` displaying 1M
+  context on dashboard while live routing and models.dev specify 200k).
+
 # v0.15.202 (2026-10-29)
 
 ## OpenCode Free: use the accepted TLS fingerprint and request contract
