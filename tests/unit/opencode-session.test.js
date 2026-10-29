@@ -201,6 +201,11 @@ describe("OpenCode Free User-Agent Validation", () => {
   });
 });
 
+// Updated 2026-10-29: the free gate no longer accepts the bash/glob/grep/read
+// stub quartet. Live probe (scratch probe/report.md, request #3): the old
+// quartet + v1 identity over the correct TLS client answered 429
+// FreeUsageLimitError, while OpenCode's exact read/shell definitions + the
+// <env> marker answered 200. These tests now pin that contract.
 describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
   it("forces stream:true upstream on chat bodies even for non-stream clients", () => {
     const executor = getExecutor("opencode");
@@ -213,7 +218,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
     expect(out.stream).toBe(true);
   });
 
-  it("injects the file-search quartet into chat bodies without tools", () => {
+  it("injects the read/shell fingerprint into chat bodies without tools", () => {
     const executor = getExecutor("opencode");
     const out = executor.transformRequest(
       "mimo-v2.5-free",
@@ -222,7 +227,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
       { rawHeaders: {} },
     );
     const names = out.tools.map((t) => t.function?.name);
-    for (const required of ["bash", "glob", "grep", "read"]) {
+    for (const required of ["read", "shell"]) {
       expect(names).toContain(required);
     }
   });
@@ -241,7 +246,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
     );
     const names = out.tools.map((t) => t.function?.name);
     expect(names[0]).toBe("my_tool");
-    for (const required of ["bash", "glob", "grep", "read"]) {
+    for (const required of ["read", "shell"]) {
       expect(names).toContain(required);
     }
   });
@@ -256,7 +261,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
     );
     expect(out.stream).toBe(true);
     const names = out.tools.map((t) => t.name);
-    for (const required of ["bash", "glob", "grep", "read"]) {
+    for (const required of ["read", "shell"]) {
       expect(names).toContain(required);
     }
   });
@@ -288,7 +293,7 @@ describe("OpenCode Free Upstream Gates (stream + tool fingerprint)", () => {
     );
     expect(out.stream).toBe(true);
     const names = out.tools.map((t) => t.function?.name);
-    for (const required of ["bash", "glob", "grep", "read"]) {
+    for (const required of ["read", "shell"]) {
       expect(names).toContain(required);
     }
   });

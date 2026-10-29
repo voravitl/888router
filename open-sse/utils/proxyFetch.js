@@ -358,8 +358,54 @@ async function getDirectDispatcher() {
   return directDispatcher;
 }
 
+// A protocol adapter may supply its own transport (`directFetch`, e.g. the
+// OpenCode free tier's impersonated-TLS client) for the direct path and — when
+// it sets `directFetchProxy` — for HTTP connection/env proxies too, receiving
+// the proxy URL. The adapter signals "transport not installed" with an
+// OpencodeTlsUnavailableError; the request then fails OPEN to native fetch and
+// the fallback is logged (the upstream gate will likely refuse it, but the
+// request is not broken here). Any other adapter error propagates as-is.
+let directFetchFallbackWarned = false;
+
+function isTransportUnavailable(err) {
+  return err?.name === "OpencodeTlsUnavailableError";
+}
+
+function logDirectFetchFallback(err, viaProxy) {
+  const msg = `[ProxyFetch] directFetch unavailable (${err?.name}: ${err?.message}); failing open to native ${viaProxy ? "proxied " : ""}fetch`;
+  if (!directFetchFallbackWarned) {
+    directFetchFallbackWarned = true;
+    console.warn(msg);
+  } else {
+    dbg("TLS", msg);
+  }
+}
+
+// Returns a Response from the adapter, or null when the caller should fall
+// back to its native path.
+async function tryDirectFetch(directFetch, url, nativeOptions, proxyUrl) {
+  try {
+    return proxyUrl
+      ? await directFetch(url, nativeOptions, { proxyUrl })
+      : await directFetch(url, nativeOptions);
+  } catch (err) {
+    if (!isTransportUnavailable(err)) throw err;
+    logDirectFetchFallback(err, !!proxyUrl);
+    return null;
+  }
+}
+
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+
+  // Strip the adapter hook so native fetch / the relay see the exact options
+  // they saw before the hook existed.
+  let directFetch = null;
+  let directFetchProxy = false;
+  if (options && (options.directFetch || "directFetchProxy" in options)) {
+    ({ directFetch = null, directFetchProxy = false, ...options } = options);
+    if (typeof directFetch !== "function") directFetch = null;
+  }
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
@@ -403,6 +449,10 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 
   if (proxyUrl) {
     try {
+      if (directFetch && directFetchProxy) {
+        const viaAdapter = await tryDirectFetch(directFetch, url, options, proxyUrl);
+        if (viaAdapter) return viaAdapter;
+      }
       const dispatcher = await getDispatcher(proxyUrl);
       return await originalFetch(url, { ...options, dispatcher });
     } catch (proxyError) {
@@ -411,12 +461,21 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
       }
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
+      if (directFetch) {
+        const viaAdapter = await tryDirectFetch(directFetch, url, options, null);
+        if (viaAdapter) return viaAdapter;
+      }
       const directDisp = options.dispatcher || await getDirectDispatcher();
       return originalFetch(url, directDisp ? { ...options, dispatcher: directDisp } : options);
     }
   }
 
-  // Direct path: use persistent undici Agent for Keep-Alive connection reuse
+  // Direct path: the adapter's own transport first (fail-open), then a
+  // persistent undici Agent for Keep-Alive connection reuse.
+  if (directFetch) {
+    const viaAdapter = await tryDirectFetch(directFetch, url, options, null);
+    if (viaAdapter) return viaAdapter;
+  }
   const directDisp = options.dispatcher || await getDirectDispatcher();
   return originalFetch(url, directDisp ? { ...options, dispatcher: directDisp } : options);
 }

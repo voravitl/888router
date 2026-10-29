@@ -1,6 +1,6 @@
 {
   "name": "888router",
-  "version": "0.15.201",
+  "version": "0.15.202",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -49,6 +49,7 @@
     "sql.js": "^1.14.1",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
+    "wreq-js": "^3.2.0",
     "zustand": "^5.0.10"
   },
   "optionalDependencies": {

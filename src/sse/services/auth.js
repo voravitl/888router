@@ -15,6 +15,20 @@ import * as log from "../utils/logger.js";
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
+// Providers whose noAuth lane must NEVER ride a vercel/cloudflare/deno RELAY
+// pool. A relay is an HTTP forwarder that originates its OWN TLS session, so a
+// TLS-fingerprint gate upstream sees the relay's ClientHello, not ours.
+// Evidence (probe 2026-10-29, opencode.ai/zen/v1 free tier): native Node TLS →
+// 429 FreeUsageLimitError; wreq-js cipher-list ClientHello → 200; the live
+// gateway's `conn=Public:cloudflare-relay` hops all answered 429 and parked the
+// relay for opencode. HTTP proxy pools (CONNECT tunnel, our TLS end-to-end)
+// and Direct stay eligible. Every other provider keeps using relays.
+const RELAY_INELIGIBLE_NOAUTH_PROVIDERS = new Set(["opencode"]);
+// Pool types resolved as relays (vercelRelayUrl, source = type) — mirrors
+// src/lib/network/connectionProxy.js. Read off the pool row so auto-rotate
+// needs no extra resolve per pool.
+const RELAY_POOL_TYPES = new Set(["vercel", "cloudflare", "deno"]);
+
 /**
  * A proxy pool carries two kinds of park, and they are not interchangeable:
  *
@@ -157,6 +171,31 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
             lastErrorCode: 429,
           };
         }
+        // A pinned RELAY cannot carry a TLS-gated lane (see
+        // RELAY_INELIGIBLE_NOAUTH_PROVIDERS): go Direct, loudly, instead of
+        // sending every request through a transport the upstream refuses.
+        // Placed after the strike check so the breaker still guards the bare
+        // `noauth` id that Direct also uses.
+        // resolveConnectionProxyConfig reports a relay as source = pool.type
+        // (the same field the auto-rotate filter below reads off the row).
+        if (RELAY_INELIGIBLE_NOAUTH_PROVIDERS.has(providerId) && RELAY_POOL_TYPES.has(resolvedProxy.source)) {
+          log.warn("AUTH", `${providerId} | pinned pool ${specificPoolId} is a ${resolvedProxy.source} relay; relays cannot carry this lane — using Direct`);
+          return {
+            id: "noauth",
+            connectionId: "noauth",
+            provider: providerId,
+            connectionName: "Direct Connection",
+            isActive: true,
+            accessToken: "public",
+            providerSpecificData: {
+              connectionProxyEnabled: false,
+              connectionProxyUrl: "",
+              connectionNoProxy: "",
+              connectionProxyPoolId: null,
+              vercelRelayUrl: "",
+            },
+          };
+        }
         return {
           id: "noauth",
           connectionId: "noauth",
@@ -179,7 +218,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // is skipped for the rest of its cooldown window — otherwise the pool
       // that just 503'd is picked again immediately on the next request
       // (relay-suspend rotation bug).
-      const pools = await getProxyPools({ isActive: true });
+      const allPools = await getProxyPools({ isActive: true });
+      // Relay pools are not candidates at all for a relay-ineligible provider:
+      // dropped HERE (cheaply, on pool.type — no resolve per pool) so they
+      // count neither as healthy/stale nor in the all-parked verdict below. A
+      // relay-only setup therefore routes Direct instead of reporting "all
+      // proxy pools parked" off a relay this lane must not use anyway.
+      const pools = RELAY_INELIGIBLE_NOAUTH_PROVIDERS.has(providerId)
+        ? allPools.filter((pool) => !RELAY_POOL_TYPES.has(pool?.type))
+        : allPools;
       const exclude = excludeSet instanceof Set ? excludeSet : new Set();
       // Healthy candidates first; stale-unavailable pools (window lapsed, not
       // yet seen working again) are re-admitted ONLY when no healthy pool

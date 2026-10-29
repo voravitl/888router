@@ -102,7 +102,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, isCombo = false }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, isCombo = false, directFetch = null, directFetchProxy = false }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -196,7 +196,11 @@ export class BaseExecutor {
           method: "POST",
           headers,
           body: bodyStr,
-          signal: mergedSignal
+          signal: mergedSignal,
+          // Protocol adapters that need their own transport (opencode's free-tier
+          // TLS fingerprint) supply it here; proxyAwareFetch uses it on the
+          // direct path and, with directFetchProxy, through HTTP proxies.
+          ...(directFetch ? { directFetch, ...(directFetchProxy ? { directFetchProxy: true } : {}) } : {}),
         }, proxyOptions);
         clearTimeout(connectTimer);
         const ct = response.headers?.get?.("content-type") || "";
