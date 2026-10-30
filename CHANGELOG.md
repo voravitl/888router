@@ -1,3 +1,22 @@
+# v0.15.204 (2026-10-30)
+
+## Combo failover: recover from short rate limits instead of returning 429
+- `isModelLockActive` (`open-sse/services/accountFallback.js`) no longer treats
+  any account error in the last 30 s (`testStatus: "unavailable"` +
+  `lastErrorAt`) as a lock. The computed lock (`modelLock_*`,
+  `rateLimitedUntil`, `unavailableUntil`) is now the single source of truth, so
+  a 2 s rate limit no longer hides a combo member for 30 s (the
+  "reset after 0s" skip verdicts).
+- Combo recovery pass (`open-sse/services/combo.js`): when no member served the
+  request, members whose failure was a short rate limit or a transient 5xx with
+  an explicit recovery instant within `COMBO_RECOVERY_WAIT_MS` and inside the
+  combo total budget (`COMBO_TOTAL_BUDGET_MS`) are waited for and retried once,
+  in recovery order. The wait is client-abortable (returns 499). Permanent
+  model errors and long quota windows are never retried; if the recovery pass
+  also fails, the verdict is unchanged.
+- New env var `COMBO_RECOVERY_WAIT_MS`: default `10000`, capped at `60000`,
+  `0` disables the recovery pass.
+
 # v0.15.203 (2026-10-29)
 
 ## Capabilities: normalize provider alias for dynamic capabilities and /api/models
