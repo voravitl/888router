@@ -174,7 +174,6 @@ export function isModelLockActive(connection, model) {
   if (connection.provider && healthStore.isProviderOpen(connection.provider)) return true;
   if (connection.rateLimitedUntil && new Date(connection.rateLimitedUntil).getTime() > now) return true;
   if (connection.unavailableUntil && new Date(connection.unavailableUntil).getTime() > now) return true;
-  if (connection.testStatus === "unavailable" && connection.lastErrorAt && (now - new Date(connection.lastErrorAt).getTime() < 30000)) return true;
   const key = getModelLockKey(model);
   const expiry = connection[key] || connection[MODEL_LOCK_ALL];
   if (!expiry) return false;

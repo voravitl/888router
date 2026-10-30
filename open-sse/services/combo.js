@@ -906,6 +906,7 @@ export function clearComboHeadTimeoutCooldown(modelStr) {
  * per-account concern resolved during account selection.
  */
 const comboKnownUnavailable = new Map();
+const comboKnownUnavailableReasons = new Map();
 
 /** Epoch ms until which `modelStr` is known unavailable, or 0.
  *  Expired entries are evicted on read so the map stays bounded across combo
@@ -913,7 +914,11 @@ const comboKnownUnavailable = new Map();
 export function getComboKnownUnavailable(modelStr) {
   const until = comboKnownUnavailable.get(modelStr) || 0;
   if (!until) return 0;
-  if (until <= Date.now()) { comboKnownUnavailable.delete(modelStr); return 0; }
+  if (until <= Date.now()) {
+    comboKnownUnavailable.delete(modelStr);
+    comboKnownUnavailableReasons.delete(modelStr);
+    return 0;
+  }
   return until;
 }
 
@@ -922,16 +927,22 @@ export function getComboKnownUnavailable(modelStr) {
  * already-passed instants are ignored so the map can never park a model
  * forever. Exported for tests.
  */
-export function markComboKnownUnavailable(modelStr, untilEpochMs) {
+export function markComboKnownUnavailable(modelStr, untilEpochMs, reason = "transient") {
   const until = Number(untilEpochMs);
   if (!Number.isFinite(until) || until <= Date.now()) return;
   comboKnownUnavailable.set(modelStr, until);
+  comboKnownUnavailableReasons.set(modelStr, reason);
 }
 
 /** Clear one or all known-unavailable entries. Exported for tests. */
 export function clearComboKnownUnavailable(modelStr) {
-  if (modelStr) comboKnownUnavailable.delete(modelStr);
-  else comboKnownUnavailable.clear();
+  if (modelStr) {
+    comboKnownUnavailable.delete(modelStr);
+    comboKnownUnavailableReasons.delete(modelStr);
+  } else {
+    comboKnownUnavailable.clear();
+    comboKnownUnavailableReasons.clear();
+  }
 }
 
 /**
@@ -964,6 +975,42 @@ export function allFailedRetryAfterSeconds(resetHints, processedCount, now = Dat
   return Math.min(Math.max(Math.ceil((earliest - now) / 1000), 1), COMBO_ALL_FAILED_RETRY_AFTER_CAP_S);
 }
 
+const COMBO_RECOVERY_WAIT_DEFAULT_MS = 10_000;
+const COMBO_RECOVERY_WAIT_MAX_MS = 60_000;
+
+/**
+ * Resolve the second-pass recovery wait horizon (default 10s, 0 disables).
+ * Read per-request so tests and live env changes take effect without restart.
+ */
+export function resolveComboRecoveryWaitMs(env = process.env) {
+  const raw = env?.COMBO_RECOVERY_WAIT_MS;
+  if (raw == null || raw === "") return COMBO_RECOVERY_WAIT_DEFAULT_MS;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return COMBO_RECOVERY_WAIT_DEFAULT_MS;
+  return Math.min(Math.round(n), COMBO_RECOVERY_WAIT_MAX_MS);
+}
+
+/**
+ * Sleep until `ms` elapses or `signal` aborts. Resolves to `{ aborted: boolean }`.
+ */
+function waitAbortable(ms, signal) {
+  const delay = Math.max(0, Math.round(ms));
+  if (signal?.aborted) return Promise.resolve({ aborted: true });
+  if (delay === 0) return Promise.resolve({ aborted: false });
+  return new Promise((resolve) => {
+    let timer;
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve({ aborted: true });
+    };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    timer = setTimeout(() => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      resolve({ aborted: Boolean(signal?.aborted) });
+    }, delay);
+  });
+}
+
 function contextCapacityResponse() {
   return new Response(JSON.stringify({ error: {
     type: "invalid_request_error",
@@ -987,7 +1034,7 @@ async function resolveCandidateRefs(models, resolveModelInfo, log) {
   return refs;
 }
 
-export async function handleComboChat({ body, models, handleSingleModel, resolveModelInfo, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null, getComboConnections = null, comboQuotaCtx = null }) {
+export async function handleComboChat({ body, models, handleSingleModel, resolveModelInfo, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, signal = null, getComboConnections = null, comboQuotaCtx = null, _isRecoveryPass = false }) {
   // Approximate token counts guide ordering; only an exact output-budget
   // violation excludes a candidate. The upstream tokenizer remains authoritative.
   const estimatedInputTokens = estimateRequestTokens(body);
@@ -1055,6 +1102,15 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
   // Per processed candidate: when it says it can serve again (see allFailedRetryAfterSeconds).
   let processedCandidates = 0;
   const resetHints = new Map();
+  // Candidates whose failure in THIS request (or pre-skip reason) was transient
+  // and reported a known recovery instant, eligible for one recovery pass.
+  const recoveryCandidates = [];
+  const recordRecoveryCandidate = (index, modelStr, recoveryUntilMs, reason) => {
+    if (_isRecoveryPass) return;
+    if (!Number.isFinite(recoveryUntilMs) || recoveryUntilMs <= 0) return;
+    if (fits.get(modelStr)?.reason === "context_length_exceeded") return;
+    recoveryCandidates.push({ index, modelStr, recoveryUntilMs, reason });
+  };
 
   for (let i = 0; i < rotatedModels.length; i++) {
     if (signal && signal.aborted) {
@@ -1084,6 +1140,10 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
     const lockedUntil = getComboKnownUnavailable(modelStr);
     if (lockedUntil > Date.now()) {
       resetHints.set(i, lockedUntil);
+      const lockReason = comboKnownUnavailableReasons.get(modelStr);
+      if (lockReason === "rate-limit" || lockReason === "transient") {
+        recordRecoveryCandidate(i, modelStr, lockedUntil, "known unavailable");
+      }
       log.info("COMBO", `Skipping model ${i + 1}/${rotatedModels.length}: ${modelStr} (known unavailable until ${new Date(lockedUntil).toISOString()}, ${Math.ceil((lockedUntil - Date.now()) / 1000)}s left)`);
       lastError = lastError ? `${lastError}; ${modelStr} known unavailable` : `${modelStr} known unavailable`;
       continue;
@@ -1656,17 +1716,17 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
         // they share the exhausted account/quota, so the next request must
         // pre-skip all of them, not just the one that surfaced the verdict.
         if (Number.isFinite(lockUntilMs)) {
-          markComboKnownUnavailable(modelStr, lockUntilMs);
+          markComboKnownUnavailable(modelStr, lockUntilMs, "long-quota");
           resetHints.set(i, lockUntilMs);
           for (let j = i + 1; j < (nextIdx > i ? nextIdx : rotatedModels.length); j++) {
             if (providerOf(rotatedModels[j]) === failedProvider) {
-              markComboKnownUnavailable(rotatedModels[j], lockUntilMs);
+              markComboKnownUnavailable(rotatedModels[j], lockUntilMs, "long-quota");
               resetHints.set(j, lockUntilMs);
             }
           }
         } else if (resetMs != null) {
           resetHints.set(i, resetMs);
-          markComboKnownUnavailable(modelStr, resetMs);
+          markComboKnownUnavailable(modelStr, resetMs, "long-quota");
         }
         log.warn("COMBO", `Model ${modelStr} hit a long quota window (retry-after ${Math.round((new Date(retryAfter).getTime() - Date.now()) / 60000)}m); skipping remaining ${failedProvider} models`);
         candidateAbortCtrl.abort();
@@ -1692,9 +1752,16 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
         const lockMs = retryAfter
           ? new Date(retryAfter).getTime()
           : (cooldownMs && cooldownMs > 0 ? new Date(getUnavailableUntil(cooldownMs)).getTime() : NaN);
-        if (Number.isFinite(lockMs)) markComboKnownUnavailable(modelStr, lockMs);
+        if (Number.isFinite(lockMs)) markComboKnownUnavailable(modelStr, lockMs, "rate-limit");
         if (!retryAfter && cooldownMs && cooldownMs > 0) {
           earliestRetryAfter = getUnavailableUntil(cooldownMs);
+        }
+        // Short rate limit: record for second-pass recovery only when the
+        // response carried an explicit recovery instant (retryAfter or
+        // Retry-After header), never on the 60s classifier fallback.
+        const explicitRecoveryMs = retryAfter ? new Date(retryAfter).getTime() : (resetMs ?? NaN);
+        if (Number.isFinite(explicitRecoveryMs)) {
+          recordRecoveryCandidate(i, modelStr, explicitRecoveryMs, `rate-limit ${result.status}`);
         }
       }
 
@@ -1711,13 +1778,25 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
           // re-discovering the same dead model (see
           // resolveModelErrorCooldownMs for the recovery story).
           const parkTtlMs = resolveModelErrorCooldownMs();
-          markComboKnownUnavailable(modelStr, Date.now() + parkTtlMs);
+          markComboKnownUnavailable(modelStr, Date.now() + parkTtlMs, "permanent");
           log.warn("COMBO", `Model ${modelStr} permanent model-error, skipping to next model (parked ${Math.round(parkTtlMs / 60_000)}m)`, { status: result.status });
         } else {
           // Request-scoped (context length, 413, transient overload): this
           // request cannot use the model, but a shorter/later request can —
           // skip within this request, do NOT park for later ones.
           log.warn("COMBO", `Model ${modelStr} request-scoped model-error, skipping to next model (not parked)`, { status: result.status });
+        }
+      } else if (!quotaLimited && result.status >= 500 && shouldFallback) {
+        // Transient 5xx/timeout with a known recovery instant (body retryAfter,
+        // or Retry-After header when not an AUTH "reset after Ns" / parked pool verdict).
+        const isAuthParkVerdict = /reset after \d+|parked/i.test(errorText || "");
+        const transientRecoveryMs = retryAfter
+          ? new Date(retryAfter).getTime()
+          : (!isAuthParkVerdict ? (resetMs ?? NaN) : NaN);
+        if (Number.isFinite(transientRecoveryMs)) {
+          recordRecoveryCandidate(i, modelStr, transientRecoveryMs, `transient ${result.status}`);
+        } else if (isAuthParkVerdict) {
+          comboKnownUnavailableReasons.set(modelStr, "auth-park");
         }
       }
 
@@ -1755,6 +1834,65 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       clearComboInflight(modelStr);
       if (!isCandidateSelected) {
         removeClientAbortListener();
+      }
+    }
+  }
+
+  // Second-pass recovery: if NO candidate served the request on the first pass,
+  // pick candidates whose failure (or pre-skip reason) was transient and whose
+  // known recovery instant is within COMBO_RECOVERY_WAIT_MS and inside
+  // COMBO_TOTAL_BUDGET_MS. Wait until the earliest recovery (abortable -> 499),
+  // clear that candidate's known-unavailable entry, and retry once in recovery order.
+  if (!_isRecoveryPass && recoveryCandidates.length > 0) {
+    const recoveryWaitBudgetMs = resolveComboRecoveryWaitMs();
+    if (recoveryWaitBudgetMs > 0) {
+      const nowBeforeWait = Date.now();
+      const budgetDeadlineMs = comboStartMs + COMBO_TOTAL_BUDGET_MS;
+      const eligibleRecovery = recoveryCandidates
+        .filter((c) => (c.recoveryUntilMs - nowBeforeWait) <= recoveryWaitBudgetMs && c.recoveryUntilMs < budgetDeadlineMs)
+        .sort((a, b) => a.recoveryUntilMs - b.recoveryUntilMs || a.index - b.index);
+
+      if (eligibleRecovery.length > 0) {
+        for (const cand of eligibleRecovery) {
+          if (signal?.aborted) {
+            return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+              status: 499,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+          const waitMs = Math.max(0, Math.ceil(cand.recoveryUntilMs - Date.now()));
+          log.info("COMBO", `[COMBO] Recovery pass: waiting ${waitMs}ms for ${cand.modelStr} (${cand.reason})`);
+          if (waitMs > 0) {
+            const { aborted } = await waitAbortable(waitMs, signal);
+            if (aborted || signal?.aborted) {
+              log.warn("COMBO", `Client aborted request during recovery wait (${comboName || ""})`);
+              return new Response(JSON.stringify({ error: { message: "Request aborted by client" } }), {
+                status: 499,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+          }
+          clearComboKnownUnavailable(cand.modelStr);
+          clearComboHeadTimeoutCooldown(cand.modelStr);
+          const secondPassRes = await handleComboChat({
+            body,
+            models: [cand.modelStr],
+            handleSingleModel,
+            resolveModelInfo,
+            log,
+            comboName,
+            comboStrategy: "fallback",
+            comboStickyLimit: 1,
+            autoSwitch: false,
+            signal,
+            getComboConnections,
+            comboQuotaCtx: headroomCtx,
+            _isRecoveryPass: true,
+          });
+          if (secondPassRes.status === 499 || secondPassRes.ok) {
+            return secondPassRes;
+          }
+        }
       }
     }
   }
