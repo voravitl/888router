@@ -1,3 +1,8 @@
+# v0.15.207 (2026-11-02)
+
+## Remove unused Headroom service from Docker Compose
+- Remove `headroom` service and its dependency from `docker-compose.yml`. Headroom consumed ~1GB RAM and 1.5 CPU while `headroomEnabled: false` was set in router settings. Removing the service frees host memory and cleans up dead weight without affecting 888router gateway routing or fail-open behavior.
+
 # v0.15.206 (2026-11-02)
 
 ## Fix comboStreamGuard false empty stream verdict on Claude SSE tool calls and Gemini candidate wrapper

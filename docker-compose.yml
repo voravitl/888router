@@ -32,7 +32,7 @@ services:
       # curl on the host still works.
       - "dev.orbstack.http-port=20128"
       # Watchtower re-pulls this container when the published image changes.
-      # Only 888route opts in — headroom/searxng stay pinned to avoid
+      # Only 888route opts in — searxng stays pinned to avoid
       # third-party breaking changes dropping in unannounced.
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
@@ -51,10 +51,8 @@ services:
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
       RTK_HARD_CAP_BYTES: "65536"
-      HEADROOM_URL: http://headroom:8787
       SEARXNG_BASE_URL: http://searxng:8080/search
     depends_on:
-      - headroom
       - searxng
     logging:
       driver: "json-file"
@@ -63,56 +61,6 @@ services:
         max-file: "3"
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:20128/api/version').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 20s
-
-  headroom:
-    image: ghcr.io/headroomlabs-ai/headroom:latest
-    container_name: headroom
-    restart: "no"
-    # Loopback-only on the host: headroom now listens on 0.0.0.0 inside the
-    # container (HEADROOM_HOST below) and /v1/compress is unauthenticated, so a
-    # bare "8787:8787" would put it on the LAN. The gateway reaches it over the
-    # compose network (http://headroom:8787), not through this mapping.
-    ports:
-      - "127.0.0.1:8787:8787"
-    deploy:
-      resources:
-        limits:
-          cpus: "1.5"
-          memory: 1024M
-    environment:
-      OMP_NUM_THREADS: "2"
-      OPENBLAS_NUM_THREADS: "2"
-      MKL_NUM_THREADS: "2"
-      VECLIB_MAXIMUM_THREADS: "2"
-      NUMEXPR_NUM_THREADS: "2"
-      # v0.39.1 binds 127.0.0.1 by default, so the gateway container got
-      # ECONNREFUSED on http://headroom:8787 while the in-container healthcheck
-      # (127.0.0.1) stayed green: compression was silently skipped on every
-      # request ("[HEADROOM] skipped: request failed: ECONNREFUSED", #515).
-      # Same four settings the k8s manifest carries (k8s/base/headroom.yaml).
-      HEADROOM_HOST: "0.0.0.0"
-      # v0.39.1 also restricts /v1/compress to loopback peers (peer IP + Host
-      # header). The gateway calls it from another container, so without this
-      # every compress is refused and the toggle silently no-ops.
-      HEADROOM_COMPRESS_ALLOW_REMOTE: "1"
-      # Default pool size is os.cpu_count() = the host's cores, not the 1.5 CPU
-      # limit above; bound it, and bound how long one compression may hold a
-      # request (the gateway abandons /v1/compress after HEADROOM_TIMEOUT_MS).
-      HEADROOM_COMPRESSION_MAX_WORKERS: "2"
-      HEADROOM_COMPRESSION_TIMEOUT_SECONDS: "3"
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    # Image default checks /readyz (includes upstream) with a 5s timeout — flaps
-    # unhealthy when Anthropic is slow. Liveness is enough for "is the proxy up".
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8787/livez"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -153,7 +101,7 @@ services:
 
   # Auto-updater: re-pulls and recreates containers carrying the
   # com.centurylinklabs.watchtower.enable=true label AND matching the name
-  # filter (the 888route service above). Everything else — headroom, searxng —
+  # filter (the 888route service above). Everything else — searxng —
   # is deliberately left out. A name filter plus the label is belt-and-braces:
   # the label is how we opt in, the name is how we scope to exactly one
   # container on a host that may run other compose projects.
