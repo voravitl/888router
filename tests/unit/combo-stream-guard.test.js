@@ -231,6 +231,29 @@ describe("comboStreamGuard whole-completion frames (non-stream over SSE)", () =>
     expect(g.isEmpty()).toBe(false);
   });
 
+  it("treats Anthropic SSE streamed tool_use as usable without text", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc("event: content_block_start\n"));
+    g.feed(enc('data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"read_file","input":{}}}\n\n'));
+    g.feed(enc("event: content_block_stop\n"));
+    g.feed(enc('data: {"type":"content_block_stop","index":0}\n\n'));
+    g.feed(enc("event: message_delta\n"));
+    g.feed(enc('data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":10}}\n\n'));
+    g.feed(enc("event: message_stop\n"));
+    g.feed(enc('data: {"type":"message_stop"}\n\n'));
+    g.feedEnd();
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("treats Gemini candidate functionCall part as usable", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc('data: {"candidates":[{"content":{"parts":[{"functionCall":{"name":"bash","args":{}}}]},"finishReason":"STOP"}]}\n\n'));
+    g.feedEnd();
+    expect(g.hasDecision()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+
   it("still reports a genuinely empty frame as empty", () => {
     // oc/muse-spark-1.3-contributor-free at a low max_tokens: delta {} and
     // finish_reason stop, no text, no reasoning, no tool calls.

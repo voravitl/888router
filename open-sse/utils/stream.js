@@ -345,9 +345,10 @@ export function createSSEStream(options = {}) {
       }
     }
 
-    // Gemini format
-    if (parsed.candidates?.[0]?.content?.parts) {
-      for (const part of parsed.candidates[0].content.parts) {
+    // Gemini format (handles both bare candidates and Antigravity response.candidates wrapper)
+    const geminiCandidates = parsed.candidates || parsed.response?.candidates;
+    if (geminiCandidates?.[0]?.content?.parts) {
+      for (const part of geminiCandidates[0].content.parts) {
         if (part.text && typeof part.text === "string") {
           totalContentLength += part.text.length;
           // Check if this is thinking content
