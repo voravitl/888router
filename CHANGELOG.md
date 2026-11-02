@@ -1,3 +1,10 @@
+# v0.15.206 (2026-11-02)
+
+## Fix comboStreamGuard false empty stream verdict on Claude SSE tool calls and Gemini candidate wrapper
+- Fix `open-sse/services/comboStreamGuard.js` to recognize Anthropic SSE streaming tool calls (`content_block_start` with `type: "tool_use"`, `content_block.type === "tool_use"`, `message_delta` with `stop_reason: "tool_use"`, and terminal `finishReason === "tool_use"` or `"tool_calls"`). Previously, tool-call-only turns without text content in Claude SSE format were judged as "zero text content", causing the combo runner to drop the response, park the healthy model in a 30s timeout cooldown, and return "empty stream content" to Claude Code.
+- Fix `open-sse/utils/stream.js` to parse both bare `parsed.candidates` and Antigravity's `parsed.response.candidates` wrapper, ensuring streaming text, thinking, and function calls from Antigravity are properly tracked and not recorded as empty responses in request details.
+- Add regression tests in `tests/unit/combo-stream-guard.test.js` and `tests/unit/stream-tool-accumulator.test.js`.
+
 # v0.15.205 (2026-11-02)
 
 ## Fix Antigravity Gemini quota tracking and Argon pool isolation

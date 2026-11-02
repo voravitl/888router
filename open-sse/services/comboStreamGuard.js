@@ -32,11 +32,13 @@ export { messageContentText, messageReasoningText, messageRefusalText };
 /** A non-empty tool-call list on a delta or a whole-completion message. */
 export function hasToolCalls(node) {
   if (!node) return false;
+  if (node.type === "tool_use" || node.type === "server_tool_use") return true;
+  if (node.content_block?.type === "tool_use" || node.content_block?.type === "server_tool_use") return true;
   const calls = node.tool_calls ?? node.toolCalls;
   if (Array.isArray(calls) && calls.length > 0) return true;
   if (node.function_call || node.functionCall) return true;
   return Array.isArray(node.content)
-    && node.content.some((p) => p && p.type === "tool_use");
+    && node.content.some((p) => p && (p.type === "tool_use" || p.type === "server_tool_use"));
 }
 
 /**
@@ -166,10 +168,43 @@ export function createComboStreamGuard() {
           || messageRefusalText(choice && choice.message);
         if (refusalVal.length > 0) sawText = true;
 
+        // Anthropic SSE tool use:
+        // 1. content_block_start event with content_block.type === "tool_use"
+        // 2. message_delta event with delta.stop_reason === "tool_use"
+        // 3. content_block.type === "tool_use"
+        if (
+          json.content_block?.type === "tool_use" ||
+          json.content_block?.type === "server_tool_use" ||
+          json.delta?.stop_reason === "tool_use" ||
+          json.stop_reason === "tool_use"
+        ) {
+          sawText = true;
+        }
+
+        // Gemini candidate format: candidates[0].content.parts (handles both bare and response wrapper)
+        const geminiCandidate = (json.candidates && json.candidates[0]) || (json.response?.candidates && json.response.candidates[0]);
+        if (geminiCandidate) {
+          if (geminiCandidate.finishReason) {
+            finishReason = String(geminiCandidate.finishReason);
+            sawTerminal = true;
+          }
+          if (geminiCandidate.content?.parts) {
+            for (const part of geminiCandidate.content.parts) {
+              if (part.text && typeof part.text === "string") {
+                if (part.thought === true) sawReasoning = true;
+                else sawText = true;
+              }
+              if (part.functionCall) sawText = true;
+            }
+          }
+        }
+
         // A tool-call-only turn carries no text but IS a usable answer — never
         // treat it as an empty stream. Covers both the streamed (delta) and
         // whole-completion (message) shapes.
-        if (hasToolCalls(delta) || hasToolCalls(choice && choice.message)) sawText = true;
+        if (hasToolCalls(json) || hasToolCalls(json.content_block) || hasToolCalls(delta) || hasToolCalls(choice && choice.message)) {
+          sawText = true;
+        }
 
         // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE)
         // or Anthropic delta.thinking (Claude 3.7/Kiro thinking delta)
@@ -179,10 +214,13 @@ export function createComboStreamGuard() {
           || anthropicReasoning;
         if (typeof reasoningVal === "string" && reasoningVal.length > 0) sawReasoning = true;
 
-        const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || (json.delta && json.delta.stop_reason) || null;
+        const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || (json.delta && json.delta.stop_reason) || (geminiCandidate && geminiCandidate.finishReason) || null;
         if (fr) {
           finishReason = typeof fr === "string" ? fr : String(fr);
           sawTerminal = true;
+          if (finishReason === "tool_use" || finishReason === "tool_calls") {
+            sawText = true;
+          }
         }
       } catch { /* incomplete / non-JSON line — not meaningful for the guard */ }
       }

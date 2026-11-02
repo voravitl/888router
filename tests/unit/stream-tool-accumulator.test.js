@@ -121,4 +121,17 @@ describe("accumulatedToolCalls in createSSETransformStreamWithLogger", () => {
     expect(captured.toolCalls[0].name).toBe("f0");
     expect(captured.toolCalls[63].name).toBe("f63");
   });
+
+  it("Antigravity: extracts text, thinking, and functionCall from response.candidates wrapper", async () => {
+    const captured = await runStream([
+      "data: " + JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "thinking step...", thought: true }] } }] } }),
+      "data: " + JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "I will execute the tool." }] } }] } }),
+      "data: " + JSON.stringify({ response: { candidates: [{ content: { parts: [{ functionCall: { name: "execute_cmd", args: { cmd: "ls" } } }] } }] } }),
+      "data: [DONE]",
+    ], { target: "antigravity", source: "openai", model: "gemini-3.8-flash-high" });
+    expect(captured.thinking).toBe("thinking step...");
+    expect(captured.content).toBe("I will execute the tool.");
+    expect(captured.toolCalls).toHaveLength(1);
+    expect(captured.toolCalls[0].name).toBe("execute_cmd");
+  });
 });
