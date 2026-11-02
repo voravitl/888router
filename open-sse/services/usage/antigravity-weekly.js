@@ -26,8 +26,11 @@ export function _clearWeeklyCache() {
 }
 
 // — Group-name to stable key mapping ——————————————————————
+// Note: Argon has its own independent weekly quota (gemini-argon-wtu-weekly) and must
+// be matched separately so it does not overwrite the general Gemini weekly quota.
 const GROUP_MATCHERS = [
-  { pattern: /gemini/i, key: "gemini_weekly", displayName: "Gemini (Weekly)", family: "gemini" },
+  { pattern: /argon/i, key: "gemini_argon_weekly", displayName: "Gemini 4 Argon (Weekly)", family: "gemini_argon" },
+  { pattern: /(?=.*gemini)(?!.*argon)/i, key: "gemini_weekly", displayName: "Gemini (Weekly)", family: "gemini" },
   { pattern: /claude|gpt/i, key: "claude_gpt_weekly", displayName: "Claude & GPT (Weekly)", family: "claude" },
 ];
 
