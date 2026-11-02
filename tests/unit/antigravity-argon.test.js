@@ -141,7 +141,7 @@ describe("Gemini 4 Argon Antigravity tier", () => {
 describe("Antigravity quota: Gemini 4 Argon (High)", () => {
   beforeEach(() => proxyAwareFetch.mockClear());
 
-  it("parses the argon quota bar and rolls it into the Gemini family pool", async () => {
+  it("parses the argon quota bar independently from the Gemini family pool", async () => {
     const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
 
     const usage = await getAntigravityUsage("access-token", {});
@@ -152,9 +152,9 @@ describe("Antigravity quota: Gemini 4 Argon (High)", () => {
       remainingPercentage: 25,
       displayName: "Gemini 4 Argon (High)",
     });
-    // Family rollup = tightest member — argon (25%) is the floor, so the
-    // pooled row must reflect argon, not the healthier 3.8 Flash member.
-    expect(usage.quotas["Gemini (all models)"]).toMatchObject({ remainingPercentage: 25 });
+    // Argon has its own independent pool (gemini-argon-wtu-weekly) and does not
+    // poison the Gemini family pool. Gemini (all models) reflects the 3.8 Flash member.
+    expect(usage.quotas["Gemini (all models)"]).toMatchObject({ remainingPercentage: 80 });
     expect(usage.quotas["Claude (all models)"]).toMatchObject({ remainingPercentage: 90 });
   });
 });

@@ -1,3 +1,21 @@
+# v0.15.205 (2026-11-02)
+
+## Fix Antigravity Gemini quota tracking and Argon pool isolation
+- Fix `GROUP_MATCHERS` in `open-sse/services/usage/antigravity-weekly.js` to match
+  `Gemini 4 Argon` independently as `gemini_argon_weekly` and prevent `/gemini/i`
+  from erroneously matching Argon and overwriting `gemini_weekly` with Argon's 0%
+  quota.
+- Fix family rollup in `open-sse/services/usage/google.js` to isolate `gemini-4-argon-*`
+  from `familyFractions["gemini"]`. Argon operates on its own weekly token limit
+  (`gemini-argon-wtu-weekly`) and does not share the 5h pool with Gemini 3.8/2.5
+  models. This prevents exhausted Argon quota from zeroing out `Gemini (all models)`
+  and all standard Gemini models.
+- Handle `argonModels` weekly quota overlay separately in `open-sse/services/usage/google.js`,
+  ensuring standard Gemini models are governed strictly by `gemini_weekly`.
+- Improve connection snapshot quota selection in `src/app/api/usage/[connectionId]/route.js`
+  to select the highest available family rollup for multi-family providers like Antigravity,
+  preventing connections from being falsely tagged as 0% due to an exhausted Claude model.
+
 # v0.15.204 (2026-10-30)
 
 ## Combo failover: recover from short rate limits instead of returning 429

@@ -179,8 +179,23 @@ export async function GET(request, { params }) {
 
     // Best-effort quota snapshot persistence — must never affect the response returned to the client.
     try {
-      const quotaKey = QUOTA_AUTOPING_CONFIG.providers[connection.provider]?.quotaKey
-        || Object.keys(usage?.quotas || {})[0];
+      let quotaKey = QUOTA_AUTOPING_CONFIG.providers[connection.provider]?.quotaKey;
+      if (!quotaKey || !usage?.quotas?.[quotaKey]) {
+        // Multi-family provider fallback: prefer family rollup with best remaining capacity
+        const candidates = ["Gemini (all models)", "Claude (all models)"];
+        let bestKey = null;
+        let bestPct = -1;
+        for (const k of candidates) {
+          if (usage?.quotas?.[k]) {
+            const pct = computeQuotaRemainingPct(usage, k) ?? -1;
+            if (pct > bestPct) {
+              bestPct = pct;
+              bestKey = k;
+            }
+          }
+        }
+        quotaKey = bestKey || Object.keys(usage?.quotas || {})[0];
+      }
       const quotaRemainingPct = quotaKey ? computeQuotaRemainingPct(usage, quotaKey) : null;
       if (quotaRemainingPct !== null) {
         await updateProviderConnection(connection.id, {

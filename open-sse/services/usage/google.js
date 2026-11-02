@@ -272,9 +272,11 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
             ? null
             : lowerKey.startsWith("claude")
               ? "claude"
-              : lowerKey.startsWith("gemini") || lowerKey.startsWith("gemini-pro-agent")
-                ? "gemini"
-                : null;
+              : lowerKey.includes("argon")
+                ? null
+                : lowerKey.startsWith("gemini") || lowerKey.startsWith("gemini-pro-agent")
+                  ? "gemini"
+                  : null;
         if (family) {
           familyFractions[family].push(remainingFraction);
           const resetAt = parseResetTime(info.quotaInfo.resetTime);
@@ -316,8 +318,10 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
 
       // If every per-model quota in a family is exhausted, do not show a
       // misleading available weekly quota for that family.
+      // Note: Argon has its own weekly limit group and is handled separately from the pooled Gemini models.
       const entries = Object.entries(quotas);
-      const geminiModels = entries.filter(([key]) => key.startsWith("gemini-") && !key.includes("image"));
+      const geminiModels = entries.filter(([key]) => key.startsWith("gemini-") && !key.includes("image") && !key.includes("argon"));
+      const argonModels = entries.filter(([key]) => key.includes("argon"));
       const claudeModels = entries.filter(([key]) => key.startsWith("claude-"));
 
       if (weeklyQuotas.gemini_weekly && geminiModels.length > 0) {
@@ -343,6 +347,26 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
             quota.remainingPercentage = 0;
             if (weeklyQuotas.gemini_weekly.resetAt) {
               quota.resetAt = weeklyQuotas.gemini_weekly.resetAt;
+            }
+          }
+        }
+      }
+
+      if (weeklyQuotas.gemini_argon_weekly && argonModels.length > 0) {
+        const allArgonExhausted = argonModels.every(([, quota]) => (quota.remainingPercentage ?? 0) === 0);
+        if (allArgonExhausted && weeklyQuotas.gemini_argon_weekly.remainingPercentage > 0) {
+          const maxResetAt = argonModels.reduce((max, [, quota]) =>
+            !max || (quota.resetAt && new Date(quota.resetAt) > new Date(max)) ? quota.resetAt : max, null
+          );
+          weeklyQuotas.gemini_argon_weekly.used = weeklyQuotas.gemini_argon_weekly.total;
+          weeklyQuotas.gemini_argon_weekly.remainingPercentage = 0;
+          if (maxResetAt) weeklyQuotas.gemini_argon_weekly.resetAt = maxResetAt;
+        } else if (weeklyQuotas.gemini_argon_weekly?.remainingPercentage === 0) {
+          for (const [, quota] of argonModels) {
+            quota.used = quota.total;
+            quota.remainingPercentage = 0;
+            if (weeklyQuotas.gemini_argon_weekly.resetAt) {
+              quota.resetAt = weeklyQuotas.gemini_argon_weekly.resetAt;
             }
           }
         }
