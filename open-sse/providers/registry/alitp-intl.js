@@ -32,4 +32,12 @@ export default {
     { id: "glm-5.2", name: "GLM 5.2" },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
   ],
+  features: {
+    // Usage is served by the Model Studio console personal panel via a
+    // console session cookie (providerSpecificData.consoleCookie), not by the
+    // sk-sp-* API key — see services/usage/alibabaTokenPlan.js. usageApikey
+    // only gates the dashboard usage page for apikey connections.
+    usage: true,
+    usageApikey: true,
+  },
 };

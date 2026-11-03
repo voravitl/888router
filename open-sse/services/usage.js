@@ -6,6 +6,7 @@ import { getGitHubUsage } from "./usage/github.js";
 import { getGeminiUsage, getAntigravityUsage } from "./usage/google.js";
 import { getClaudeUsage } from "./usage/claude.js";
 import { getCodexUsage, consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "./usage/codex.js";
+import { getAlibabaTokenPlanUsage } from "./usage/alibabaTokenPlan.js";
 
 export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits };
 import { getKiroUsage } from "./usage/kiro.js";
@@ -56,6 +57,8 @@ const USAGE_HANDLERS = {
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
   "opencode-go": (c) => getOpenCodeGoUsage(c.apiKey, c.proxyOptions),
+  // Alibaba Token Plan Personal — cookie lives in providerSpecificData.consoleCookie
+  "alitp-intl": (c) => getAlibabaTokenPlanUsage(c.providerSpecificData, c.proxyOptions),
   aipass: (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   "aipass-th": (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   "aipass-bridge": (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),

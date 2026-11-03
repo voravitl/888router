@@ -29,6 +29,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [cloudflareData, setCloudflareData] = useState({
     accountId: connection?.providerSpecificData?.accountId || "",
   });
+  const [consoleCookie, setConsoleCookie] = useState("");
+  const [clearConsoleCookie, setClearConsoleCookie] = useState(false);
   const [region, setRegion] = useState(() => {
     const providerCfg = AI_PROVIDERS?.[connection?.provider];
     return connection?.providerSpecificData?.region || providerCfg?.defaultRegion || providerCfg?.regions?.[0]?.id || "";
@@ -59,6 +61,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     if (connection?.provider === "cloudflare-ai" && connection?.providerSpecificData) {
       setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
     }
+    setConsoleCookie("");
+    setClearConsoleCookie(false);
     const providerCfg = AI_PROVIDERS?.[connection?.provider];
     if (providerCfg?.regions) {
       const savedRegion = connection?.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg?.regions[0]?.id || "";
@@ -73,6 +77,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isAlibabaTokenPlan = connection?.provider === "alitp-intl";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -179,6 +184,22 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
       }
+      // Persist the Token Plan console cookie: a value typed here replaces the
+      // stored one, the Clear checkbox removes it, and an untouched field
+      // leaves the stored cookie alone (server merges providerSpecificData).
+      if (isAlibabaTokenPlan) {
+        if (clearConsoleCookie) {
+          updates.providerSpecificData = {
+            ...(updates.providerSpecificData || connection?.providerSpecificData || {}),
+            consoleCookie: "",
+          };
+        } else if (consoleCookie.trim()) {
+          updates.providerSpecificData = {
+            ...(updates.providerSpecificData || connection?.providerSpecificData || {}),
+            consoleCookie: consoleCookie.trim(),
+          };
+        }
+      }
       // Persist updated region for region-aware providers
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
@@ -273,6 +294,30 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 hint="Required for billing"
               />
             </div>
+          </div>
+        )}
+
+        {isAlibabaTokenPlan && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Console Cookie (quota)</h3>
+            <Input
+              label="Model Studio console Cookie"
+              type="password"
+              value={consoleCookie}
+              onChange={(e) => { setConsoleCookie(e.target.value); if (e.target.value) setClearConsoleCookie(false); }}
+              placeholder={connection?.hasConsoleCookie ? "Cookie saved — leave blank to keep" : "Paste the Cookie header…"}
+              hint="Model Studio → Token Plan → My Subscriptions (Singapore). Used only to read Credits usage on the server; never stored in the browser."
+            />
+            {connection?.hasConsoleCookie && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-text-muted select-none">
+                <input
+                  type="checkbox"
+                  checked={clearConsoleCookie}
+                  onChange={(e) => setClearConsoleCookie(e.target.checked)}
+                />
+                Clear saved cookie on save
+              </label>
+            )}
           </div>
         )}
 

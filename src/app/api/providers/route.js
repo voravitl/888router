@@ -10,6 +10,7 @@ import { getClientCount } from "open-sse/services/aipassBridge.js";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import { stripSensitiveProviderSpecificData } from "@/lib/connectionSanitize";
 
 export const dynamic = "force-dynamic";
 
@@ -67,14 +68,14 @@ export async function GET() {
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
-      return {
+      return stripSensitiveProviderSpecificData({
         ...c,
         name,
         apiKey: undefined,
         accessToken: undefined,
         refreshToken: undefined,
         idToken: undefined,
-      };
+      });
     });
 
     // Inject virtual aipass connection so it appears in Dashboard Providers UI.
@@ -210,7 +211,7 @@ export async function POST(request) {
     });
 
     // Hide sensitive fields
-    const result = { ...newConnection };
+    const result = stripSensitiveProviderSpecificData({ ...newConnection });
     delete result.apiKey;
 
     return NextResponse.json({ connection: result }, { status: 201 });

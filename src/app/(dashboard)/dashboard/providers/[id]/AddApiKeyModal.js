@@ -19,6 +19,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isAlibabaTokenPlan = provider === "alitp-intl";
   const providerCfg = AI_PROVIDERS?.[provider] || null;
   const providerRegions = providerCfg?.regions || null;
   const isKeyless = authType === "none" || providerCfg?.authType === "none";
@@ -44,6 +45,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [consoleCookie, setConsoleCookie] = useState("");
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -66,6 +68,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isAlibabaTokenPlan && consoleCookie.trim()) {
+      return { consoleCookie: consoleCookie.trim() };
     }
     if (providerRegions && region) {
       return { region };
@@ -300,6 +305,21 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             />
             <p className="text-xs text-text-muted mt-2">
               Find your Account ID in the right sidebar of <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">dash.cloudflare.com</a>
+            </p>
+          </div>
+        )}
+        {isAlibabaTokenPlan && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Console Cookie (quota, optional)</h3>
+            <Input
+              label="Model Studio console Cookie"
+              type="password"
+              value={consoleCookie}
+              onChange={(e) => setConsoleCookie(e.target.value)}
+              placeholder="Paste the Cookie header…"
+            />
+            <p className="text-xs text-text-muted mt-2">
+              Model Studio → Token Plan → My Subscriptions (Singapore) → DevTools Network → any request → copy the Cookie header. Used only to read Credits usage; the chat API key stays separate.
             </p>
           </div>
         )}
