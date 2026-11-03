@@ -30,7 +30,15 @@
   API ever returns them again.
 - Without a cookie the card shows setup instructions instead of a fabricated
   remaining row; a rejected cookie surfaces a "paste a fresh cookie" message,
-  never a silent 100%.
+  never a silent 100%. When the console reports a usage ratio but no plan tier
+  and no `quota-config` ceiling, the card shows "quota total is unknown" instead
+  of a `0 / 0` row (the card divides by the total, so a zero total rendered as
+  `NaN%`).
+- `/api/providers/client` (the list behind the quota page and its edit dialog)
+  now reports `hasConsoleCookie`, so a stored cookie shows as "Cookie saved"
+  and can be cleared; whitespace-only is treated as not stored, matching the
+  handler. `src/lib/connectionSanitize.js` strips the value on both provider
+  routes.
 - **Not verified against a logged-in account.** Evidence is the gateway
   contract (unauthenticated probe answers `BailianGateway.Login.NotLogined`),
   the console's own request shape, and offline fixtures; the envelope walker is
@@ -40,11 +48,13 @@
   table, mirroring the ollama/deepseek handling. Eligibility for the quota page
   (`USAGE_SUPPORTED_PROVIDERS` + `USAGE_APIKEY_PROVIDERS`) flows from the
   registry `features.usage` / `features.usageApikey` flags — no list edits.
-- Tests in `tests/unit/alibaba-token-plan-usage.test.js` (15 cases: envelope
-  expansion, ratio handling incl. `8.69e-7`, tier fallback to documented
-  quotas, sec_token resolution order, NotLogined + 200-HTML-login
-  classification, retry-once on an empty 200, legacy window parsing,
-  `parseQuotaData` wiring).
+- Tests: `tests/unit/alibaba-token-plan-usage.test.js` (envelope expansion,
+  ratio handling incl. `8.69e-7`, tier fallback to documented quotas, unknown
+  tier → message rather than a zero-total row, sec_token resolution order,
+  NotLogined + 200-HTML-login classification, retry-once on an empty 200, legacy
+  window parsing, `parseQuotaData` wiring) and
+  `tests/unit/connection-sanitize.test.js` (cookie stripped, `hasConsoleCookie`
+  set, other fields kept).
 
 # v0.15.221 (2026-11-03)
 

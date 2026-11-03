@@ -198,9 +198,39 @@ describe("getAlibabaTokenPlanUsage", () => {
       throw new Error(`unmocked url: ${u}`);
     });
     const result = await getAlibabaTokenPlanUsage(psd("cna=x"), null);
-    expect(result.quotas.Monthly).toBeDefined();
-    expect(result.quotas.Monthly.total).toBe(0); // tier unknown
-    expect(result.quotas.Monthly.remainingPercentage).toBe(90);
+    const usageCalls = mockFetch.mock.calls.filter(([url]) =>
+      decodedUrl(url).includes("tokenplan/personal/api/v2/usage"),
+    );
+    expect(usageCalls).toHaveLength(1);
+    // No tier and no quota-config total → no readable row at all (a total-0
+    // row used to render as NaN% on the card).
+    expect(result.quotas).toBeUndefined();
+    expect(result.message).toMatch(/plan tier/i);
+  });
+
+  it("skips the row when the console reports neither the tier nor a total", async () => {
+    mockConsole({
+      userInfo: userInfoOk,
+      subscription: { specCode: "mega-unknown" },
+      quotaConfig: { monthly: 99000 }, // not keyed by tier → no total for "mega-unknown"
+      usage: { per1MonthPercentage: 0.5, per1MonthResetTime: 1791043200000 },
+    });
+    const result = await getAlibabaTokenPlanUsage(psd(), null);
+    expect(result.quotas).toBeUndefined();
+    expect(result.message).toMatch(/plan tier/i);
+  });
+
+  it("keeps the row when quota-config supplies a total for an unknown tier", async () => {
+    mockConsole({
+      userInfo: userInfoOk,
+      subscription: { specCode: "mega-unknown" },
+      quotaConfig: { "mega-unknown": { monthly: 99000 } },
+      usage: { per1MonthPercentage: 0.5, per1MonthResetTime: 1791043200000 },
+    });
+    const result = await getAlibabaTokenPlanUsage(psd(), null);
+    expect(result.quotas.Monthly.total).toBe(99000);
+    expect(result.quotas.Monthly.used).toBe(49500);
+    expect(result.quotas.Monthly.remainingPercentage).toBe(50);
   });
 
   it("surfaces the login page when the console answers NotLogined (expired cookie)", async () => {

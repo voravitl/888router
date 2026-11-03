@@ -358,7 +358,11 @@ function buildWindowRows(usageNode, quotaNode, tier) {
       : quotaKey === "monthly"
         ? MONTHLY_QUOTA_BY_TIER[tier] ?? 0
         : 0;
-    const used = total > 0 ? Math.round(total * ratio) : 0;
+    // A row with no known total is not a quota reading: the card treats
+    // total 0 as "unlimited" and divides by it (NaN%), so skip it and let the
+    // caller report the unresolved tier instead.
+    if (!(total > 0)) continue;
+    const used = Math.round(total * ratio);
     quotas[label] = {
       name: label,
       used,
@@ -443,7 +447,12 @@ export async function getAlibabaTokenPlanUsage(providerSpecificData, proxyOption
   }
   const quotas = buildWindowRows(usageNode, quotaConfigNode, tier);
   if (Object.keys(quotas).length === 0) {
-    return { message: "Alibaba Token Plan quota data unavailable (unexpected response shape)." };
+    const sawRatio = WINDOW_DEFS.some(({ key }) => ratioOf(usageNode?.[key]) !== null);
+    return {
+      message: sawRatio
+        ? "Alibaba Token Plan quota total is unknown: the console did not report the plan tier or a quota ceiling."
+        : "Alibaba Token Plan quota data unavailable (unexpected response shape).",
+    };
   }
 
   return {

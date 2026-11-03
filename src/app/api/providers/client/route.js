@@ -40,6 +40,11 @@ function sanitize(c) {
     }
     safe.providerSpecificData = psd;
   }
+  // Boolean only — the console cookie itself never leaves the server, but the
+  // edit dialog on the quota page needs to know one is stored.
+  if (typeof c.providerSpecificData?.consoleCookie === "string" && c.providerSpecificData.consoleCookie.trim()) {
+    safe.hasConsoleCookie = true;
+  }
   return safe;
 }
 

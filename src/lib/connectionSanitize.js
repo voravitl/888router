@@ -18,7 +18,8 @@ export function stripSensitiveProviderSpecificData(connection) {
 
   return {
     ...connection,
-    hasConsoleCookie: Boolean(psd.consoleCookie),
+    // Same notion of "stored" as the usage handler: whitespace is not a cookie.
+    hasConsoleCookie: String(psd.consoleCookie ?? "").trim() !== "",
     providerSpecificData: clean,
   };
 }
