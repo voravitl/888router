@@ -9,17 +9,22 @@ describe("cache-optimized combo routing", () => {
         { role: "user", content: "Write a function to sort an array." }
       ]
     };
+    // Same system AND same first user turn. computePrefixHash now folds the
+    // first user message into the prefix on purpose: it is part of what the
+    // provider caches, and without it every conversation sharing a system
+    // prompt collapsed onto one model index. Two conversations that differ in
+    // their opening message are therefore expected to hash differently — see
+    // tests/unit/prefix-hash-claude-system.test.js.
     const body2 = {
       messages: [
         { role: "system", content: "You are an expert developer assistant." },
-        { role: "user", content: "Write a function to reverse a string." }
+        { role: "user", content: "Write a function to sort an array." }
       ]
     };
 
     const hash1 = computePrefixHash(body1);
     const hash2 = computePrefixHash(body2);
 
-    // Identical system instructions yield identical prefix hash (first 2,048 chars)
     expect(hash1).toBe(hash2);
     expect(typeof hash1).toBe("number");
     expect(hash1).toBeGreaterThanOrEqual(0);

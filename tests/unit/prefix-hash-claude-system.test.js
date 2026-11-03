@@ -58,4 +58,28 @@ describe("computePrefixHash sees the real cacheable prefix", () => {
     const b = { messages: [{ role: "user", content: "beta" }] };
     expect(computePrefixHash(a)).not.toBe(computePrefixHash(b));
   });
+
+  // The first version clamped the CONCATENATION to 2,048 chars, so a long
+  // system prompt ate the whole budget and the tools never reached the hash —
+  // two different tool sets hashed identically. Tools are part of the prefix
+  // the provider caches, so this must hold for a realistic Claude Code prompt.
+  it("keeps tools in the hash when the system prompt exceeds the old clamp", () => {
+    const longSystem = "You are Claude Code. ".repeat(300); // ~6,300 chars
+    const withRead = { system: longSystem, tools: [{ name: "Read" }], messages: [{ role: "user", content: "q" }] };
+    const withBash = { system: longSystem, tools: [{ name: "Bash" }], messages: [{ role: "user", content: "q" }] };
+    expect(computePrefixHash(withRead)).not.toBe(computePrefixHash(withBash));
+  });
+
+  it("separates two conversations that share a system prompt", () => {
+    const a = { system: "same sys", messages: [{ role: "user", content: "project alpha" }] };
+    const b = { system: "same sys", messages: [{ role: "user", content: "project beta" }] };
+    expect(computePrefixHash(a)).not.toBe(computePrefixHash(b));
+  });
+
+  it("distinguishes tool sets with no system prompt at all", () => {
+    const a = { tools: [{ name: "Read" }], messages: [{ role: "user", content: "q" }] };
+    const b = { tools: [{ name: "Bash" }], messages: [{ role: "user", content: "q" }] };
+    expect(computePrefixHash(a)).not.toBe(computePrefixHash(b));
+  });
 });
+
