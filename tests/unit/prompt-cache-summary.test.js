@@ -68,6 +68,15 @@ describe("token-save summary separates prompt cache from response cache", () => 
     expect(s.promptCache.requestsWithCache).toBe(0);
   });
 
+  it("counts an \"empty\" stream row, which still billed the prompt", async () => {
+    // streamingHandler writes status:"empty" for a content-less stream, but the
+    // upstream billed the prompt (and may have cached it).
+    await save("empty1", { status: "empty", prompt: 1000, cached: 900 });
+    const s = await summary();
+    expect(s.promptCache.requests).toBe(1);
+    expect(s.promptCache.cachedTokens).toBe(900);
+  });
+
   it("ignores failed and token-less rows", async () => {
     await save("e", { status: "error", prompt: 5000, cached: 5000 });
     await save("f", { status: "success", prompt: 0, cached: 0 });

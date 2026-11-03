@@ -522,9 +522,13 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     // Track upstream prompt-cache reuse. Only successful, token-bearing rows
     // count: a 0-token row would drag the ratio toward 0 for a reason that has
     // nothing to do with caching.
+    // "empty" counts too: streamingHandler writes it when the stream carried no
+    // content, but the upstream still billed (and may have cached) the prompt,
+    // so the row is neither dead nor token-less — the two cases this filters.
     const promptTokens = Number(row.promptTokens) || 0;
     const cachedTokens = Number(row.cachedTokens) || 0;
-    if (row.status === "success" && promptTokens > 0) {
+    const billedPrompt = (row.status === "success" || row.status === "empty") && promptTokens > 0;
+    if (billedPrompt) {
       promptCache.requests += 1;
       promptCache.promptTokens += promptTokens;
       promptCache.cachedTokens += Math.min(cachedTokens, promptTokens);
