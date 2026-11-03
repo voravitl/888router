@@ -1,3 +1,28 @@
+# v0.15.217 (2026-11-03)
+
+## Fix qwen3.8-flash advertising a quarter of its real context window
+- `qwen3.8-flash` resolved through the generic `*qwen*` pattern to **262,144**
+  while models.dev's `alibaba-token-plan` entry says **1,000,000** — every other
+  qwen3.8 model in that catalog is 1M too. The gateway published the smaller
+  number, so a client sizing a request against it would truncate unnecessarily.
+- Add a suffix-anchored `*qwen3.8-flash` pattern at 1M. Suffix-anchored on
+  purpose: `qwen3.8-flash-next` is a different SKU that genuinely is 262,144
+  (confirmed across cortecs / tensorx / vultr / requesty in models.dev), and a
+  plain `*qwen3.8*` glob would have inflated it.
+- Cross-checked all 13 Token Plan chat models against models.dev after the
+  change: every one resolves to 1,000,000 except where models.dev says
+  otherwise. No mismatches.
+- Test `tests/unit/alitp-context-windows.test.js` pins all 13 models, checks the
+  two sibling Alibaba providers agree, and asserts `qwen3.8-flash-next` is not
+  caught by the new pattern.
+
+## Disabled two non-chat models synced into the Token Plan catalog
+- `auto` and `wan3.0-video` came from upstream `/models` and were published as
+  chat completions models — `auto` with a fabricated 1M window (it is Alibaba's
+  router pseudo-model, absent from models.dev's Token Plan list) and
+  `wan3.0-video` with no window at all. Both are disabled via the models
+  allow-list for `alitp-intl`; the catalog now advertises 13 chat models.
+
 # v0.15.216 (2026-11-03)
 
 ## Report the routing decision on single-model responses, with provider and tried candidates
