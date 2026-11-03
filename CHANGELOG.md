@@ -1,3 +1,31 @@
+# v0.15.214 (2026-11-03)
+
+## Restrict Headroom to the one compressor that does not corrupt content
+- With every built-in compressor enabled, `code_aware` **mangled source lines**
+  rather than merely shortening them. A numbered read body of 600 lines came
+  back with 133 of them broken:
+
+  ```
+  in :   52|  const value51 = compute(51);
+  out:   52| compute(51);
+  ```
+
+  The declaration is gone, so a model reading that file cannot see what the
+  line does. The `text` compressor separately dropped a `FAIL … TypeError`
+  line from a test log — the single line a model would need to diagnose it.
+- Measured on the deployed proxy: `code_aware` 8.4% saving / 133 corrupted
+  lines; `text` 21% saving / FAIL line lost; `log` 89% saving with all 11
+  ERROR lines kept but no guarantee for other shapes.
+- Set `HEADROOM_COMPRESSORS=smart_crusher`. It survived a preservation check
+  (400/400 JSON paths kept) and still compresses structured tool output 61%
+  in isolation, 27% end-to-end through the gateway
+  (`[HEADROOM] reported token delta=3185 before=11812 after=8627`).
+- Net effect: Headroom now saves only on structured/duplicated tool output.
+  Read bodies, prose and test logs pass through untouched. That is the
+  intended trade — a smaller saving rather than a wrong answer.
+- `headroomEnabled` stays off in settings; the service is opt-in via the
+  `headroom` compose profile.
+
 # v0.15.213 (2026-11-03)
 
 ## Add a fidelity gate so RTK cannot silently drop material the model needs
