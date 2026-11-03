@@ -1,3 +1,23 @@
+# v0.15.209 (2026-11-03)
+
+## Fix request payload size undercount that hid large prompts
+- `estimatePayloadSize()` in `src/lib/db/repos/requestDetailsRepo.js` only read
+  top-level `content` strings and `block.text`. Claude Code nests tool output in
+  `tool_result.content[].text`, so a request carrying 500k characters of tool
+  output was counted as **0** and its dropped size was logged as 0.
+- A 64 KB early exit also capped the counter, understating multi-megabyte
+  requests.
+- Replaced with a full string-leaf walk that stops once the limit is exceeded,
+  and `_originalSize` now reports the real serialized size of what was dropped.
+  This is the only evidence an operator has that a request was discarded for
+  size — a live incident logged a 730k-token prompt as 102 KB, which made the
+  cause undiagnosable.
+- Logging only: `estimateRequestTokens()` in the request path already walked
+  recursively and is unchanged. No routing, quota, or cache behaviour changes.
+- Add `tests/unit/request-detail-payload-size.test.js` covering nested
+  tool_result text, the removed 64 KB ceiling, base64 media, and the intact
+  small-request path.
+
 # v0.15.208 (2026-11-03)
 
 ## Refresh alims-intl (Alibaba Studio) model list
