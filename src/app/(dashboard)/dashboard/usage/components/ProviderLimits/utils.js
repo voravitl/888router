@@ -561,6 +561,24 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "alitp-intl":
+        // Alibaba Token Plan Personal — monthly Credits pool. The handler
+        // forwards remainingPercentage (percentage-points) and a credits unit;
+        // same handling as ollama/deepseek.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name: quota.name || name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              unit: quota.unit || "credits",
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
       case "ollama":
         // Monthly credits / Pay-as-you-go per-token usage.
         // Support unit (USD) and remainingPercentage for credit balance tracking.

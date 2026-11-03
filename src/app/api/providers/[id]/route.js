@@ -5,6 +5,7 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { stripSensitiveProviderSpecificData } from "@/lib/connectionSanitize";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -70,7 +71,7 @@ export async function GET(request, { params }) {
     }
 
     // Hide sensitive fields
-    const result = { ...connection };
+    const result = stripSensitiveProviderSpecificData({ ...connection });
     delete result.apiKey;
     delete result.accessToken;
     delete result.refreshToken;
@@ -158,7 +159,7 @@ export async function PUT(request, { params }) {
     const updated = await updateProviderConnection(id, updateData);
 
     // Hide sensitive fields
-    const result = { ...updated };
+    const result = stripSensitiveProviderSpecificData({ ...updated });
     delete result.apiKey;
     delete result.accessToken;
     delete result.refreshToken;
