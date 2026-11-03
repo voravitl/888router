@@ -1,9 +1,8 @@
-import { claudeToOpenAIRequest } from "../translator/request/claude-to-openai.js";
-import { openaiToClaudeRequest } from "../translator/request/openai-to-claude.js";
 import {
   openaiResponsesToOpenAIRequest,
   openaiToOpenAIResponsesRequest,
 } from "../translator/request/openai-responses.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/index.js";
 
 // Agent contexts can be large; 3s was the main source of "aborted due to timeout"
 // when Headroom was reachable but slow. Override with HEADROOM_TIMEOUT_MS.
@@ -312,9 +311,105 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
   return data;
 }
 
+// Project only the text leaves Headroom may rewrite, never the native blocks.
+// A Claude -> OpenAI -> Claude round trip drops document blocks and rewrites
+// tool/thinking metadata even when the proxy returns its input unchanged
+// (upstream 86adae35c), so the body must not travel through the translator.
+function collectClaudeHeadroomMessages(body) {
+  if (!Array.isArray(body?.messages)) return null;
+  const messages = [];
+  const targets = [];
+  const addText = (role, object, key, extra = {}) => {
+    if (typeof object?.[key] !== "string") return;
+    messages.push({ role, content: object[key], ...extra });
+    targets.push({ object, key });
+  };
+  const addContent = (role, object, key, extra = {}) => {
+    if (typeof object?.[key] === "string") {
+      addText(role, object, key, extra);
+    } else if (Array.isArray(object?.[key])) {
+      for (const block of object[key]) {
+        if (block?.type === CLAUDE_BLOCK.TEXT) addText(role, block, "text", extra);
+      }
+    }
+  };
+
+  addContent(ROLE.SYSTEM, body, "system");
+  for (const message of body.messages) {
+    const blocks = Array.isArray(message?.content) ? message.content : [];
+    const toolUses = blocks.filter((block) => block?.type === CLAUDE_BLOCK.TOOL_USE);
+    if (message?.role === ROLE.ASSISTANT && toolUses.length) {
+      messages.push({
+        role: ROLE.ASSISTANT,
+        content: "",
+        tool_calls: toolUses.map((block) => ({
+          id: block.id,
+          type: OPENAI_BLOCK.FUNCTION,
+          function: { name: block.name, arguments: JSON.stringify(block.input || {}) },
+        })),
+      });
+      targets.push(null);
+    }
+    addContent(message?.role, message, "content");
+    for (const block of blocks) {
+      if (block?.type === CLAUDE_BLOCK.TOOL_RESULT) {
+        addContent(ROLE.TOOL, block, "content", { tool_call_id: block.tool_use_id });
+      }
+    }
+  }
+  return targets.some(Boolean) ? { messages, targets } : null;
+}
+
+function textFromHeadroomMessage(message) {
+  const content = message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+
+  const parts = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part);
+    } else if (typeof part?.text === "string") {
+      parts.push(part.text);
+    }
+  }
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+// Copy compressed text back into the native blocks the projection pointed at.
+// Rejects a response that reordered, dropped or re-typed any message.
+function applyProjectedHeadroomMessages(projection, compressedMessages, diagnostics, label) {
+  if (!Array.isArray(compressedMessages) || compressedMessages.length !== projection.messages.length) {
+    setDiagnostic(diagnostics, `proxy response did not match ${label} message count`);
+    return false;
+  }
+
+  const updates = [];
+  for (let i = 0; i < projection.messages.length; i++) {
+    const expected = projection.messages[i];
+    const actual = compressedMessages[i];
+    if (!actual || actual.role !== expected.role || actual.tool_call_id !== expected.tool_call_id) {
+      setDiagnostic(diagnostics, `proxy response did not preserve ${label} message order`);
+      return false;
+    }
+
+    const text = textFromHeadroomMessage(actual);
+    if (text === null) {
+      setDiagnostic(diagnostics, `proxy response missing ${label} text content`);
+      return false;
+    }
+    if (projection.targets[i]) updates.push({ target: projection.targets[i], text });
+  }
+
+  for (const update of updates) {
+    update.target.object[update.target.key] = update.text;
+  }
+  return true;
+}
+
 // Compress request body via Headroom proxy. Fail-open: returns null on any error.
-// /v1/compress only understands OpenAI shape, so Claude bodies are translated
-// to OpenAI, compressed, then translated back using 9Router's own translators.
+// /v1/compress only understands OpenAI shape; other formats are projected to it
+// and only their text leaves are copied back.
 export async function compressWithHeadroom(body, { enabled, url, model, format, compressUserMessages, timeoutMs = DEFAULT_TIMEOUT_MS, diagnostics = null } = {}) {
   if (!enabled) {
     setDiagnostic(diagnostics, "disabled");
@@ -341,18 +436,17 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
       return data;
     }
 
-    // Claude shape: translate → OpenAI → compress → translate back.
+    // Keep Claude's documents, tool blocks and signatures in their native form.
+    // Only validated text leaves are copied back after compression.
     if (format === "claude") {
-      const oai = claudeToOpenAIRequest(model, body, false);
-      if (!Array.isArray(oai?.messages)) {
-        setDiagnostic(diagnostics, "Claude request did not translate to messages[]");
+      const projection = collectClaudeHeadroomMessages(body);
+      if (!projection) {
+        setDiagnostic(diagnostics, "Claude request has no eligible text content");
         return null;
       }
-      const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      const data = await callCompress(url, projection.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
       if (!data) return null;
-      const claudeBody = openaiToClaudeRequest(model, { ...oai, messages: data.messages }, false);
-      if (Array.isArray(claudeBody?.messages)) body.messages = claudeBody.messages;
-      if (claudeBody?.system !== undefined) body.system = claudeBody.system;
+      if (!applyProjectedHeadroomMessages(projection, data.messages, diagnostics, "Claude")) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
       return data;
     }

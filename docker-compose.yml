@@ -51,6 +51,13 @@ services:
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
       RTK_HARD_CAP_BYTES: "65536"
+      # Let RTK run on Claude Code traffic, which is otherwise preserved
+      # byte-for-byte (chatCore.js preserveRequestInput). Only safe together
+      # with RTK_LOSSY=off: that keeps raw file content byte-identical and
+      # applies only the format-only filters (git status/diff/log, ls, grep,
+      # build output), which summarise tool reports rather than dropping code.
+      RTK_ON_PRESERVED_INPUT: "on"
+      RTK_LOSSY: "off"
       SEARXNG_BASE_URL: http://searxng:8080/search
     depends_on:
       - searxng
@@ -98,6 +105,58 @@ services:
       start_period: 15s
     # Search engines may be flaky; a full readiness gate would flap the app.
     # Liveness ("is SearXNG up") is enough for the gateway to route queries.
+
+  # Optional context-compression proxy. Disabled by default: it costs ~1GB RAM
+  # and 1.5 CPU, and nothing calls it unless headroomEnabled is turned on in
+  # settings. Kept in compose so the feature is testable — `docker compose up -d
+  # headroom` then enable the toggle. Loopback-only on the host because
+  # /v1/compress is unauthenticated; the gateway reaches it over the compose
+  # network instead.
+  headroom:
+    image: ghcr.io/headroomlabs-ai/headroom:latest
+    container_name: headroom
+    restart: "no"
+    profiles: ["headroom"]
+    ports:
+      - "127.0.0.1:8787:8787"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1024M
+    environment:
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      VECLIB_MAXIMUM_THREADS: "2"
+      NUMEXPR_NUM_THREADS: "2"
+      # v0.39.1 binds 127.0.0.1 by default, so a sibling container got
+      # ECONNREFUSED while the in-container healthcheck stayed green (#515).
+      HEADROOM_HOST: "0.0.0.0"
+      # ...and it restricts /v1/compress to loopback peers. Without this every
+      # compress is refused and the toggle silently no-ops.
+      HEADROOM_COMPRESS_ALLOW_REMOTE: "1"
+      # Default pool size is the host's core count, not the CPU limit above;
+      # bound it, and bound how long one compression may hold a request.
+      HEADROOM_COMPRESSION_MAX_WORKERS: "2"
+      HEADROOM_COMPRESSION_TIMEOUT_SECONDS: "30"
+      # Default mode is "cache": it freezes prior turns to protect the provider
+      # prefix cache, so /v1/compress is a no-op (router:noop, ratio 1.0).
+      # "token" mode prioritises compression.
+      HEADROOM_MODE: "token"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # /readyz includes the upstream and flaps when Anthropic is slow; /livez is
+    # enough for "is the proxy up".
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8787/livez"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   # Auto-updater: re-pulls and recreates containers carrying the
   # com.centurylinklabs.watchtower.enable=true label AND matching the name

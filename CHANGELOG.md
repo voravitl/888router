@@ -1,3 +1,94 @@
+# v0.15.213 (2026-11-03)
+
+## Add a fidelity gate so RTK cannot silently drop material the model needs
+- RTK's filters cap their own output: `git-status` shows 10 files then
+  `+30 more`, `git-diff` cuts a hunk at 100 lines, `find` caps dirs at 20. On a
+  40-file status that dropped **30 file names**, so a model asked which files
+  changed would answer from an incomplete list. Calling these "lossless" (as the
+  previous release note did) was wrong.
+- New `open-sse/rtk/fidelity.js` compares the input and the rewritten text and
+  **refuses the rewrite** when any protected token is missing: fenced code
+  blocks, URLs, version strings, path-like tokens, and failure/error lines. The
+  original text is used instead — dropping the compression costs tokens, dropping
+  the content costs the answer.
+- The scan is bounded (400 tokens, 400 chars each) so a hostile multi-megabyte
+  blob cannot stall the gate, and it fails open on unexpected input types.
+- Measured: a 40-file git status is now refused and passed through intact
+  (previously 10 names + `+30 more`); an `ls` listing still compresses 64% with
+  all 25 names kept.
+- Test fixtures that relied on the old behaviour are updated, not deleted: the
+  diff/status/build-log fixtures now use payloads whose protected tokens survive,
+  and the git-status fixtures lost their `origin/vN` version strings and
+  `origin/main` path, which the gate correctly refused.
+- Scope, stated plainly: this is a **safeguard, not a guarantee** — the same
+  position OmniRoute documents for its own gate. Content that is capped but not
+  in the protected set (the 11th grep match in one file, say) can still be
+  dropped, with a `+N more` marker left for the model to see.
+
+# v0.15.212 (2026-11-03)
+
+## Let RTK run on Claude Code traffic, lossless-only by default
+- `chatCore.js` preserved every Claude Code request byte-for-byte (#523), and all
+  token savers were gated behind that flag — so RTK, the one saver that measured a
+  real saving, did **no work at all** on live traffic (235 Claude Code requests in
+  40 minutes produced 2 RTK runs, both from OpenAI-shaped tests). Savings on the
+  owner's actual usage were 0%.
+- Add `RTK_ON_PRESERVED_INPUT=on` (default `off`) so RTK can run on preserved
+  input. RTK rewrites only `tool_result` text in place and never reorders or drops
+  messages, so it is safe on input the other savers must leave alone.
+- Add `RTK_LOSSY` (default `on`, set to `off` in compose). With `off`, RTK skips
+  the filters that trim raw file content — `read-numbered`, `smart-truncate`,
+  `dedup-log` — and skips both hard-cap cuts. Measured: a 171 KB `Read` body came
+  back **byte-identical** instead of being cut to 4 KB.
+- The format-only filters still run and still save: git-status 78%, ls 73%,
+  build-output 68%, grep 33% on their own output shapes. They summarise tool
+  reports (a status listing, a directory listing) rather than dropping source code.
+- Compose sets both: `RTK_ON_PRESERVED_INPUT: "on"` with `RTK_LOSSY: "off"`.
+
+## Port upstream's Claude projection for Headroom (86adae35c)
+- Headroom's Claude path round-tripped the body through the Claude → OpenAI →
+  Claude translators whenever the proxy was enabled. That bridge drops document
+  blocks and rewrites tool/thinking metadata **even when the proxy returns its
+  input unchanged** — so enabling Headroom could corrupt a request by itself.
+- Port `collectClaudeHeadroomMessages()` / `applyProjectedHeadroomMessages()` /
+  `textFromHeadroomMessage()` from upstream: project only the text leaves, then
+  copy validated text back into the original native blocks. Any response that
+  reorders, drops or re-types a message fails open and leaves the body untouched.
+- Upstream's 9-case regression suite ported and passing.
+
+# v0.15.211 (2026-11-03)
+
+## Fix RTK destroying Read output by misreading it as git status
+- `RE_PORCELAIN` in `open-sse/rtk/autodetect.js` accepted a space in both XY
+  positions, so **any indented line** matched a git porcelain status row.
+- Claude Code returns `Read` output as `   N|content` — three spaces then digits.
+  That matched, the content was classified as `git-status`, and `gitStatus()`
+  replaced the entire tool result with `clean — nothing to commit`:
+  a 15,672-character file the model had just read became 26 characters, and a
+  symbol on line 250 was gone. With RTK enabled this would have silently
+  corrupted every large file read.
+- Require a real status character on at least one side of the XY pair. Every
+  porcelain row has one (` M`, `M `, `??`, `A `, `D `); an indented source line
+  does not. Real status output still compresses (960 bytes saved on a sample).
+- Regression tests in `tests/unit/rtk.test.js`: three indentation shapes must not
+  detect as git-status, a 500-line Read body must keep its line-250 symbol
+  through `compressMessages`, and five real porcelain forms must still detect.
+  Reverting the regex fails four of them.
+- **This is a data-loss fix, not a savings change.** RTK stays gated off for
+  Claude Code traffic (`preserveRequestInput`), so it has no effect on live
+  requests yet.
+
+## Headroom service restored to compose (opt-in)
+- Re-add the `headroom` service removed in v0.15.207, behind
+  `profiles: ["headroom"]` so it never starts with the gateway: it costs
+  ~1GB RAM and 1.5 CPU and nothing calls it unless the toggle is on.
+- Running it needs three values the old block did not carry: `HEADROOM_MODE=token`
+  (the default `cache` mode freezes prior turns and makes `/v1/compress` a no-op —
+  measured `router:noop`, ratio 1.0), a compression timeout above the 3s default
+  (3s produced `skip_reason: compression_timeout`), and a loaded `kompress` model.
+  With those, a 39 KB structured payload compressed 27% end-to-end through the
+  gateway (`[HEADROOM] reported token delta=3185 before=11818 after=8633`).
+
 # v0.15.210 (2026-11-03)
 
 ## Fix pruner tombstone rewriting the prefix cache on every prune

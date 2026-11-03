@@ -19,7 +19,13 @@ const RE_GIT_DIFF = /^diff --git /m;
 const RE_GIT_DIFF_HUNK = /^@@ /m;
 const RE_GIT_STATUS = /^On branch |^nothing to commit|^Changes (not |to be )|^Untracked files:/m;
 const RE_GIT_LOG = /^[*|/\\ ]*commit [0-9a-f]{7,40}$/m;
-const RE_PORCELAIN = /^[ MADRCU?!][ MADRCU?!] \S/m;
+// A space is a valid XY status char, so `^[ MADRCU?!][ MADRCU?!] \S` matched any
+// indented line ("      if (x) {"). That made real Read output — Claude Code
+// returns "   N|content", three spaces then digits — detect as git-status and be
+// replaced wholesale by "clean — nothing to commit", destroying the file the
+// model had just read. Require a real status character on at least one side of
+// the XY pair, which every porcelain line has and an indented line does not.
+const RE_PORCELAIN = /^(?:[ MADRCU?!][MADRCU?!]|[MADRCU?!] ) \S/m;
 const RE_BUILD_OUTPUT = /^(npm (warn|error|ERR!)|yarn (warn|error)|\s*Compiling\s+\S+|\s*Downloading\s+\S+|added \d+ package|\[ERROR\]|BUILD (SUCCESS|FAILED)|\s*Finished\s+|Successfully (installed|built)|ERROR:)/im;
 const RE_TREE_GLYPH = /[├└]──|│  /;
 const RE_LS_ROW = /^[-dlbcps][rwx-]{9}/m;

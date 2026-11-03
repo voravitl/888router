@@ -1,7 +1,8 @@
 // RTK port: compress tool_result content in LLM request bodies
 // Injected in chatCore.js after format translation and pruneMessageHistory
-import { RAW_CAP, MIN_COMPRESS_SIZE, HARD_CAP_BYTES, FILTERS } from "./constants.js";
+import { RAW_CAP, MIN_COMPRESS_SIZE, HARD_CAP_BYTES, FILTERS, isLossyEnabled, isLossyFilter } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
+import { preservesProtectedContent } from "./fidelity.js";
 import { safeApply } from "./applyFilter.js";
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
@@ -216,7 +217,14 @@ function compressText(text, stats, shape) {
   stats.bytesBefore += bytesIn;
 
   // RAW_CAP bypass safety: if blob exceeds RAW_CAP, STILL force apply hard cap!
+  // The hard cap decapitates a blob (head + tail, middle dropped), which is
+  // exactly the data loss RTK_LOSSY=off exists to prevent — so it is skipped too.
+  const lossyEnabled = isLossyEnabled();
   if (bytesIn > RAW_CAP) {
+    if (!lossyEnabled) {
+      stats.bytesAfter += bytesIn;
+      return text;
+    }
     const capped = applyHardCap(text, HARD_CAP_BYTES);
     if (capped.length < bytesIn) {
       stats.bytesAfter += capped.length;
@@ -234,9 +242,10 @@ function compressText(text, stats, shape) {
 
   let workingText = text;
   let filterName = null;
+  // Set when the fidelity gate refuses a rewrite; the original is kept instead.
 
   const fn = autoDetectFilter(workingText);
-  if (fn) {
+  if (fn && !(!lossyEnabled && isLossyFilter(fn.filterName || fn.name))) {
     const out = safeApply(fn, workingText);
     if (out && out.length > 0 && out.length < workingText.length) {
       filterName = fn.filterName || fn.name;
@@ -244,13 +253,23 @@ function compressText(text, stats, shape) {
     }
   }
 
-  // RTK v2 Hard Cap Guard: if text is still larger than HARD_CAP_BYTES, truncate safely
-  if (workingText.length > HARD_CAP_BYTES) {
+  // RTK v2 Hard Cap Guard: if text is still larger than HARD_CAP_BYTES, truncate safely.
+  // Skipped under RTK_LOSSY=off for the same reason as the RAW_CAP branch above.
+  if (lossyEnabled && workingText.length > HARD_CAP_BYTES) {
     const capped = applyHardCap(workingText, HARD_CAP_BYTES);
     if (capped && capped.length < workingText.length) {
       filterName = filterName ? `${filterName}+${FILTERS.HARD_CAP}` : FILTERS.HARD_CAP;
       workingText = capped;
     }
+  }
+
+  // Fidelity gate: a rewrite that lost a URL, code block, version, path or error
+  // line is refused outright — the model gets the untouched original instead.
+  // Dropping the compression costs tokens; dropping the content costs the answer.
+  if (workingText !== text && !preservesProtectedContent(text, workingText)) {
+    stats.bytesAfter += bytesIn;
+    stats.refused = (stats.refused || 0) + 1;
+    return text;
   }
 
   // Safety: never return empty, never grow the input

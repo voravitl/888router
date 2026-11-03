@@ -20,6 +20,27 @@ function makeLongDiff() {
   return lines.join("\n");
 }
 
+// Reformatted by git-status but every file name survives, so the fidelity gate
+// accepts it. makeLongDiff() is refused instead: the diff cap drops hunk content.
+function makeSafeStatus() {
+  const files = Array.from({ length: 9 }, (_, i) => ` M src/file${i}.js`);
+  // git's verbose preamble pads the payload past MIN_COMPRESS_SIZE (500 bytes)
+  // without adding new file names for the fidelity gate to police.
+  // No branch-tracking line ("origin/main" is path-like and git-status drops
+  // it, which the fidelity gate would rightly refuse).
+  const preamble = [
+    "Changes not staged for commit:",
+    '  (use "git add <file>..." to update what will be committed)',
+    '  (use "git restore <file>..." to discard changes in working directory)',
+    "  (commit or discard the untracked or modified content in submodules)",
+    "  (use \"git add <file>...\" to mark resolution)",
+    "  (use \"git checkout -- <file>...\" to discard changes)",
+    "  (commit or discard the untracked or modified content in submodules)",
+    "",
+  ];
+  return `${preamble.join("\n")}${files.join("\n")}\n`;
+}
+
 function makeGitStatus() {
   return [
     "On branch main",
@@ -401,6 +422,45 @@ describe("autoDetectFilter (extras)", () => {
     const input = "Result of search in '/x' (total 3 files):\n- a/b.js\n- a/c.js\n- a/d.js";
     expect(autoDetectFilter(input).filterName).toBe("search-list");
   });
+
+  // A space is a valid XY status char, so a porcelain regex written as
+  // /^[ MADRCU?!][ MADRCU?!] \S/ also matched any indented line. Claude Code
+  // returns Read output as "   N|content" (three spaces, then digits), so real
+  // file contents detected as git-status and gitStatus() replaced them with
+  // "clean — nothing to commit" — the model lost the file it had just read.
+  describe("does not mistake Read output for git status", () => {
+    const readOutput = (indent) =>
+      Array.from({ length: 60 }, (_, i) => `   ${i + 1}|${indent}const x${i} = ${i};`).join("\n");
+
+    it.each([
+      ["unindented", ""],
+      ["two-space indent", "  "],
+      ["four-space indent", "    "],
+    ])("leaves %s Read output alone", (_label, indent) => {
+      expect(autoDetectFilter(readOutput(indent))?.filterName).not.toBe("git-status");
+    });
+
+    it("keeps the file body intact through compressMessages", () => {
+      const lines = Array.from({ length: 500 }, (_, i) =>
+        `   ${i + 1}|${i + 1 === 250 ? "export const TARGET = 42;" : `  const filler${i} = ${i};`}`
+      );
+      const body = { messages: [{ role: "tool", content: lines.join("\n") }] };
+      compressMessages(body, true);
+      expect(body.messages[0].content).toContain("export const TARGET = 42;");
+      expect(body.messages[0].content).not.toBe("clean — nothing to commit");
+    });
+
+    it.each([
+      [" M", "unstaged modification"],
+      ["M ", "staged modification"],
+      ["??", "untracked"],
+      ["A ", "added"],
+          ["D ", "deleted"],
+    ])("still detects real porcelain status %j (%s)", (xy) => {
+      const input = [`${xy} a.js`, `${xy} b.js`, `${xy} c.js`].join("\n");
+      expect(autoDetectFilter(input)?.filterName).toBe("git-status");
+    });
+  });
 });
 
 describe("safeApply", () => {
@@ -423,7 +483,7 @@ describe("compressMessages (disabled)", () => {
 
 describe("compressMessages (enabled)", () => {
   it("compresses OpenAI tool message (string content)", () => {
-    const big = makeLongDiff();
+    const big = makeSafeStatus();
     const body = { messages: [{ role: "tool", tool_call_id: "call_1", content: big }] };
     const stats = compressMessages(body, true);
     expect(stats.hits.length).toBeGreaterThan(0);
@@ -432,7 +492,7 @@ describe("compressMessages (enabled)", () => {
   });
 
   it("compresses Claude string-form tool_result", () => {
-    const big = makeLongDiff();
+    const big = makeSafeStatus();
     const body = {
       messages: [{
         role: "user",
@@ -445,7 +505,7 @@ describe("compressMessages (enabled)", () => {
   });
 
   it("compresses Claude array-form tool_result text parts", () => {
-    const big = makeLongDiff();
+    const big = makeSafeStatus();
     const body = {
       messages: [{
         role: "user",
@@ -521,5 +581,60 @@ describe("formatRtkLog", () => {
     expect(line).toContain("saved 600B");
     expect(line).toContain("60.0%");
     expect(line).toContain("git-diff");
+  });
+});
+
+// RTK_LOSSY=off is the safety switch for agent traffic: it must keep every byte
+// of raw file content the model was asked to read, while still summarising the
+// outputs that are already condensed tool reports (git status/diff, ls, grep).
+// The module reads the env at import time, so each case re-imports it.
+describe("lossy guard (RTK_LOSSY)", () => {
+  const readOutput = (lines, markLine) =>
+    Array.from({ length: lines }, (_, i) => {
+      const n = i + 1;
+      const body = n === markLine ? 'export const TARGET_SYMBOL = "find-me";' : `  const filler${n} = ${n};`;
+      return `   ${n}|${body}`;
+    }).join("\n");
+
+  it("RTK_LOSSY=off keeps a >64KB Read body byte-identical", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_LOSSY", "off");
+    vi.stubEnv("RTK_HARD_CAP_BYTES", "65536");
+    const { compressMessages: compress } = await import("../../open-sse/rtk/index.js");
+    const text = readOutput(2500, 1250);
+    expect(text.length).toBeGreaterThan(64 * 1024);
+    const body = { messages: [{ role: "tool", content: text }] };
+    compress(body, true);
+    expect(body.messages[0].content).toBe(text);
+    expect(body.messages[0].content).toContain("TARGET_SYMBOL");
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("RTK_LOSSY=off still summarises git status", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_LOSSY", "off");
+    const { compressMessages: compress } = await import("../../open-sse/rtk/index.js");
+    const status = " M src/a.js\n M src/b.js\n M src/c.js\n M src/d.js\n?? new1.js\n?? new2.js\n".repeat(20);
+    const body = { messages: [{ role: "tool", content: status }] };
+    const stats = compress(body, true);
+    expect(stats.hits[0].filter).toBe("git-status");
+    expect(body.messages[0].content.length).toBeLessThan(status.length);
+    expect(body.messages[0].content).toContain("src/a.js");
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("default (lossy on) still truncates an oversized Read body", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_LOSSY", "on");
+    vi.stubEnv("RTK_HARD_CAP_BYTES", "65536");
+    const { compressMessages: compress } = await import("../../open-sse/rtk/index.js");
+    const text = readOutput(2500, 1250);
+    const body = { messages: [{ role: "tool", content: text }] };
+    compress(body, true);
+    expect(body.messages[0].content.length).toBeLessThan(text.length);
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 });
