@@ -267,6 +267,16 @@ function rotateModelsFromIndex(models, currentIndex) {
 export function computePrefixHash(body) {
   if (!body) return 0;
   let prefix = "";
+  // Claude (and Gemini) put the system prompt at the TOP LEVEL, not as a
+  // messages[] entry. Reading only messages[] meant two requests with
+  // completely different system prompts hashed identically — verified: a
+  // 1,000-char Claude system and a 32-char one both returned 2661614456, so
+  // cache-optimized was pinning on messages[0] and silently ignoring the
+  // prefix the provider actually caches (CLAUDE.md, tools, environment).
+  const topLevelSystem = body.system ?? body.systemInstruction ?? body.system_instruction ?? body.instructions;
+  if (topLevelSystem) {
+    prefix += (typeof topLevelSystem === "string" ? topLevelSystem : JSON.stringify(topLevelSystem)) + "\n";
+  }
   if (Array.isArray(body.messages)) {
     for (const m of body.messages) {
       if (m && (m.role === "system" || m.role === "developer")) {
