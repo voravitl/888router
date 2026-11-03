@@ -50,6 +50,27 @@
 - `tests/unit/oc-context-windows.test.js` pins all nine ids and asserts each one
   has an explicit entry rather than sitting on the floor by accident.
 
+# v0.15.218 (2026-11-03)
+
+## Report the real prompt-cache reuse instead of only the response cache
+- The dashboard had exactly one cache number, and it counted the gateway's own
+  **response cache** — the opt-in `x-888-response-cache` reply replay. Normal
+  traffic never uses it, so the tile read **0%** while the upstream prefix cache
+  was in fact serving **99%** of prompt tokens. That made the gateway look like it
+  did no cache management at all.
+- `getTokenSaveSummary()` now also returns `promptCache`: requests that reused a
+  cached prefix, plus cached/prompt token totals and `pctSaved`. Measured against
+  the live DB: **459 requests, 439 with a cached prefix (96%), 190.3M of 192.2M
+  prompt tokens cached (99%)** — against `cache.hitRate: 0`.
+- Only rows that actually billed a prompt (`success`, plus `empty` — a
+  content-less stream still bills the prompt) with a non-zero count are counted,
+  so a dead or token-less row cannot drag the ratio toward zero; cached tokens
+  are clamped to the prompt total because some providers over-report them.
+- Add a "Prompt Cache" card next to the existing "Response Cache" card, which
+  keeps its own meaning.
+- Tests in `tests/unit/prompt-cache-summary.test.js` pin the two counters apart:
+  a response-cache hit must not inflate the prompt ratio, failed rows are
+  ignored, and the ratio never exceeds 100%. Breaking the counter fails one.
 
 # v0.15.217 (2026-11-03)
 
