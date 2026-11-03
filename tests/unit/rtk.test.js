@@ -401,6 +401,45 @@ describe("autoDetectFilter (extras)", () => {
     const input = "Result of search in '/x' (total 3 files):\n- a/b.js\n- a/c.js\n- a/d.js";
     expect(autoDetectFilter(input).filterName).toBe("search-list");
   });
+
+  // A space is a valid XY status char, so a porcelain regex written as
+  // /^[ MADRCU?!][ MADRCU?!] \S/ also matched any indented line. Claude Code
+  // returns Read output as "   N|content" (three spaces, then digits), so real
+  // file contents detected as git-status and gitStatus() replaced them with
+  // "clean — nothing to commit" — the model lost the file it had just read.
+  describe("does not mistake Read output for git status", () => {
+    const readOutput = (indent) =>
+      Array.from({ length: 60 }, (_, i) => `   ${i + 1}|${indent}const x${i} = ${i};`).join("\n");
+
+    it.each([
+      ["unindented", ""],
+      ["two-space indent", "  "],
+      ["four-space indent", "    "],
+    ])("leaves %s Read output alone", (_label, indent) => {
+      expect(autoDetectFilter(readOutput(indent))?.filterName).not.toBe("git-status");
+    });
+
+    it("keeps the file body intact through compressMessages", () => {
+      const lines = Array.from({ length: 500 }, (_, i) =>
+        `   ${i + 1}|${i + 1 === 250 ? "export const TARGET = 42;" : `  const filler${i} = ${i};`}`
+      );
+      const body = { messages: [{ role: "tool", content: lines.join("\n") }] };
+      compressMessages(body, true);
+      expect(body.messages[0].content).toContain("export const TARGET = 42;");
+      expect(body.messages[0].content).not.toBe("clean — nothing to commit");
+    });
+
+    it.each([
+      [" M", "unstaged modification"],
+      ["M ", "staged modification"],
+      ["??", "untracked"],
+      ["A ", "added"],
+          ["D ", "deleted"],
+    ])("still detects real porcelain status %j (%s)", (xy) => {
+      const input = [`${xy} a.js`, `${xy} b.js`, `${xy} c.js`].join("\n");
+      expect(autoDetectFilter(input)?.filterName).toBe("git-status");
+    });
+  });
 });
 
 describe("safeApply", () => {
