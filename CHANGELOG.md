@@ -1,3 +1,30 @@
+# v0.15.213 (2026-11-03)
+
+## Add a fidelity gate so RTK cannot silently drop material the model needs
+- RTK's filters cap their own output: `git-status` shows 10 files then
+  `+30 more`, `git-diff` cuts a hunk at 100 lines, `find` caps dirs at 20. On a
+  40-file status that dropped **30 file names**, so a model asked which files
+  changed would answer from an incomplete list. Calling these "lossless" (as the
+  previous release note did) was wrong.
+- New `open-sse/rtk/fidelity.js` compares the input and the rewritten text and
+  **refuses the rewrite** when any protected token is missing: fenced code
+  blocks, URLs, version strings, path-like tokens, and failure/error lines. The
+  original text is used instead — dropping the compression costs tokens, dropping
+  the content costs the answer.
+- The scan is bounded (400 tokens, 400 chars each) so a hostile multi-megabyte
+  blob cannot stall the gate, and it fails open on unexpected input types.
+- Measured: a 40-file git status is now refused and passed through intact
+  (previously 10 names + `+30 more`); an `ls` listing still compresses 64% with
+  all 25 names kept.
+- Test fixtures that relied on the old behaviour are updated, not deleted: the
+  diff/status/build-log fixtures now use payloads whose protected tokens survive,
+  and the git-status fixtures lost their `origin/vN` version strings and
+  `origin/main` path, which the gate correctly refused.
+- Scope, stated plainly: this is a **safeguard, not a guarantee** — the same
+  position OmniRoute documents for its own gate. Content that is capped but not
+  in the protected set (the 11th grep match in one file, say) can still be
+  dropped, with a `+N more` marker left for the model to see.
+
 # v0.15.212 (2026-11-03)
 
 ## Let RTK run on Claude Code traffic, lossless-only by default

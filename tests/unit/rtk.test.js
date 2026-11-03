@@ -20,6 +20,27 @@ function makeLongDiff() {
   return lines.join("\n");
 }
 
+// Reformatted by git-status but every file name survives, so the fidelity gate
+// accepts it. makeLongDiff() is refused instead: the diff cap drops hunk content.
+function makeSafeStatus() {
+  const files = Array.from({ length: 9 }, (_, i) => ` M src/file${i}.js`);
+  // git's verbose preamble pads the payload past MIN_COMPRESS_SIZE (500 bytes)
+  // without adding new file names for the fidelity gate to police.
+  // No branch-tracking line ("origin/main" is path-like and git-status drops
+  // it, which the fidelity gate would rightly refuse).
+  const preamble = [
+    "Changes not staged for commit:",
+    '  (use "git add <file>..." to update what will be committed)',
+    '  (use "git restore <file>..." to discard changes in working directory)',
+    "  (commit or discard the untracked or modified content in submodules)",
+    "  (use \"git add <file>...\" to mark resolution)",
+    "  (use \"git checkout -- <file>...\" to discard changes)",
+    "  (commit or discard the untracked or modified content in submodules)",
+    "",
+  ];
+  return `${preamble.join("\n")}${files.join("\n")}\n`;
+}
+
 function makeGitStatus() {
   return [
     "On branch main",
@@ -462,7 +483,7 @@ describe("compressMessages (disabled)", () => {
 
 describe("compressMessages (enabled)", () => {
   it("compresses OpenAI tool message (string content)", () => {
-    const big = makeLongDiff();
+    const big = makeSafeStatus();
     const body = { messages: [{ role: "tool", tool_call_id: "call_1", content: big }] };
     const stats = compressMessages(body, true);
     expect(stats.hits.length).toBeGreaterThan(0);
@@ -471,7 +492,7 @@ describe("compressMessages (enabled)", () => {
   });
 
   it("compresses Claude string-form tool_result", () => {
-    const big = makeLongDiff();
+    const big = makeSafeStatus();
     const body = {
       messages: [{
         role: "user",
@@ -484,7 +505,7 @@ describe("compressMessages (enabled)", () => {
   });
 
   it("compresses Claude array-form tool_result text parts", () => {
-    const big = makeLongDiff();
+    const big = makeSafeStatus();
     const body = {
       messages: [{
         role: "user",

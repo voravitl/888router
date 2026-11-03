@@ -21,12 +21,12 @@ describe("Kiro format RTK support", () => {
                   content: [
                     {
                       text: [
-                        "npm warn deprecated har-validator@5.1.5: this library is no longer supported",
-                        "npm warn deprecated uuid@3.4.0: uuid@10 and below is no longer supported",
-                        "npm warn deprecated request@2.88.2: request has been deprecated",
-                        "npm warn deprecated inflight@1.0.6: This module is not supported",
-                        "npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported",
-                        "npm warn deprecated rimraf@2.7.1: Rimraf versions prior to v4 are no longer supported",
+                        "npm warn deprecated har-validator: this library is no longer supported",
+                        "npm warn deprecated uuid: this package is no longer supported",
+                        "npm warn deprecated request: request has been deprecated",
+                        "npm warn deprecated inflight: This module is not supported",
+                        "npm warn deprecated glob: older versions are no longer supported",
+                        "npm warn deprecated rimraf: old versions are no longer supported",
                         "",
                         "added 47 packages, and audited 48 packages in 13s",
                         "",
@@ -71,7 +71,7 @@ describe("Kiro format RTK support", () => {
     // Need >500 bytes for compression to trigger
     const compilingLines = [];
     for (let i = 1; i <= 20; i++) {
-      compilingLines.push(`   Compiling package-${i} v1.0.${i}`);
+      compilingLines.push(`   Compiling package-${i}`);
     }
     compilingLines.push("    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.34s");
 
@@ -122,8 +122,8 @@ describe("Kiro format RTK support", () => {
     const deprecations1 = [];
     const deprecations2 = [];
     for (let i = 1; i <= 10; i++) {
-      deprecations1.push(`npm warn deprecated package-${i}@1.0.0: This version is deprecated`);
-      deprecations2.push(`npm warn deprecated lib-${i}@2.0.0: This library is no longer supported`);
+      deprecations1.push(`npm warn deprecated package-${i}: This version is deprecated`);
+      deprecations2.push(`npm warn deprecated lib-${i}: This library is no longer supported`);
     }
     deprecations1.push("added 50 packages in 5s");
     deprecations2.push("added 1 package in 2s");

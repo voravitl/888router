@@ -2,6 +2,7 @@
 // Injected in chatCore.js after format translation and pruneMessageHistory
 import { RAW_CAP, MIN_COMPRESS_SIZE, HARD_CAP_BYTES, FILTERS, isLossyEnabled, isLossyFilter } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
+import { preservesProtectedContent } from "./fidelity.js";
 import { safeApply } from "./applyFilter.js";
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
@@ -241,6 +242,7 @@ function compressText(text, stats, shape) {
 
   let workingText = text;
   let filterName = null;
+  // Set when the fidelity gate refuses a rewrite; the original is kept instead.
 
   const fn = autoDetectFilter(workingText);
   if (fn && !(!lossyEnabled && isLossyFilter(fn.filterName || fn.name))) {
@@ -259,6 +261,15 @@ function compressText(text, stats, shape) {
       filterName = filterName ? `${filterName}+${FILTERS.HARD_CAP}` : FILTERS.HARD_CAP;
       workingText = capped;
     }
+  }
+
+  // Fidelity gate: a rewrite that lost a URL, code block, version, path or error
+  // line is refused outright — the model gets the untouched original instead.
+  // Dropping the compression costs tokens; dropping the content costs the answer.
+  if (workingText !== text && !preservesProtectedContent(text, workingText)) {
+    stats.bytesAfter += bytesIn;
+    stats.refused = (stats.refused || 0) + 1;
+    return text;
   }
 
   // Safety: never return empty, never grow the input
