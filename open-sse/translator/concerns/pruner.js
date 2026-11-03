@@ -277,7 +277,10 @@ export function pruneMessageHistory(body, provider, model) {
     }
   }
 
-  const tombstoneText = `[earlier ${omittedCount || 1} history turns omitted for context limit]`;
+  // Static text, no counts: this line sits at the head of the surviving history,
+  // so any per-turn change (an omitted-turn number) would shift every following
+  // byte and turn a prompt-cache hit into a full prefix rewrite.
+  const tombstoneText = `[earlier history turns omitted for context limit]`;
   const remainingMiddleAndTrailing = [
     ...prunedMiddle.flatMap((g) => g.messages),
     ...trailingGroups.flatMap((g) => g.messages),

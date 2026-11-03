@@ -1,3 +1,24 @@
+# v0.15.210 (2026-11-03)
+
+## Fix pruner tombstone rewriting the prefix cache on every prune
+- `pruneMessageHistory()` inserted `[earlier N history turns omitted …]` where N
+  was the number of turns dropped in *that* request. The tombstone heads the
+  surviving history, so N changed on every subsequent prune and shifted every
+  following byte — a live conversation at the budget ceiling got 2.6% common
+  prefix between consecutive turns, i.e. an upstream prompt-cache miss on
+  nearly the whole payload. Cache misses bill at 125% of the input price, so the
+  pruner could cost more than it saved.
+- The tombstone is now a fixed string. Verified: three different prune depths
+  (120/140/160 turns dropped) emit byte-identical tombstones.
+- Add a regression test in `tests/unit/pruner.test.js` that pins the tombstone
+  for different prune depths and rejects an embedded count. Reverting the fix
+  fails it.
+- Scope note: this only removes the per-turn jitter. A middle-out pruner still
+  shifts surviving content whenever it prunes again, so a conversation parked
+  at the budget ceiling will still miss cache on each turn it prunes. It does
+  not prune at all for normal traffic (a 1M-context model only prunes above
+  ~932k tokens).
+
 # v0.15.209 (2026-11-03)
 
 ## Fix request payload size undercount that hid large prompts

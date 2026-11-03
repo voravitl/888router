@@ -136,7 +136,43 @@ describe("pruner: tool-pair aware atomic context pruner", () => {
     const trailingUserMsg = result.request.contents.find(m => m.parts && m.parts.some(p => p.text.includes("u3 (trailing)")));
     expect(trailingUserMsg).toBeDefined();
     expect(trailingUserMsg.content).toBeUndefined(); // Must NOT set invalid content field on Gemini shape
-    expect(trailingUserMsg.parts[0].text).toContain("[earlier 2 history turns omitted for context limit]");
+    // Tombstone text is deliberately static (no omitted-turn count): it sits at
+    // the head of the surviving history, so a per-turn number would shift every
+    // following byte and kill the upstream prefix cache.
+    expect(trailingUserMsg.parts[0].text).toContain("[earlier history turns omitted for context limit]");
+  });
+
+  it("emits a byte-identical tombstone regardless of how many turns were dropped", () => {
+    // The tombstone heads the surviving history. If it embedded the omitted-turn
+    // count, consecutive turns would differ at that byte and every following token
+    // would miss the upstream prefix cache — so two different prune depths must
+    // produce the same tombstone string.
+    const build = (middleTurns) => {
+      const messages = [
+        { role: "system", content: "sys" },
+        { role: "user", content: "initial context" },
+      ];
+      for (let i = 0; i < middleTurns; i++) {
+        messages.push({ role: "assistant", content: `a${i}: ` + "x".repeat(40000) });
+        messages.push({ role: "user", content: `u${i}: ` + "y".repeat(10000) });
+      }
+      messages.push({ role: "user", content: "trailing question" });
+      return { messages };
+    };
+
+    const tombstones = [120, 140, 160].map((turns) => {
+      const result = pruneMessageHistory(build(turns), "alims-intl", "deepseek-v4.1-flash");
+      expect(result._prunerStats?.pruned).toBe(true);
+      // The tombstone is merged into the first surviving user message, so scan
+      // every message rather than expecting a standalone one.
+      const serialized = JSON.stringify(result.messages);
+      const match = serialized.match(/\[earlier[^\]]*omitted for context limit\]/);
+      expect(match).not.toBeNull();
+      return match[0];
+    });
+
+    expect(new Set(tombstones).size).toBe(1);
+    expect(tombstones[0]).not.toMatch(/\d+\s+history turns/);
   });
 });
 
