@@ -1,3 +1,17 @@
+# v0.15.208 (2026-11-03)
+
+## Refresh alims-intl (Alibaba Studio) model list
+- Replace the 7 catalogued `alims-intl` models with 10 verified against
+  `dashscope-intl.aliyuncs.com` on 2026-11-03. Every previous id was dead upstream:
+  `kimi-k2.5`, `glm-5`, `MiniMax-M2.5`, `qwen3-coder-next`, `qwen3-coder-plus`,
+  `glm-4.7` now answer 404 `Model does not exist`, and `qwen3.5-plus` answers 403
+  `AllocationQuota.FreeTierOnly`. `/v1/models` was advertising model ids nobody could call.
+- New set, each confirmed 200 on the same host: `qwen3.8-max`, `qwen3.7-max`,
+  `qwen3.7-plus`, `qwen3.7-flash`, `qwen3.8-flash`, `glm-5.3`, `glm-5.2`,
+  `deepseek-v4-pro`, `kimi-k3`, `qwen3-coder-flash`.
+- Registry-only change: `PROVIDER_MODELS` is built from `providers/registry`, so no
+  executor or translator work is needed.
+
 # v0.15.207 (2026-11-02)
 
 ## Remove unused Headroom service from Docker Compose
