@@ -1,3 +1,27 @@
+# v0.15.216 (2026-11-03)
+
+## Report the routing decision on single-model responses, with provider and tried candidates
+- `X-Router-Decision` existed but was stamped only on combo responses. A direct
+  `provider/model` call returned 200 with no way to tell which account served it —
+  verified live: `curl -D-` on `/v1/messages` with `alims-intl/qwen3.8-max` returned
+  no header at all.
+- Single-model successes now carry `strategy=direct; model=…; provider=…;
+  fallback_count=…; status=ok`.
+- The header also gained `provider=` and `tried=` for combo responses. A header
+  reading `model=ollama/deepseek-v4.1-flash` did not say the traffic had already
+  failed over from five other candidates; now it does:
+
+  ```
+  x-router-decision: strategy=round-robin; model=ollama/deepseek-v4.1-flash:1017;
+    fallback_count=5; status=ok; provider=ollama;
+    tried=kr/claude-sonnet-5.5,cx/gpt-6.1-terra,ag/claude-sonnet-5-5-high,
+          ag/gemini-3.8-flash-medium,cc/claude-sonnet-5-5
+  ```
+- Verified against a locally built server (0.15.215) before shipping: single model
+  200 with `strategy=direct`, combo 200 with `provider` + `tried`, and an
+  all-candidates-fail 404 carrying `status=error` plus the full `tried` list.
+- Header-only change: no request body, routing order or fallback behaviour moved.
+
 # v0.15.215 (2026-11-03)
 
 ## Make RTK's per-filter caps tunable, and raise them so listings are never cut
