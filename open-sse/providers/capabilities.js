@@ -290,15 +290,24 @@ export const MODEL_CAPABILITIES = {
   // models.dev `opencode`, 8 of the 9 registered ids were wrong, four overstated
   // by 5x (the gateway accepts a request the upstream then rejects) and one
   // understated by 8x.
-  "nemotron-3-ultra-free":       { reasoning: true, vision: false, contextWindow: 1000000, maxOutput: 128000 },
-  "nemotron-3.5-lightning-free": { reasoning: true, vision: false, contextWindow: 262144,  maxOutput: 262144 },
-  "nemotron-3.5-super-vl-free":  { reasoning: true, vision: true,  contextWindow: 1048576, maxOutput: 131072 },
-  "mimo-v2.6-flash-free":        { reasoning: true, vision: false, contextWindow: 200000,  maxOutput: 32000 },
-  "beam-free":                   { reasoning: true, vision: false, contextWindow: 1048576, maxOutput: 131072 },
-  "deepseek-v4.1-flash-free":    { reasoning: true, vision: false, contextWindow: 200000,  maxOutput: 32000 },
-  "glm-5.3-flash-free":          { reasoning: true, vision: false, contextWindow: 200000,  maxOutput: 32000 },
-  "longcat-2.5-preview-free":    { reasoning: true, vision: false, contextWindow: 1000000, maxOutput: 131072 },
-  "big-pickle":                  { reasoning: true, vision: false, contextWindow: 200000,  maxOutput: 64000 },
+  // vision mirrors models.dev's input modalities; declaring `vision: false` is
+  // redundant (it is the DEFAULT) and actively harmful here — before this block
+  // existed these ids inherited vision:true from PATTERN_CAPABILITIES, so writing
+  // false would strip image blocks from models that accept them.
+  "nemotron-3-ultra-free":       { reasoning: true, contextWindow: 1000000, maxOutput: 128000 },
+  "nemotron-3.5-lightning-free": { reasoning: true, contextWindow: 262144,  maxOutput: 262144 },
+  "nemotron-3.5-super-vl-free":  { reasoning: true, vision: true, contextWindow: 1048576, maxOutput: 131072 },
+  "mimo-v2.6-flash-free":        { reasoning: true, vision: true, contextWindow: 200000,  maxOutput: 32000 },
+  "beam-free":                   { reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
+  // text-only on purpose: models.dev lists image input for OpenCode's free
+  // variant, but the whole deepseek-v4 family rejects image_url upstream with
+  // 400 "unknown variant image_url, expected text" — see
+  // tests/unit/capabilities-deepseek-v4-text-only.test.js, which pins that
+  // invariant for every provider override.
+  "deepseek-v4.1-flash-free":    { reasoning: true, contextWindow: 200000,  maxOutput: 32000 },
+  "glm-5.3-flash-free":          { reasoning: true, vision: true, contextWindow: 200000,  maxOutput: 32000 },
+  "longcat-2.5-preview-free":    { reasoning: true, vision: true, contextWindow: 1000000, maxOutput: 131072 },
+  "big-pickle":                  { reasoning: true, contextWindow: 200000,  maxOutput: 64000 },
   // GLM-5.3 and GLM-5.2 have 1M context (overrides *glm-5* pattern's 200k). Claude 4.6/4.7/4.8 and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "glm-5.3":           { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
   "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
@@ -436,6 +445,13 @@ export const PROVIDER_CAPABILITIES = {
   // ids resolve through PATTERN_CAPABILITIES to the same limits, so nothing
   // is lost. `opencode-go` (the PAID tier) is a different upstream and keeps
   // its own entries — do not prune the two together.
+  "nara": {
+    // nara registers deepseek-v4.1-flash-free too. The catalogue entry above
+    // (measured on OpenCode Zen's upstream) must not silently redefine nara's
+    // limits — models.dev has no nara provider, so keep the values nara had
+    // before that entry existed rather than inventing new ones.
+    "deepseek-v4.1-flash-free": { reasoning: true, contextWindow: 1000000, maxOutput: 384000 },
+  },
   "opencode": {
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },

@@ -7,16 +7,20 @@ import { PROVIDER_MODELS } from "../../open-sse/providers/index.js";
 // `opencode`: 8 of 9 were wrong — four overstated by 5x (the gateway accepts a
 // request the upstream then rejects) and one understated by 8x. These pin the
 // values so a future glob change cannot silently drop them back to the floor.
+// `vision` is pinned too: writing the DEFAULT false into a catalogue entry is a
+// silent regression, because these ids previously inherited vision:true from
+// PATTERN_CAPABILITIES and would start stripping image blocks the model accepts.
+// Values mirror models.dev `opencode` input modalities.
 const EXPECTED = {
-  "nemotron-3-ultra-free":      { contextWindow: 1000000, maxOutput: 128000 },
-  "nemotron-3.5-lightning-free":{ contextWindow: 262144,  maxOutput: 262144 },
-  "nemotron-3.5-super-vl-free": { contextWindow: 1048576, maxOutput: 131072 },
-  "mimo-v2.6-flash-free":       { contextWindow: 200000,  maxOutput: 32000 },
-  "beam-free":                  { contextWindow: 1048576, maxOutput: 131072 },
-  "deepseek-v4.1-flash-free":   { contextWindow: 200000,  maxOutput: 32000 },
-  "glm-5.3-flash-free":         { contextWindow: 200000,  maxOutput: 32000 },
-  "longcat-2.5-preview-free":   { contextWindow: 1000000, maxOutput: 131072 },
-  "big-pickle":                 { contextWindow: 200000,  maxOutput: 64000 },
+  "nemotron-3-ultra-free":      { contextWindow: 1000000, maxOutput: 128000, vision: false },
+  "nemotron-3.5-lightning-free":{ contextWindow: 262144,  maxOutput: 262144, vision: false },
+  "nemotron-3.5-super-vl-free": { contextWindow: 1048576, maxOutput: 131072, vision: true },
+  "mimo-v2.6-flash-free":       { contextWindow: 200000,  maxOutput: 32000,  vision: true },
+  "beam-free":                  { contextWindow: 1048576, maxOutput: 131072, vision: false },
+  "deepseek-v4.1-flash-free":   { contextWindow: 200000,  maxOutput: 32000,  vision: false },
+  "glm-5.3-flash-free":         { contextWindow: 200000,  maxOutput: 32000,  vision: true },
+  "longcat-2.5-preview-free":   { contextWindow: 1000000, maxOutput: 131072, vision: true },
+  "big-pickle":                 { contextWindow: 200000,  maxOutput: 64000,  vision: false },
 };
 
 describe("oc (OpenCode Zen free) context windows match models.dev", () => {
@@ -27,7 +31,11 @@ describe("oc (OpenCode Zen free) context windows match models.dev", () => {
 
   it.each(Object.entries(EXPECTED))("%s", (model, want) => {
     const caps = getCapabilitiesForModel("oc", model);
-    expect({ contextWindow: caps.contextWindow, maxOutput: caps.maxOutput }).toEqual(want);
+    expect({
+      contextWindow: caps.contextWindow,
+      maxOutput: caps.maxOutput,
+      vision: caps.vision === true,
+    }).toEqual(want);
   });
 
   it("does not leave any registered id on the 200k floor by accident", () => {
@@ -38,6 +46,14 @@ describe("oc (OpenCode Zen free) context windows match models.dev", () => {
       const caps = getCapabilitiesForModel("oc", model);
       expect(caps.reasoning).toBe(true);
     }
+  });
+
+  it("does not redefine nara, which registers the same model id", () => {
+    // models.dev has no nara provider, so the catalogue entry measured on
+    // OpenCode Zen's upstream must not silently shrink nara's limits.
+    const nara = getCapabilitiesForModel("nara", "deepseek-v4.1-flash-free");
+    expect(nara.contextWindow).toBe(1000000);
+    expect(nara.maxOutput).toBe(384000);
   });
 
   it("keeps the OC Alpha entry at 1M even though it is not in the registry", () => {
