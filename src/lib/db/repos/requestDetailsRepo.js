@@ -105,25 +105,19 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
-function estimatePayloadSize(obj) {
-  if (typeof obj?.prompt === "string") return obj.prompt.length;
+// Count every string leaf, not just top-level `text`. Claude Code carries tool
+// output in tool_result.content[].text, which the old top-level-only walk missed
+// entirely — a 730k-token prompt was recorded as 102 KB.
+// Stops early: the caller only needs to know whether the payload exceeds maxSize.
+function estimatePayloadSize(obj, limit = Infinity) {
   let total = 0;
-  const list = Array.isArray(obj?.messages) ? obj.messages : (Array.isArray(obj?.contents) ? obj.contents : null);
-  if (list) {
-    for (const item of list) {
-      if (typeof item?.content === "string") {
-        total += item.content.length;
-      } else if (Array.isArray(item?.content)) {
-        for (const block of item.content) {
-          if (typeof block?.text === "string") total += block.text.length;
-        }
-      } else if (Array.isArray(item?.parts)) {
-        for (const part of item.parts) {
-          if (typeof part?.text === "string") total += part.text.length;
-        }
-      }
-      if (total > 64 * 1024) break;
-    }
+  const stack = [obj];
+  while (stack.length > 0 && total <= limit) {
+    const value = stack.pop();
+    if (value == null) continue;
+    if (typeof value === "string") { total += value.length; continue; }
+    if (typeof value !== "object") continue;
+    for (const item of Object.values(value)) stack.push(item);
   }
   return total;
 }
@@ -136,12 +130,13 @@ function truncateField(obj, maxSize) {
     }
     return obj;
   }
-  const est = estimatePayloadSize(obj);
+  const est = estimatePayloadSize(obj, maxSize);
   if (est > maxSize) {
     let preview = "[large payload]";
     if (typeof obj.prompt === "string") preview = obj.prompt.substring(0, 200);
     else if (Array.isArray(obj.messages) && typeof obj.messages[0]?.content === "string") preview = obj.messages[0].content.substring(0, 200);
-    return { _truncated: true, _originalSize: est, _preview: preview };
+    // Serialize once so the reported size is the real byte size of what was dropped.
+    return { _truncated: true, _originalSize: JSON.stringify(obj).length, _preview: preview };
   }
   const str = JSON.stringify(obj);
   if (str.length > maxSize) {

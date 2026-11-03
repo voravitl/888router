@@ -1,3 +1,41 @@
+# v0.15.209 (2026-11-03)
+
+## Fix request payload size undercount that hid large prompts
+- `estimatePayloadSize()` in `src/lib/db/repos/requestDetailsRepo.js` only read
+  top-level `content` strings and `block.text`. Claude Code nests tool output in
+  `tool_result.content[].text`, so a request carrying 500k characters of tool
+  output was counted as **0** and its dropped size was logged as 0.
+- A 64 KB early exit also capped the counter, understating multi-megabyte
+  requests.
+- Replaced with a full string-leaf walk that stops once the limit is exceeded,
+  and `_originalSize` now reports the real serialized size of what was dropped.
+  This is the only evidence an operator has that a request was discarded for
+  size — a live incident logged a 730k-token prompt as 102 KB, which made the
+  cause undiagnosable.
+- Logging only: `estimateRequestTokens()` in the request path already walked
+  recursively and is unchanged. No routing, quota, or cache behaviour changes.
+- Add `tests/unit/request-detail-payload-size.test.js` covering nested
+  tool_result text, the removed 64 KB ceiling, base64 media, and the intact
+  small-request path.
+
+# v0.15.208 (2026-11-03)
+
+## Refresh alims-intl (Alibaba Studio) model list
+- Replace the 7 catalogued `alims-intl` models with 10 verified against
+  `dashscope-intl.aliyuncs.com` on 2026-11-03. Every previous id was dead upstream:
+  `kimi-k2.5`, `glm-5`, `MiniMax-M2.5`, `qwen3-coder-next`, `qwen3-coder-plus`,
+  `glm-4.7` now answer 404 `Model does not exist`, and `qwen3.5-plus` answers 403
+  `AllocationQuota.FreeTierOnly`. `/v1/models` was advertising model ids nobody could call.
+- New set, each confirmed 200 on the same host: `qwen3.8-max`, `qwen3.7-max`,
+  `qwen3.7-plus`, `qwen3.7-flash`, `qwen3.8-flash`, `glm-5.3`, `glm-5.2`,
+  `deepseek-v4-pro`, `deepseek-v4.1-flash`, `deepseek-v4.1-flash-1017`,
+  `kimi-k3`, `qwen3-coder-flash`.
+- Both `deepseek-v4.1-flash` and its dated snapshot `deepseek-v4.1-flash-1017`
+  stay listed: free-tier quota is metered per model id, so the alias can serve
+  while the snapshot answers `insufficient_quota`.
+- Registry-only change: `PROVIDER_MODELS` is built from `providers/registry`, so no
+  executor or translator work is needed.
+
 # v0.15.207 (2026-11-02)
 
 ## Remove unused Headroom service from Docker Compose
