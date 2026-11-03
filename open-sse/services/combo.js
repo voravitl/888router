@@ -287,12 +287,10 @@ export function computePrefixHash(body) {
   if (topLevelSystem) add(asText(topLevelSystem), 1024);
 
   if (Array.isArray(body.messages)) {
-    let systemBudget = 256;
-    for (const m of body.messages) {
-      if (!m || (m.role !== "system" && m.role !== "developer")) continue;
-      add(asText(m.content), systemBudget);
-      systemBudget = 0; // one messages[]-system is enough to distinguish
-    }
+    // One messages[]-system is enough to distinguish; skip the rest rather than
+    // appending empty separators.
+    const systemMsg = body.messages.find((m) => m && (m.role === "system" || m.role === "developer"));
+    if (systemMsg) add(asText(systemMsg.content), 256);
     // Always include the first user turn: it separates two conversations that
     // share a system prompt (the same project, two tasks) without breaking
     // pinning, because it does not change as the conversation grows.
