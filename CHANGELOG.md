@@ -1,23 +1,30 @@
-# v0.15.218 (2026-11-03)
+# v0.15.219 (2026-11-03)
 
-## Report the real prompt-cache reuse instead of only the response cache
-- The dashboard had exactly one cache number, and it counted the gateway's own
-  **response cache** — the opt-in `x-888-response-cache` reply replay. Normal
-  traffic never uses it, so the tile read **0%** while the upstream prefix cache
-  was in fact serving **99%** of prompt tokens. That made the gateway look like it
-  did no cache management at all.
-- `getTokenSaveSummary()` now also returns `promptCache`: requests that reused a
-  cached prefix, plus cached/prompt token totals and `pctSaved`. Measured against
-  the live DB: **459 requests, 439 with a cached prefix (96%), 190.3M of 192.2M
-  prompt tokens cached (99%)** — against `cache.hitRate: 0`.
-- Only `status: "success"` rows with a non-zero prompt count are counted, so a
-  dead or token-less row cannot drag the ratio toward zero; cached tokens are
-  clamped to the prompt total because some providers over-report them.
-- Add a "Prompt Cache" card next to the existing "Response Cache" card, which
-  keeps its own meaning.
-- Tests in `tests/unit/prompt-cache-summary.test.js` pin the two counters apart:
-  a response-cache hit must not inflate the prompt ratio, failed rows are
-  ignored, and the ratio never exceeds 100%. Breaking the counter fails one.
+## Fix context windows for every OpenCode Zen free model
+- `oc` (OpenCode Zen free) had almost no capability entries, so every id fell to
+  `DEFAULT_CAPABILITIES`' 200,000 / 64,000 floor. Checked against models.dev's
+  `opencode` catalog: **8 of the 9 registered ids were wrong**.
+- The errors ran in both directions, and the overstatements were the dangerous
+  ones — the gateway would accept a request the upstream then rejects:
+
+  | model | was | real |
+  |---|---|---|
+  | `deepseek-v4.1-flash-free` | 1,000,000 | **200,000** |
+  | `glm-5.3-flash-free` | 1,000,000 | **200,000** |
+  | `mimo-v2.6-flash-free` | 262,144 | **200,000** |
+  | `nemotron-3.5-super-vl-free` | 128,000 | **1,048,576** |
+  | `beam-free` | 200,000 | **1,048,576** |
+  | `longcat-2.5-preview-free` | 200,000 | **1,000,000** |
+  | `nemotron-3.5-lightning-free` | 128,000 | **262,144** |
+  | `big-pickle` | 128,000 | **200,000** |
+
+- The values live in `MODEL_CAPABILITIES` (catalogue), not
+  `PROVIDER_CAPABILITIES`. Precedence is `DEFAULT < catalogue < dynamic <
+  provider`, so a provider entry would have outranked a live capability sync and
+  frozen today's numbers — the first attempt did exactly that and broke two
+  alias-normalization tests.
+- `tests/unit/oc-context-windows.test.js` pins all nine ids and asserts each one
+  has an explicit entry rather than sitting on the floor by accident.
 
 # v0.15.217 (2026-11-03)
 
@@ -3206,7 +3213,6 @@ DuckDuckGo changed its VQD handshake protocol. The 5 new models from v0.15.56 ar
 
 # v0.15.41 (2026-08-24)
 
-
 ## Fix: Allow public model sync for OpenCode Go (`opencode-go`, `ocg`) & OpenRouter
 
 - **Public Model Listing**: Added `opencode-go`, `ocg`, and `openrouter` to `isPublicModelsProvider` in `src/shared/constants/providers.js` so clicking Sync Models fetches the live catalog without requiring a pre-saved API key in DB.
@@ -3920,7 +3926,6 @@ DuckDuckGo changed its VQD handshake protocol. The 5 new models from v0.15.56 ar
 
 # v0.10.41 (2026-07-29)
 
-
 ## Features & Improvements (P2: Dynamic AST Soft-Pruner & History Shrinker)
 - **AST Soft-Pruner & History Shrinker**: added `open-sse/translator/concerns/astSummarizer.js` to extract AST outlines (function signatures, class definitions, struct interfaces) for JS, TS, Python, Go, and Rust code blocks in middle turns before hard middle-out pruning.
 - **Zero-Bloat Invariant**: enforced strict shrink constraint (`result.length < match.length`), ensuring soft AST outlines never expand payload size.
@@ -3928,7 +3933,6 @@ DuckDuckGo changed its VQD handshake protocol. The 5 new models from v0.15.56 ar
 - **Unit Test Coverage**: added `tests/unit/ast-summarizer.test.js` pinning language signature extraction, zero-bloat invariant, and soft-only middle turn preservation.
 
 # v0.10.40 (2026-07-29)
-
 
 ## Features & Improvements (P1: RTK v2 & Tool Output Hard-Caps)
 - **RTK v2 Hard Caps**: added `applyHardCap` truncation guard in `open-sse/rtk/index.js` capping oversized tool outputs at 32KB (or `RTK_HARD_CAP_BYTES`) with guaranteed length invariants (`out.length <= capBytes && out.length < text.length`), preventing runaway tool outputs from blowing up context budgets.
@@ -3938,14 +3942,12 @@ DuckDuckGo changed its VQD handshake protocol. The 5 new models from v0.15.56 ar
 
 # v0.10.39 (2026-07-29)
 
-
 ## Features & Improvements (Auto Upstream Prompt Caching Injection & Build Resilience)
 - **Auto Prompt Caching Injection**: added `open-sse/translator/concerns/promptCache.js` for automatic `cache_control: { type: "ephemeral", ttl: "1h" }` injection in Claude requests and static system prefix normalization for OpenAI/Codex/Gemini requests (saves up to 90% input token cost).
 - **Hardened Caching Logic**: enforced max 4 explicit Anthropic cache breakpoints, excluded `thinking`/`redacted_thinking` content blocks, preserved existing client cache controls, and added unit tests (`tests/unit/prompt-cache-concern.test.js`).
 - **Data Dir Build Fallback**: added `ENOENT` error handling to `src/mitm/paths.js` and `src/lib/mitmAliasCache.js` fallback mechanism, ensuring clean Next.js production builds when `/app/data` is unmapped.
 
 # v0.10.38 (2026-07-29)
-
 
 ## Fixes & Improvements (Combo Fallback Classification & Model Capabilities Sync)
 - **Combo Model-Error Fallback**: classified permanent model-level errors (`"not supported"`, `"model not found"`, status 404, etc.) as `modelError` — bypassing useless account cycling and triggering immediate combo fallback to the next model without locking fine accounts.
