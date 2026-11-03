@@ -58,6 +58,12 @@ services:
       # build output), which summarise tool reports rather than dropping code.
       RTK_ON_PRESERVED_INPUT: "on"
       RTK_LOSSY: "off"
+      # The per-filter caps (grep 10/file, git-status 10 files, find 20 dirs, ...)
+      # are the only place RTK drops whole entries. Raise them so a listing is
+      # never cut: measured 30/30 status files and 25/25 grep matches kept, while
+      # `ls` still saves 61% and grep 13% by reformatting. The fidelity gate
+      # remains the backstop if a rewrite still loses a protected token.
+      RTK_SAFE_CAPS: "on"
       SEARXNG_BASE_URL: http://searxng:8080/search
     depends_on:
       - searxng

@@ -1,3 +1,25 @@
+# v0.15.215 (2026-11-03)
+
+## Make RTK's per-filter caps tunable, and raise them so listings are never cut
+- The caps were the only place RTK deletes whole entries rather than reformatting
+  them: `grep` kept 10 matches per file, `git-status` 10 files, `find` 20 dirs,
+  `git-log`/`tree` 200 lines, `git-diff` 100 lines per hunk. Measured: a 30-file
+  status showed 10, a 25-match grep result showed 10.
+- Every cap is now env-tunable (`RTK_GREP_PER_FILE_MAX`, `RTK_STATUS_MAX_FILES`,
+  `RTK_FIND_PER_DIR_MAX`, `RTK_FIND_TOTAL_DIR_MAX`, `RTK_GIT_DIFF_HUNK_MAX_LINES`,
+  `RTK_GIT_LOG_MAX_LINES`, `RTK_TREE_MAX_LINES`, `RTK_DEDUP_LINE_MAX`,
+  `RTK_SEARCH_LIST_*`), with `RTK_SAFE_CAPS=on` raising them all at once.
+- Compose sets `RTK_SAFE_CAPS: "on"`. Measured after: 30/30 status files,
+  25/25 grep matches and 40/40 find paths kept, with no fidelity-gate refusal.
+- Savings that remain are pure reformatting: `ls` 61% (drops permission bits and
+  dates, keeps every name), grep 13%. Listings that cannot be reformatted cost
+  nothing and lose nothing.
+- **Trade, stated plainly:** this lowers measured savings versus the capped
+  defaults — a listing that used to be cut to a tenth now travels whole. The
+  goal is the largest saving that never drops content, not the largest number.
+- Tests in `tests/unit/rtk-safe-caps.test.js` pin each cap; clearing the flag
+  fails three of them.
+
 # v0.15.214 (2026-11-03)
 
 ## Restrict Headroom to the one compressor that does not corrupt content
