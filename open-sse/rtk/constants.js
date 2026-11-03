@@ -54,8 +54,15 @@ export const HARD_CAP_BYTES = (Number.isFinite(rawCap) && rawCap > 0) ? rawCap :
 // read; a model that never saw line 250 answers from nothing. RTK_LOSSY=off keeps
 // only the first group so agent traffic cannot be corrupted.
 const LOSSY_FILTERS = new Set(["read-numbered", "smart-truncate", "dedup-log"]);
-const rawLossy = String(process.env.RTK_LOSSY || "on").toLowerCase();
-export const LOSSY_ENABLED = !(rawLossy === "off" || rawLossy === "0" || rawLossy === "false");
+
+// Read per call, not at import: a module-level constant freezes whatever env
+// the process started with, so a settings toggle or a test could never change
+// it without a restart (and a stale `on` would silently truncate file reads).
+export function isLossyEnabled() {
+  const raw = String(process.env.RTK_LOSSY || "on").toLowerCase();
+  return !(raw === "off" || raw === "0" || raw === "false");
+}
+
 export function isLossyFilter(name) {
   return LOSSY_FILTERS.has(name);
 }
