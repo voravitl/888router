@@ -1,3 +1,36 @@
+# v0.15.211 (2026-11-03)
+
+## Fix RTK destroying Read output by misreading it as git status
+- `RE_PORCELAIN` in `open-sse/rtk/autodetect.js` accepted a space in both XY
+  positions, so **any indented line** matched a git porcelain status row.
+- Claude Code returns `Read` output as `   N|content` — three spaces then digits.
+  That matched, the content was classified as `git-status`, and `gitStatus()`
+  replaced the entire tool result with `clean — nothing to commit`:
+  a 15,672-character file the model had just read became 26 characters, and a
+  symbol on line 250 was gone. With RTK enabled this would have silently
+  corrupted every large file read.
+- Require a real status character on at least one side of the XY pair. Every
+  porcelain row has one (` M`, `M `, `??`, `A `, `D `); an indented source line
+  does not. Real status output still compresses (960 bytes saved on a sample).
+- Regression tests in `tests/unit/rtk.test.js`: three indentation shapes must not
+  detect as git-status, a 500-line Read body must keep its line-250 symbol
+  through `compressMessages`, and five real porcelain forms must still detect.
+  Reverting the regex fails four of them.
+- **This is a data-loss fix, not a savings change.** RTK stays gated off for
+  Claude Code traffic (`preserveRequestInput`), so it has no effect on live
+  requests yet.
+
+## Headroom service restored to compose (opt-in)
+- Re-add the `headroom` service removed in v0.15.207, behind
+  `profiles: ["headroom"]` so it never starts with the gateway: it costs
+  ~1GB RAM and 1.5 CPU and nothing calls it unless the toggle is on.
+- Running it needs three values the old block did not carry: `HEADROOM_MODE=token`
+  (the default `cache` mode freezes prior turns and makes `/v1/compress` a no-op —
+  measured `router:noop`, ratio 1.0), a compression timeout above the 3s default
+  (3s produced `skip_reason: compression_timeout`), and a loaded `kompress` model.
+  With those, a 39 KB structured payload compressed 27% end-to-end through the
+  gateway (`[HEADROOM] reported token delta=3185 before=11818 after=8633`).
+
 # v0.15.210 (2026-11-03)
 
 ## Fix pruner tombstone rewriting the prefix cache on every prune
