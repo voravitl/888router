@@ -1,4 +1,4 @@
-# v0.15.218 (2026-11-03)
+# v0.15.221 (2026-11-03)
 
 ## Fix a combo advertising its SMALLEST member's context window
 - `/v1/models` published `context_length` for a combo as the **minimum** across
