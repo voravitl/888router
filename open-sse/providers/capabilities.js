@@ -283,6 +283,22 @@ const OX_ALPHA_CAPABILITIES = {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
+  // OpenCode Zen free tier. These ids belong in the CATALOGUE, not
+  // PROVIDER_CAPABILITIES: a live capability sync must be able to correct them
+  // (precedence is DEFAULT < catalogue < dynamic < provider). Without an entry
+  // every one of them fell to DEFAULT's 200,000/64,000 — verified against
+  // models.dev `opencode`, 8 of the 9 registered ids were wrong, four overstated
+  // by 5x (the gateway accepts a request the upstream then rejects) and one
+  // understated by 8x.
+  "nemotron-3-ultra-free":       { reasoning: true, vision: false, contextWindow: 1000000, maxOutput: 128000 },
+  "nemotron-3.5-lightning-free": { reasoning: true, vision: false, contextWindow: 262144,  maxOutput: 262144 },
+  "nemotron-3.5-super-vl-free":  { reasoning: true, vision: true,  contextWindow: 1048576, maxOutput: 131072 },
+  "mimo-v2.6-flash-free":        { reasoning: true, vision: false, contextWindow: 200000,  maxOutput: 32000 },
+  "beam-free":                   { reasoning: true, vision: false, contextWindow: 1048576, maxOutput: 131072 },
+  "deepseek-v4.1-flash-free":    { reasoning: true, vision: false, contextWindow: 200000,  maxOutput: 32000 },
+  "glm-5.3-flash-free":          { reasoning: true, vision: false, contextWindow: 200000,  maxOutput: 32000 },
+  "longcat-2.5-preview-free":    { reasoning: true, vision: false, contextWindow: 1000000, maxOutput: 131072 },
+  "big-pickle":                  { reasoning: true, vision: false, contextWindow: 200000,  maxOutput: 64000 },
   // GLM-5.3 and GLM-5.2 have 1M context (overrides *glm-5* pattern's 200k). Claude 4.6/4.7/4.8 and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "glm-5.3":           { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
   "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },

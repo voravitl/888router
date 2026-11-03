@@ -1,3 +1,31 @@
+# v0.15.219 (2026-11-03)
+
+## Fix context windows for every OpenCode Zen free model
+- `oc` (OpenCode Zen free) had almost no capability entries, so every id fell to
+  `DEFAULT_CAPABILITIES`' 200,000 / 64,000 floor. Checked against models.dev's
+  `opencode` catalog: **8 of the 9 registered ids were wrong**.
+- The errors ran in both directions, and the overstatements were the dangerous
+  ones — the gateway would accept a request the upstream then rejects:
+
+  | model | was | real |
+  |---|---|---|
+  | `deepseek-v4.1-flash-free` | 1,000,000 | **200,000** |
+  | `glm-5.3-flash-free` | 1,000,000 | **200,000** |
+  | `mimo-v2.6-flash-free` | 262,144 | **200,000** |
+  | `nemotron-3.5-super-vl-free` | 128,000 | **1,048,576** |
+  | `beam-free` | 200,000 | **1,048,576** |
+  | `longcat-2.5-preview-free` | 200,000 | **1,000,000** |
+  | `nemotron-3.5-lightning-free` | 128,000 | **262,144** |
+  | `big-pickle` | 128,000 | **200,000** |
+
+- The values live in `MODEL_CAPABILITIES` (catalogue), not
+  `PROVIDER_CAPABILITIES`. Precedence is `DEFAULT < catalogue < dynamic <
+  provider`, so a provider entry would have outranked a live capability sync and
+  frozen today's numbers — the first attempt did exactly that and broke two
+  alias-normalization tests.
+- `tests/unit/oc-context-windows.test.js` pins all nine ids and asserts each one
+  has an explicit entry rather than sitting on the floor by accident.
+
 # v0.15.218 (2026-11-03)
 
 ## Report the real prompt-cache reuse instead of only the response cache
