@@ -2,19 +2,38 @@
 export const RAW_CAP = 10 * 1024 * 1024;      // 10 MiB
 export const MIN_COMPRESS_SIZE = 500;          // bytes; skip tiny blobs
 export const DETECT_WINDOW = 1024;             // autodetect peeks first N chars
-export const GIT_DIFF_HUNK_MAX_LINES = 100;    // per-hunk line cap
+
+// Per-filter caps. These are the only place RTK drops whole entries rather than
+// reformatting them, so they are env-tunable: raise them (or set 0 = unlimited)
+// to trade savings for completeness without touching filter logic.
+// Defaults keep upstream parity; `RTK_SAFE_CAPS=on` raises every cap so that a
+// listing is never truncated and the fidelity gate has nothing to refuse.
+function capFromEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+const SAFE_CAPS = String(process.env.RTK_SAFE_CAPS || "").toLowerCase();
+export const SAFE_CAPS_ENABLED = SAFE_CAPS === "on" || SAFE_CAPS === "1" || SAFE_CAPS === "true";
+// Large enough that no realistic listing is cut; the fidelity gate still refuses
+// any rewrite that loses a protected token.
+const SAFE_CAP = 100000;
+
+export const GIT_DIFF_HUNK_MAX_LINES = capFromEnv("RTK_GIT_DIFF_HUNK_MAX_LINES", SAFE_CAPS_ENABLED ? SAFE_CAP : 100);
 export const GIT_DIFF_CONTEXT_KEEP = 3;        // context lines around changes
-export const GIT_LOG_MAX_LINES = 200;          // gitLog line cap
-export const DEDUP_LINE_MAX = 2000;            // dedupLog truncation cap
+export const GIT_LOG_MAX_LINES = capFromEnv("RTK_GIT_LOG_MAX_LINES", SAFE_CAPS_ENABLED ? SAFE_CAP : 200);
+export const DEDUP_LINE_MAX = capFromEnv("RTK_DEDUP_LINE_MAX", SAFE_CAPS_ENABLED ? SAFE_CAP : 2000);
 
 // Rust pipe_cmd.rs parity caps
-export const GREP_PER_FILE_MAX = 10;           // match rust: matches.iter().take(10)
-export const FIND_PER_DIR_MAX = 10;            // match rust: files.iter().take(10)
-export const FIND_TOTAL_DIR_MAX = 20;          // match rust: dirs.iter().take(20)
+export const GREP_PER_FILE_MAX = capFromEnv("RTK_GREP_PER_FILE_MAX", SAFE_CAPS_ENABLED ? SAFE_CAP : 10);
+export const FIND_PER_DIR_MAX = capFromEnv("RTK_FIND_PER_DIR_MAX", SAFE_CAPS_ENABLED ? SAFE_CAP : 10);
+export const FIND_TOTAL_DIR_MAX = capFromEnv("RTK_FIND_TOTAL_DIR_MAX", SAFE_CAPS_ENABLED ? SAFE_CAP : 20);
 
 // git status caps (rust config::limits())
-export const STATUS_MAX_FILES = 10;            // config::limits().status_max_files
-export const STATUS_MAX_UNTRACKED = 10;        // config::limits().status_max_untracked
+export const STATUS_MAX_FILES = capFromEnv("RTK_STATUS_MAX_FILES", SAFE_CAPS_ENABLED ? SAFE_CAP : 10);
+export const STATUS_MAX_UNTRACKED = capFromEnv("RTK_STATUS_MAX_UNTRACKED", SAFE_CAPS_ENABLED ? SAFE_CAP : 10);
 
 // ls compact_ls (rtk/src/cmds/system/ls.rs)
 export const LS_EXT_SUMMARY_TOP = 5;           // top-N extensions in summary
@@ -29,11 +48,11 @@ export const LS_NOISE_DIRS = [
 ];
 
 // tree filter_tree_output cap (no rust cap, we add one to be safe)
-export const TREE_MAX_LINES = 200;
+export const TREE_MAX_LINES = capFromEnv("RTK_TREE_MAX_LINES", SAFE_CAPS_ENABLED ? SAFE_CAP : 200);
 
 // Cursor Glob "Result of search in '...' (total N files):" list
-export const SEARCH_LIST_PER_DIR_MAX = 10;
-export const SEARCH_LIST_TOTAL_DIR_MAX = 20;
+export const SEARCH_LIST_PER_DIR_MAX = capFromEnv("RTK_SEARCH_LIST_PER_DIR_MAX", SAFE_CAPS_ENABLED ? SAFE_CAP : 10);
+export const SEARCH_LIST_TOTAL_DIR_MAX = capFromEnv("RTK_SEARCH_LIST_TOTAL_DIR_MAX", SAFE_CAPS_ENABLED ? SAFE_CAP : 20);
 
 // Smart truncate (port of filter.rs smart_truncate fallback)
 export const SMART_TRUNCATE_HEAD = 120;        // lines kept from top

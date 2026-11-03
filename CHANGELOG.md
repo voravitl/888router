@@ -1,3 +1,77 @@
+# v0.15.216 (2026-11-03)
+
+## Report the routing decision on single-model responses, with provider and tried candidates
+- `X-Router-Decision` existed but was stamped only on combo responses. A direct
+  `provider/model` call returned 200 with no way to tell which account served it —
+  verified live: `curl -D-` on `/v1/messages` with `alims-intl/qwen3.8-max` returned
+  no header at all.
+- Single-model successes now carry `strategy=direct; model=…; provider=…;
+  fallback_count=…; status=ok`.
+- The header also gained `provider=` and `tried=` for combo responses. A header
+  reading `model=ollama/deepseek-v4.1-flash` did not say the traffic had already
+  failed over from five other candidates; now it does:
+
+  ```
+  x-router-decision: strategy=round-robin; model=ollama/deepseek-v4.1-flash:1017;
+    fallback_count=5; status=ok; provider=ollama;
+    tried=kr/claude-sonnet-5.5,cx/gpt-6.1-terra,ag/claude-sonnet-5-5-high,
+          ag/gemini-3.8-flash-medium,cc/claude-sonnet-5-5
+  ```
+- Verified against a locally built server (0.15.215) before shipping: single model
+  200 with `strategy=direct`, combo 200 with `provider` + `tried`, and an
+  all-candidates-fail 404 carrying `status=error` plus the full `tried` list.
+- Header-only change: no request body, routing order or fallback behaviour moved.
+
+# v0.15.215 (2026-11-03)
+
+## Make RTK's per-filter caps tunable, and raise them so listings are never cut
+- The caps were the only place RTK deletes whole entries rather than reformatting
+  them: `grep` kept 10 matches per file, `git-status` 10 files, `find` 20 dirs,
+  `git-log`/`tree` 200 lines, `git-diff` 100 lines per hunk. Measured: a 30-file
+  status showed 10, a 25-match grep result showed 10.
+- Every cap is now env-tunable (`RTK_GREP_PER_FILE_MAX`, `RTK_STATUS_MAX_FILES`,
+  `RTK_FIND_PER_DIR_MAX`, `RTK_FIND_TOTAL_DIR_MAX`, `RTK_GIT_DIFF_HUNK_MAX_LINES`,
+  `RTK_GIT_LOG_MAX_LINES`, `RTK_TREE_MAX_LINES`, `RTK_DEDUP_LINE_MAX`,
+  `RTK_SEARCH_LIST_*`), with `RTK_SAFE_CAPS=on` raising them all at once.
+- Compose sets `RTK_SAFE_CAPS: "on"`. Measured after: 30/30 status files,
+  25/25 grep matches and 40/40 find paths kept, with no fidelity-gate refusal.
+- Savings that remain are pure reformatting: `ls` 61% (drops permission bits and
+  dates, keeps every name), grep 13%. Listings that cannot be reformatted cost
+  nothing and lose nothing.
+- **Trade, stated plainly:** this lowers measured savings versus the capped
+  defaults — a listing that used to be cut to a tenth now travels whole. The
+  goal is the largest saving that never drops content, not the largest number.
+- Tests in `tests/unit/rtk-safe-caps.test.js` pin each cap; clearing the flag
+  fails three of them.
+
+# v0.15.214 (2026-11-03)
+
+## Restrict Headroom to the one compressor that does not corrupt content
+- With every built-in compressor enabled, `code_aware` **mangled source lines**
+  rather than merely shortening them. A numbered read body of 600 lines came
+  back with 133 of them broken:
+
+  ```
+  in :   52|  const value51 = compute(51);
+  out:   52| compute(51);
+  ```
+
+  The declaration is gone, so a model reading that file cannot see what the
+  line does. The `text` compressor separately dropped a `FAIL … TypeError`
+  line from a test log — the single line a model would need to diagnose it.
+- Measured on the deployed proxy: `code_aware` 8.4% saving / 133 corrupted
+  lines; `text` 21% saving / FAIL line lost; `log` 89% saving with all 11
+  ERROR lines kept but no guarantee for other shapes.
+- Set `HEADROOM_COMPRESSORS=smart_crusher`. It survived a preservation check
+  (400/400 JSON paths kept) and still compresses structured tool output 61%
+  in isolation, 27% end-to-end through the gateway
+  (`[HEADROOM] reported token delta=3185 before=11812 after=8627`).
+- Net effect: Headroom now saves only on structured/duplicated tool output.
+  Read bodies, prose and test logs pass through untouched. That is the
+  intended trade — a smaller saving rather than a wrong answer.
+- `headroomEnabled` stays off in settings; the service is opt-in via the
+  `headroom` compose profile.
+
 # v0.15.213 (2026-11-03)
 
 ## Add a fidelity gate so RTK cannot silently drop material the model needs

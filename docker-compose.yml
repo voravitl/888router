@@ -58,6 +58,12 @@ services:
       # build output), which summarise tool reports rather than dropping code.
       RTK_ON_PRESERVED_INPUT: "on"
       RTK_LOSSY: "off"
+      # The per-filter caps (grep 10/file, git-status 10 files, find 20 dirs, ...)
+      # are the only place RTK drops whole entries. Raise them so a listing is
+      # never cut: measured 30/30 status files and 25/25 grep matches kept, while
+      # `ls` still saves 61% and grep 13% by reformatting. The fidelity gate
+      # remains the backstop if a rewrite still loses a protected token.
+      RTK_SAFE_CAPS: "on"
       SEARXNG_BASE_URL: http://searxng:8080/search
     depends_on:
       - searxng
@@ -144,6 +150,12 @@ services:
       # prefix cache, so /v1/compress is a no-op (router:noop, ratio 1.0).
       # "token" mode prioritises compression.
       HEADROOM_MODE: "token"
+      # code_aware, text and log were measured to CORRUPT content (a numbered
+      # line "52|  const value51 = compute(51);" came back as "52| compute(51);"
+      # — 133 of 600 lines mangled), and text dropped a FAIL line from a test
+      # log. Only smart_crusher survived a content-preservation check, and it
+      # only touches structured/duplicated tool output.
+      HEADROOM_COMPRESSORS: "smart_crusher"
     logging:
       driver: "json-file"
       options:

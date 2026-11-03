@@ -22,7 +22,7 @@ import { resolveUniversalToolsMode } from "open-sse/translator/concerns/universa
 import { DEFAULT_HEADROOM_URL, resolveHeadroomUrl } from "@/lib/headroom/detect";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { isClientAbort } from "open-sse/utils/abort.js";
-import { handleComboChat, handleFusionChat, normalizePersistedStrategy } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, normalizePersistedStrategy, attachRouterDecisionHeader } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { isRetiredProvider, retiredProviderMessage } from "open-sse/config/retiredProviders.js";
@@ -354,7 +354,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           log.warn("AUTH", `health EMA persist failed: ${e.message}`);
         });
       }
-      return result.response;
+      // Stamp the routing decision on single-model responses too. Without this
+      // only combo traffic carried X-Router-Decision, so a direct
+      // "provider/model" call gave no way to tell which account served it.
+      return attachRouterDecisionHeader(result.response, {
+        strategy: "direct",
+        model: `${provider}/${model}`,
+        provider,
+        fallbackCount: excludeConnectionIds.size,
+        status: "ok",
+      });
     }
 
     // The client is gone. That is not an account failure: marking it parked the

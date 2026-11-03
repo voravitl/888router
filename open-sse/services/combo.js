@@ -657,6 +657,12 @@ export function attachRouterDecisionHeader(response, meta = {}) {
     const fallbackCount = meta.fallbackCount ?? 0;
     const status = meta.status || (response.ok ? "ok" : "error");
     let headerVal = `strategy=${strategy}; model=${model}; fallback_count=${fallbackCount}; status=${status}`;
+    // provider is what a caller actually needs when a request lands somewhere
+    // unexpected — "model=9-sonnet" does not say the traffic went to ollama.
+    if (meta.provider) headerVal += `; provider=${meta.provider}`;
+    if (meta.triedModels?.length) {
+      headerVal += `; tried=${meta.triedModels.join(",")}`;
+    }
     if (meta.savingsTokens !== undefined && meta.savingsTokens !== null) {
       headerVal += `; savings_tokens=${meta.savingsTokens}`;
     }
@@ -1414,7 +1420,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
                   removeClientAbortListener();
                   throw wrapErr;
                 }
-                return attachRouterDecisionHeader(retriedWithCleanup, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+                return attachRouterDecisionHeader(retriedWithCleanup, { strategy: effectiveStrategy, model: modelStr, provider: modelRefs.get(modelStr)?.provider, fallbackCount: i, status: "ok", triedModels: rotatedModels.slice(0, i) });
               }
               log.warn("COMBO", `Model ${modelStr} returned ${result.status} SSE stream with zero text content, trying next`);
               await safeCancelReader(reader);
@@ -1442,7 +1448,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
               headers: streamHeaders,
             });
             isCandidateSelected = true;
-            return attachRouterDecisionHeader(responseWithHeaders, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+            return attachRouterDecisionHeader(responseWithHeaders, { strategy: effectiveStrategy, model: modelStr, provider: modelRefs.get(modelStr)?.provider, fallbackCount: i, status: "ok", triedModels: rotatedModels.slice(0, i) });
           }
         }
         // shortcut: reasoning models (deepseek, kimi, ...) can exhaust max_tokens
@@ -1543,7 +1549,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
                 removeClientAbortListener();
                 throw wrapErr;
               }
-              return attachRouterDecisionHeader(retriedWithCleanup, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+              return attachRouterDecisionHeader(retriedWithCleanup, { strategy: effectiveStrategy, model: modelStr, provider: modelRefs.get(modelStr)?.provider, fallbackCount: i, status: "ok", triedModels: rotatedModels.slice(0, i) });
             }
             candidateAbortCtrl.abort();
             if (retried.body) await safeCancelStream(retried.body);
@@ -1563,7 +1569,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
           removeClientAbortListener();
           throw wrapErr;
         }
-        return attachRouterDecisionHeader(resultWithCleanup, { strategy: effectiveStrategy, model: modelStr, fallbackCount: i, status: "ok" });
+        return attachRouterDecisionHeader(resultWithCleanup, { strategy: effectiveStrategy, model: modelStr, provider: modelRefs.get(modelStr)?.provider, fallbackCount: i, status: "ok", triedModels: rotatedModels.slice(0, i) });
       }
 
       // Extract error info from response
@@ -1908,7 +1914,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
   // Attach the router decision to failure verdicts too, not just successes:
   // without it a client retry ("API error · Retrying N/10" with no detail) can
   // never be correlated with the gateway reason that caused it.
-  const failureMeta = { strategy: effectiveStrategy, model: "none", fallbackCount: rotatedModels.length, status: "error" };
+  const failureMeta = { strategy: effectiveStrategy, model: "none", fallbackCount: rotatedModels.length, status: "error", triedModels: rotatedModels };
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);
