@@ -8,7 +8,11 @@
   `AllocationQuota.FreeTierOnly`. `/v1/models` was advertising model ids nobody could call.
 - New set, each confirmed 200 on the same host: `qwen3.8-max`, `qwen3.7-max`,
   `qwen3.7-plus`, `qwen3.7-flash`, `qwen3.8-flash`, `glm-5.3`, `glm-5.2`,
-  `deepseek-v4-pro`, `kimi-k3`, `qwen3-coder-flash`.
+  `deepseek-v4-pro`, `deepseek-v4.1-flash`, `deepseek-v4.1-flash-1017`,
+  `kimi-k3`, `qwen3-coder-flash`.
+- Both `deepseek-v4.1-flash` and its dated snapshot `deepseek-v4.1-flash-1017`
+  stay listed: free-tier quota is metered per model id, so the alias can serve
+  while the snapshot answers `insufficient_quota`.
 - Registry-only change: `PROVIDER_MODELS` is built from `providers/registry`, so no
   executor or translator work is needed.
 

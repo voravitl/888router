@@ -31,6 +31,10 @@ export default {
     { id: "glm-5.3", name: "GLM 5.3" },
     { id: "glm-5.2", name: "GLM 5.2" },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+    // Quota is per model: the alias and the dated snapshot draw on separate
+    // free-tier pools, so keep both — one can be exhausted while the other works.
+    { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash" },
+    { id: "deepseek-v4.1-flash-1017", name: "DeepSeek V4.1 Flash (1017)" },
     { id: "kimi-k3", name: "Kimi K3" },
     { id: "qwen3-coder-flash", name: "Qwen3 Coder Flash" },
   ],
