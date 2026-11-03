@@ -1,3 +1,24 @@
+# v0.15.221 (2026-11-03)
+
+## Fix a combo advertising its SMALLEST member's context window
+- `/v1/models` published `context_length` for a combo as the **minimum** across
+  its members, on the theory that round-robin/fallback "must work for every
+  member". The combo does not work that way: `handleComboChat` sorts members
+  that report `context_length_exceeded` to the END of the rotation, so a request
+  too big for the small members is served by the big one. Advertising the
+  minimum made that capability unreachable — a client that sizes its history
+  against the published number compacts early and never asks for the context the
+  combo can actually deliver.
+- Verified live 2026-11-03: `9-free` (`oc/deepseek-v4.1-flash-free` 200k +
+  `oc/beam-free` 1M) advertised **200,000** and served a **225,583-token**
+  request from `beam-free`. The member's 1M was invisible to the client.
+- `resolveComboContextWindow` now takes the **max** across catalog-known
+  members. `resolveComboMaxOutput` deliberately stays **min**: an inflated
+  output budget is added to the estimated input in `getContextFit`, so
+  over-advertising it would reject requests that actually fit.
+- Unknown members (no provider/model/pattern match) are still excluded, so the
+  DEFAULT 200k floor is never fabricated for an unknown combo member.
+
 # v0.15.220 (2026-11-03)
 
 ## Make cache-optimized see the Claude system prompt
@@ -71,6 +92,7 @@
 - Tests in `tests/unit/prompt-cache-summary.test.js` pin the two counters apart:
   a response-cache hit must not inflate the prompt ratio, failed rows are
   ignored, and the ratio never exceeds 100%. Breaking the counter fails one.
+
 
 # v0.15.217 (2026-11-03)
 

@@ -352,21 +352,30 @@ function parseComboModelRef(ref) {
   return { providerId: "", modelId: trimmed };
 }
 
-// Resolve context_window for a combo = min across member models (round-robin/fallback
-// must work for every member). undefined if no member is known to the catalog.
+// Resolve context_window for a combo = MAX across member models. The combo does
+// not pin a request to one member: `handleComboChat` orders members that report
+// `context_length_exceeded` LAST (combo.js), so a request too big for the small
+// members is served by the big one — verified live 2026-11-03: a 225,583-token
+// request advertised as 200k was served by the 1M member of the same combo.
+// Advertising the minimum made that capability unreachable, because a
+// well-behaved client compacts to the advertised number and never asks.
+// `maxOutput` stays MIN on purpose (see resolveComboMaxOutput): an inflated
+// output budget is added to the input in getContextFit, so over-advertising it
+// rejects requests that would have fit.
+// undefined if no member is known to the catalog.
 // Truly unknown members (no PROVIDER/MODEL/PATTERN match) are excluded so they don't
 // fabricate the DEFAULT floor; a real 200k member is honoured.
 // Callers MUST NOT re-apply || 200000 on the HTTP surface — omit fields when undefined.
 export function resolveComboContextWindow(combo) {
   if (!Array.isArray(combo?.models) || combo.models.length === 0) return undefined;
-  let min = Infinity;
+  let max = -Infinity;
   for (const ref of combo.models) {
     const parsed = parseComboModelRef(ref);
     if (!parsed) continue;
     const cw = resolveKnownContextWindow(parsed.providerId, parsed.modelId);
-    if (cw && cw < min) min = cw;
+    if (cw && cw > max) max = cw;
   }
-  return min === Infinity ? undefined : min;
+  return max === -Infinity ? undefined : max;
 }
 
 // Min known maxOutput across combo members (only when member is catalog-known).
