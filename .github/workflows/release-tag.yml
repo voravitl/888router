@@ -42,11 +42,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # A tag pushed with the default GITHUB_TOKEN does NOT trigger other
+      # workflows (GitHub policy), so docker-publish.yml never ran and
+      # voravitl/888router:<version> was never published — silently, twice
+      # (v0.15.207, v0.15.209). Use a PAT so the push is attributed to a user
+      # and the tag event fires the publish. Without the secret the job still
+      # tags and warns, rather than failing the release.
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELEASE_TAG_PAT || github.token }}
 
       - name: Resolve and create the version tag
+        env:
+          RELEASE_TAG_PAT: ${{ secrets.RELEASE_TAG_PAT }}
         run: |
           set -euo pipefail
+          if [ -z "${RELEASE_TAG_PAT:-}" ]; then
+            echo "::warning::RELEASE_TAG_PAT is not set — the tag will be pushed with GITHUB_TOKEN and docker-publish.yml will NOT be triggered. Create a fine-grained PAT with 'Contents: read and write' and store it as RELEASE_TAG_PAT."
+          fi
           version=$(node -p "require('./package.json').version")
           echo "  package.json version: $version"
 
