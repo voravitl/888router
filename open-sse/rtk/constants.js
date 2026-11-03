@@ -47,6 +47,19 @@ export const READ_NUMBERED_MIN_HIT_RATIO = 0.7;
 const rawCap = parseInt(process.env.RTK_HARD_CAP_BYTES || "32768", 10);
 export const HARD_CAP_BYTES = (Number.isFinite(rawCap) && rawCap > 0) ? rawCap : 32768; // 32 KB default cap
 
+// Lossy guard. Filters that summarise an ALREADY-condensed tool output (ls, git
+// status, find, grep, build logs) lose only detail the tool itself could re-emit.
+// Filters that trim RAW FILE CONTENT — read-numbered, smart-truncate, dedup-log —
+// and the hard-cap head/tail cut permanently remove bytes the model was asked to
+// read; a model that never saw line 250 answers from nothing. RTK_LOSSY=off keeps
+// only the first group so agent traffic cannot be corrupted.
+const LOSSY_FILTERS = new Set(["read-numbered", "smart-truncate", "dedup-log"]);
+const rawLossy = String(process.env.RTK_LOSSY || "on").toLowerCase();
+export const LOSSY_ENABLED = !(rawLossy === "off" || rawLossy === "0" || rawLossy === "false");
+export function isLossyFilter(name) {
+  return LOSSY_FILTERS.has(name);
+}
+
 
 // Filter name strings (Rust parity + JS extras)
 export const FILTERS = {

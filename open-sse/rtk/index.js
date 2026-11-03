@@ -1,6 +1,6 @@
 // RTK port: compress tool_result content in LLM request bodies
 // Injected in chatCore.js after format translation and pruneMessageHistory
-import { RAW_CAP, MIN_COMPRESS_SIZE, HARD_CAP_BYTES, FILTERS } from "./constants.js";
+import { RAW_CAP, MIN_COMPRESS_SIZE, HARD_CAP_BYTES, FILTERS, LOSSY_ENABLED, isLossyFilter } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
@@ -216,7 +216,13 @@ function compressText(text, stats, shape) {
   stats.bytesBefore += bytesIn;
 
   // RAW_CAP bypass safety: if blob exceeds RAW_CAP, STILL force apply hard cap!
+  // The hard cap decapitates a blob (head + tail, middle dropped), which is
+  // exactly the data loss RTK_LOSSY=off exists to prevent — so it is skipped too.
   if (bytesIn > RAW_CAP) {
+    if (!LOSSY_ENABLED) {
+      stats.bytesAfter += bytesIn;
+      return text;
+    }
     const capped = applyHardCap(text, HARD_CAP_BYTES);
     if (capped.length < bytesIn) {
       stats.bytesAfter += capped.length;
@@ -236,7 +242,7 @@ function compressText(text, stats, shape) {
   let filterName = null;
 
   const fn = autoDetectFilter(workingText);
-  if (fn) {
+  if (fn && !(!LOSSY_ENABLED && isLossyFilter(fn.filterName || fn.name))) {
     const out = safeApply(fn, workingText);
     if (out && out.length > 0 && out.length < workingText.length) {
       filterName = fn.filterName || fn.name;
@@ -244,8 +250,9 @@ function compressText(text, stats, shape) {
     }
   }
 
-  // RTK v2 Hard Cap Guard: if text is still larger than HARD_CAP_BYTES, truncate safely
-  if (workingText.length > HARD_CAP_BYTES) {
+  // RTK v2 Hard Cap Guard: if text is still larger than HARD_CAP_BYTES, truncate safely.
+  // Skipped under RTK_LOSSY=off for the same reason as the RAW_CAP branch above.
+  if (LOSSY_ENABLED && workingText.length > HARD_CAP_BYTES) {
     const capped = applyHardCap(workingText, HARD_CAP_BYTES);
     if (capped && capped.length < workingText.length) {
       filterName = filterName ? `${filterName}+${FILTERS.HARD_CAP}` : FILTERS.HARD_CAP;

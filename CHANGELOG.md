@@ -1,3 +1,34 @@
+# v0.15.212 (2026-11-03)
+
+## Let RTK run on Claude Code traffic, lossless-only by default
+- `chatCore.js` preserved every Claude Code request byte-for-byte (#523), and all
+  token savers were gated behind that flag — so RTK, the one saver that measured a
+  real saving, did **no work at all** on live traffic (235 Claude Code requests in
+  40 minutes produced 2 RTK runs, both from OpenAI-shaped tests). Savings on the
+  owner's actual usage were 0%.
+- Add `RTK_ON_PRESERVED_INPUT=on` (default `off`) so RTK can run on preserved
+  input. RTK rewrites only `tool_result` text in place and never reorders or drops
+  messages, so it is safe on input the other savers must leave alone.
+- Add `RTK_LOSSY` (default `on`, set to `off` in compose). With `off`, RTK skips
+  the filters that trim raw file content — `read-numbered`, `smart-truncate`,
+  `dedup-log` — and skips both hard-cap cuts. Measured: a 171 KB `Read` body came
+  back **byte-identical** instead of being cut to 4 KB.
+- The format-only filters still run and still save: git-status 78%, ls 73%,
+  build-output 68%, grep 33% on their own output shapes. They summarise tool
+  reports (a status listing, a directory listing) rather than dropping source code.
+- Compose sets both: `RTK_ON_PRESERVED_INPUT: "on"` with `RTK_LOSSY: "off"`.
+
+## Port upstream's Claude projection for Headroom (86adae35c)
+- Headroom's Claude path round-tripped the body through the Claude → OpenAI →
+  Claude translators whenever the proxy was enabled. That bridge drops document
+  blocks and rewrites tool/thinking metadata **even when the proxy returns its
+  input unchanged** — so enabling Headroom could corrupt a request by itself.
+- Port `collectClaudeHeadroomMessages()` / `applyProjectedHeadroomMessages()` /
+  `textFromHeadroomMessage()` from upstream: project only the text leaves, then
+  copy validated text back into the original native blocks. Any response that
+  reorders, drops or re-types a message fails open and leaves the body untouched.
+- Upstream's 9-case regression suite ported and passing.
+
 # v0.15.211 (2026-11-03)
 
 ## Fix RTK destroying Read output by misreading it as git status

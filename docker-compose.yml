@@ -51,6 +51,13 @@ services:
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
       RTK_HARD_CAP_BYTES: "65536"
+      # Let RTK run on Claude Code traffic, which is otherwise preserved
+      # byte-for-byte (chatCore.js preserveRequestInput). Only safe together
+      # with RTK_LOSSY=off: that keeps raw file content byte-identical and
+      # applies only the format-only filters (git status/diff/log, ls, grep,
+      # build output), which summarise tool reports rather than dropping code.
+      RTK_ON_PRESERVED_INPUT: "on"
+      RTK_LOSSY: "off"
       SEARXNG_BASE_URL: http://searxng:8080/search
     depends_on:
       - searxng

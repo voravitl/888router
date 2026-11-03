@@ -155,6 +155,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Explicitly opting into transformations retains the legacy compression path.
   let preserveRequestInput = preserveClaudeClientInput
     || (estimateRequestTokens(body) >= 100000 && !nativeTransformationsOptIn);
+  // RTK is gated separately: it rewrites tool_result text in place and never
+  // touches message order or history, so it can run on preserved input. With
+  // RTK_LOSSY=off (rtkEnabled + lossy off) it only applies the format-only
+  // filters and leaves raw file content byte-identical.
+  const rtkAllowedOnPreservedInput = String(process.env.RTK_ON_PRESERVED_INPUT || "off").toLowerCase() === "on";
   const preserveNativeClaudeRequest = nativeClaudePassthrough && preserveClaudeClientInput;
   const effectiveUniversalToolsMode = preserveNativeClaudeRequest ? "off" : universalToolsMode;
   if (useTransport && requestCredentials) requestCredentials.runtimeTransport = useTransport;
@@ -327,8 +332,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._prunerStats;
   }
 
-  // RTK: compress tool_result content
-  if (!preserveRequestInput) rtkStats = compressMessages(translatedBody, rtkEnabled);
+  // RTK: compress tool_result content. Runs on preserved input too when
+  // explicitly opted in (RTK_ON_PRESERVED_INPUT=on) — pair it with RTK_LOSSY=off
+  // so raw file content stays byte-identical and only format-only filters apply.
+  if (!preserveRequestInput || rtkAllowedOnPreservedInput) {
+    rtkStats = compressMessages(translatedBody, rtkEnabled);
+  }
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
 

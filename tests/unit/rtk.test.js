@@ -562,3 +562,58 @@ describe("formatRtkLog", () => {
     expect(line).toContain("git-diff");
   });
 });
+
+// RTK_LOSSY=off is the safety switch for agent traffic: it must keep every byte
+// of raw file content the model was asked to read, while still summarising the
+// outputs that are already condensed tool reports (git status/diff, ls, grep).
+// The module reads the env at import time, so each case re-imports it.
+describe("lossy guard (RTK_LOSSY)", () => {
+  const readOutput = (lines, markLine) =>
+    Array.from({ length: lines }, (_, i) => {
+      const n = i + 1;
+      const body = n === markLine ? 'export const TARGET_SYMBOL = "find-me";' : `  const filler${n} = ${n};`;
+      return `   ${n}|${body}`;
+    }).join("\n");
+
+  it("RTK_LOSSY=off keeps a >64KB Read body byte-identical", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_LOSSY", "off");
+    vi.stubEnv("RTK_HARD_CAP_BYTES", "65536");
+    const { compressMessages: compress } = await import("../../open-sse/rtk/index.js");
+    const text = readOutput(2500, 1250);
+    expect(text.length).toBeGreaterThan(64 * 1024);
+    const body = { messages: [{ role: "tool", content: text }] };
+    compress(body, true);
+    expect(body.messages[0].content).toBe(text);
+    expect(body.messages[0].content).toContain("TARGET_SYMBOL");
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("RTK_LOSSY=off still summarises git status", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_LOSSY", "off");
+    const { compressMessages: compress } = await import("../../open-sse/rtk/index.js");
+    const status = " M src/a.js\n M src/b.js\n M src/c.js\n M src/d.js\n?? new1.js\n?? new2.js\n".repeat(20);
+    const body = { messages: [{ role: "tool", content: status }] };
+    const stats = compress(body, true);
+    expect(stats.hits[0].filter).toBe("git-status");
+    expect(body.messages[0].content.length).toBeLessThan(status.length);
+    expect(body.messages[0].content).toContain("src/a.js");
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("default (lossy on) still truncates an oversized Read body", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_LOSSY", "on");
+    vi.stubEnv("RTK_HARD_CAP_BYTES", "65536");
+    const { compressMessages: compress } = await import("../../open-sse/rtk/index.js");
+    const text = readOutput(2500, 1250);
+    const body = { messages: [{ role: "tool", content: text }] };
+    compress(body, true);
+    expect(body.messages[0].content.length).toBeLessThan(text.length);
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+});
