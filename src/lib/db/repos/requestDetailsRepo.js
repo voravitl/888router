@@ -407,7 +407,10 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
   const totalInWindow = cntRow ? cntRow.c : 0;
 
   const rows = db.all(
-    `SELECT id, timestamp, model, provider, prunerTokensSaved, rtkBytesSaved, headroomTokensSaved, prunerTokensBefore, prunerTokensAfter, prunerOmitted, rtkBytesBefore, rtkBytesAfter, headroomBytesSaved, cacheHit FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
+    `SELECT id, timestamp, model, provider, status, prunerTokensSaved, rtkBytesSaved, headroomTokensSaved, prunerTokensBefore, prunerTokensAfter, prunerOmitted, rtkBytesBefore, rtkBytesAfter, headroomBytesSaved, cacheHit,
+       json_extract(data, '$.tokens.prompt_tokens') AS promptTokens,
+       json_extract(data, '$.tokens.cached_tokens') AS cachedTokens
+     FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
     [...params, safeLimit],
   );
 
@@ -442,6 +445,16 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
   const cache = {
     hits: 0,
     requests: 0,
+  };
+  // Upstream prompt cache — what providers actually billed at the cached rate.
+  // Distinct from `cache` above, which counts the gateway's own response-cache
+  // replay (opt-in header). Lumping them together made the dashboard report 0%
+  // while the real prefix cache was hitting ~99%.
+  const promptCache = {
+    requests: 0,
+    requestsWithCache: 0,
+    promptTokens: 0,
+    cachedTokens: 0,
   };
   const recent = [];
   /** @type {Record<string, { date: string, before: number, after: number, saved: number, requests: number }>} */
@@ -505,6 +518,18 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     // Track response cache hits
     cache.requests += 1;
     if (isCacheHit) cache.hits += 1;
+
+    // Track upstream prompt-cache reuse. Only successful, token-bearing rows
+    // count: a 0-token row would drag the ratio toward 0 for a reason that has
+    // nothing to do with caching.
+    const promptTokens = Number(row.promptTokens) || 0;
+    const cachedTokens = Number(row.cachedTokens) || 0;
+    if (row.status === "success" && promptTokens > 0) {
+      promptCache.requests += 1;
+      promptCache.promptTokens += promptTokens;
+      promptCache.cachedTokens += Math.min(cachedTokens, promptTokens);
+      if (cachedTokens > 0) promptCache.requestsWithCache += 1;
+    }
 
     let prunerTokensSaved = 0;
     if (row.prunerTokensBefore != null) {
@@ -627,6 +652,17 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
     cache: {
       ...cache,
       hitRate: cache.requests > 0 ? Math.round((cache.hits / cache.requests) * 100) : 0,
+    },
+    // Upstream prefix-cache reuse, the number that actually reflects provider
+    // billing. `pctSaved` is the share of prompt tokens served from cache.
+    promptCache: {
+      ...promptCache,
+      hitRate: promptCache.requests > 0
+        ? Math.round((promptCache.requestsWithCache / promptCache.requests) * 100)
+        : 0,
+      pctSaved: promptCache.promptTokens > 0
+        ? Math.round((promptCache.cachedTokens / promptCache.promptTokens) * 100)
+        : 0,
     },
     // Chart-friendly series: daily RTK tool-blob bytes (not full bill)
     series,

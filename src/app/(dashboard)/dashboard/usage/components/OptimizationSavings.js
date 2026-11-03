@@ -69,7 +69,7 @@ export default function OptimizationSavings({ period = "7d" }) {
     return <div className="text-text-muted text-sm py-4">No optimization data available.</div>;
   }
 
-  const { rtk, pruner, headroom, cache } = data || {};
+  const { rtk, pruner, headroom, cache, promptCache } = data || {};
 
   return (
     <div className="flex flex-col gap-4">
@@ -158,6 +158,26 @@ export default function OptimizationSavings({ period = "7d" }) {
               </div>
             </div>
           )}
+        </SavingsCard>
+
+        {/* Upstream prompt cache — the number that reflects provider billing.
+            Distinct from the Response Cache card below, which only counts the
+            gateway's own opt-in reply replay. */}
+        <SavingsCard
+          title="Prompt Cache"
+          icon="database"
+          color="text-success"
+          stats={{
+            before: fmt(promptCache?.promptTokens),
+            after: fmt(promptCache?.cachedTokens),
+            saved: `${fmtPct(promptCache?.pctSaved)} of prompt tokens`,
+            savedPct: fmtPct(promptCache?.pctSaved),
+            savedPctNum: promptCache?.pctSaved,
+          }}
+        >
+          <div className="text-[10px] text-text-muted">
+            {fmt(promptCache?.requestsWithCache)}/{fmt(promptCache?.requests)} requests reused a cached prefix
+          </div>
         </SavingsCard>
 
         {/* Response Cache */}
