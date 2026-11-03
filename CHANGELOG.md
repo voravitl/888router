@@ -1,3 +1,27 @@
+# v0.15.220 (2026-11-03)
+
+## Make cache-optimized see the Claude system prompt
+- `computePrefixHash()` — the hash `cache-optimized` uses to pin a conversation
+  to one model — walked only `messages[]` for role `system`. Claude (and Gemini)
+  send the system prompt as a **top-level field**, so the hash missed it
+  entirely: a 1,000-character Claude system prompt and a 32-character one both
+  returned `2661614456`.
+- Consequence: model pinning keyed on `messages[0]` instead of the prefix the
+  provider actually caches (CLAUDE.md, tools, environment). Verified live — five
+  requests with different top-level system prompts all landed on the same model.
+  Pinning within a single conversation still worked (messages[0] does not
+  change), which is why the defect looked harmless.
+- Read `body.system` / `systemInstruction` / `system_instruction` /
+  `instructions` before falling back to `messages[]`. After the fix the two
+  prompts hash to `4274418669` and `2254762901`.
+- Verified end to end against a probe combo with `cache-optimized`: four
+  identical-prefix requests pinned to one model, and distinct prefixes spread
+  across models (500-sample distribution A:98 B:99 C:101 D:97 E:105).
+- Tests in `tests/unit/prefix-hash-claude-system.test.js`: distinguishes two
+  Claude system prompts, stays stable as the conversation grows, still handles
+  the OpenAI `messages[]`-system shape, and spreads distinct prefixes. Removing
+  the fix fails two of them.
+
 # v0.15.219 (2026-11-03)
 
 ## Fix context windows for every OpenCode Zen free model
@@ -25,6 +49,7 @@
   alias-normalization tests.
 - `tests/unit/oc-context-windows.test.js` pins all nine ids and asserts each one
   has an explicit entry rather than sitting on the floor by accident.
+
 
 # v0.15.217 (2026-11-03)
 

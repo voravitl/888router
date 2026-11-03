@@ -267,22 +267,40 @@ function rotateModelsFromIndex(models, currentIndex) {
 export function computePrefixHash(body) {
   if (!body) return 0;
   let prefix = "";
+  // Budget is per component, not global. A single trailing slice() over the
+  // concatenation let a long system prompt eat the whole budget and drop the
+  // tools entirely — verified: two bodies with an identical 6,300-char Claude
+  // system and [Read] vs [Bash] tool sets hashed the same. Tools are part of
+  // the prefix the provider caches, so they must always reach the hash.
+  const asText = (value) => (typeof value === "string" ? value : JSON.stringify(value ?? ""));
+  const add = (text, max) => {
+    if (!text) return;
+    prefix += (text.length > max ? text.slice(0, max) : text) + "\n";
+  };
+
+  // Claude (and Gemini) put the system prompt at the TOP LEVEL, not as a
+  // messages[] entry. Reading only messages[] meant two requests with
+  // completely different system prompts hashed identically, so cache-optimized
+  // was pinning without seeing the prefix the provider actually caches
+  // (CLAUDE.md, tools, environment).
+  const topLevelSystem = body.system ?? body.systemInstruction ?? body.system_instruction ?? body.instructions;
+  if (topLevelSystem) add(asText(topLevelSystem), 1024);
+
   if (Array.isArray(body.messages)) {
-    for (const m of body.messages) {
-      if (m && (m.role === "system" || m.role === "developer")) {
-        prefix += (typeof m.content === "string" ? m.content : JSON.stringify(m.content || "")) + "\n";
-      }
-    }
-    if (!prefix && body.messages[0]) {
-      const first = body.messages[0];
-      prefix += (typeof first?.content === "string" ? first.content : JSON.stringify(first?.content || "")) + "\n";
-    }
+    // One messages[]-system is enough to distinguish; skip the rest rather than
+    // appending empty separators.
+    const systemMsg = body.messages.find((m) => m && (m.role === "system" || m.role === "developer"));
+    if (systemMsg) add(asText(systemMsg.content), 256);
+    // Always include the first user turn: it separates two conversations that
+    // share a system prompt (the same project, two tasks) without breaking
+    // pinning, because it does not change as the conversation grows.
+    const firstUser = body.messages.find((m) => m && m.role === "user");
+    if (firstUser) add(asText(firstUser.content), 256);
+    else if (!prefix && body.messages[0]) add(asText(body.messages[0]?.content), 256);
   }
-  if (Array.isArray(body.tools)) {
-    prefix += JSON.stringify(body.tools);
-  }
-  // Clamp to first 2,048 chars (Normalized Substring) to avoid excessive processing
-  prefix = prefix.slice(0, 2048);
+
+  if (Array.isArray(body.tools)) add(JSON.stringify(body.tools), 512);
+
   if (!prefix) return 0;
   
   // Fast FNV-1a 32-bit hash
