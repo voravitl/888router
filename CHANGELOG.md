@@ -1,3 +1,51 @@
+# v0.15.222 (2026-11-03)
+
+## Track Alibaba Token Plan usage in the quota dashboard
+- `alitp-intl` (Alibaba Token Plan, Personal edition, Singapore) now reports its
+  quota to Dashboard → Quota (`/dashboard/quota`), next to the other tracked
+  providers. The Personal plan quota is a **monthly** Credits pool — Lite
+  11,500 / Essential 25,500 / Standard 45,000 / Pro 180,000 — resetting per
+  subscription month; the 5-hour / weekly rolling windows were removed upstream
+  on 2026-09-22, so older tracker work built on that shape was obsolete.
+- The `sk-sp-*` API key is inference-only — every billing path 404s unrouted
+  and the console gateway answers `ConsoleNeedLogin` — so usage is read from the
+  Model Studio console personal panel, reached with the browser session cookie.
+  Paste the Cookie header from the Token Plan subscription page under
+  **Console Cookie (quota)** in the connection's Add/Edit dialog; it is stored in
+  `providerSpecificData.consoleCookie`, is never returned to the browser (the
+  providers API strips it and reports `hasConsoleCookie` instead), and the chat
+  key stays separate.
+- New handler `getAlibabaTokenPlanUsage` (`open-sse/services/usage/alibabaTokenPlan.js`)
+  calls the same gateway the console page uses
+  (`bailian-singapore-cs.alibabacloud.com/data/api.json`,
+  `action=IntlBroadScopeAspnGateway`, `product=sfm_bailian` — route and
+  parameter contract confirmed against the live gateway: an unauthenticated
+  request answers `BailianGateway.Login.NotLogined`). It resolves `sec_token`
+  from `/tool/user/info.json` → the cookie → the dashboard HTML (best effort;
+  cookie-only is attempted last, matching the console's own fallback), expands
+  stringified levels of `data.DataV2.data.data`, prefers the monthly ceiling
+  from the API `quota-config`, and falls back to the documented tier quotas.
+  The row shows Monthly Credits used/total, remaining %, and the
+  subscription-month reset; legacy rolling-window keys are rendered too if the
+  API ever returns them again.
+- Without a cookie the card shows setup instructions instead of a fabricated
+  remaining row; a rejected cookie surfaces a "paste a fresh cookie" message,
+  never a silent 100%.
+- **Not verified against a logged-in account.** Evidence is the gateway
+  contract (unauthenticated probe answers `BailianGateway.Login.NotLogined`),
+  the console's own request shape, and offline fixtures; the envelope walker is
+  tolerant of stringified levels and extra nesting, but a live account may
+  still turn up a new field spelling that needs a tweak.
+- `parseQuotaData("alitp-intl")` forwards `remainingPercentage`/`credits` to the
+  table, mirroring the ollama/deepseek handling. Eligibility for the quota page
+  (`USAGE_SUPPORTED_PROVIDERS` + `USAGE_APIKEY_PROVIDERS`) flows from the
+  registry `features.usage` / `features.usageApikey` flags — no list edits.
+- Tests in `tests/unit/alibaba-token-plan-usage.test.js` (15 cases: envelope
+  expansion, ratio handling incl. `8.69e-7`, tier fallback to documented
+  quotas, sec_token resolution order, NotLogined + 200-HTML-login
+  classification, retry-once on an empty 200, legacy window parsing,
+  `parseQuotaData` wiring).
+
 # v0.15.221 (2026-11-03)
 
 ## Fix a combo advertising its SMALLEST member's context window
