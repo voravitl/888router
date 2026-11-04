@@ -465,6 +465,18 @@ export const PROVIDER_CAPABILITIES = {
   "oc": {
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
   },
+  // The *qwen*coder* pattern assumes 1M, but these hosts serve Qwen2.5-Coder-32B
+  // at its native 32k (Cloudflare 413 code 5021 "exceeded ... limit (32768)").
+  // Left at 1M they leak into auto/best-free-1m and 413 every long request.
+  "cloudflare-ai": {
+    "@cf/qwen/qwen2.5-coder-32b-instruct": { reasoning: false, thinkingFormat: null, contextWindow: 32768, maxOutput: 8192 },
+  },
+  "hyperbolic": {
+    "Qwen/Qwen2.5-Coder-32B-Instruct": { reasoning: false, thinkingFormat: null, contextWindow: 32768, maxOutput: 8192 },
+  },
+  "llm7": {
+    "qwen2.5-coder-32b-instruct": { reasoning: false, thinkingFormat: null, contextWindow: 32768, maxOutput: 8192 },
+  },
   "opencode-go": {
     "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
