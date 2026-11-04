@@ -1035,6 +1035,41 @@ function waitAbortable(ms, signal) {
   });
 }
 
+// Combo context ceiling = smallest declared window among eligible members,
+// derived from the catalogue (same rule as /v1/models). Members with unknown
+// limits are ignored. Only returned when members' windows DIFFER: that is the
+// case where an oversized request would silently roll onto a bigger member.
+// When every known member shares one window, the estimate is only approximate
+// and the upstream tokenizer stays authoritative (no gateway-side rejection).
+// Reject only when the estimate is more than 10% over the combo ceiling.
+const COMBO_CONTEXT_REJECT_MARGIN = 1.1;
+
+function comboContextCeiling(models, fits) {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const model of models) {
+    const cw = fits.get(model)?.contextWindow;
+    if (!cw) continue;
+    if (cw < min) min = cw;
+    if (cw > max) max = cw;
+  }
+  return min === Infinity || min === max ? null : min;
+}
+
+// Anthropic's own wording ("prompt is too long: N tokens > M maximum") so
+// Claude Code recognises it and compacts; `code` covers OpenAI-style clients.
+function comboContextExceededResponse(estimatedInputTokens, reservedTokens, ceiling) {
+  const total = estimatedInputTokens + reservedTokens;
+  return new Response(JSON.stringify({
+    type: "error",
+    error: {
+      type: "invalid_request_error",
+      code: "context_length_exceeded",
+      message: `prompt is too long: ${total} tokens > ${ceiling} maximum (combo context window is its smallest member's; compact the conversation)`,
+    },
+  }), { status: 400, headers: { "Content-Type": "application/json" } });
+}
+
 function contextCapacityResponse() {
   return new Response(JSON.stringify({ error: {
     type: "invalid_request_error",
@@ -1067,6 +1102,21 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
   const eligibleModels = models.filter((model) => fits.get(model).reason !== "output_limit_exceeded");
   if (models.length > 0 && eligibleModels.length === 0) {
     return contextCapacityResponse();
+  }
+  // Enforce the advertised combo window (min of members). Without this a
+  // request past the small members' limit silently rolls onto the largest
+  // member, so the conversation keeps growing and every turn resends it.
+  const ceiling = comboContextCeiling(eligibleModels, fits);
+  if (ceiling) {
+    const reserved = fits.get(eligibleModels[0])?.reservedOutputTokens || 0;
+    // The estimate is approximate and runs HIGH on non-ASCII text (~1 token
+    // per char for Thai/CJK), so only reject clearly past the ceiling. Inside
+    // the margin the request is routed normally and the upstream tokenizer
+    // stays authoritative.
+    if (estimatedInputTokens + reserved > ceiling * COMBO_CONTEXT_REJECT_MARGIN) {
+      log?.warn?.("COMBO", `Combo "${comboName || ""}" request ~${estimatedInputTokens}+${reserved} tokens exceeds combo window ${ceiling}; rejecting so the client compacts`);
+      return comboContextExceededResponse(estimatedInputTokens, reserved, ceiling);
+    }
   }
   // Apply the persisted strategy — normalized once, so every log line and the
   // X-Router-Decision header below report the strategy that actually ran, not

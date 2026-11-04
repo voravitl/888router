@@ -11,11 +11,10 @@ describe("Combo context window resolution", () => {
       name: "test-combo-1",
       models: ["kr/claude-sonnet-4.6", "openai/gpt-4o"],
     };
-    // max(1000000, 128000) => 1000000: the combo routes a big request to the
-    // member that fits (combo.js orders context_length_exceeded last), so the
-    // advertised ceiling is the largest member, not the smallest.
+    // min(1000000, 128000) => 128000: every member must serve the conversation,
+    // and handleComboChat enforces the same ceiling at request time.
     const cw = resolveComboContextWindow(combo);
-    expect(cw).toBe(1000000);
+    expect(cw).toBe(128000);
   });
 
   it("resolves context window for combos with bare model names (slashless)", () => {
@@ -23,9 +22,9 @@ describe("Combo context window resolution", () => {
       name: "test-combo-2",
       models: ["claude-opus-4.7", "gpt-4o"],
     };
-    // max(1000000, 128000) => 1000000
+    // min(1000000, 128000) => 128000
     const cw = resolveComboContextWindow(combo);
-    expect(cw).toBe(1000000);
+    expect(cw).toBe(128000);
   });
 
   it("returns undefined for empty combo models", () => {
