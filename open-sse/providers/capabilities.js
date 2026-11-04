@@ -261,14 +261,6 @@ export function __resetScopedDynamicCache() {
 // the common video transport is end-to-end). Shared by the provider/id pairs
 // below; never exposed globally so other providers' same-named models keep
 // pattern/default caps.
-// Space Bunny Free — reasoning model with 1M context window
-const SPACE_BUNNY_CAPABILITIES = {
-  reasoning: true,
-  vision: false,
-  contextWindow: 1048576,
-  maxOutput: 64000,
-};
-
 const OX_ALPHA_CAPABILITIES = {
   vision: true,
   reasoning: true,
@@ -498,8 +490,7 @@ export const PROVIDER_CAPABILITIES = {
     "hy4-preview":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
     "hy3":               { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
     // Go catalog additions from https://opencode.ai/v2/docs/console/go (live catalog
-    // https://opencode.ai/zen/go/v1/models, values from the `limit` block). Contexts
-    // match the Go docs pricing bands (Grok ≤200K, Qwen Plus ≤256K) and the live ids.
+    // https://opencode.ai/zen/go/v1/models, values from the `limit` block).
     "kimi-k3.1-pro":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
     "step-5-preview":       { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 65536 },
     "beam-free":            { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
