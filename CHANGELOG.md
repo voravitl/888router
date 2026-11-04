@@ -1,3 +1,13 @@
+# v0.15.230 (2026-11-04)
+
+## auto/best-free-1m no longer routes to 32k Qwen2.5-Coder hosts
+- `cloudflare-ai/@cf/qwen/qwen2.5-coder-32b-instruct`, `hyperbolic/Qwen/Qwen2.5-Coder-32B-Instruct` and
+  `llm7/qwen2.5-coder-32b-instruct` matched the `*qwen*coder*` pattern (1M) but serve a native 32,768
+  window. They passed the `contextMin` gate, were tried first, and returned 413 (Cloudflare code 5021),
+  which the combo surfaced as the final status and Claude Code rendered as "Request too large".
+- Added provider-scoped 32,768 caps so they fall out of the 1M combo; regression test pins both the
+  resolved window and combo membership.
+
 # v0.15.229 (2026-11-04)
 
 ## Fix OpenAI tool result is_error breaking OpenCode Go upstream
