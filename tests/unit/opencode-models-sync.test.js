@@ -26,14 +26,15 @@ describe("OpenCode Model Sync Support", () => {
     // tests/unit/opencode-free-catalogue.test.js, as is
     // minimax-m3.1-flash-free (HTTP 410 ModelDeprecated, retired 2026-10-25).
     const modelIds = opencodeRegistry.models.map((m) => m.id);
-    expect(modelIds).toContain("nemotron-3-ultra-free");
     expect(modelIds).toContain("nemotron-3.5-lightning-free");
     expect(modelIds).toContain("nemotron-3.5-super-vl-free");
     expect(modelIds).toContain("mimo-v2.6-flash-free");
     expect(modelIds).toContain("beam-free");
     expect(modelIds).toContain("deepseek-v4.1-flash-free");
     expect(modelIds).toContain("glm-5.3-flash-free");
-    expect(modelIds).toContain("longcat-2.5-preview-free");
+    expect(modelIds).toContain("pulse-alpha-free");
+    expect(modelIds).toContain("flint-40b-free");
+    expect(modelIds).toContain("crouton-alpha-free");
     expect(modelIds).toContain("big-pickle");
   });
 

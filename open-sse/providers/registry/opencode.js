@@ -51,19 +51,22 @@ const opencodeConfig = {
   //   catalogue for two more days after upstream killed it, so /v1/models
   //   offered a dead id to every client — including the 9-free combo.
   //
-  // `nemotron-3-ultra-free` is NOT in the upstream /v1/models list but still
-  // answers 200 — "absent from the list" is not evidence of death, so it stays.
+  // Retired by 2026-11-04 (verified live against opencode.ai/zen/v1):
+  //   nemotron-3-ultra-free, longcat-2.5-preview-free → 400 Bad Request on every request.
+  //   Added live free models from /zen/v1/models (verified 200 OK):
+  //   pulse-alpha-free, flint-40b-free, crouton-alpha-free.
   // The paid tier (registry/opencode-go.js) is a DIFFERENT upstream and keeps
   // its own catalogue; the two must not be pruned together.
   models: [
-    { id: "nemotron-3-ultra-free", name: "nemotron-3-ultra-free" },
     { id: "nemotron-3.5-lightning-free", name: "nemotron-3.5-lightning-free" },
     { id: "nemotron-3.5-super-vl-free", name: "nemotron-3.5-super-vl-free" },
     { id: "mimo-v2.6-flash-free", name: "mimo-v2.6-flash-free" },
     { id: "beam-free", name: "beam-free" },
     { id: "deepseek-v4.1-flash-free", name: "deepseek-v4.1-flash-free" },
     { id: "glm-5.3-flash-free", name: "glm-5.3-flash-free" },
-    { id: "longcat-2.5-preview-free", name: "longcat-2.5-preview-free" },
+    { id: "pulse-alpha-free", name: "pulse-alpha-free" },
+    { id: "flint-40b-free", name: "flint-40b-free" },
+    { id: "crouton-alpha-free", name: "crouton-alpha-free" },
     { id: "big-pickle", name: "big-pickle" },
   ],
 };

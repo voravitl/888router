@@ -236,8 +236,13 @@ function attachToolNameMap(body, sanitizerMap, aliasMap) {
     out._toolNameMap = sanitizerMap;
     return out;
   }
-  const merged = new Map(sanitized ? sanitizerMap : []);
+  const merged = new Map();
   for (const [sent, original] of aliasMap) merged.set(sent, original);
+  if (sanitized) {
+    for (const [sent, mid] of sanitizerMap) {
+      merged.set(sent, aliasMap.get(mid) ?? mid);
+    }
+  }
   out._toolNameMap = merged;
   return out;
 }
@@ -427,7 +432,7 @@ export class OpenCodeExecutor extends BaseExecutor {
         method: options.method,
         headers: options.headers,
         body: options.body,
-      }, { signal: options.signal, proxyUrl }),
+      }, { signal: options.signal, proxyUrl, timeoutMs: 0 }),
       directFetchProxy: true,
     });
   }

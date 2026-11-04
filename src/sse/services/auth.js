@@ -844,8 +844,17 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0, modelError: !!modelError };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  const resolvedProvider = provider ? resolveProviderId(provider) : null;
+  // OpenCode's free-tier quota wall ("FreeUsageLimitError: Free usage limit
+  // reached") is per-MODEL, not account-wide — see providerQuota.js and the
+  // pool branch at line 764. Locking modelLock___all here takes every sibling
+  // free model on a saved BYOK key offline for 30m and forces traffic onto the
+  // anonymous Public pool.
+  const isPerModelQuota429 = status === 429 && Boolean(model) && (
+    resolvedProvider === "opencode" || /FreeUsageLimitError/i.test(errorText || "")
+  );
   const isAccountLevel = status === 402 || status === 403 ||
-    (status === 429 && /quota|limit|credit|balance|allowance|capacity/i.test(errorText || ""));
+    (status === 429 && !isPerModelQuota429 && /quota|limit|credit|balance|allowance|capacity/i.test(errorText || ""));
   const lockUpdate = buildModelLockUpdate(model, cooldownMs, isAccountLevel);
 
   await updateProviderConnection(connectionId, {
