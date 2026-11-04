@@ -157,41 +157,6 @@ render_svg_to_png(chatgpt_svg, os.path.join(PROVIDERS_DIR, "chatgpt-web.png"), 1
 Image.open(os.path.join(PROVIDERS_DIR, "chatgpt-web.png")).save(os.path.join(PROVIDERS_DIR, "chatgpt.png"), "PNG")
 print("  [OK] chatgpt-web.png & chatgpt.png")
 
-# 8. AiPASS TH (Thai AI Passport) SVG
-aipass_svg_content = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <defs>
-    <linearGradient id="ap_bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1E3A8A"/>
-      <stop offset="50%" stop-color="#0F172A"/>
-      <stop offset="100%" stop-color="#020617"/>
-    </linearGradient>
-    <linearGradient id="ap_gold" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#FDE047"/>
-      <stop offset="50%" stop-color="#EAB308"/>
-      <stop offset="100%" stop-color="#CA8A04"/>
-    </linearGradient>
-    <linearGradient id="ap_red" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#EF4444"/>
-      <stop offset="100%" stop-color="#B91C1C"/>
-    </linearGradient>
-  </defs>
-  <rect x="6" y="6" width="116" height="116" rx="26" fill="url(#ap_bg)" stroke="url(#ap_gold)" stroke-width="2.5"/>
-  <rect x="28" y="20" width="72" height="3" rx="1.5" fill="url(#ap_red)"/>
-  <rect x="36" y="25" width="56" height="2" rx="1" fill="#FFFFFF" opacity="0.85"/>
-  <rect x="42" y="29" width="44" height="3" rx="1.5" fill="#3B82F6"/>
-  <circle cx="64" cy="60" r="19" fill="none" stroke="url(#ap_gold)" stroke-width="2.5"/>
-  <path d="M64 45 L64 75 M49 60 L79 60" stroke="url(#ap_gold)" stroke-width="1.5" stroke-dasharray="2,2"/>
-  <circle cx="64" cy="60" r="9" fill="url(#ap_gold)"/>
-  <circle cx="64" cy="60" r="4.5" fill="#0F172A"/>
-  <text x="64" y="103" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="1.5">AiPASS</text>
-  <text x="64" y="115" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="8" font-weight="700" fill="#EAB308" text-anchor="middle" letter-spacing="1">THAILAND</text>
-</svg>"""
-aipass_svg = os.path.join(TMP_DIR, "aipass.svg")
-with open(aipass_svg, "w") as f:
-    f.write(aipass_svg_content)
-render_svg_to_png(aipass_svg, os.path.join(PROVIDERS_DIR, "aipass.png"), 128)
-print("  [OK] aipass.png")
-
 # 9. Bazaarlink SVG
 bazaarlink_svg_content = """<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
@@ -373,7 +338,7 @@ print("\n--- Summary Verification ---")
 from glob import glob
 missing_count = 0
 all_providers = [
-    "aihubmix", "aipass", "alims-intl", "alitp-intl", "api-airforce", "baidu",
+    "aihubmix", "alims-intl", "alitp-intl", "api-airforce", "baidu",
     "bazaarlink", "bluesminds", "chatgpt-web", "cheaperinference", "codebuddy-intl",
     "featherless", "felo-web", "fish-audio", "freebuff",
     "gitlab", "kilo-gateway", "llm7", "mmf", "morph", "selfhosted-embedding",

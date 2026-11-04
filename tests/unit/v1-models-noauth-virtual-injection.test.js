@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// /v1/models must expose noAuth zero-config providers (aipass, opencode,
+// /v1/models must expose noAuth zero-config providers (opencode,
 // mimo-free) even though they have no DB connection row. Keyed public
 // gateways (openrouter, nousresearch, felo-web) must NOT be injected — their
 // models 401 without a stored key. Regression for PR #378 review round 2:
-// gating on the PROVIDERS transport barrel silently dropped aipass because
+// gating on the PROVIDERS transport barrel silently dropped opencode because
 // buildTransport copies hasFree but not noAuth — the injection must iterate
 // AI_PROVIDERS (which copies noAuth).
 
@@ -70,26 +70,24 @@ describe("/v1/models noAuth virtual connection injection (#377)", { timeout: 300
     mocks.getAllModelDynamicCapabilities.mockReset().mockResolvedValue(new Map());
   });
 
-  it("injects aipass models even when other providers have DB connections", async () => {
-    // The normal deployment case: connections exist, but none for aipass.
+  it("injects opencode models even when other providers have DB connections", async () => {
+    // The normal deployment case: connections exist, but none for opencode.
     mocks.getProviderConnections.mockResolvedValue([
       { id: "conn-ollama", provider: "ollama", isActive: true, providerSpecificData: {} },
     ]);
 
     const ids = await listModelIds();
-    const aipass = ids.filter((id) => id.startsWith("ap/") || id.startsWith("aipass/"));
-    expect(aipass.length).toBeGreaterThan(0);
-    expect(aipass.some((id) => id.includes("gemini-3.1-flash-lite"))).toBe(true);
+    expect(ids.filter((id) => id.startsWith("oc/")).length).toBeGreaterThan(0);
+    expect(ids).toContain("oc/beam-free");
   });
 
-  it("does not duplicate aipass when a real aipass connection exists", async () => {
+  it("does not duplicate opencode when a real opencode connection exists", async () => {
     mocks.getProviderConnections.mockResolvedValue([
-      { id: "conn-aipass", provider: "aipass", isActive: true, providerSpecificData: {} },
+      { id: "conn-opencode", provider: "opencode", isActive: true, providerSpecificData: {} },
     ]);
 
     const ids = await listModelIds();
-    const aipassGemini = ids.filter((id) => id.endsWith("/gemini-3.1-flash-lite"));
-    expect(aipassGemini.length).toBe(1);
+    expect(ids.filter((id) => id === "oc/beam-free").length).toBe(1);
   });
 
   it("does not inject keyed public gateways (openrouter) without a connection", async () => {

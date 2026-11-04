@@ -11,7 +11,6 @@ vi.mock("../../open-sse/services/qoderModels.js", () => ({
   resolveQoderModels: vi.fn(), isQoderPat: () => false, resolveQoderCredentials: vi.fn(),
 }));
 
-import { AipassExecutor } from "../../open-sse/executors/aipass.js";
 import { CursorExecutor } from "../../open-sse/executors/cursor.js";
 import { QoderExecutor } from "../../open-sse/executors/qoder.js";
 import { KimchiExecutor } from "../../open-sse/executors/kimchi.js";
@@ -20,20 +19,6 @@ import { getRequestTimeoutPolicy } from "../../open-sse/utils/requestTimeout.js"
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); mocks.fetch.mockReset(); });
 
 describe("provider long-input integrity", () => {
-  it.each([true, false])("AiPASS rejects unsupported full-history requests before bridge dispatch (explicit=%s)", async (explicit) => {
-    const body = { messages: [
-      { role: "system", content: "retain this instruction" },
-      { role: "user", content: explicit ? "prior turn" : "x".repeat(400000) },
-      { role: "assistant", content: "prior answer" },
-      { role: "user", content: "continue" },
-    ], tools: [{ type: "function", function: { name: "read" } }] };
-    const original = structuredClone(body);
-    const result = await new AipassExecutor().execute({ body, credentials: { preserveRequestInput: explicit } });
-    expect(result.response.status).toBe(400);
-    expect((await result.response.json()).error.type).toBe("unsupported_request");
-    expect(body).toEqual(original);
-  });
-
   it("Kimchi retains supplied reasoning during preservation while ordinary requests keep legacy stripping", () => {
     const body = { messages: [{ role: "assistant", content: "answer", reasoning_content: "valuable reasoning trace" }] };
     const executor = new KimchiExecutor();

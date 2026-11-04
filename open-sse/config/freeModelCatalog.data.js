@@ -24,10 +24,6 @@ export const FREE_MODEL_BUDGETS = [
   { provider: "tokenharbor", modelId: "mimo-v2.5:free", displayName: "MiMo V2.5 (TokenHarbor Free)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-daily", poolKey: "tokenharbor-free", tos: "caution" },
   { provider: "chatgpt-web", modelId: "gpt-5.6-luna-free", displayName: "GPT-5.6 Luna (Free)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "chatgpt-web-free", tos: "caution" },
   { provider: "chatgpt-web", modelId: "gpt-5.6-luna-free-thinking", displayName: "GPT-5.6 Luna (Free, Think)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-uncapped", poolKey: "chatgpt-web-free", tos: "caution" },
-  { provider: "aipass", modelId: "gemini-3.1-flash-lite", displayName: "Gemini 3.1 Flash Lite (AiPASS Free)", monthlyTokens: 0, creditTokens: 10000000000, freeType: "recurring-monthly", poolKey: "aipass", tos: "clean" },
-  { provider: "aipass", modelId: "claude-sonnet-5@default", displayName: "Claude Sonnet 5 (AiPASS)", monthlyTokens: 0, creditTokens: 10000000000, freeType: "recurring-monthly", poolKey: "aipass", tos: "clean" },
-  { provider: "aipass", modelId: "claude-opus-5@default", displayName: "Claude Opus 5 (AiPASS)", monthlyTokens: 0, creditTokens: 10000000000, freeType: "recurring-monthly", poolKey: "aipass", tos: "clean" },
-  { provider: "aipass", modelId: "gpt-image-2", displayName: "GPT-Image-2 (AiPASS)", monthlyTokens: 0, creditTokens: 10000000000, freeType: "recurring-monthly", poolKey: "aipass", tos: "clean" },
   // felo-web moved off the keyless /search/threads proxy (turnstile-gated, not chat-shaped)
   // to the openapi.felo.ai LLM API — now an apikey provider; see registry/felo-web.js.
   // Entries live in the alphabetical block below (single source, no duplicates).

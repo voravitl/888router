@@ -110,7 +110,7 @@ describe("tokenharbor provider registration", () => {
   it("keyed gateway needs a connection: no virtual injection for tokenharbor", async () => {
     // /v1/models only lists keyed-gateway providers (tokenharbor, bai,
     // tokenrouter, ...) when a real connection row exists — unlike
-    // noAuth+hasFree providers (aipass, opencode) which get a virtual
+    // noAuth+hasFree providers (opencode) which get a virtual
     // connection. A fresh install with zero connections must not route
     // auto/best-free into a 401. Strict assertions: the entry must EXIST
     // (a missing registration must fail, not pass vacuously).

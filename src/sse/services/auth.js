@@ -105,7 +105,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // excluded, resolve only that one (avoids N+1 sequential resolves).
     // Specific pool → legacy "noauth" id. Returns null when none eligible.
     async function pickVirtualNoAuthConnection(providerId, excludeSet) {
-      if (providerId === "aipass" || providerId === "ollama-local") {
+      if (providerId === "ollama-local") {
         return {
           id: "noauth",
           connectionId: "noauth",

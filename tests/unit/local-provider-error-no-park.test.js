@@ -111,7 +111,6 @@ describe("a local provider error is recognised as local", () => {
   it("flags the other local-only failures", () => {
     expect(isLocalProviderError("Machine ID is required for the Cursor API")).toBe(true);
     expect(isLocalProviderError("Devin CLI bridge is disabled by default")).toBe(true);
-    expect(isLocalProviderError("AiPASS Chrome extension not connected")).toBe(true);
   });
 
   it("does not flag an upstream failure", () => {

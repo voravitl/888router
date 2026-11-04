@@ -70,7 +70,7 @@ export function isLocalProviderError(errorText) {
   // Tight patterns only. A broad one ("not connected", "required") would
   // catch genuine upstream failures and stop the relay from being parked when
   // it should be.
-  return /requires \w+ in providerSpecificData|Machine ID is required for the Cursor API|bridge is disabled by default|AiPASS Chrome extension not connected/i.test(text);
+  return /requires \w+ in providerSpecificData|Machine ID is required for the Cursor API|bridge is disabled by default/i.test(text);
 }
 
 /**

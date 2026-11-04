@@ -24,7 +24,6 @@ const SPECIALIZED = new Set([
   "codex", "cursor", "vertex", "vertex-partner", "qwen", "opencode",
   "opencode-go", "grok-web", "perplexity-web", "chatgpt-web", "zenmux-free", "ollama-local", "commandcode",
   "xiaomi-tokenplan", "mimo-free",
-  "aipass", "aipass-th", "aipass-bridge", "ap",
 ]);
 
 // Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) để snapshot ổn định.

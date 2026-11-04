@@ -26,7 +26,7 @@ Next.js App Router entry: public landing/login pages, `(dashboard)` route group,
 | `ext/` | Extension/chunk/loader/status/quota helper pages |
 
 ### `api/` routes
-`aipass-extension, auth, cli-tools, combos, dashboard, headroom, health, init, keys, locale, mcp, media-providers, models, oauth, pricing, provider-nodes, providers, proxy-pools, settings, shutdown, skills, tags, translator, tunnel, usage, v1, v1beta, version`
+`auth, cli-tools, combos, dashboard, headroom, health, init, keys, locale, mcp, media-providers, models, oauth, pricing, provider-nodes, providers, proxy-pools, settings, shutdown, skills, tags, translator, tunnel, usage, v1, v1beta, version`
 
 ## For AI Agents
 

@@ -20,7 +20,6 @@ Server-side libraries: SQLite persistence, auth/session, OAuth providers, networ
 | `cloudflareAiModels.js` | Cloudflare AI model list |
 | `disabledModelsDb.js` | Disabled-models store |
 | `requestDetailsDb.js` | Request detail store |
-| `extCors.js` | Extension CORS helper |
 | `mitmAliasCache.js` | MITM alias cache |
 | `route-manifest.js` | Route manifest helper |
 

@@ -375,7 +375,7 @@ describe("all-stale-no-URL", () => {
 });
 
 describe("modelError vs pool failure classification", () => {
-  it.each(["content_length_exceeds_threshold", "context_length_exceeded", "maximum context length exceeded", "AiPASS browser bridge cannot preserve full request context"])("keeps a healthy pool available after request capacity error: %s", async (message) => {
+  it.each(["content_length_exceeds_threshold", "context_length_exceeded", "maximum context length exceeded"])("keeps a healthy pool available after request capacity error: %s", async (message) => {
     resetPools({ id: "contextPool", name: "Context pool" });
     const result = await markAccountUnavailable("noauth:contextPool", 400, message, "opencode");
     expect(result.modelError).toBe(true);
