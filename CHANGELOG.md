@@ -10,10 +10,15 @@
 - `resolveComboContextWindow` is back to the **min** across catalog-known members,
   derived from the members (nothing hardcoded).
 - `handleComboChat` now enforces that same min. When the members' windows differ
-  and the estimated input plus the reserved output is above the smallest one, the
-  combo returns 400 `context_length_exceeded` with Anthropic's
+  and the estimated input plus the reserved output is more than 10% above the
+  smallest one, the combo returns 400 `context_length_exceeded` with Anthropic's
   `prompt is too long: N tokens > M maximum` wording, so the client compacts
   instead of the request spilling onto a bigger member.
+- The 10% margin exists because the routing estimate is approximate and runs high
+  on non-ASCII text (measured ~0.96 estimated tokens per Thai character vs 0.25
+  for ASCII). Inside the margin the request is routed normally and the upstream
+  tokenizer decides. Covered by ASCII and Thai tests on both sides of the margin.
+- `fusion` combos advertise the min too but are not enforced (unchanged).
 - If all known members share one window, nothing is rejected at the gateway and
   the upstream tokenizer decides, same as before. Unknown-limit members are
   ignored.

@@ -62,6 +62,38 @@ describe("500k synthetic routing with real catalogue and estimator", () => {
     expect(response.status).toBe(200);
     expect(single).toHaveBeenCalledTimes(1);
   });
+  it("routes a request inside the 10% estimate margin instead of rejecting it", async () => {
+    // ~135k estimated + 2000 reserved: over gpt-4o's 128k, under 128k × 1.1.
+    const body = { messages: [{ role: "user", content: "x".repeat(135000 * 4) }], max_tokens: 2000 };
+    const total = estimateRequestTokens(body) + 2000;
+    expect(total).toBeGreaterThan(128000);
+    expect(total).toBeLessThan(128000 * 1.1);
+    const single = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { headers: { "content-type": "application/json" } }));
+    const response = await handleComboChat({ body, models: ["openai/gpt-4o", "google/gemini-2.5-pro"], handleSingleModel: single, autoSwitch: false, log });
+    expect(response.status).toBe(200);
+    expect(single).toHaveBeenCalled();
+  });
+  it("routes a Thai payload inside the margin even though the estimator counts ~1 token per Thai char", async () => {
+    const thai = "สวัสดีครับ ช่วยตรวจสอบโค้ดนี้หน่อย ".repeat(3950);
+    const body = { messages: [{ role: "user", content: thai }], max_tokens: 2000 };
+    const total = estimateRequestTokens(body) + 2000;
+    expect(total).toBeGreaterThan(128000);
+    expect(total).toBeLessThan(128000 * 1.1);
+    const single = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { headers: { "content-type": "application/json" } }));
+    const response = await handleComboChat({ body, models: ["openai/gpt-4o", "google/gemini-2.5-pro"], handleSingleModel: single, autoSwitch: false, log });
+    expect(response.status).toBe(200);
+    expect(single).toHaveBeenCalled();
+  });
+  it("still rejects a Thai payload well past the margin", async () => {
+    const thai = "สวัสดีครับ ช่วยตรวจสอบโค้ดนี้หน่อย ".repeat(6000);
+    const body = { messages: [{ role: "user", content: thai }], max_tokens: 2000 };
+    expect(estimateRequestTokens(body) + 2000).toBeGreaterThan(128000 * 1.1);
+    const single = vi.fn();
+    const response = await handleComboChat({ body, models: ["openai/gpt-4o", "google/gemini-2.5-pro"], handleSingleModel: single, autoSwitch: false, log });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("context_length_exceeded");
+    expect(single).not.toHaveBeenCalled();
+  });
   it("serves a request under the smallest member's window from the combo's own order", async () => {
     const body = { messages: [{ role: "user", content: "short" }], max_tokens: 128 };
     const single = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { headers: { "content-type": "application/json" } }));

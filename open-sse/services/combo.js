@@ -1041,6 +1041,9 @@ function waitAbortable(ms, signal) {
 // case where an oversized request would silently roll onto a bigger member.
 // When every known member shares one window, the estimate is only approximate
 // and the upstream tokenizer stays authoritative (no gateway-side rejection).
+// Reject only when the estimate is more than 10% over the combo ceiling.
+const COMBO_CONTEXT_REJECT_MARGIN = 1.1;
+
 function comboContextCeiling(models, fits) {
   let min = Infinity;
   let max = -Infinity;
@@ -1106,7 +1109,11 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
   const ceiling = comboContextCeiling(eligibleModels, fits);
   if (ceiling) {
     const reserved = fits.get(eligibleModels[0])?.reservedOutputTokens || 0;
-    if (estimatedInputTokens + reserved > ceiling) {
+    // The estimate is approximate and runs HIGH on non-ASCII text (~1 token
+    // per char for Thai/CJK), so only reject clearly past the ceiling. Inside
+    // the margin the request is routed normally and the upstream tokenizer
+    // stays authoritative.
+    if (estimatedInputTokens + reserved > ceiling * COMBO_CONTEXT_REJECT_MARGIN) {
       log?.warn?.("COMBO", `Combo "${comboName || ""}" request ~${estimatedInputTokens}+${reserved} tokens exceeds combo window ${ceiling}; rejecting so the client compacts`);
       return comboContextExceededResponse(estimatedInputTokens, reserved, ceiling);
     }
