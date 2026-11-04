@@ -466,7 +466,6 @@ export const PROVIDER_CAPABILITIES = {
     "x-preview-f-free": OX_ALPHA_CAPABILITIES,
   },
   "opencode-go": {
-    "space-bunny-free": SPACE_BUNNY_CAPABILITIES,
     "laguna-s-2.1-free":  { reasoning: true, vision: false, contextWindow: 256000, maxOutput: 32000 },
     "ling-3.0-flash-fin-free": { reasoning: true, vision: false, contextWindow: 262144, maxOutput: 32768 },
     "muse-spark-1.2-contributor-free": { vision: false, pdf: false, audioInput: false, videoInput: false },
@@ -480,22 +479,15 @@ export const PROVIDER_CAPABILITIES = {
     "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
     "glm-5.3":           { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
     "glm-5.2":           { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 48000 },
-    "glm-5.1":           { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 48000 },
     "kimi-k3":           { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 131072 },
     "kimi-k2.7-code":    { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 256000,  maxOutput: 64000 },
-    "kimi-k2.6":         { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 256000,  maxOutput: 64000 },
     "deepseek-v4-pro":   { vision: false, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 384000 },
-    "deepseek-v4-flash": { vision: false, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 384000 },
     "deepseek-v4.1-flash": { vision: false, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 384000 },
     "minimax-m3":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 512000, maxOutput: 48000 },
-    "minimax-m2.7":      { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 200000,  maxOutput: 131072 },
     "qwen3.8-max":       { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 65536 },
     "qwen3.8-flash":     { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 65536 },
-    "qwen3.7-max":       { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 65536 },
-    // grok-4.6/4.7 are natively 500k (x.ai official; models.dev xai/grok-4.6+4.7
-    // = 500,000). The 200k here was another stale DEFAULT-floor copy.
+    // grok-4.7 is natively 500k (x.ai official; models.dev xai/grok-4.7 = 500,000).
     "grok-4.7":          { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 500000, maxOutput: 500000 },
-    "grok-4.6":          { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 500000, maxOutput: 500000 },
     "gpt-6-luna":        { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 272000, maxOutput: 64000 },
     "gpt-5.6-luna":      { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 272000, maxOutput: 64000 },
     // LongCat-2.0 is natively 1M (models.dev: opencode-go/longcat-2.0 = 1,000,000 /
@@ -503,9 +495,18 @@ export const PROVIDER_CAPABILITIES = {
     // The 200k here was a stale copy of the DEFAULT floor — the add-combo picker
     // showed 200k while the live model accepted 1M (owner report, 2026-09-29).
     "longcat-2.0":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
-    "longcat-2.5-preview-free": { reasoning: false, thinkingFormat: null, thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 131072 },
     "hy4-preview":       { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
     "hy3":               { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 256000, maxOutput: 64000 },
+    // Go catalog additions from https://opencode.ai/v2/docs/console/go (live catalog
+    // https://opencode.ai/zen/go/v1/models, values from the `limit` block). Contexts
+    // match the Go docs pricing bands (Grok ≤200K, Qwen Plus ≤256K) and the live ids.
+    "kimi-k3.1-pro":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+    "step-5-preview":       { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true,  contextWindow: 1000000, maxOutput: 65536 },
+    "beam-free":            { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
+    "iceman-contributor-free": { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 262144, maxOutput: 131072 },
+    "minimax-m3.1-flash":   { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 512000 },
+    "gemini-4-argon":       { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 },
+    "claude-haiku-5-5":     { vision: true, pdf: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
   },
   // "opencode-zen" aliases the SAME free upstream as opencode/oc (registry
   // aliases oc/opencode/opencode-zen/zen to one implementation), so the

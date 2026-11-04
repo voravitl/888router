@@ -54,19 +54,18 @@ describe("getCapabilitiesForModel", () => {
     });
   });
 
-  it("reports OpenCode space-bunny-free as a 1M reasoning model across all aliases", () => {
+  it("reports OpenCode space-bunny-free as retired on all tiers (falls to default floor)", () => {
+    // space-bunny-free was retired from the opencode FREE tier
+    // (HTTP 410 ModelDeprecated, verified live 2026-10-21) and has since been
+    // removed from the live Go catalogue as well (2026-11-04). It no longer
+    // carries a dedicated opencode-go capability entry, so it resolves to the
+    // DEFAULT_CAPABILITIES floor instead of the old 1M/reasoning entry.
     const expected = {
-      reasoning: true,
+      reasoning: false,
       vision: false,
-      contextWindow: 1048576,
+      contextWindow: 200000,
       maxOutput: 64000,
     };
-    // The opencode FREE tier (opencode / oc / opencode-zen / zen) retired
-    // space-bunny-free (HTTP 410 ModelDeprecated, verified live 2026-10-21),
-    // so those aliases no longer carry a dedicated capability entry — they
-    // fall through to the default limits. The PAID tier (opencode-go) still
-    // serves the id and keeps its entry, so that is where the 1M/reasoning
-    // contract is pinned.
     expect(getCapabilitiesForModel("opencode-go", "space-bunny-free")).toMatchObject(expected);
   });
 });

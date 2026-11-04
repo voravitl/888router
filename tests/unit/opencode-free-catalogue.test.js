@@ -94,11 +94,12 @@ describe("opencode free catalogue lists only models that serve", () => {
 
   it("keeps the dead ids out of the opencode-go catalogue (a different upstream)", () => {
     // opencode-go is the PAID tier. Its catalogue legitimately lists
-    // space-bunny-free / muse-spark-*-contributor — those ids were verified
-    // still serving there (HTTP 429 quota, not 410). Pruning the free tier must
-    // not touch the paid one.
+    // muse-spark-*-contributor (verified still serving there). Pruning the free
+    // tier must not touch the paid one. space-bunny-free was still serving on
+    // the paid tier on 2026-10-21 but has since been retired from the live Go
+    // catalogue (2026-11-04), so it must NOT be advertised here either.
     const goIds = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
-    expect(goIds).toContain("space-bunny-free");
+    expect(goIds).not.toContain("space-bunny-free");
     expect(goIds).toContain("muse-spark-1.3-contributor");
   });
 });
