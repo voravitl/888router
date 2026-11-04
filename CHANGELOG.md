@@ -1,3 +1,9 @@
+# v0.15.231 (2026-11-05)
+
+## Make auto combos selectable in model/combo selector
+- `ModelSelectModal` only listed DB-stored combos from `/api/combos`, so virtual auto combos (`auto/best-free`, `auto/best-free-1m`, …) never appeared — users could not select them as combo members or model targets.
+- Appended `AUTO_COMBO_TEMPLATES` to the combo list and matched search against `displayName` so `best-free-1m` is findable.
+
 # v0.15.230 (2026-11-04)
 
 ## auto/best-free-1m no longer routes to 32k Qwen2.5-Coder hosts
