@@ -111,3 +111,52 @@ describe("combo lock list + unlock (UI backing)", () => {
     expect(listComboLocks()).toEqual([]);
   });
 });
+
+import {
+  escalatedPermanentLockMs,
+  isDeadCredentialFailure,
+  clearPermanentStrikes,
+} from "../../open-sse/services/combo.js";
+
+describe("dead-hop locks (#619)", () => {
+  beforeEach(() => clearPermanentStrikes());
+
+  it("escalates permanent locks 60s -> 120s -> ... capped at 1h", () => {
+    expect(escalatedPermanentLockMs(60_000, 1)).toBe(60_000);
+    expect(escalatedPermanentLockMs(60_000, 2)).toBe(120_000);
+    expect(escalatedPermanentLockMs(60_000, 3)).toBe(240_000);
+    expect(escalatedPermanentLockMs(60_000, 20)).toBe(3_600_000);
+  });
+
+  it("classifies missing-credential and local-config failures only", () => {
+    expect(isDeadCredentialFailure(404, "No active credentials for provider: bazaarlink")).toBe(true);
+    expect(isDeadCredentialFailure(502, "cloudflare-ai requires accountId in providerSpecificData")).toBe(true);
+    expect(isDeadCredentialFailure(401, "")).toBe(true);
+    expect(isDeadCredentialFailure(404, "Model not found")).toBe(false);
+    expect(isDeadCredentialFailure(502, "Bad gateway")).toBe(false);
+  });
+
+  const log = { info: vi.fn(), warn: vi.fn() };
+  const json = (status, message) =>
+    new Response(JSON.stringify({ error: { message } }), { status, headers: { "Content-Type": "application/json" } });
+  const ok = () => new Response(JSON.stringify({ choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  it("a no-credentials 404 locks the whole provider for 30m, not 60s", async () => {
+    const handleSingleModel = async (_b, m) =>
+      m.startsWith("bazaarlink/") ? json(404, "No active credentials for provider: bazaarlink") : ok();
+    const models = ["bazaarlink/a", "bazaarlink/b", "kr/claude"];
+    const res = await handleComboChat({ body: { messages: [{ role: "user", content: "hi" }] }, models, handleSingleModel, log, comboName: "t", comboStrategy: "fallback" });
+    expect(res.ok).toBe(true);
+    for (const m of ["bazaarlink/a", "bazaarlink/b"]) {
+      expect(getComboKnownUnavailable(m)).toBeGreaterThan(Date.now() + 20 * 60 * 1000);
+    }
+  });
+
+  it("a local-config 502 locks the provider instead of retrying every request", async () => {
+    const handleSingleModel = async (_b, m) =>
+      m.startsWith("cloudflare-ai/") ? json(502, "cloudflare-ai requires accountId in providerSpecificData") : ok();
+    const res = await handleComboChat({ body: { messages: [{ role: "user", content: "hi" }] }, models: ["cloudflare-ai/x", "kr/claude"], handleSingleModel, log, comboName: "t", comboStrategy: "fallback" });
+    expect(res.ok).toBe(true);
+    expect(getComboKnownUnavailable("cloudflare-ai/x")).toBeGreaterThan(Date.now() + 20 * 60 * 1000);
+  });
+});
