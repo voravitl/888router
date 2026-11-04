@@ -159,28 +159,6 @@ const LIVE_MODEL_RESOLVERS = {
       return null;
     }
   },
-  aipass: async () => {
-    try {
-      const { listAipassModels } = await import("open-sse/services/aipassBridge.js");
-      const list = await listAipassModels();
-      if (!Array.isArray(list) || list.length === 0) return null;
-      const seen = new Set(list.map((m) => m.id));
-      const merged = [...list];
-      const staticModels = PROVIDERS["aipass"]?.models || [];
-      for (const sm of staticModels) {
-        const id = typeof sm === "string" ? sm : sm.id;
-        if (id && !seen.has(id)) {
-          seen.add(id);
-          merged.push(typeof sm === "string" ? { id: sm, name: sm } : sm);
-        }
-      }
-      const models = merged.map((m) => ({ id: m.id, name: m.name || m.id, kind: m.kind, type: m.kind }));
-      return models.length ? { models } : null;
-    } catch {
-      return null;
-    }
-  },
-
   // Generic OpenAI-compatible resolver for every provider whose registry entry
   // sets `modelsFetcher.type === "openai"`: bai, venice, gmi, vercel-ai-gateway,
   // perplexity-agent, nousresearch, tokenrouter. Hits `modelsFetcher.url`
@@ -566,14 +544,14 @@ export async function buildModelsList(kindFilter) {
     }
   }
 
-  // Zero-config noAuth providers (aipass, opencode, mimo-free) have no DB
+  // Zero-config noAuth providers (opencode, mimo-free) have no DB
   // connection row, so the provider loop above never sees them and their
   // models vanish from /v1/models. Inject a virtual active connection per
   // provider flagged noAuth+hasFree — same pattern as the Dashboard's
-  // /api/providers injection (which injects only aipass). Iterate AI_PROVIDERS,
+  // /api/providers injection. Iterate AI_PROVIDERS,
   // NOT the transport barrel: buildTransport copies hasFree but drops noAuth,
-  // so PROVIDERS.aipass.noAuth is undefined and the injection would silently
-  // miss aipass/opencode. Keyed public gateways (openrouter, nousresearch,
+  // so PROVIDERS.opencode.noAuth is undefined and the injection would silently
+  // miss opencode. Keyed public gateways (openrouter, nousresearch,
   // felo-web, …) must NOT appear here — their models 401 without a stored
   // key. The static branch below (connections.length === 0) reads
   // PROVIDER_MODELS directly and is untouched by this.

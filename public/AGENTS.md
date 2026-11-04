@@ -4,7 +4,7 @@
 # public
 
 ## Purpose
-Static assets served by Next.js: provider logos, app icons, i18n literals, and the AiPASS extension bundle.
+Static assets served by Next.js: provider logos, app icons, i18n literals.
 
 ## Subdirectories
 | Directory | Purpose |
@@ -12,7 +12,6 @@ Static assets served by Next.js: provider logos, app icons, i18n literals, and t
 | `providers/` | Per-provider logo PNGs (matches `open-sse/providers/registry/` ids) |
 | `icons/` | App icons (`icon-192.svg`, `icon-512.svg`) |
 | `i18n/literals/` | Static i18n literal files |
-| `aipass-extension/` | AiPASS browser-extension bundle served at `/api/aipass-extension` |
 
 ## For AI Agents
 

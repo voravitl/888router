@@ -364,8 +364,7 @@ the shared pool. Rules:
   whole relay pool out of rotation for 30 s.
 - **The matcher must stay tight.** `isLocalProviderError` matches a short
   list of exact local-only failures (missing `accountId`, missing Cursor
-  `machineId`, the disabled Devin CLI bridge, an unconnected AiPASS
-  extension). A broad pattern ("not connected", "required") would catch
+  `machineId`, the disabled Devin CLI bridge). A broad pattern ("not connected", "required") would catch
   genuine upstream failures and stop the relay from being parked when it
   should be.
 - **A local failure is not a request-validation failure.** It is a

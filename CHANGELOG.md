@@ -1,3 +1,14 @@
+# v0.15.228 (2026-11-04)
+
+## Remove the AiPASS provider and Chrome extension bridge
+- Deleted the `aipass` provider (aliases `aipass-th`, `aipass-bridge`, `ap`): registry entry, executor,
+  usage fetcher, `aipassBridge` hub, the `/ext/*` bridge routes, `/api/aipass-extension` download,
+  the `public/aipass-extension` bundle and logo, and the AiPASS free-catalog rows.
+- Removed the virtual `aipass-virtual` connection from `/api/providers`, `/api/providers/[id]/models|test`
+  and `/v1/models`; `/v1/models` noAuth injection now covers opencode / mimo-free only.
+- Dropped the `/ext` loopback branch from the dashboard guard and the `/ext` route-manifest entry.
+- Tests that pinned AiPASS behaviour were removed or retargeted at opencode.
+
 # v0.15.226 (2026-11-04)
 
 ## Dead combo hops stop being re-tried every minute

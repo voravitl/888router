@@ -65,7 +65,6 @@ describe("Auto-Combo 2.0 & Suffix Composition Parity", () => {
     expect(bestFree.models).not.toContain(
       "openrouter/nvidia/llama-nemotron-embed-vl-1b-v2:free"
     );
-    expect(bestFree.models).not.toContain("aipass/gpt-image-2");
   });
 
   it("coding category filters to code-family models", () => {

@@ -6,7 +6,6 @@ import {
   getProviderNodes,
   getProxyPoolById,
 } from "@/models";
-import { getClientCount } from "open-sse/services/aipassBridge.js";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
@@ -77,27 +76,6 @@ export async function GET() {
         idToken: undefined,
       });
     });
-
-    // Inject virtual aipass connection so it appears in Dashboard Providers UI.
-    // aipass is noAuth so it has no DB row — this makes it visible.
-    const hasAipass = safeConnections.some(c => c.provider === "aipass");
-    if (!hasAipass) {
-      const extCount = getClientCount();
-      const installError = "Chrome Extension not connected — download the extension from /api/aipass-extension, load it via chrome://extensions (Developer mode → Load unpacked), and open de.aipass.net/chat";
-      safeConnections.push({
-        id: "aipass-virtual",
-        provider: "aipass",
-        name: "AiPASS TH (Chrome Extension Bridge)",
-        isActive: true,
-        testStatus: extCount > 0 ? "active" : "error",
-        // ConnectionRow renders lastError (testError is unused there)
-        lastError: extCount > 0 ? null : installError,
-        providerSpecificData: {
-          virtual: true,
-          extensions: extCount,
-        },
-      });
-    }
 
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {
