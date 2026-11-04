@@ -1027,7 +1027,7 @@ export function parsePeriodQuotaLockMs(text, now = Date.now()) {
     if (at <= now) at = Date.UTC(year + 1, mo - 1, d, h, mi, s);
     return Math.min(at - now, PERIOD_QUOTA_MAX_LOCK_MS);
   }
-  if (/monthly (usage )?(limit|quota)|1-month quota|month(ly)? quota (has been )?exhausted|insufficient_quota/i.test(text)) {
+  if (/monthly (usage )?(limit|quota)|1-month quota|month(ly)? quota (has been )?exhausted/i.test(text)) {
     return PERIOD_QUOTA_NO_DATE_LOCK_MS;
   }
   return null;
