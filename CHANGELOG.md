@@ -1,4 +1,4 @@
-# v0.15.223 (2026-11-04)
+# v0.15.224 (2026-11-04)
 
 ## Combo context window is its smallest member again, and it is enforced
 - Reverts the 0.15.221 change: `/v1/models` advertised a combo's **largest**
@@ -17,6 +17,19 @@
 - If all known members share one window, nothing is rejected at the gateway and
   the upstream tokenizer decides, same as before. Unknown-limit members are
   ignored.
+- Effect on `9-free` (200k + 1M members): it now advertises 200k and returns 400
+  above it instead of serving the request from `oc/beam-free`.
+
+# v0.15.223 (2026-11-04)
+
+## Fix OpenCode Zen free-tier 429 (`FreeUsageLimitError`) gates, per-model BYOK lock, and catalogue
+- **Per-model lock on saved BYOK OpenCode connections (`src/sse/services/auth.js`)**: `markAccountUnavailable()` previously matched `/limit/i` against `"FreeUsageLimitError: Free usage limit reached"` on HTTP 429 and wrote `modelLock___all` (30-minute account-wide lock) on saved BYOK `opencode` connections. Because OpenCode's free quota wall is per-model (`deepseek-v4.1-flash-free`, `glm-5.3-flash-free`, `mimo-v2.6-flash-free`, and `big-pickle` can be exhausted while `beam-free`, `pulse-alpha-free`, `flint-40b-free`, `crouton-alpha-free`, `nemotron-3.5-lightning-free`, and `nemotron-3.5-super-vl-free` still answer 200 on the same key), locking `modelLock___all` took all healthy sibling free models on the BYOK key offline and forced traffic onto the anonymous `Bearer public` pool until the host IP quota also burned out. `markAccountUnavailable()` now scopes 429 locks on `opencode` / `FreeUsageLimitError` to `modelLock_${model}` when a model is present, matching the existing per-model proxy-pool park at line 764.
+- **Neutralize non-OpenCode harness tool names on the free lane (`open-sse/utils/opencodeFingerprint.js`)**: Live probes against `https://opencode.ai/zen/v1/chat/completions` using captured failing Claude Code payloads (`213KB`, 17 tools) proved that OpenCode's free gate inspects `tools[].function.name` for third-party harness signatures (`PascalCase`/`camelCase` tool names such as `ReportFindings` + `ScheduleWakeup` / `DeferredToolPlaceholder`, or `terminal`-bearing names per upstream `decolua/9router#5328`) and immediately rejects the request with `429 FreeUsageLimitError` even when model quota is available. `concealFingerprintToolNames()` now converts uppercase and `terminal`-bearing caller tool names into neutral `snake_case` aliases (appending `_client` when an alias such as `Read` → `read` collides with OpenCode's own `read`/`shell` fingerprint tools or an existing tool), rewrites `tool_choice` and prior-turn `tool_calls` / `role: "tool"` `name` / `tool_use` / `function_call` references, and records every alias in `_toolNameMap` so `restoreOpencodeToolNames()` restores the caller's exact original tool names on the response stream.
+- **Fix `pulse-alpha-free` reasoning effort HTTP 400 and refresh static free catalogue (`open-sse/providers/capabilities.js`, `open-sse/providers/registry/opencode.js`)**:
+  - Added `thinkingFormat: "openai-low-high-max"` and `models.dev`-verified limits (`1048576` context / `131072` output, `vision: true`) for `pulse-alpha-free`, which rejects `reasoning_effort: "medium"` upstream with `400 [airlock_error] invalid request: reasoning_effort 'medium' is unsupported; allowed values: ["low", "high", "max"]`.
+  - Added `flint-40b-free` (`262144` / `65536`) and `crouton-alpha-free` (`1048576` / `270000`, `vision: true`, `videoInput: true`, `pdf: true`) to `MODEL_CAPABILITIES` and `open-sse/providers/registry/opencode.js`, and removed `nemotron-3-ultra-free` and `longcat-2.5-preview-free` from the `opencode` free registry (both now return HTTP 400 on `/zen/v1/chat/completions`).
+- **Disable `wreq-js` 120s request timeout on free-lane SSE streams (`open-sse/executors/opencode.js`, `open-sse/services/opencodeTlsClient.js`)**: Pass `timeoutMs: 0` from `OpenCodeExecutor.execute()` and omit `options.timeout` in `opencodeTlsFetch()` when `timeoutMs <= 0` (ported from upstream `decolua/9router#5338`) so long-running free-tier streams are not terminated at 120 seconds.
+- **Tests**: Added regression coverage in `tests/unit/proxy-pool-provider-scope.test.js`, `tests/unit/opencode-free-contract.test.js`, `tests/unit/opencode-tls-client.test.js`, `tests/unit/opencode-free-catalogue.test.js`, `tests/unit/oc-context-windows.test.js`, and `tests/unit/opencode-models-sync.test.js`.
 
 # v0.15.222 (2026-11-03)
 

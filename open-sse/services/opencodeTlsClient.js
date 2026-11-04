@@ -109,8 +109,8 @@ export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEF
     method: init.method || "GET",
     headers: init.headers,
     redirect: "follow",
-    timeout: timeoutMs,
   };
+  if (timeoutMs > 0) options.timeout = timeoutMs;
   if (init.body !== undefined) options.body = init.body;
   if (signal) options.signal = signal;
 

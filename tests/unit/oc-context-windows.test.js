@@ -12,14 +12,15 @@ import { PROVIDER_MODELS } from "../../open-sse/providers/index.js";
 // PATTERN_CAPABILITIES and would start stripping image blocks the model accepts.
 // Values mirror models.dev `opencode` input modalities.
 const EXPECTED = {
-  "nemotron-3-ultra-free":      { contextWindow: 1000000, maxOutput: 128000, vision: false },
   "nemotron-3.5-lightning-free":{ contextWindow: 262144,  maxOutput: 262144, vision: false },
   "nemotron-3.5-super-vl-free": { contextWindow: 1048576, maxOutput: 131072, vision: true },
   "mimo-v2.6-flash-free":       { contextWindow: 200000,  maxOutput: 32000,  vision: true },
   "beam-free":                  { contextWindow: 1048576, maxOutput: 131072, vision: false },
   "deepseek-v4.1-flash-free":   { contextWindow: 200000,  maxOutput: 32000,  vision: false },
   "glm-5.3-flash-free":         { contextWindow: 200000,  maxOutput: 32000,  vision: true },
-  "longcat-2.5-preview-free":   { contextWindow: 1000000, maxOutput: 131072, vision: true },
+  "pulse-alpha-free":           { contextWindow: 1048576, maxOutput: 131072, vision: true },
+  "flint-40b-free":             { contextWindow: 262144,  maxOutput: 65536,  vision: false },
+  "crouton-alpha-free":         { contextWindow: 1048576, maxOutput: 270000, vision: true },
   "big-pickle":                 { contextWindow: 200000,  maxOutput: 64000,  vision: false },
 };
 
@@ -60,5 +61,10 @@ describe("oc (OpenCode Zen free) context windows match models.dev", () => {
     // x-preview-f-free is served through `oc` but listed only via the OC Alpha
     // capability constant, so guard it separately rather than via PROVIDER_MODELS.
     expect(getCapabilitiesForModel("oc", "x-preview-f-free").contextWindow).toBe(1000000);
+  });
+
+  it("sets thinkingFormat to openai-low-high-max for pulse-alpha-free so reasoning_effort medium is remapped instead of 400ing", () => {
+    const caps = getCapabilitiesForModel("oc", "pulse-alpha-free");
+    expect(caps.thinkingFormat).toBe("openai-low-high-max");
   });
 });

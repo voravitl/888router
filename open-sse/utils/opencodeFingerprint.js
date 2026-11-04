@@ -135,10 +135,31 @@ function withFingerprintDefinition(tool, key) {
 }
 
 /**
+ * Convert a non-OpenCode harness tool name (PascalCase/camelCase such as
+ * Claude Code's `ReportFindings`, `ScheduleWakeup`, `DeferredToolPlaceholder`,
+ * `Read`, or `terminal`-bearing names from upstream PR #5328) into a neutral
+ * snake_case identifier. Live probe 2026-11-04: OpenCode's free gate returns
+ * 429 FreeUsageLimitError when `tools[]` carries non-OpenCode harness tool
+ * names (`ReportFindings` + `ScheduleWakeup`, or `terminal`), and 200 OK when
+ * the same tools are sent under snake_case aliases and restored via `_toolNameMap`.
+ */
+function neutralizeCallerToolName(rawName) {
+  if (!rawName || (!/[A-Z]/.test(rawName) && !/terminal/i.test(rawName))) return rawName;
+  let snake = rawName
+    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1_$2")
+    .toLowerCase();
+  if (snake === "terminal") snake = "run_command";
+  else if (/terminal/i.test(snake)) snake = snake.replace(/terminal/gi, "command");
+  return snake;
+}
+
+/**
  * Keep caller tools on the fingerprint names whenever their arguments can carry
  * OpenCode's, and move the remaining ones off them so the exact definitions can
- * be appended without a duplicate name. Everything else (including case
- * variants such as `Read`) is preserved verbatim.
+ * be appended without a duplicate name. Also neutralize PascalCase/camelCase
+ * and `terminal`-bearing caller tool names into snake_case aliases so upstream's
+ * textual harness-name gate does not reject the request with 429.
  *
  * @returns {{ tools: Array, map: Map<string,string> }} map: sent name -> original name
  */
@@ -154,8 +175,22 @@ export function concealFingerprintToolNames(tools) {
       out.push(tool);
       continue;
     }
-    const key = fingerprintToolKey(toolNameOf(tool));
+    const rawName = toolNameOf(tool);
+    const key = fingerprintToolKey(rawName);
     if (!key) {
+      const candidate = neutralizeCallerToolName(rawName);
+      if (candidate !== rawName) {
+        let alias = candidate;
+        if (fingerprintToolKey(alias) || taken.has(alias)) {
+          const base = fingerprintToolKey(alias) ? `${alias}_client` : `${alias}_client`;
+          alias = base;
+          for (let i = 2; taken.has(alias); i++) alias = `${base}${i}`;
+        }
+        taken.add(alias);
+        map.set(alias, rawName);
+        out.push(withToolName(tool, alias));
+        continue;
+      }
       out.push(tool);
       continue;
     }
@@ -245,6 +280,9 @@ export function aliasHistoryToolCalls(body, map) {
               ? { ...call, function: { ...call.function, name: aliases.get(call.function.name) } }
               : call),
         };
+      }
+      if (msg?.role === "tool" && typeof msg.name === "string" && aliases.has(msg.name)) {
+        return { ...msg, name: aliases.get(msg.name) };
       }
       // Claude history: assistant tool_use blocks.
       if (Array.isArray(msg?.content) && msg.content.some((b) => b?.type === "tool_use" && aliases.has(b.name))) {
