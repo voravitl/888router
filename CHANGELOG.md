@@ -13,6 +13,10 @@
 - Combo loop: a 401 (missing/invalid credential) parks the model and its
   same-provider siblings for 30m (`COMBO_AUTH_ERROR_COOLDOWN_MS`, 1m-6h) so
   `gemini/*` and `kilo-gateway/*` stop being retried on every request.
+- Combos page: new "Locked models" panel (`/api/combos/locks`) lists every model
+  the combo router is skipping (quota / 401 / slow-stream) with time left, and
+  unlocks one or all. Lock maps now live on `globalThis` so the API route and the
+  chat route share them. Locks are process-local (lost on restart).
 - Evidence: 888route logs 2026-11-04 19:55-20:02 (`9-sonnet` round-robin sticky 1;
   ollama 429 monthly limit; alitp 429 reset 12-03; kilo/gemini 401 loops).
 

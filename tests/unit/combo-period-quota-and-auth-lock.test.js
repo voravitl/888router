@@ -80,3 +80,34 @@ describe("handleComboChat locks", () => {
     expect(getComboKnownUnavailable("ollama/x")).toBeGreaterThan(Date.now() + 5 * 60 * 60 * 1000);
   });
 });
+
+import {
+  listComboLocks,
+  unlockComboModel,
+  markComboKnownUnavailable,
+  markComboHeadTimeout,
+  clearComboHeadTimeoutCooldown,
+} from "../../open-sse/services/combo.js";
+
+describe("combo lock list + unlock (UI backing)", () => {
+  afterEach(() => clearComboHeadTimeoutCooldown());
+
+  it("lists both lock kinds with reasons, soonest first", () => {
+    markComboKnownUnavailable("ollama/x", Date.now() + 3600_000, "long-quota");
+    markComboHeadTimeout("kr/slow", 30_000);
+    const locks = listComboLocks();
+    expect(locks.map((l) => [l.model, l.reason])).toEqual([
+      ["kr/slow", "head-timeout"],
+      ["ollama/x", "long-quota"],
+    ]);
+  });
+
+  it("unlocks one model, then all", () => {
+    markComboKnownUnavailable("a/1", Date.now() + 60_000, "auth");
+    markComboKnownUnavailable("b/2", Date.now() + 60_000, "auth");
+    unlockComboModel("a/1");
+    expect(listComboLocks().map((l) => l.model)).toEqual(["b/2"]);
+    unlockComboModel();
+    expect(listComboLocks()).toEqual([]);
+  });
+});

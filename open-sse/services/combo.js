@@ -878,7 +878,9 @@ export function wrapSelectedBody(response, cleanup, onCancel) {
  * tests. Upgrade path: move to healthStore when cross-provider cooldown
  * coordination is needed.
  */
-const comboHeadTimeoutCooldowns = new Map();
+// Lock maps live on globalThis: the dashboard API route (unlock UI) and the chat
+// route may be bundled separately, and must see the same state.
+const comboHeadTimeoutCooldowns = (globalThis.__comboHeadTimeoutCooldowns ||= new Map());
 const COMBO_HEAD_TIMEOUT_COOLDOWN_MS = 30 * 1000;
 
 // "Permanent" model errors ("model not supported" / "model not found") never
@@ -929,8 +931,8 @@ export function clearComboHeadTimeoutCooldown(modelStr) {
  * do not reach into accountFallback's `isModelLockActive`, which is a
  * per-account concern resolved during account selection.
  */
-const comboKnownUnavailable = new Map();
-const comboKnownUnavailableReasons = new Map();
+const comboKnownUnavailable = (globalThis.__comboKnownUnavailable ||= new Map());
+const comboKnownUnavailableReasons = (globalThis.__comboKnownUnavailableReasons ||= new Map());
 
 /** Epoch ms until which `modelStr` is known unavailable, or 0.
  *  Expired entries are evicted on read so the map stays bounded across combo
@@ -956,6 +958,25 @@ export function markComboKnownUnavailable(modelStr, untilEpochMs, reason = "tran
   if (!Number.isFinite(until) || until <= Date.now()) return;
   comboKnownUnavailable.set(modelStr, until);
   comboKnownUnavailableReasons.set(modelStr, reason);
+}
+
+/** Active combo locks (known-unavailable + stream-head cooldown) for the unlock UI. */
+export function listComboLocks() {
+  const now = Date.now();
+  const out = [];
+  for (const [model, until] of comboKnownUnavailable) {
+    if (until > now) out.push({ model, until, reason: comboKnownUnavailableReasons.get(model) || "transient" });
+  }
+  for (const [model, until] of comboHeadTimeoutCooldowns) {
+    if (until > now) out.push({ model, until, reason: "head-timeout" });
+  }
+  return out.sort((a, b) => a.until - b.until);
+}
+
+/** Unlock one model (both lock kinds) or, with no argument, every combo lock. */
+export function unlockComboModel(modelStr) {
+  clearComboKnownUnavailable(modelStr);
+  clearComboHeadTimeoutCooldown(modelStr);
 }
 
 /** Clear one or all known-unavailable entries. Exported for tests. */

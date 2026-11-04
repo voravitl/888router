@@ -13,6 +13,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { ACTIVE_STRATEGY_IDS } from "@/shared/constants/comboStrategies";
 
 import AutoComboCatalog from "./AutoComboCatalog.jsx";
+import ComboLocksPanel from "./ComboLocksPanel.jsx";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -243,6 +244,8 @@ export default function CombosPage() {
       </div>
 
       {/* Zero-config auto/* templates (OmniRoute parity) — call directly without saving */}
+      <ComboLocksPanel />
+
       <AutoComboCatalog onDuplicate={handleSnapshotTemplate} onCopy={copy} copiedId={copied} />
 
       {/* Combos List */}
