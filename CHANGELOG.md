@@ -1,3 +1,9 @@
+# v0.15.229 (2026-11-04)
+
+## Fix OpenAI tool result is_error breaking OpenCode Go upstream
+- `claude-to-openai.js` no longer emits the Anthropic `is_error` flag on OpenAI tool messages — OpenCode Go upstream returns 400 `[unsupported_parameter] Unrecognized request argument supplied: messages[N].is_error`.
+- The gateway locks the model for 30s each 400 hit, hiding the real issue; error state remains accessible in tool content and via rtk before translation.
+
 # v0.15.228 (2026-11-04)
 
 ## Remove the AiPASS provider and Chrome extension bridge
