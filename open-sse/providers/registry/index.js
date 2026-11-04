@@ -131,7 +131,6 @@ import p129 from "./cheaperinference.js";
 import p130 from "./freebuff.js";
 import p131 from "./zenmux-free.js";
 import p132 from "./aihubmix.js";
-import p133 from "./aipass.js";
 import p134 from "./tokenharbor.js";
 import p135 from "./nara.js";
 
@@ -268,7 +267,6 @@ export default [
   p130,
   p131,
   p132,
-  p133,
   p134,
   p135,
 ];

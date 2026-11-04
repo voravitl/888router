@@ -4,11 +4,11 @@ import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
 
 // Chat-only models (no /messages, no /responses support on opencode-go)
-const CHAT_ONLY = ["glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6", "mimo-v2.5", "mimo-v2.5-pro"];
+const CHAT_ONLY = ["glm-5.2", "kimi-k2.7-code"];
 // Models that also expose the Anthropic /messages endpoint
-const CLAUDE_CAPABLE = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
+const CLAUDE_CAPABLE = ["minimax-m3", "qwen3.7-plus"];
 // Models that also expose the OpenAI /responses endpoint
-const RESPONSES_CAPABLE = ["deepseek-v4-pro", "deepseek-v4-flash"];
+const RESPONSES_CAPABLE = ["deepseek-v4-pro"];
 // New seed ids added to cover the full Go docs endpoint table (longcat, hy, grok,
 // gpt-luna, muse-spark-contributor, deepseek variants) — docs 2026-09-28.
 
@@ -29,17 +29,19 @@ describe("OpenCode Go model catalog", () => {
     // registry edit. This test pins the seed contract, not the live list.
     const ids = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
     expect(ids).toEqual([
-      "glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-5.1",
-      "kimi-k3", "kimi-k2.7-code", "kimi-k2.6",
-      "longcat-2.0", "longcat-2.5-preview-free",
-      "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4.1-flash",
-      "deepseek-v4-flash-vision-exp", "deepseek-flash",
-      "mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.5", "mimo-v2.5-pro",
-      "hy4-preview", "hy3", "space-bunny-free",
-      "minimax-m3", "minimax-m2.7", "minimax-m2.5",
-      "qwen3.8-max", "qwen3.8-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
-      "grok-4.7", "grok-4.6", "gpt-6-luna", "gpt-5.6-luna",
+      "glm-5.3-flash", "glm-5.3", "glm-5.2",
+      "kimi-k3", "kimi-k2.7-code", "kimi-k3.1-pro",
+      "longcat-2.0",
+      "deepseek-v4-pro", "deepseek-v4.1-flash",
+      "mimo-v2.6-flash", "mimo-v2.6-pro",
+      "hy4-preview", "hy3", "step-5-preview",
+      "beam-free", "iceman-contributor-free",
+      "minimax-m3", "minimax-m3.1-flash",
+      "qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus",
+      "grok-4.7",
+      "gpt-6-luna", "gpt-5.6-luna",
       "muse-spark-1.3-contributor", "muse-spark-1.2-contributor",
+      "gemini-4-argon", "claude-haiku-5-5",
     ]);
   });
 

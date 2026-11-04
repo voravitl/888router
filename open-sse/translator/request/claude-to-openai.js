@@ -267,9 +267,8 @@ function convertClaudeMessage(msg) {
             tool_call_id: block.tool_use_id,
             content: resultContent
           };
-          if (typeof block.is_error === "boolean") {
-            toolMsg.is_error = block.is_error;
-          }
+          // OpenAI chat/completions rejects unknown msg keys with 400 Unsupported_parameter;
+          // error state lives in content (and rtk reads it pre-translate), so is_error is not emitted.
           toolResults.push(toolMsg);
           break;
       }

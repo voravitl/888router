@@ -16,7 +16,6 @@ import { getGrokCliUsage } from "./usage/grok-cli.js";
 import { getKimiUsage } from "./usage/kimi.js";
 import { getDeepseekUsage } from "./usage/deepseek.js";
 import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
-import { getAipassUsage } from "./usage/aipass.js";
 import {
   getQwenUsage,
   getIflowUsage,
@@ -59,10 +58,6 @@ const USAGE_HANDLERS = {
   "opencode-go": (c) => getOpenCodeGoUsage(c.apiKey, c.proxyOptions),
   // Alibaba Token Plan Personal — cookie lives in providerSpecificData.consoleCookie
   "alitp-intl": (c) => getAlibabaTokenPlanUsage(c.providerSpecificData, c.proxyOptions),
-  aipass: (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
-  "aipass-th": (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
-  "aipass-bridge": (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
-  ap: (c) => getAipassUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {

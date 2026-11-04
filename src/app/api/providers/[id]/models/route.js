@@ -377,12 +377,6 @@ export async function GET(request, { params }) {
     let connection = await getProviderConnectionById(id);
 
     if (!connection) {
-      if (id === "aipass-virtual") {
-        connection = { id: "aipass-virtual", provider: "aipass", isActive: true };
-      }
-    }
-
-    if (!connection) {
       try {
         const { getProviderConnections } = await import("@/models");
         const matching = await getProviderConnections({ provider: id, isActive: true });
@@ -650,49 +644,6 @@ export async function GET(request, { params }) {
             };
           })
           .filter(Boolean),
-      });
-    }
-
-    // AiPASS TH: Fetch live models from de.aipass.net via connected Chrome extension bridge
-    if (["aipass", "aipass-th", "aipass-bridge", "ap"].includes(connection.provider)) {
-      let warning;
-      try {
-        const { listAipassModels, hasConnectedClients } = await import("open-sse/services/aipassBridge.js");
-        const isConnected = hasConnectedClients();
-        if (isConnected) {
-          const liveModels = await listAipassModels({ force: true });
-          if (Array.isArray(liveModels) && liveModels.length > 0) {
-            const seen = new Set(liveModels.map((m) => m.id));
-            const merged = [...liveModels];
-            const staticModels = PROVIDERS["aipass"]?.models || [];
-            for (const sm of staticModels) {
-              const id = typeof sm === "string" ? sm : sm.id;
-              if (id && !seen.has(id)) {
-                seen.add(id);
-                merged.push(typeof sm === "string" ? { id: sm, name: sm } : sm);
-              }
-            }
-            return buildModelsResponse({
-              provider: connection.provider,
-              connectionId: connection.id,
-              models: merged,
-            });
-          }
-        } else {
-          warning = "AiPASS Chrome extension not connected. Open de.aipass.net/chat in Chrome with the extension active to sync live models.";
-        }
-      } catch (error) {
-        warning = `Failed to fetch AiPASS models: ${error?.message || error}`;
-        console.log("Failed to fetch AiPASS models dynamically:", error?.message || error);
-      }
-
-      const staticModels = PROVIDERS["aipass"]?.models || [];
-      // Do NOT stamp synced models on static fallback (so lastSyncedAt doesn't lie)
-      return NextResponse.json({
-        provider: connection.provider,
-        connectionId: connection.id,
-        models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
-        warning,
       });
     }
 

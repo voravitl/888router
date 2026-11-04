@@ -520,4 +520,4 @@ messages. Native Gemini audio/TTS requests retain their dedicated forwarding pat
 
 ### Provider-specific transport limits
 
-Long-input handling cannot raise an upstream model's context limit. AiPASS's browser bridge cannot preserve a long multi-turn request and returns `unsupported_request`, allowing a configured combo to try another provider. Qoder retains its normal 120-second header wait and extends it for long input. Cursor's buffered HTTP/2 response uses the long-request budget; this is a whole buffered-response deadline, not a streaming idle timeout. Healthy streaming responses are not universally cut off after the combo's candidate-start budget.
+Long-input handling cannot raise an upstream model's context limit. Qoder retains its normal 120-second header wait and extends it for long input. Cursor's buffered HTTP/2 response uses the long-request budget; this is a whole buffered-response deadline, not a streaming idle timeout. Healthy streaming responses are not universally cut off after the combo's candidate-start budget.

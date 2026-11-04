@@ -64,7 +64,7 @@ describe("bug: Claude → OpenAI bridge data loss", () => {
       ],
     });
     const json = JSON.stringify(out);
-    expect(json, "is_error dropped → model can't see tool failure").toContain("is_error");
+    expect(json, "is_error dropped so OpenAI upstreams don't reject it").not.toContain("is_error");
   });
 
   // claude-to-openai.js:24-27 — system array only takes .text, drops cache_control/non-text

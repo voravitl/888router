@@ -8,6 +8,52 @@
 - Added provider-scoped 32,768 caps so they fall out of the 1M combo; regression test pins both the
   resolved window and combo membership.
 
+# v0.15.229 (2026-11-04)
+
+## Fix OpenAI tool result is_error breaking OpenCode Go upstream
+- `claude-to-openai.js` no longer emits the Anthropic `is_error` flag on OpenAI tool messages — OpenCode Go upstream returns 400 `[unsupported_parameter] Unrecognized request argument supplied: messages[N].is_error`.
+- The gateway locks the model for 30s each 400 hit, hiding the real issue; error state remains accessible in tool content and via rtk before translation.
+
+# v0.15.228 (2026-11-04)
+
+## Remove the AiPASS provider and Chrome extension bridge
+- Deleted the `aipass` provider (aliases `aipass-th`, `aipass-bridge`, `ap`): registry entry, executor,
+  usage fetcher, `aipassBridge` hub, the `/ext/*` bridge routes, `/api/aipass-extension` download,
+  the `public/aipass-extension` bundle and logo, and the AiPASS free-catalog rows.
+- Removed the virtual `aipass-virtual` connection from `/api/providers`, `/api/providers/[id]/models|test`
+  and `/v1/models`; `/v1/models` noAuth injection now covers opencode / mimo-free only.
+- Dropped the `/ext` loopback branch from the dashboard guard and the `/ext` route-manifest entry.
+- Tests that pinned AiPASS behaviour were removed or retargeted at opencode.
+
+# v0.15.227 (2026-11-04)
+
+## Sync OpenCode model catalogues for both tiers (Zen free + Go paid)
+- **OpenCode Go (`opencode-go`, registry/opencode-go.js)**: static seed now
+  matches the live catalog `https://opencode.ai/zen/go/v1/models` (28 ids)
+  exactly. Added 7 models missing from
+  https://opencode.ai/v2/docs/console/go/: `claude-haiku-5-5` (claude
+  `/messages`), `gemini-4-argon`, `kimi-k3.1-pro`, `step-5-preview`,
+  `beam-free`, `iceman-contributor-free`, `minimax-m3.1-flash`. Each declares
+  `supportedFormats` per the Go docs endpoint table so chat/claude/responses
+  clients route to the right upstream endpoint instead of falling back to
+  chat-only and hitting 400 `ModelProtocolUnsupported`. Removed 14 retired ids
+  no longer served upstream (glm-5.1, kimi-k2.6, longcat-2.5-preview-free,
+  deepseek-v4-flash, deepseek-v4-flash-vision-exp, deepseek-flash, mimo-v2.5,
+  mimo-v2.5-pro, space-bunny-free, minimax-m2.7, minimax-m2.5, qwen3.7-max,
+  qwen3.6-plus, grok-4.6) so stale capabilities and dead routes are not
+  advertised.
+- **OpenCode Zen free (`opencode`, registry/opencode.js)**: free static seed
+  already matches the live free catalog exactly (10 ids); no drift.
+- **Capabilities**: added per-model context/output/limits from the live `limit`
+  block for the new Go ids (e.g. claude-haiku-5-5 1M/128k, gemini-4-argon
+  1M/65k, minimax-m3.1-flash 1M/512k) and pruned entries for the retired Go
+  ids above.
+- Live catalog sync (`modelsFetcher` / `passthroughModels`) was already
+  discovering new ids on both tiers; the static seed now carries their
+  transport formats so they work offline and before the first sync. New upstream
+  models appear in `/v1_models` + dashboard without a registry edit; retired
+  ones should be pruned from the seed on each sync like this change.
+
 # v0.15.226 (2026-11-04)
 
 ## Dead combo hops stop being re-tried every minute
