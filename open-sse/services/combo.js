@@ -1028,6 +1028,44 @@ export function resolveAuthErrorCooldownMs(env = process.env) {
   return Math.min(Math.max(Math.round(n), 60 * 1000), 6 * 60 * 60 * 1000);
 }
 
+// Consecutive permanent-error strikes per model (cleared on success). A single
+// strike keeps the short default TTL (a falsely-classified transient error must
+// not park a healthy model for long, see 0.15.175); repeats double it up to 1h.
+const comboPermanentStrikes = (globalThis.__comboPermanentStrikes ||= new Map());
+const PERMANENT_ESCALATION_MAX_MS = 60 * 60 * 1000;
+
+/** TTL for the Nth consecutive permanent error: base * 2^(n-1), capped at 1h. Pure. */
+export function escalatedPermanentLockMs(baseMs, strikes) {
+  const n = Math.max(1, Math.floor(strikes) || 1);
+  return Math.min(baseMs * 2 ** (n - 1), Math.max(baseMs, PERMANENT_ESCALATION_MAX_MS));
+}
+
+/** Record a permanent-error strike; returns the new strike count. */
+export function recordPermanentStrike(modelStr) {
+  const n = (comboPermanentStrikes.get(modelStr) || 0) + 1;
+  comboPermanentStrikes.set(modelStr, n);
+  return n;
+}
+
+export function clearPermanentStrikes(modelStr) {
+  if (modelStr) comboPermanentStrikes.delete(modelStr);
+  else comboPermanentStrikes.clear();
+}
+
+/**
+ * A failure that no retry can fix because OUR side lacks something: no stored
+ * credential for the provider (404 "No active credentials ...") or a local
+ * configuration gap (502 "requires accountId in providerSpecificData"). Every
+ * model of that provider fails the same way, so the lock is provider-wide. Pure.
+ */
+export function isDeadCredentialFailure(status, text) {
+  if (status === 401) return true;
+  if (typeof text !== "string" || !text) return false;
+  if (status === 404 && /no (active )?credentials/i.test(text)) return true;
+  if (status === 502 && /requires \S+ in providerSpecificData/i.test(text)) return true;
+  return false;
+}
+
 const PERIOD_QUOTA_MAX_LOCK_MS = 24 * 60 * 60 * 1000;
 const PERIOD_QUOTA_NO_DATE_LOCK_MS = 6 * 60 * 60 * 1000;
 
@@ -1328,6 +1366,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       
       // Success (2xx) - return response
       if (result.ok) {
+        clearPermanentStrikes(modelStr);
         // A 2xx with no usable body (stalled upstream / empty proxy-pool stream)
         // is a failure, not a success — fall through to the next combo model
         // instead of piping an empty response to the client. Best-effort check:
@@ -1909,7 +1948,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       // credential. It will not fix itself in seconds, so park the model AND its
       // same-provider siblings (one credential serves them all) instead of
       // re-paying the 401 round trip on every request.
-      if (result.status === 401) {
+      if (isDeadCredentialFailure(result.status, errorText)) {
         const authLockUntil = Date.now() + resolveAuthErrorCooldownMs();
         const authProvider = modelStr.includes("/") ? modelStr.slice(0, modelStr.indexOf("/")) : modelStr;
         for (let j = i; j < rotatedModels.length; j++) {
@@ -1931,9 +1970,13 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
           // lock so the next request pre-skips this hop instead of
           // re-discovering the same dead model (see
           // resolveModelErrorCooldownMs for the recovery story).
-          const parkTtlMs = resolveModelErrorCooldownMs();
-          markComboKnownUnavailable(modelStr, Date.now() + parkTtlMs, "permanent");
-          log.warn("COMBO", `Model ${modelStr} permanent model-error, skipping to next model (parked ${Math.round(parkTtlMs / 60_000)}m)`, { status: result.status });
+          const strikes = recordPermanentStrike(modelStr);
+          const parkTtlMs = escalatedPermanentLockMs(resolveModelErrorCooldownMs(), strikes);
+          // Never shorten a longer lock already set above (dead credential / quota).
+          if (getComboKnownUnavailable(modelStr) < Date.now() + parkTtlMs) {
+            markComboKnownUnavailable(modelStr, Date.now() + parkTtlMs, "permanent");
+          }
+          log.warn("COMBO", `Model ${modelStr} permanent model-error #${strikes}, skipping to next model (parked ${Math.round(parkTtlMs / 60_000)}m)`, { status: result.status });
         } else {
           // Request-scoped (context length, 413, transient overload): this
           // request cannot use the model, but a shorter/later request can —

@@ -1,3 +1,18 @@
+# v0.15.226 (2026-11-04)
+
+## Dead combo hops stop being re-tried every minute
+- A provider with no stored credential (404 "No active credentials ...") or a local
+  config gap (502 "requires accountId in providerSpecificData") now locks every
+  model of that provider for 30m (same `COMBO_AUTH_ERROR_COOLDOWN_MS` as 401).
+  Evidence 2026-11-04, 20 min of `auto/best-free-1m`: bazaarlink x30, bluesminds x18,
+  deepseek x6, cloudflare-ai x15 (502 was never locked at all).
+- Repeated permanent model errors escalate the lock 60s -> 2m -> 4m ... capped 1h and
+  reset on success. The first strike stays 60s on purpose (0.15.175: a falsely
+  classified transient error must not park a healthy model for long).
+- A shorter permanent lock never overwrites a longer quota/credential lock.
+- Not changed: `opencode-go/space-bunny-free` 400 "Model is unavailable" still
+  follows the escalating permanent path; its root cause is not investigated here.
+
 # v0.15.225 (2026-11-04)
 
 ## Combos page shows the strategy that actually runs; dead hops stay parked
