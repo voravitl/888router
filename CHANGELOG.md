@@ -1,3 +1,23 @@
+# v0.15.223 (2026-11-04)
+
+## Combo context window is its smallest member again, and it is enforced
+- Reverts the 0.15.221 change: `/v1/models` advertised a combo's **largest**
+  member's window. Requests past the small members then rolled onto the 1M
+  member, so Claude Code sessions grew to 500k–990k tokens and resent the whole
+  history every turn. Measured 2026-11-03: one key sent 523M input tokens in a day
+  through `9-sonnet`/`9-haiku` → `alitp-intl/deepseek-v4.1-flash-1017` (avg
+  ~410k per request, output ~0.86M).
+- `resolveComboContextWindow` is back to the **min** across catalog-known members,
+  derived from the members (nothing hardcoded).
+- `handleComboChat` now enforces that same min. When the members' windows differ
+  and the estimated input plus the reserved output is above the smallest one, the
+  combo returns 400 `context_length_exceeded` with Anthropic's
+  `prompt is too long: N tokens > M maximum` wording, so the client compacts
+  instead of the request spilling onto a bigger member.
+- If all known members share one window, nothing is rejected at the gateway and
+  the upstream tokenizer decides, same as before. Unknown-limit members are
+  ignored.
+
 # v0.15.222 (2026-11-03)
 
 ## Track Alibaba Token Plan usage in the quota dashboard

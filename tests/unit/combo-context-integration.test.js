@@ -41,20 +41,33 @@ describe("500k synthetic routing with real catalogue and estimator", () => {
       expect(resolveModelInfo).toHaveBeenCalledWith(requestedModel);
     } finally { __resetScopedDynamicCache(); }
   });
-  it.each(formats)("%s keeps full input and selects a declared larger-context provider", async (_format, body) => {
+  it.each(formats)("%s past the smallest member's window is rejected instead of rolling onto the larger member", async (_format, body) => {
     expect(estimateRequestTokens(body)).toBeGreaterThanOrEqual(500000);
     expect(getContextFit(body, "openai/gpt-4o").fits).toBe(false);
-    const handleSingleModel = vi.fn(async (request, model) => {
-      expect(request).toBe(body);
-      expect(model).toBe("google/gemini-2.5-pro");
-      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
-        headers: { "content-type": "application/json" },
-      });
-    });
+    const before = structuredClone(body);
+    const handleSingleModel = vi.fn();
     const response = await handleComboChat({ body, models: ["openai/gpt-4o", "google/gemini-2.5-pro"], handleSingleModel, autoSwitch: false, log });
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error.code).toBe("context_length_exceeded");
+    // Anthropic wording so Claude Code recognises it and compacts.
+    expect(payload.error.message).toMatch(/^prompt is too long: \d+ tokens > 128000 maximum/);
+    expect(handleSingleModel).not.toHaveBeenCalled();
+    expect(body).toEqual(before);
+  });
+  it("still serves a combo whose members share one window, leaving the limit to the upstream", async () => {
+    const body = { messages: [{ role: "user", content: "x".repeat(130000 * 4) }], max_tokens: 2000 };
+    const single = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { headers: { "content-type": "application/json" } }));
+    const response = await handleComboChat({ body, models: ["openai/gpt-4o", "openai/gpt-4o"], handleSingleModel: single, log });
     expect(response.status).toBe(200);
-    expect(handleSingleModel).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(handleSingleModel.mock.calls[0][0])).toContain(longText);
+    expect(single).toHaveBeenCalledTimes(1);
+  });
+  it("serves a request under the smallest member's window from the combo's own order", async () => {
+    const body = { messages: [{ role: "user", content: "short" }], max_tokens: 128 };
+    const single = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { headers: { "content-type": "application/json" } }));
+    const response = await handleComboChat({ body, models: ["openai/gpt-4o", "google/gemini-2.5-pro"], handleSingleModel: single, autoSwitch: false, log });
+    expect(response.status).toBe(200);
+    expect(single.mock.calls[0][1]).toBe("openai/gpt-4o");
   });
   it("lets the upstream decide when only the approximate context estimate is oversized", async () => {
     const body = { messages: [{ role: "user", content: "x".repeat(127000 * 4) }], max_tokens: 2000 };
