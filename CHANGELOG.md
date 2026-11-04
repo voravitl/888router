@@ -1,3 +1,12 @@
+# v0.15.232 (2026-11-05)
+
+## Pre-skip dead (registry-removed) members in manual combos
+- Manual combos kept fixed member lists, so deprecated/removed models (glm-5.1,
+  kimi-k2.6, mimo-v2.5, …) were retried every request and 400/410'd before
+  their 30s lock kicked in. Filter them at resolution time, like auto combos
+  do, so dead members are skipped from the first request. Applies to both
+  `getComboModels` (chat/image/tts) and `getComboModelsFromData` (fetch/search).
+
 # v0.15.231 (2026-11-05)
 
 ## Make auto combos selectable in model/combo selector

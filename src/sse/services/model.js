@@ -132,7 +132,18 @@ export async function getComboModels(modelStr) {
 
   const combo = await getComboByName(modelStr);
   if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+    // Drop dead members (deprecated/removed from the registry) so a manual combo
+    // behaves like an auto combo: stale members are skipped instead of being
+    // retried every request and 400/410-ing before their 30s lock kicks in.
+    const alive = combo.models.filter((m) => {
+      if (typeof m !== "string") return true;
+      if (m.startsWith("auto/")) return true;
+      const slash = m.indexOf("/");
+      if (slash <= 0) return true; // bare name / combo reference: leave alone
+      const provider = m.slice(0, slash);
+      return REGISTRY.some((p) => p.id === provider);
+    });
+    return alive.length > 0 ? alive : null;
   }
   return null;
 }
