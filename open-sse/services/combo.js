@@ -878,7 +878,9 @@ export function wrapSelectedBody(response, cleanup, onCancel) {
  * tests. Upgrade path: move to healthStore when cross-provider cooldown
  * coordination is needed.
  */
-const comboHeadTimeoutCooldowns = new Map();
+// Lock maps live on globalThis: the dashboard API route (unlock UI) and the chat
+// route may be bundled separately, and must see the same state.
+const comboHeadTimeoutCooldowns = (globalThis.__comboHeadTimeoutCooldowns ||= new Map());
 const COMBO_HEAD_TIMEOUT_COOLDOWN_MS = 30 * 1000;
 
 // "Permanent" model errors ("model not supported" / "model not found") never
@@ -929,8 +931,8 @@ export function clearComboHeadTimeoutCooldown(modelStr) {
  * do not reach into accountFallback's `isModelLockActive`, which is a
  * per-account concern resolved during account selection.
  */
-const comboKnownUnavailable = new Map();
-const comboKnownUnavailableReasons = new Map();
+const comboKnownUnavailable = (globalThis.__comboKnownUnavailable ||= new Map());
+const comboKnownUnavailableReasons = (globalThis.__comboKnownUnavailableReasons ||= new Map());
 
 /** Epoch ms until which `modelStr` is known unavailable, or 0.
  *  Expired entries are evicted on read so the map stays bounded across combo
@@ -956,6 +958,25 @@ export function markComboKnownUnavailable(modelStr, untilEpochMs, reason = "tran
   if (!Number.isFinite(until) || until <= Date.now()) return;
   comboKnownUnavailable.set(modelStr, until);
   comboKnownUnavailableReasons.set(modelStr, reason);
+}
+
+/** Active combo locks (known-unavailable + stream-head cooldown) for the unlock UI. */
+export function listComboLocks() {
+  const now = Date.now();
+  const out = [];
+  for (const [model, until] of comboKnownUnavailable) {
+    if (until > now) out.push({ model, until, reason: comboKnownUnavailableReasons.get(model) || "transient" });
+  }
+  for (const [model, until] of comboHeadTimeoutCooldowns) {
+    if (until > now) out.push({ model, until, reason: "head-timeout" });
+  }
+  return out.sort((a, b) => a.until - b.until);
+}
+
+/** Unlock one model (both lock kinds) or, with no argument, every combo lock. */
+export function unlockComboModel(modelStr) {
+  clearComboKnownUnavailable(modelStr);
+  clearComboHeadTimeoutCooldown(modelStr);
 }
 
 /** Clear one or all known-unavailable entries. Exported for tests. */
@@ -997,6 +1018,40 @@ export function allFailedRetryAfterSeconds(resetHints, processedCount, now = Dat
   if (!processedCount || resetHints.size !== processedCount) return null;
   const earliest = Math.min(...resetHints.values());
   return Math.min(Math.max(Math.ceil((earliest - now) / 1000), 1), COMBO_ALL_FAILED_RETRY_AFTER_CAP_S);
+}
+
+// 401 = bad/missing credential: park 30m by default (env COMBO_AUTH_ERROR_COOLDOWN_MS,
+// range 1m–6h) so a key the operator fixes recovers without a restart.
+export function resolveAuthErrorCooldownMs(env = process.env) {
+  const n = Number(env.COMBO_AUTH_ERROR_COOLDOWN_MS);
+  if (!Number.isFinite(n) || n <= 0) return 30 * 60 * 1000;
+  return Math.min(Math.max(Math.round(n), 60 * 1000), 6 * 60 * 60 * 1000);
+}
+
+const PERIOD_QUOTA_MAX_LOCK_MS = 24 * 60 * 60 * 1000;
+const PERIOD_QUOTA_NO_DATE_LOCK_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Lock duration (ms) for a calendar-period quota error, or null when the text
+ * is not one. "reset at MM-DD HH:MM:SS UTC" is honoured (next occurrence);
+ * "monthly usage limit" / "1-month quota" with no date locks 6h. Always capped
+ * at 24h so a top-up or plan upgrade self-heals within a day. Pure; exported
+ * for tests.
+ */
+export function parsePeriodQuotaLockMs(text, now = Date.now()) {
+  if (typeof text !== "string" || !text) return null;
+  const dated = text.match(/reset(?:s)?\s+at\s+(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*UTC/i);
+  if (dated) {
+    const [mo, d, h, mi, s] = [dated[1], dated[2], dated[3], dated[4], dated[5] || "0"].map(Number);
+    const year = new Date(now).getUTCFullYear();
+    let at = Date.UTC(year, mo - 1, d, h, mi, s);
+    if (at <= now) at = Date.UTC(year + 1, mo - 1, d, h, mi, s);
+    return Math.min(at - now, PERIOD_QUOTA_MAX_LOCK_MS);
+  }
+  if (/monthly (usage )?(limit|quota)|1-month quota|month(ly)? quota (has been )?exhausted/i.test(text)) {
+    return PERIOD_QUOTA_NO_DATE_LOCK_MS;
+  }
+  return null;
 }
 
 const COMBO_RECOVERY_WAIT_DEFAULT_MS = 10_000;
@@ -1781,6 +1836,17 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
           }
         }
       }
+      // Calendar-period quotas ("monthly usage limit", "1-month quota ...
+      // reset at 12-03 16:00:00 UTC") are far longer than the 5m/30m window the
+      // layer below reported, so extend the lock to the real horizon (capped).
+      if (quotaLimited && errorText) {
+        const periodMs = parsePeriodQuotaLockMs(typeof errorText === "string" ? errorText : String(errorText));
+        const currentMs = retryAfter ? new Date(retryAfter).getTime() - Date.now() : 0;
+        if (periodMs && periodMs > currentMs) {
+          retryAfter = new Date(Date.now() + periodMs).toISOString();
+          longQuotaWindow = true;
+        }
+      }
       if (quotaLimited && longQuotaWindow) {
         const providerOf = (m) => (typeof m === "string" && m.includes("/")) ? m.slice(0, m.indexOf("/")) : m;
         const failedProvider = providerOf(modelStr);
@@ -1836,6 +1902,20 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
         const explicitRecoveryMs = retryAfter ? new Date(retryAfter).getTime() : (resetMs ?? NaN);
         if (Number.isFinite(explicitRecoveryMs)) {
           recordRecoveryCandidate(i, modelStr, explicitRecoveryMs, `rate-limit ${result.status}`);
+        }
+      }
+
+      // 401 after the layer below already tried refresh = missing/invalid
+      // credential. It will not fix itself in seconds, so park the model AND its
+      // same-provider siblings (one credential serves them all) instead of
+      // re-paying the 401 round trip on every request.
+      if (result.status === 401) {
+        const authLockUntil = Date.now() + resolveAuthErrorCooldownMs();
+        const authProvider = modelStr.includes("/") ? modelStr.slice(0, modelStr.indexOf("/")) : modelStr;
+        for (let j = i; j < rotatedModels.length; j++) {
+          const m = rotatedModels[j];
+          const p = m.includes("/") ? m.slice(0, m.indexOf("/")) : m;
+          if (p === authProvider) markComboKnownUnavailable(m, authLockUntil, "auth");
         }
       }
 

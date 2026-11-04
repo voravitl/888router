@@ -13,6 +13,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { ACTIVE_STRATEGY_IDS } from "@/shared/constants/comboStrategies";
 
 import AutoComboCatalog from "./AutoComboCatalog.jsx";
+import ComboLocksPanel from "./ComboLocksPanel.jsx";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -26,6 +27,7 @@ export default function CombosPage() {
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
+  const [globalComboStrategy, setGlobalComboStrategy] = useState("fallback");
   const [modelCaps, setModelCaps] = useState({});
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
@@ -67,6 +69,7 @@ export default function CombosPage() {
         setModelCaps(map);
       }
       setComboStrategies(settingsData.comboStrategies || {});
+      setGlobalComboStrategy(settingsData.comboStrategy || "fallback");
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -136,8 +139,11 @@ export default function CombosPage() {
     try {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
-      // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      // Prune only when dropping the entry is a no-op. A missing entry makes the
+      // gateway use the GLOBAL comboStrategy, so when that is not "fallback" an
+      // explicit "fallback" must be persisted or the combo silently rotates.
+      const globalIsFallback = !globalComboStrategy || globalComboStrategy === "fallback";
+      if (!next.fallbackStrategy || (next.fallbackStrategy === "fallback" && globalIsFallback)) {
         delete updated[comboName];
       } else {
         updated[comboName] = next;
@@ -238,6 +244,8 @@ export default function CombosPage() {
       </div>
 
       {/* Zero-config auto/* templates (OmniRoute parity) — call directly without saving */}
+      <ComboLocksPanel />
+
       <AutoComboCatalog onDuplicate={handleSnapshotTemplate} onCopy={copy} copiedId={copied} />
 
       {/* Combos List */}
@@ -269,6 +277,7 @@ export default function CombosPage() {
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
               strategy={comboStrategies[combo.name] || {}}
+              defaultStrategy={globalComboStrategy}
               onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
               onOpenStrategyHelp={handleOpenStrategyHelp}
             />
@@ -347,9 +356,10 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — fan-out panel + AI Judge synthesis 🧬" },
 ].filter((o) => ACTIVE_STRATEGY_IDS.includes(o.value));
 
-function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], modelAliases = {}, copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, onOpenStrategyHelp }) {
+function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProviders = [], modelAliases = {}, copied, onCopy, onEdit, onDelete, strategy = {}, defaultStrategy = "fallback", onSetStrategy, onOpenStrategyHelp }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
-  const current = strategy.fallbackStrategy || "fallback";
+  // Show the strategy the gateway actually runs: per-combo entry, else the global one.
+  const current = strategy.fallbackStrategy || defaultStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
 

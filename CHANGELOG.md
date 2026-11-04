@@ -1,3 +1,25 @@
+# v0.15.225 (2026-11-04)
+
+## Combos page shows the strategy that actually runs; dead hops stay parked
+- Combos page: a combo with no per-combo entry runs the GLOBAL `comboStrategy`
+  (`chat.js`), but the card displayed `fallback`, and choosing `fallback` deleted
+  the entry. With global `round-robin`, `9-sonnet` showed `fallback` while rotating
+  every request (sticky 1), so its head hop moved onto exhausted `ollama`/`alitp`.
+  The card now shows the effective strategy and persists an explicit `fallback`
+  when the global strategy is not `fallback`.
+- Combo loop: calendar-period quota errors ("monthly usage limit", "1-month quota
+  ... reset at 12-03 16:00:00 UTC") are locked for the real horizon (parsed date,
+  capped 24h; 6h when undated) instead of the 5m/30m the layer below reported.
+- Combo loop: a 401 (missing/invalid credential) parks the model and its
+  same-provider siblings for 30m (`COMBO_AUTH_ERROR_COOLDOWN_MS`, 1m-6h) so
+  `gemini/*` and `kilo-gateway/*` stop being retried on every request.
+- Combos page: new "Locked models" panel (`/api/combos/locks`) lists every model
+  the combo router is skipping (quota / 401 / slow-stream) with time left, and
+  unlocks one or all. Lock maps now live on `globalThis` so the API route and the
+  chat route share them. Locks are process-local (lost on restart).
+- Evidence: 888route logs 2026-11-04 19:55-20:02 (`9-sonnet` round-robin sticky 1;
+  ollama 429 monthly limit; alitp 429 reset 12-03; kilo/gemini 401 loops).
+
 # v0.15.224 (2026-11-04)
 
 ## Combo context window is its smallest member again, and it is enforced
