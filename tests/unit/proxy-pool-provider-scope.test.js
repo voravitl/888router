@@ -254,4 +254,38 @@ describe("a model-scoped park does not block the provider's siblings", () => {
     const live = await getProviderCredentials("opencode", null, "live-model");
     expect(live.id).toBe("noauth:poolA");
   });
+
+  it("locks only modelLock_<model> (never modelLock___all) on a saved BYOK opencode connection when one free model hits FreeUsageLimitError", async () => {
+    const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
+    const byokConn = {
+      id: "conn-byok-1",
+      provider: "opencode",
+      name: "OpenCode BYOK",
+      isActive: true,
+      apiKey: "oc_sk_test_123",
+      providerSpecificData: {},
+    };
+    getProviderConnections.mockImplementation(async () => [byokConn]);
+    const writes = [];
+    updateProviderConnection.mockImplementation(async (id, patch) => {
+      writes.push({ id, patch });
+      if (id === byokConn.id) Object.assign(byokConn, patch);
+      return byokConn;
+    });
+
+    await markAccountUnavailable("conn-byok-1", 429, FREE_USAGE_BODY, "opencode", "deepseek-v4.1-flash-free");
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0].patch["modelLock_deepseek-v4.1-flash-free"]).toBeTruthy();
+    expect(writes[0].patch.modelLock___all).toBeUndefined();
+
+    // Sibling free model on the same BYOK key must still use the BYOK connection,
+    // NOT fall through to the anonymous Public pool.
+    resetPools({ id: "poolA", name: "A" });
+    const siblingCreds = await getProviderCredentials("opencode", null, "pulse-alpha-free");
+    expect(siblingCreds.connectionId).toBe("conn-byok-1");
+    expect(siblingCreds.apiKey).toBe("oc_sk_test_123");
+
+    getProviderConnections.mockImplementation(async () => []);
+  });
 });

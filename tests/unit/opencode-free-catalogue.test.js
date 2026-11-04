@@ -46,22 +46,24 @@ const DEAD = [
   // instead". It kept being advertised for two more days, and the 9-free
   // combo kept carrying it as a member.
   "minimax-m3.1-flash-free",           // 410 ModelDeprecated
+  // Retired by 2026-11-04: both return HTTP 400 on /zen/v1/chat/completions
+  // (verified live against opencode.ai/zen/v1).
+  "nemotron-3-ultra-free",             // 400 Bad Request
+  "longcat-2.5-preview-free",          // 400 Bad Request
 ];
 
-// Verified serving on 2026-10-21. Every one of these must stay in the
-// catalogue — including the two that the upstream /v1/models list does not
-// mention (nemotron-3-ultra-free) or mentions but cannot serve (jev-1.13-free
-// is the opposite case and is pinned as dead above).
+// Verified serving on 2026-11-04 against live /zen/v1/models + /zen/v1/chat/completions.
 const ALIVE = [
-  "nemotron-3-ultra-free",             // 200 — absent from the upstream list
   "nemotron-3.5-lightning-free",       // 200
   "mimo-v2.6-flash-free",              // 200
   "big-pickle",                        // 200
   "beam-free",                         // 200
   "deepseek-v4.1-flash-free",          // 200
   "glm-5.3-flash-free",                // 200
-  "longcat-2.5-preview-free",          // 200
   "nemotron-3.5-super-vl-free",        // 200
+  "pulse-alpha-free",                  // 200
+  "flint-40b-free",                    // 200
+  "crouton-alpha-free",                // 200
 ];
 
 describe("opencode free catalogue lists only models that serve", () => {

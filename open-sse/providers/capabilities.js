@@ -307,6 +307,12 @@ export const MODEL_CAPABILITIES = {
   "deepseek-v4.1-flash-free":    { reasoning: true, contextWindow: 200000,  maxOutput: 32000 },
   "glm-5.3-flash-free":          { reasoning: true, vision: true, contextWindow: 200000,  maxOutput: 32000 },
   "longcat-2.5-preview-free":    { reasoning: true, vision: true, contextWindow: 1000000, maxOutput: 131072 },
+  // Live-probed 2026-11-04: pulse-alpha-free rejects reasoning_effort "medium"
+  // with 400 `[airlock_error] invalid request: reasoning_effort 'medium' is
+  // unsupported; allowed values: ["low", "high", "max"]`.
+  "pulse-alpha-free":            { reasoning: true, vision: true, thinkingFormat: "openai-low-high-max", contextWindow: 1048576, maxOutput: 131072 },
+  "flint-40b-free":              { reasoning: true, contextWindow: 262144,  maxOutput: 65536 },
+  "crouton-alpha-free":          { reasoning: true, vision: true, videoInput: true, pdf: true, contextWindow: 1048576, maxOutput: 270000 },
   "big-pickle":                  { reasoning: true, contextWindow: 200000,  maxOutput: 64000 },
   // GLM-5.3 and GLM-5.2 have 1M context (overrides *glm-5* pattern's 200k). Claude 4.6/4.7/4.8 and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "glm-5.3":           { vision: false, reasoning: true, thinkingFormat: "openai-low-high-max", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },

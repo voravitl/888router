@@ -117,6 +117,14 @@ describe("opencodeTlsClient", () => {
     await opencodeTlsFetch("https://opencode.ai/a", { method: "POST" }, { signal: ctrl.signal });
     expect(session.fetch.mock.calls[0][1].signal).toBe(ctrl.signal);
   });
+
+  it("omits wreq-js request timeout when timeoutMs is 0 so long SSE streams are not cut off at 120s", async () => {
+    const session = fakeSession();
+    createSessionMock.mockResolvedValue(session);
+    const { opencodeTlsFetch } = await import("../../open-sse/services/opencodeTlsClient.js");
+    await opencodeTlsFetch("https://opencode.ai/a", { method: "POST" }, { timeoutMs: 0 });
+    expect(session.fetch.mock.calls[0][1].timeout).toBeUndefined();
+  });
 });
 
 describe("lazyRuntime loader (bundled deps only)", () => {

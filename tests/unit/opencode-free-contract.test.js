@@ -234,13 +234,92 @@ describe("caller tools that collide with read/shell", () => {
     expect(result.toolNameMap?.has?.("read_client") ?? false).toBe(false);
   });
 
-  it("merges fingerprint aliases with sanitizer renames in one map", async () => {
+  it("merges fingerprint aliases with sanitizer renames in one map (including transitive git:ReportFindings)", async () => {
     const { result, sent } = await run("opencode", FREE, {
       messages: [{ role: "user", content: "hi" }],
-      tools: [callerRead, { type: "function", function: { name: "git:status", parameters: { type: "object", properties: {} } } }],
+      tools: [
+        callerRead,
+        { type: "function", function: { name: "git:status", parameters: { type: "object", properties: {} } } },
+        { type: "function", function: { name: "git:ReportFindings", parameters: { type: "object", properties: {} } } },
+      ],
     });
-    expect(names(sent.tools)).toEqual(expect.arrayContaining(["read_client", "git_status"]));
+    expect(names(sent.tools)).toEqual(expect.arrayContaining(["read_client", "git_status", "git_report_findings"]));
     expect(result.toolNameMap.get("read_client")).toBe("read");
     expect(result.toolNameMap.get("git_status")).toBe("git:status");
+    expect(result.toolNameMap.get("git_report_findings")).toBe("git:ReportFindings");
+  });
+
+  it("conceals PascalCase/camelCase and terminal caller tools (e.g. ReportFindings, ScheduleWakeup, Read, terminal) into snake_case aliases and restores them via _toolNameMap", async () => {
+    const { result, sent } = await run("opencode", FREE, {
+      messages: [
+        { role: "user", content: "go" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "c1", type: "function", function: { name: "ReportFindings", arguments: "{}" } },
+            { id: "c2", type: "function", function: { name: "Read", arguments: "{\"file_path\":\"a\"}" } },
+            { id: "c3", type: "function", function: { name: "terminal", arguments: "{}" } },
+          ],
+        },
+        { role: "tool", tool_call_id: "c1", name: "ReportFindings", content: "ok" },
+      ],
+      tools: [
+        { type: "function", function: { name: "ReportFindings", description: "r", parameters: { type: "object", properties: {} } } },
+        { type: "function", function: { name: "ScheduleWakeup", description: "s", parameters: { type: "object", properties: {} } } },
+        { type: "function", function: { name: "DeferredToolPlaceholder", description: "d", parameters: { type: "object", properties: {} } } },
+        { type: "function", function: { name: "Read", description: "r", parameters: { type: "object", properties: { file_path: { type: "string" } } } } },
+        { type: "function", function: { name: "terminal", description: "t", parameters: { type: "object", properties: {} } } },
+        { type: "function", function: { name: "runInTerminal", description: "t2", parameters: { type: "object", properties: {} } } },
+      ],
+      tool_choice: { type: "function", function: { name: "ReportFindings" } },
+    });
+
+    const sentNames = names(sent.tools);
+    expect(sentNames).toContain("report_findings");
+    expect(sentNames).toContain("schedule_wakeup");
+    expect(sentNames).toContain("deferred_tool_placeholder");
+    expect(sentNames).toContain("read_client");
+    expect(sentNames).toContain("run_command");
+    expect(sentNames).toContain("run_in_command");
+    expect(sentNames).toContain("read");
+    expect(sentNames).toContain("shell");
+    expect(sentNames.some((n) => /[A-Z]/.test(n) || /terminal/i.test(n))).toBe(false);
+
+    expect(sent.tool_choice.function.name).toBe("report_findings");
+    const assistantMsg = sent.messages.find((m) => Array.isArray(m.tool_calls));
+    expect(assistantMsg.tool_calls.map((c) => c.function.name)).toEqual([
+      "report_findings",
+      "read_client",
+      "run_command",
+    ]);
+    const toolMsg = sent.messages.find((m) => m.role === "tool");
+    expect(toolMsg.name).toBe("report_findings");
+
+    expect(result.toolNameMap.get("report_findings")).toBe("ReportFindings");
+    expect(result.toolNameMap.get("schedule_wakeup")).toBe("ScheduleWakeup");
+    expect(result.toolNameMap.get("deferred_tool_placeholder")).toBe("DeferredToolPlaceholder");
+    expect(result.toolNameMap.get("read_client")).toBe("Read");
+    expect(result.toolNameMap.get("run_command")).toBe("terminal");
+    expect(result.toolNameMap.get("run_in_command")).toBe("runInTerminal");
+
+    const upstreamChunk = {
+      choices: [{
+        index: 0,
+        delta: {
+          tool_calls: [
+            { index: 0, id: "t1", function: { name: "report_findings", arguments: "" } },
+            { index: 1, id: "t2", function: { name: "read_client", arguments: "" } },
+            { index: 2, id: "t3", function: { name: "run_command", arguments: "" } },
+          ],
+        },
+      }],
+    };
+    const restored = restoreOpencodeToolNames(upstreamChunk, result.toolNameMap);
+    expect(restored.choices[0].delta.tool_calls.map((c) => c.function.name)).toEqual([
+      "ReportFindings",
+      "Read",
+      "terminal",
+    ]);
   });
 });
