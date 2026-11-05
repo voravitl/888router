@@ -70,6 +70,7 @@ const opencode_goConfig = {
     { id: "mimo-v2.6-flash", name: "MiMo V2.6 Flash", supportedFormats: ["openai"] },
     { id: "mimo-v2.6-pro", name: "MiMo V2.6 Pro", supportedFormats: ["openai"] },
     { id: "hy4-preview", name: "Hy4 Preview", supportedFormats: ["openai"] },
+    { id: "hy4", name: "Hy4", supportedFormats: ["openai"] },
     { id: "hy3", name: "Hy3", supportedFormats: ["openai"] },
     { id: "step-5-preview", name: "Step 5 Preview", supportedFormats: ["openai"] },
     { id: "beam-free", name: "Beam Free", supportedFormats: ["openai"] },

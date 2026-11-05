@@ -730,7 +730,10 @@ export function getComboModelsFromData(modelStr, combosData) {
       const slash = m.indexOf("/");
       if (slash <= 0) return true; // bare name / combo reference: leave alone
       const provider = m.slice(0, slash);
-      return REGISTRY.some((p) => p.id === provider);
+      // Resolve aliases (ocg, kr, cx, ...) to their canonical provider id so
+      // aliased combo members are not mistaken for dead/removed providers.
+      const providerId = resolveProviderAlias(provider);
+      return REGISTRY.some((p) => p.id === providerId);
     });
     return alive.length > 0 ? alive : null;
   }

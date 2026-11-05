@@ -1,6 +1,6 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
-import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
+import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore, resolveProviderAlias } from "open-sse/services/model.js";
 import { splitThinkingSuffix } from "open-sse/translator/concerns/thinkingUnified.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
@@ -141,7 +141,9 @@ export async function getComboModels(modelStr) {
       const slash = m.indexOf("/");
       if (slash <= 0) return true; // bare name / combo reference: leave alone
       const provider = m.slice(0, slash);
-      return REGISTRY.some((p) => p.id === provider);
+      // Resolve aliases (ocg, kr, cx, ...) to canonical provider id.
+      const providerId = resolveProviderAlias(provider);
+      return REGISTRY.some((p) => p.id === providerId);
     });
     return alive.length > 0 ? alive : null;
   }

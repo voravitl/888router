@@ -1,3 +1,15 @@
+# v0.15.235 (2026-11-05)
+
+## Fix combo pre-skip: resolve provider aliases before registry lookup
+- The dead-member filter introduced in v0.15.232 compared the combo member's
+  provider prefix against `REGISTRY` by `p.id` only, so aliased providers
+  (`ocg`, `kr`, `cx`, `ag`, `cc`, ...) were treated as dead and dropped —
+  breaking combos whose members were stored with short aliases (the format the
+  dashboard's ModelSelectModal produces). Resolve the alias to its canonical
+  provider id before the lookup in both `getComboModels` and
+  `getComboModelsFromData`.
+- Add `hy4` to the opencode-go static catalog (was missing; live catalog has it).
+
 # v0.15.234 (2026-11-05)
 
 ## Fix sync endpoint: copy scripts folder into image for sync endpoint

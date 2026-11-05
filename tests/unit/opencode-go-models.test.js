@@ -34,7 +34,7 @@ describe("OpenCode Go model catalog", () => {
       "longcat-2.0",
       "deepseek-v4-pro", "deepseek-v4.1-flash",
       "mimo-v2.6-flash", "mimo-v2.6-pro",
-      "hy4-preview", "hy3", "step-5-preview",
+      "hy4-preview", "hy4", "hy3", "step-5-preview",
       "beam-free", "iceman-contributor-free",
       "minimax-m3", "minimax-m3.1-flash",
       "qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus",
