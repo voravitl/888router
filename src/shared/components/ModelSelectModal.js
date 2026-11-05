@@ -9,6 +9,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { formatContextWindow, CONTEXT_FILTER_OPTIONS } from "@/shared/utils/contextWindow";
 import { matchesModelSearch, contextKeywordMin, splitContextQuery } from "@/shared/utils/modelSearch";
+import { AUTO_COMBO_TEMPLATES } from "open-sse/services/autoCombo/builtinCatalog.js";
 import {
   OAUTH_PROVIDERS,
   APIKEY_PROVIDERS,
@@ -72,7 +73,20 @@ async function loadModalData() {
         return null;
       }
 
-      const combos = combosRes.ok ? (await combosRes.json().catch(() => ({}))).combos || [] : [];
+      const dbCombos = combosRes.ok ? (await combosRes.json().catch(() => ({}))).combos || [] : [];
+      // Auto combos (auto/best-free, auto/best-free-1m, ...) are virtual routes resolved at
+      // request time and are not stored in the DB, so they never appear in /api/combos.
+      // Surface them here so they can be selected as combo members / model targets.
+      const autoCombos = (AUTO_COMBO_TEMPLATES || []).map((tpl) => ({
+        id: `auto-${tpl.name}`,
+        name: tpl.name,
+        displayName: tpl.displayName,
+        models: [],
+        strategy: tpl.strategy,
+        isAuto: true,
+        isVirtual: true,
+      }));
+      const combos = [...dbCombos, ...autoCombos];
       const nodes = nodesRes.ok ? (await nodesRes.json().catch(() => ({}))).nodes || [] : [];
       const custom = customRes.ok ? (await customRes.json().catch(() => ({}))).models || [] : [];
       const disabled = disabledRes.ok ? (await disabledRes.json().catch(() => ({}))).disabled || {} : {};
@@ -466,9 +480,10 @@ export default function ModelSelectModal({
       const tokens = q.split(/[\s\-_/]+/).filter(Boolean);
       list = list.filter((c) => {
         const name = (c.name || "").toLowerCase();
-        if (name.includes(q)) return true;
+        const display = (c.displayName || "").toLowerCase();
+        if (name.includes(q) || display.includes(q)) return true;
         if (tokens.length > 0) {
-          const normalized = name.replace(/[\-_/]/g, " ");
+          const normalized = (name + " " + display).replace(/[\-_/]/g, " ");
           return tokens.every((t) => normalized.includes(t));
         }
         return false;
@@ -476,6 +491,7 @@ export default function ModelSelectModal({
     }
     if (contextFilter > 0 || filterVision || filterReasoning) {
       list = list.filter((c) => {
+        if (c.isAuto || c.isVirtual) return true;
         const members = c.models || [];
         if (members.length === 0) return false;
         return members.some((m) => {
