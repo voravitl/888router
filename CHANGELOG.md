@@ -1,3 +1,10 @@
+# v0.15.233 (2026-11-05)
+
+## Sync OpenCode catalog from live API
+- Added sync script, API endpoint, and UI button to sync OpenCode model catalog
+- Updated opencode-go registry to 29 models from live catalog
+- Updated opencode (free) registry to 80 models from live catalog
+
 # v0.15.232 (2026-11-05)
 
 ## Pre-skip dead (registry-removed) members in manual combos

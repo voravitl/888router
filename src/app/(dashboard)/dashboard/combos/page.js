@@ -24,6 +24,7 @@ export default function CombosPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   // Template being snapshotted into the create modal (from AutoComboCatalog)
   const [snapshotTemplate, setSnapshotTemplate] = useState(null);
+  const [syncing, setSyncing] = useState(false);
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
@@ -74,6 +75,24 @@ export default function CombosPage() {
       console.log("Error fetching data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSyncOpencode = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/sync-opencode", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        alert("Synced " + (data.output?.match(/Found (\d+) models/)?.[1] || "models") + " from live catalog");
+        fetchData();
+      } else {
+        alert("Sync failed: " + data.error);
+      }
+    } catch (e) {
+      alert("Sync failed: " + e.message);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -247,6 +266,11 @@ export default function CombosPage() {
       <ComboLocksPanel />
 
       <AutoComboCatalog onDuplicate={handleSnapshotTemplate} onCopy={copy} copiedId={copied} />
+      <div className="mt-2 flex justify-end">
+        <Button variant="secondary" size="sm" onClick={handleSyncOpencode} disabled={syncing}>
+          {syncing ? "Syncing..." : "Sync OpenCode Catalog"}
+        </Button>
+      </div>
 
       {/* Combos List */}
       {combos.length === 0 ? (
