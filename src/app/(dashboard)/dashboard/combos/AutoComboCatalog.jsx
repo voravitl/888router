@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card } from "@/shared/components";
 import { AUTO_COMBO_TEMPLATES } from "open-sse/services/autoCombo/builtinCatalog.js";
+import { withClaudeCodeSuffix } from "@/shared/utils/claudeCodeModelId";
 
 export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null }) {
   const [open, setOpen] = useState(false);
@@ -73,7 +74,13 @@ export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null 
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onCopy(tpl.name, `tpl-${tpl.name}`);
+                        // Claude Code reads context window from a hardcoded registry and
+                        // needs the "[1m]" suffix to activate its 1M entry for custom ids.
+                        // Only append "[1m]" for combos that actually carry 1M context;
+                        // other auto combos keep their (smaller) default window.
+                        const ctx = tpl.contextMin || 0;
+                        const copyText = withClaudeCodeSuffix(tpl.name, ctx);
+                        onCopy(copyText, `tpl-${tpl.name}`);
                       }}
                       className="flex items-center gap-1 text-text-muted hover:text-brand-500 transition-colors"
                       title={`Copy "${tpl.name}" — usable directly as a model ID in Claude Code / Cursor / Cline`}
