@@ -40,6 +40,8 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/custom-server.js ./custom-server.js
 COPY --from=builder /app/open-sse ./open-sse
+# Sync script for OpenCode catalog (used by /api/sync-opencode endpoint)
+COPY --from=builder /app/scripts ./scripts
 # Ship the OMC HUD provider script + setup instruction so users can install
 # via `docker cp 888router:/app/cli/scripts/...` (see install-hud.md).
 COPY --from=builder /app/cli/scripts ./cli/scripts

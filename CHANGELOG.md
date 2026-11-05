@@ -1,3 +1,12 @@
+# v0.15.234 (2026-11-05)
+
+## Fix sync endpoint: copy scripts folder into image for sync endpoint
+- The `/api/sync-opencode` endpoint runs `scripts/sync-opencode-catalog.mjs`
+  via `execSync`, but the Dockerfile only copied `open-sse` and `cli/scripts`
+  into the runtime image, leaving `scripts/` behind.
+- Add `COPY --from=builder /app/scripts ./scripts` so the sync endpoint
+  can find the script at runtime.
+
 # v0.15.233 (2026-11-05)
 
 ## Sync OpenCode catalog from live API
