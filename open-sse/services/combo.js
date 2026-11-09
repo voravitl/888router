@@ -1178,6 +1178,41 @@ function comboContextExceededResponse(estimatedInputTokens, reservedTokens, ceil
   }), { status: 400, headers: { "Content-Type": "application/json" } });
 }
 
+function extractUpstreamContextExceeded(errorText, errorCode, candidateFit, estimatedInputTokens, ceiling) {
+  const text = typeof errorText === "string" ? errorText : String(errorText || "");
+  const code = typeof errorCode === "string" ? errorCode : "";
+  const isContextError =
+    code === "context_length_exceeded" ||
+    code === "content_length_exceeds_threshold" ||
+    /prompt is too long|input is too long|context_length_exceeded|content_length_exceeds_threshold|maximum context length|exceeds the (?:model )?context|exceeds the context window|context window exceeded|max_model_len|token count.*exceeds/i.test(text);
+  if (!isContextError) return null;
+
+  let promptTokens = null;
+  let maxTokens = null;
+
+  const anthropicMatch = text.match(/prompt is too long:\s*(\d+)\s*tokens\s*>\s*(\d+)\s*maximum/i);
+  if (anthropicMatch) {
+    promptTokens = Number(anthropicMatch[1]);
+    maxTokens = Number(anthropicMatch[2]);
+  } else {
+    const vllmMatch = text.match(/maximum context length is\s*(\d+)\s*tokens[\s\S]*?(?:prompt has|resulted in|requested)\s*(\d+)\s*tokens/i);
+    if (vllmMatch) {
+      maxTokens = Number(vllmMatch[1]);
+      promptTokens = Number(vllmMatch[2]);
+    }
+  }
+
+  if (!Number.isFinite(maxTokens) || maxTokens <= 0) {
+    maxTokens = candidateFit?.contextWindow || ceiling || 1000000;
+  }
+  if (!Number.isFinite(promptTokens) || promptTokens <= 0) {
+    const estTotal = (estimatedInputTokens || 0) + (candidateFit?.reservedOutputTokens || 0);
+    promptTokens = estTotal > maxTokens ? estTotal : maxTokens + 1;
+  }
+
+  return { promptTokens, maxTokens, rawMessage: text || "context_length_exceeded" };
+}
+
 function contextCapacityResponse() {
   return new Response(JSON.stringify({ error: {
     type: "invalid_request_error",
@@ -1281,6 +1316,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  let firstContextExceeded = null;
   // Per processed candidate: when it says it can serve again (see allFailedRetryAfterSeconds).
   let processedCandidates = 0;
   const resetHints = new Map();
@@ -1759,6 +1795,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
 
       // Extract error info from response
       let errorText = result.statusText || "";
+      let errorCode = null;
       let retryAfter = null;
       const errContentType = result.headers?.get("content-type") || "";
       if (!errContentType || errContentType.includes("json")) {
@@ -1781,6 +1818,7 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
               signal
             );
             errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+            errorCode = errorBody?.error?.code || errorBody?.code || null;
             retryAfter = errorBody?.retryAfter || null;
             // Google-style error envelope (antigravity/gemini-cli): the reset
             // hint lives in details[] as RetryInfo.retryDelay ("289539.38s")
@@ -1837,6 +1875,15 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
 
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs, modelError, permanentModelError } = checkFallbackError(result.status, errorText);
+      if (!firstContextExceeded && (result.status === 400 || result.status === 413 || modelError)) {
+        firstContextExceeded = extractUpstreamContextExceeded(
+          errorText,
+          errorCode,
+          fits.get(modelStr),
+          estimatedInputTokens,
+          ceiling,
+        );
+      }
 
       // A model is quota/rate-limit limited when the upstream returned 429, or
       // when the error text is an explicit quota/rate-limit signal (even if no
@@ -2140,6 +2187,31 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
     // auth.js) has already tried every eligible proxy pool before this 429.
     return attachRouterDecisionHeader(
       unavailableResponse(HTTP_STATUS.RATE_LIMITED, msg, earliestRetryAfter, retryHuman),
+      failureMeta,
+    );
+  }
+
+  if (firstContextExceeded) {
+    const { promptTokens, maxTokens, rawMessage } = firstContextExceeded;
+    const normalizedMsg = /^prompt is too long:\s*\d+\s*tokens\s*>\s*\d+\s*maximum/i.test(rawMessage)
+      ? rawMessage
+      : `prompt is too long: ${promptTokens} tokens > ${maxTokens} maximum (${rawMessage})`;
+    log.warn("COMBO", `All models failed (context length exceeded) | ${normalizedMsg}`);
+    return attachRouterDecisionHeader(
+      new Response(
+        JSON.stringify({
+          type: "error",
+          error: {
+            type: "invalid_request_error",
+            code: "context_length_exceeded",
+            message: normalizedMsg,
+          },
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      ),
       failureMeta,
     );
   }

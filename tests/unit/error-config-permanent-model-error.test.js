@@ -127,5 +127,14 @@ describe("errorConfig: permanentModelError is identity death only", () => {
     expect(invalidReq.permanentModelError).toBe(false);
     expect(invalidReq.shouldFallback).toBe(false);
     expect(invalidReq.cooldownMs).toBe(0);
+
+    const invalidTools = checkFallbackError(
+      400,
+      '{"error":{"param":"tools","type":"invalid_request_error","message":"Upstream request failed: [invalid_value] Invalid value for \'tools\': maximum number of items is 128."}}',
+    );
+    expect(invalidTools.modelError).toBe(true);
+    expect(invalidTools.permanentModelError).toBe(false);
+    expect(invalidTools.shouldFallback).toBe(false);
+    expect(invalidTools.cooldownMs).toBe(0);
   });
 });

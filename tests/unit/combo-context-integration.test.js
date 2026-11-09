@@ -27,6 +27,30 @@ describe("500k synthetic routing with real catalogue and estimator", () => {
     expect(single.mock.calls.map(call => call[1])).toEqual(["kiro/claude-opus-5.5", "google/gemini-2.5-pro"]);
     expect(body).toEqual(before);
   });
+  it("normalizes non-Anthropic upstream context-length 400 into 'prompt is too long: ...' when all combo models fail, so Claude Code auto-compacts", async () => {
+    const body = { messages: [{ role: "user", content: "oversized prompt" }], max_tokens: 128 };
+    const single = vi.fn(async (_body, model) => model.startsWith("ocg/deepseek")
+      ? new Response(JSON.stringify({
+        error: {
+          message: "[400]: {\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Upstream request failed: [invalid_request_error] This model's maximum context length is 1048576 tokens; the prompt has 1354853 tokens (max_model_len)\"}}",
+        },
+      }), { status: 400, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({
+        error: {
+          message: "[400]: {\"error\":{\"param\":\"tools\",\"type\":\"invalid_request_error\",\"message\":\"Upstream request failed: [invalid_value] Invalid value for 'tools': maximum number of items is 128.\"}}",
+        },
+      }), { status: 400, headers: { "content-type": "application/json" } }));
+    const response = await handleComboChat({
+      body,
+      models: ["ocg/deepseek-v4.1-flash", "ocg/beam-free"],
+      handleSingleModel: single,
+      log,
+    });
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error.code).toBe("context_length_exceeded");
+    expect(payload.error.message).toMatch(/^prompt is too long: 1354853 tokens > 1048576 maximum/);
+  });
   it.each(["saved-large-model-alias", "custom-node/gpt-4o"])("resolves %s before applying provider-specific capacity ordering", async (requestedModel) => {
     registerDynamicCapabilitiesScoped("openai-compatible-long-test", "gpt-4o", { contextWindow: 1000000, maxOutput: 64000 });
     try {

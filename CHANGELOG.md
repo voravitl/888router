@@ -1,3 +1,9 @@
+# v0.15.237 (2026-11-09)
+
+## Fix OpenCode Go `[invalid_value]` tool-limit lock & normalize combo context-length errors for Claude Code auto-compact
+- Added `"[invalid_value]"` and `"maximum number of items is"` to request-scoped `modelError` rules in `open-sse/config/errorConfig.js` so OpenCode Go's 128-tool cap (`"Upstream request failed: [invalid_value] Invalid value for 'tools': maximum number of items is 128."`) fails over to the next candidate without locking `modelLock_*` for 30s.
+- Normalized combo-level all-models-failed responses in `open-sse/services/combo.js` when any candidate rejected the prompt for exceeding context length (`maximum context length is N tokens; the prompt has M tokens`) into Anthropic's `"prompt is too long: <M> tokens > <N> maximum"` wording (`code: "context_length_exceeded"`) so Claude Code automatically triggers auto-compaction instead of retrying oversized requests indefinitely.
+
 # v0.15.236 (2026-11-09)
 
 ## Fix OpenCode Go false-positive 30s model locks on 400 request-scoped errors
