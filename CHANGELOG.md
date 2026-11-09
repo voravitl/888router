@@ -1,3 +1,9 @@
+# v0.15.236 (2026-11-09)
+
+## Fix OpenCode Go false-positive 30s model locks on 400 request-scoped errors
+- Added `"exceeds the model context"` and `"[invalid_request_error]"` to request-scoped `modelError` rules in `open-sse/config/errorConfig.js` so oversized prompts (`"the prompt exceeds the model context"`) and gateway 400 request rejections (`"Upstream request failed: [invalid_request_error] Invalid request"`) fail over to the next combo model without locking `modelLock_*` for 30s or parking healthy OpenCode Go accounts.
+- Clear `comboKnownUnavailable` and `comboHeadTimeoutCooldowns` in `open-sse/services/combo.js` whenever a candidate completes a 2xx response so concurrent successes immediately lift any stale in-memory combo pre-skip lock.
+
 # v0.15.235 (2026-11-05)
 
 ## Fix combo pre-skip: resolve provider aliases before registry lookup

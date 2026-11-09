@@ -152,11 +152,18 @@ export const ERROR_RULES = [
   { text: "maximum context length", modelError: true },
   { text: "exceed context limit", modelError: true },
   { text: "exceeds the context", modelError: true },
+  { text: "exceeds the model context", modelError: true },
   { text: "prompt is too long", modelError: true },
   { text: "input is too long", modelError: true },
   { text: "output_limit_exceeded", modelError: true },
   { text: "cannot preserve full request context", modelError: true },
   { text: "unsupported request:", modelError: true },
+  // OpenCode / gateway upstream request-validation rejection (e.g.
+  // `Upstream request failed: [invalid_request_error] Invalid request` on an
+  // oversized or malformed payload). This is request-scoped: locking
+  // `modelLock_*` for 30s on a single 400 request rejection takes a healthy
+  // OpenCode Go account/model offline for concurrent normal-sized requests.
+  { text: "[invalid_request_error]", modelError: true },
   // OpenCode Free Tier rate limit — backoff: true makes it escalate like a
   // regular 429 (2s→4s→8s…). But opencode free returns 429 *aggressively*
   // and ALL proxy pools and accounts share the same upstream quota, so

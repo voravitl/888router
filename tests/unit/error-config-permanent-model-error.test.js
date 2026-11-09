@@ -34,6 +34,7 @@ const REQUEST_SCOPED = [
   "maximum context length exceeded",
   "exceed context limit",
   "exceeds the context window",
+  "Upstream request failed: [invalid_request_error] the prompt exceeds the model context (request_id: gw-4b602097e417-12f8)",
   "prompt is too long",
   "input is too long",
   "output_limit_exceeded",
@@ -106,5 +107,25 @@ describe("errorConfig: permanentModelError is identity death only", () => {
     expect(gone.permanentModelError).toBe(true);
     expect(gone.shouldFallback).toBe(false);
     expect(gone.cooldownMs).toBe(0);
+  });
+
+  it("classifies opencode-go 'exceeds the model context' and generic 400 invalid_request_error as request-scoped modelError (never locks account)", () => {
+    const ctxExceeded = checkFallbackError(
+      400,
+      '{"error":{"param":null,"type":"invalid_request_error","code":"invalid_request_error","message":"Upstream request failed: [invalid_request_error] the prompt exceeds the model context (request_id: gw-4b602097e417-12f8)"}}',
+    );
+    expect(ctxExceeded.modelError).toBe(true);
+    expect(ctxExceeded.permanentModelError).toBe(false);
+    expect(ctxExceeded.shouldFallback).toBe(false);
+    expect(ctxExceeded.cooldownMs).toBe(0);
+
+    const invalidReq = checkFallbackError(
+      400,
+      '{"error":{"param":null,"type":"invalid_request_error","message":"Upstream request failed: [invalid_request_error] Invalid request"}}',
+    );
+    expect(invalidReq.modelError).toBe(true);
+    expect(invalidReq.permanentModelError).toBe(false);
+    expect(invalidReq.shouldFallback).toBe(false);
+    expect(invalidReq.cooldownMs).toBe(0);
   });
 });

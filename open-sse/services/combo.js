@@ -1584,6 +1584,8 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
                   continue;
                 }
                 log.info("COMBO", `Model ${modelStr} succeeded after streamed reasoning-budget retry`);
+                clearComboKnownUnavailable(modelStr);
+                clearComboHeadTimeoutCooldown(modelStr);
                 let retriedWithCleanup;
                 try {
                   retriedWithCleanup = wrapSelectedBody(retried, cleanupRetryAbort, () => retryAbortCtrl.abort());
@@ -1615,6 +1617,8 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
             // the client.
             const streamHeaders = new Headers(result.headers);
             streamHeaders.delete("content-length");
+            clearComboKnownUnavailable(modelStr);
+            clearComboHeadTimeoutCooldown(modelStr);
             const responseWithHeaders = new Response(pipeStreamWithHead(
               reader,
               guard.release(),
@@ -1716,6 +1720,8 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
             }
             if (retried.ok) {
               log.info("COMBO", `Model ${modelStr} succeeded after reasoning-budget retry`);
+              clearComboKnownUnavailable(modelStr);
+              clearComboHeadTimeoutCooldown(modelStr);
               let retriedWithCleanup;
               try {
                 retriedWithCleanup = wrapSelectedBody(retried, removeClientAbortListener, () => candidateAbortCtrl.abort());
@@ -1736,6 +1742,8 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
           }
         }
         log.info("COMBO", `Model ${modelStr} succeeded`);
+        clearComboKnownUnavailable(modelStr);
+        clearComboHeadTimeoutCooldown(modelStr);
         let resultWithCleanup;
         try {
           resultWithCleanup = wrapSelectedBody(result, removeClientAbortListener, () => candidateAbortCtrl.abort());

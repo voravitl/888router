@@ -50,6 +50,7 @@ vi.mock("open-sse/config/runtimeConfig.js", async (importOriginal) => ({
 // Import AFTER mocks.
 const {
   handleComboChat,
+  markComboKnownUnavailable,
   getComboKnownUnavailable,
   clearComboKnownUnavailable,
   getComboHeadTimeoutCooldown,
@@ -177,6 +178,20 @@ describe("combo parks permanent model-error hops so the next request pre-skips t
     const { handleSingleModel } = await runCombo(["ag/gemini", "ocg/muse-spark"], () => makeSseSuccess());
     expect(handleSingleModel).toHaveBeenCalledTimes(1);
     expect(handleSingleModel.mock.calls[0][1]).toBe("ag/gemini");
+  });
+
+  it("a 2xx success on a model clears any existing comboKnownUnavailable lock on that model", async () => {
+    // Simulate a concurrent request that succeeded while another request set a
+    // known-unavailable lock on the same model: the 2xx completion must clear
+    // the stale in-memory lock so subsequent combo calls do not pre-skip a
+    // model that just proved it is healthy.
+    const responseFor = () => {
+      markComboKnownUnavailable("ocg/deepseek-v4.1-flash", Date.now() + 30_000, "transient");
+      return makeSseSuccess();
+    };
+    const { result } = await runCombo(["ocg/deepseek-v4.1-flash", "ocg/beam-free"], responseFor);
+    expect(result.status).toBe(200);
+    expect(getComboKnownUnavailable("ocg/deepseek-v4.1-flash")).toBe(0);
   });
 });
 
