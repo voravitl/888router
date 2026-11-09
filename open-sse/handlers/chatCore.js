@@ -293,9 +293,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
-  // Cap tools for providers with hard upstream limits (e.g. xAI max 250).
-  // Claude Code / agent clients often send 260+ MCP tools and get 400 invalid-argument.
-  const maxTools = PROVIDERS[provider]?.maxTools;
+  // Cap tools for providers with hard upstream limits (e.g. xAI max 250, OpenCode / OpenAI max 128).
+  // Claude Code / agent clients often send 200+ MCP tools and get 400 invalid-argument.
+  const maxTools = PROVIDERS[provider]?.maxTools ?? (targetFormat === "openai" || targetFormat === "openai-responses" ? 128 : undefined);
   if (!preserveNativeClaudeRequest && maxTools && Array.isArray(translatedBody.tools)) {
     if (preserveRequestInput && translatedBody.tools.length > maxTools) {
       return localValidationResult(`Provider ${provider} accepts at most ${maxTools} tools; the ${translatedBody.tools.length} supplied tools were not truncated.`, "unsupported_request");

@@ -1,6 +1,7 @@
 const opencode_goConfig = {
   id: "opencode-go",
   priority: 210,
+  maxTools: 128,
   alias: "opencode-go",
   aliases: [
     "ocg",
