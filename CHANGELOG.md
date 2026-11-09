@@ -1,3 +1,10 @@
+# v0.15.238 (2026-11-09)
+
+## Cap tools to 128 for OpenCode Go and OpenAI target formats to prevent upstream 400
+- Set `maxTools: 128` in `open-sse/providers/registry/opencode-go.js` and `open-sse/providers/registry/opencode.js` so clients sending >128 tools (e.g. Claude Code with heavy MCP server setups) do not get rejected by OpenCode's Zen gateway with `Invalid value for 'tools': maximum number of items is 128.`
+- Added fallback tool cap in `open-sse/handlers/chatCore.js` defaulting to 128 tools when `targetFormat === "openai"` or `"openai-responses"` if a provider omitted `maxTools`, adhering to the OpenAI specification and protecting all OpenAI-compatible endpoints.
+- Added comprehensive unit tests in `tests/unit/opencode-go-tool-cap.test.js`.
+
 # v0.15.237 (2026-11-09)
 
 ## Fix OpenCode Go `[invalid_value]` tool-limit lock & normalize combo context-length errors for Claude Code auto-compact

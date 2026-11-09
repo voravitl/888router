@@ -1,6 +1,7 @@
 const opencodeConfig = {
   id: "opencode",
   priority: 210,
+  maxTools: 128,
   hasFree: true,
   alias: "oc",
   aliases: ["oc", "opencode", "opencode-zen", "zen"],
