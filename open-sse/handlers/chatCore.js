@@ -416,12 +416,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody.model;
   }
 
-  // Ensure stream flag on translated body matches resolved streaming mode
+  // Formats that accept a top-level `stream` boolean in the request body.
+  // Google formats (Gemini, Antigravity, Vertex) and AWS Kiro reject `stream` in payload with HTTP 400.
+  const formatsWithBodyStream = new Set([
+    FORMATS.CLAUDE,
+    FORMATS.OPENAI,
+    FORMATS.OPENAI_RESPONSES,
+    FORMATS.OPENAI_RESPONSE,
+    FORMATS.OLLAMA,
+    FORMATS.COMMANDCODE,
+  ]);
+
+  // Ensure stream flag on translated body matches resolved streaming mode and target format capability
   if (stream && translatedBody && typeof translatedBody === "object") {
-    if (finalFormat !== FORMATS.GEMINI && translatedBody.stream === undefined) {
-      translatedBody.stream = true;
+    if (formatsWithBodyStream.has(finalFormat)) {
+      if (translatedBody.stream === undefined) {
+        translatedBody.stream = true;
+      }
+    } else {
+      delete translatedBody.stream;
     }
-  } else if (!stream && translatedBody && typeof translatedBody === "object" && translatedBody.stream === true) {
+  } else if (translatedBody && typeof translatedBody === "object" && (!stream || !formatsWithBodyStream.has(finalFormat))) {
     delete translatedBody.stream;
   }
   // Validate the actual outbound budget as well as the original client budget.

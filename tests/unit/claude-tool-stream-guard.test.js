@@ -131,4 +131,48 @@ describe("Claude tool stream and combo guard integrity", () => {
     };
     expect(hasValuableContent(emptyChunk, FORMATS.CLAUDE)).toBe(false);
   });
+
+  it("ensures body stream flag is injected only for formats that accept it (e.g. claude, openai) and deleted for google/aws (antigravity, gemini, kiro)", () => {
+    const formatsWithBodyStream = new Set([
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI,
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSE,
+      FORMATS.OLLAMA,
+      FORMATS.COMMANDCODE,
+    ]);
+
+    const sanitizeStreamFlag = (translatedBody, finalFormat, stream) => {
+      if (stream && translatedBody && typeof translatedBody === "object") {
+        if (formatsWithBodyStream.has(finalFormat)) {
+          if (translatedBody.stream === undefined) {
+            translatedBody.stream = true;
+          }
+        } else {
+          delete translatedBody.stream;
+        }
+      } else if (translatedBody && typeof translatedBody === "object" && (!stream || !formatsWithBodyStream.has(finalFormat))) {
+        delete translatedBody.stream;
+      }
+      return translatedBody;
+    };
+
+    // Streaming to Claude (injects stream: true)
+    expect(sanitizeStreamFlag({ model: "claude-sonnet" }, FORMATS.CLAUDE, true).stream).toBe(true);
+
+    // Streaming to OpenAI (injects stream: true)
+    expect(sanitizeStreamFlag({ model: "gpt-4o" }, FORMATS.OPENAI, true).stream).toBe(true);
+
+    // Streaming to Antigravity (strips stream: true to prevent 400 Unknown name "stream")
+    expect(sanitizeStreamFlag({ model: "claude-sonnet", stream: true }, FORMATS.ANTIGRAVITY, true).stream).toBeUndefined();
+
+    // Streaming to Gemini (strips stream: true)
+    expect(sanitizeStreamFlag({ model: "gemini-2.5", stream: true }, FORMATS.GEMINI, true).stream).toBeUndefined();
+
+    // Streaming to Kiro (strips stream: true)
+    expect(sanitizeStreamFlag({ model: "claude-sonnet", stream: true }, FORMATS.KIRO, true).stream).toBeUndefined();
+
+    // Non-streaming to Claude (deletes stream: true)
+    expect(sanitizeStreamFlag({ model: "claude-sonnet", stream: true }, FORMATS.CLAUDE, false).stream).toBeUndefined();
+  });
 });
