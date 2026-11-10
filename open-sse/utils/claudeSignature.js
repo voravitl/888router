@@ -3,6 +3,8 @@
 // R-form: double-layer base64, outer decoded[0] == 'E', inner decoded[0] == 0x12.
 // Cache prefix "...#sig" stripped before validation.
 
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE, DEFAULT_THINKING_GEMINI_SIGNATURE } from "../config/defaultThinkingSignature.js";
+
 const MAX_CLAUDE_SIGNATURE_LEN = 32 * 1024 * 1024;
 const CLAUDE_SIGNATURE_MARKER = 0x12;
 
@@ -19,9 +21,13 @@ export function hasClaudeSignaturePrefix(rawSignature) {
 }
 
 // Strict-ish: validates base64 layers + Claude marker byte.
+// Synthetic placeholder signatures injected by the router must NEVER be validated as authentic Claude signatures.
 export function isValidClaudeSignature(rawSignature) {
   const sig = stripCachePrefix(rawSignature);
   if (!sig || sig.length > MAX_CLAUDE_SIGNATURE_LEN) return false;
+  if (sig === DEFAULT_THINKING_CLAUDE_SIGNATURE || sig === DEFAULT_THINKING_GEMINI_SIGNATURE) {
+    return false;
+  }
 
   try {
     if (sig[0] === "E") {

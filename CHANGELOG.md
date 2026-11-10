@@ -1,3 +1,11 @@
+# v0.15.239 (2026-11-10)
+
+## Strip synthetic thinking signatures in Claude native passthrough & combo chaining
+- Reject synthetic signatures (`DEFAULT_THINKING_CLAUDE_SIGNATURE` and `DEFAULT_THINKING_GEMINI_SIGNATURE`) in `open-sse/utils/claudeSignature.js` `isValidClaudeSignature()` so synthetic placeholder signatures are not treated as authentic Claude signatures.
+- Export `stripSyntheticClaudeSignatures(body)` in `open-sse/translator/formats/claude.js` to strip synthetic thinking blocks and foreign server_tool_use IDs from conversation history under native passthrough in `open-sse/handlers/chatCore.js`, preventing Anthropic API 400 rejection (`messages.1.content.0: Invalid signature in thinking block`) when combos switch or fail over across providers (e.g. `9-sonnet` -> `cc-sonnet` after turns handled by DeepSeek/OpenAI).
+- In `open-sse/translator/formats/claude.js`, avoid re-injecting synthetic thinking placeholders into assistant messages for native Claude provider (`provider === "claude"` / `anthropic`), as Anthropic strictly validates thinking signatures via HMAC.
+- Added comprehensive unit tests in `tests/unit/claude-combo-thinking-signature.test.js`.
+
 # v0.15.238 (2026-11-09)
 
 ## Cap tools to 128 for OpenCode Go and OpenAI target formats to prevent upstream 400
