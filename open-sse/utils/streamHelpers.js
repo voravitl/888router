@@ -49,11 +49,12 @@ export function hasValuableContent(chunk, format) {
   // Claude format
   if (format === FORMATS.CLAUDE) {
     const isContentBlockDelta = chunk.type === "content_block_delta";
-    const hasText = chunk.delta?.text && chunk.delta.text !== "";
-    const hasThinking = chunk.delta?.thinking && chunk.delta.thinking !== "";
-    const hasInputJson = chunk.delta?.partial_json && chunk.delta.partial_json !== "";
-    
-    if (isContentBlockDelta && !hasText && !hasThinking && !hasInputJson) {
+    const hasText = chunk.delta?.text !== undefined && chunk.delta.text !== "";
+    const hasThinking = chunk.delta?.thinking !== undefined && chunk.delta.thinking !== "";
+    const hasSignature = chunk.delta?.type === "signature_delta" || (chunk.delta?.signature !== undefined && chunk.delta.signature !== "");
+    const hasInputJson = chunk.delta?.partial_json !== undefined && chunk.delta.partial_json !== "";
+
+    if (isContentBlockDelta && !hasText && !hasThinking && !hasSignature && !hasInputJson) {
       return false;
     }
     return true;

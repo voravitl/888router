@@ -415,6 +415,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody.stream;
     delete translatedBody.model;
   }
+
+  // Ensure stream flag on translated body matches resolved streaming mode
+  if (stream && translatedBody && typeof translatedBody === "object") {
+    if (finalFormat !== FORMATS.GEMINI && translatedBody.stream === undefined) {
+      translatedBody.stream = true;
+    }
+  } else if (!stream && translatedBody && typeof translatedBody === "object" && translatedBody.stream === true) {
+    delete translatedBody.stream;
+  }
   // Validate the actual outbound budget as well as the original client budget.
   const outboundFit = getContextFit(translatedBody, { provider, model: upstreamModel });
   if (outboundFit.reason === "output_limit_exceeded") {

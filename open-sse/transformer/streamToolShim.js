@@ -265,12 +265,12 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
           const holdLen = getPartialTagPrefixLength(textBuffer);
           if (holdLen > 0) {
             const safeText = textBuffer.slice(0, textBuffer.length - holdLen);
-            if (safeText && safeText.trim()) {
+            if (safeText) {
               emitTextChunk(safeText, json, clientFormat, controller);
             }
             textBuffer = textBuffer.slice(textBuffer.length - holdLen);
           } else {
-            if (textBuffer.trim()) {
+            if (textBuffer) {
               emitTextChunk(textBuffer, json, clientFormat, controller);
             }
             textBuffer = "";
@@ -388,6 +388,16 @@ export function createStreamToolShimTransformStream(tools = [], clientFormat = "
 
   function emitTextChunk(text, originalJson, format, controller) {
     if (format === "claude") {
+      if (pendingEmptyTextBlockIndex >= 0) {
+        controller.enqueue(new TextEncoder().encode(`event: content_block_start\ndata: ${JSON.stringify({
+          type: "content_block_start",
+          index: pendingEmptyTextBlockIndex,
+          content_block: { type: "text", text: "" }
+        })}\n\n`));
+        droppedBlockIndices.delete(pendingEmptyTextBlockIndex);
+        pendingEmptyTextBlockIndex = -1;
+      }
+
       // If text block 0 was already closed (tool calls emitted), open a new text block
       if (textBlockClosed) {
         const newBlockIndex = nextBlockIndex++;
