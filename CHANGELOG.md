@@ -1,3 +1,11 @@
+# v0.15.240 (2026-11-10)
+
+## Cap combo wrapper locks to 30s & sanitize Claude Code experimental `advisor_tool`
+- In `open-sse/services/combo.js`, cap in-memory `comboKnownUnavailable` locks on composite combo candidates (models without a `"/"` provider prefix, e.g. `"cc-sonnet"`, `"cc-opus"`) to `COMBO_WRAPPER_MAX_LOCK_MS = 30_000` (30s) and downgrade lock reason from `"long-quota"` to `"transient"`. An individual nested candidate's multi-day quota window (e.g. Google Antigravity 41h limit) must never lock the parent composite combo wrapper for days and starve healthy sibling models (e.g. Anthropic API).
+- Export `sanitizeClaudeTools(body)` in `open-sse/translator/formats/claude.js` and call it across passthrough and native fidelity paths in `open-sse/handlers/chatCore.js` to strip Claude Code's experimental `advisor_tool` (`type: "advisor_tool"`). Public Anthropic API and third-party gateways reject `advisor_tool` with HTTP 400 (`Input tag 'advisor_tool' found using 'type' does not match any of the expected tags`) or reject unregistered alias models (e.g. `tools.N.model: 9-fable`). Stripping it ensures seamless sessions even when `CLAUDE_CODE_ENABLE_EXPERIMENTAL_ADVISOR_TOOL=1` is enabled in Claude Code settings.
+- In `open-sse/translator/formats/claude.js`, strip `advisor_tool_result` content blocks and `server_tool_use` blocks named `"advisor"` in `stripSyntheticClaudeSignatures()` and `normalizeClaudePassthrough()`.
+- Added comprehensive unit tests in `tests/unit/combo-nested-long-quota-cap.test.js` and `tests/unit/claude-advisor-tool-sanitizer.test.js`.
+
 # v0.15.239 (2026-11-10)
 
 ## Strip synthetic thinking signatures in Claude native passthrough & combo chaining

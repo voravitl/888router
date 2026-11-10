@@ -220,6 +220,9 @@ export function stripSyntheticClaudeSignatures(body) {
           continue;
         }
       }
+      if (block?.type === "advisor_tool_result" || (block?.type === CLAUDE_BLOCK.SERVER_TOOL_USE && block?.name === "advisor")) {
+        continue;
+      }
       if (hasForeignServerToolUseId(block)) {
         if (block.id != null) droppedServerToolUseIds.add(String(block.id));
         continue;
@@ -248,12 +251,37 @@ export function stripSyntheticClaudeSignatures(body) {
   return body;
 }
 
+/**
+ * Sanitize tools for Anthropic Messages API and upstream compatibility.
+ * - Strips Claude Code experimental advisor_tool (type: "advisor_tool") which is a server-side
+ *   tool that Anthropic API rejects with 400 when missing enterprise server-side enablement
+ *   or when specifying non-Anthropic alias models (e.g. tools.N.model: 9-fable).
+ * - Deletes body.tools and body.tool_choice if the tools array becomes empty after stripping.
+ */
+export function sanitizeClaudeTools(body) {
+  if (!body || !Array.isArray(body.tools)) return body;
+
+  body.tools = body.tools.filter(tool => {
+    if (!tool || typeof tool !== "object") return false;
+    if (tool.type === "advisor_tool") return false;
+    return true;
+  });
+
+  if (body.tools.length === 0) {
+    delete body.tools;
+    delete body.tool_choice;
+  }
+
+  return body;
+}
+
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
 // 1. thinking shape the model generation rejects (adaptive vs enabled+budget)
 // 2. output_config.effort on models that don't support it
 // 3. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
 // 4. server_tool_use blocks carrying a foreign (non-srvtoolu_) id → rejected outright
+// 5. advisor_tool blocks that Anthropic rejects with 400
 export function normalizeClaudePassthrough(body, model = "") {
   if (!body || typeof body !== "object") return body;
 
@@ -262,6 +290,9 @@ export function normalizeClaudePassthrough(body, model = "") {
 
   // 1 + 2. Coerce the thinking shape/effort for this model generation
   normalizeClaudeThinkingShape(body, model);
+
+  // Sanitize tools (drop unsupported advisor_tool)
+  sanitizeClaudeTools(body);
 
   // Claude API allows at most one role:"system" (which is top-level).
   // Some clients (e.g. Cowork) emit role:"system" messages in messages array.
@@ -312,6 +343,9 @@ export function normalizeClaudePassthrough(body, model = "") {
             hasKeptThinking = true;
             kept.push(block);
           }
+          continue;
+        }
+        if (block?.type === "advisor_tool_result" || (block?.type === CLAUDE_BLOCK.SERVER_TOOL_USE && block?.name === "advisor")) {
           continue;
         }
         if (hasForeignServerToolUseId(block)) {

@@ -963,14 +963,30 @@ export function getComboKnownUnavailable(modelStr) {
   return until;
 }
 
+export const COMBO_WRAPPER_MAX_LOCK_MS = 30_000;
+
 /**
  * Record that `modelStr` is unavailable until `untilEpochMs`. Non-finite or
  * already-passed instants are ignored so the map can never park a model
  * forever. Exported for tests.
  */
 export function markComboKnownUnavailable(modelStr, untilEpochMs, reason = "transient") {
-  const until = Number(untilEpochMs);
+  let until = Number(untilEpochMs);
   if (!Number.isFinite(until) || until <= Date.now()) return;
+
+  // Composite combo wrappers (no "/" provider prefix, e.g. "cc-sonnet", "cc-opus")
+  // contain multiple models and accounts. An individual child's multi-day quota
+  // (e.g. Antigravity 41h limit) must NEVER lock the parent combo wrapper for days,
+  // which would starve healthy sibling accounts (e.g. Anthropic API).
+  // Cap composite combo locks to at most 30s transient cooldown.
+  if (typeof modelStr === "string" && !modelStr.includes("/")) {
+    const maxUntil = Date.now() + COMBO_WRAPPER_MAX_LOCK_MS;
+    if (until > maxUntil) {
+      until = maxUntil;
+      if (reason === "long-quota") reason = "transient";
+    }
+  }
+
   comboKnownUnavailable.set(modelStr, until);
   comboKnownUnavailableReasons.set(modelStr, reason);
 }
@@ -1852,8 +1868,10 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       // the next request pre-skips this candidate instead of re-attempting it.
       const resetMs = retryAfterHeaderMs(result.headers);
       if (resetMs != null) {
-        resetHints.set(i, resetMs);
-        markComboKnownUnavailable(modelStr, resetMs);
+        const isComboWrapper = typeof modelStr === "string" && !modelStr.includes("/");
+        const effectiveReset = isComboWrapper ? Math.min(resetMs, Date.now() + COMBO_WRAPPER_MAX_LOCK_MS) : resetMs;
+        resetHints.set(i, effectiveReset);
+        markComboKnownUnavailable(modelStr, effectiveReset);
       }
 
       if (signal?.aborted) {
@@ -1961,21 +1979,28 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
         const failedProvider = providerOf(modelStr);
         const nextIdx = rotatedModels.findIndex((m, j) => j > i && providerOf(m) !== failedProvider);
         const lockUntilMs = retryAfter ? new Date(retryAfter).getTime() : NaN;
+        const isComboWrapper = typeof modelStr === "string" && !modelStr.includes("/");
+        const effectiveLockUntilMs = isComboWrapper && Number.isFinite(lockUntilMs)
+          ? Math.min(lockUntilMs, Date.now() + COMBO_WRAPPER_MAX_LOCK_MS)
+          : lockUntilMs;
         // Record the failed model AND every jumped-over same-provider candidate:
         // they share the exhausted account/quota, so the next request must
         // pre-skip all of them, not just the one that surfaced the verdict.
         if (Number.isFinite(lockUntilMs)) {
-          markComboKnownUnavailable(modelStr, lockUntilMs, "long-quota");
-          resetHints.set(i, lockUntilMs);
+          markComboKnownUnavailable(modelStr, effectiveLockUntilMs, isComboWrapper ? "transient" : "long-quota");
+          resetHints.set(i, effectiveLockUntilMs);
           for (let j = i + 1; j < (nextIdx > i ? nextIdx : rotatedModels.length); j++) {
             if (providerOf(rotatedModels[j]) === failedProvider) {
-              markComboKnownUnavailable(rotatedModels[j], lockUntilMs, "long-quota");
-              resetHints.set(j, lockUntilMs);
+              const siblingIsWrapper = typeof rotatedModels[j] === "string" && !rotatedModels[j].includes("/");
+              const siblingLockMs = siblingIsWrapper ? Math.min(lockUntilMs, Date.now() + COMBO_WRAPPER_MAX_LOCK_MS) : lockUntilMs;
+              markComboKnownUnavailable(rotatedModels[j], siblingLockMs, siblingIsWrapper ? "transient" : "long-quota");
+              resetHints.set(j, siblingLockMs);
             }
           }
         } else if (resetMs != null) {
-          resetHints.set(i, resetMs);
-          markComboKnownUnavailable(modelStr, resetMs, "long-quota");
+          const effectiveResetMs = isComboWrapper ? Math.min(resetMs, Date.now() + COMBO_WRAPPER_MAX_LOCK_MS) : resetMs;
+          resetHints.set(i, effectiveResetMs);
+          markComboKnownUnavailable(modelStr, effectiveResetMs, isComboWrapper ? "transient" : "long-quota");
         }
         log.warn("COMBO", `Model ${modelStr} hit a long quota window (retry-after ${Math.round((new Date(retryAfter).getTime() - Date.now()) / 60000)}m); skipping remaining ${failedProvider} models`);
         candidateAbortCtrl.abort();
@@ -1998,10 +2023,14 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
         // Prefer an explicit retryAfter; else derive a cooldown from the
         // fallback classifier so the client gets a usable retry window.
         // Either way the lock is recorded for the next request's pre-skip.
-        const lockMs = retryAfter
+        const isComboWrapper = typeof modelStr === "string" && !modelStr.includes("/");
+        const rawLockMs = retryAfter
           ? new Date(retryAfter).getTime()
           : (cooldownMs && cooldownMs > 0 ? new Date(getUnavailableUntil(cooldownMs)).getTime() : NaN);
-        if (Number.isFinite(lockMs)) markComboKnownUnavailable(modelStr, lockMs, "rate-limit");
+        const lockMs = isComboWrapper && Number.isFinite(rawLockMs)
+          ? Math.min(rawLockMs, Date.now() + COMBO_WRAPPER_MAX_LOCK_MS)
+          : rawLockMs;
+        if (Number.isFinite(lockMs)) markComboKnownUnavailable(modelStr, lockMs, isComboWrapper ? "transient" : "rate-limit");
         if (!retryAfter && cooldownMs && cooldownMs > 0) {
           earliestRetryAfter = getUnavailableUntil(cooldownMs);
         }
