@@ -1,3 +1,9 @@
+# v0.15.242 (2026-11-10)
+
+## Strip `stream` payload property for Google (Antigravity/Gemini/Vertex) and AWS (Kiro) providers
+- In `open-sse/handlers/chatCore.js`, define `formatsWithBodyStream` (Claude, OpenAI, OpenAI-Responses, Ollama, CommandCode) and strictly strip `stream` from `translatedBody` for Google Cloud Code / Antigravity, Gemini, Vertex, and AWS Kiro targets. Google and AWS endpoints reject top-level `stream` properties in request bodies with HTTP 400 (`Invalid JSON payload received. Unknown name "stream": Cannot find field.`).
+- Added unit tests in `tests/unit/claude-tool-stream-guard.test.js` verifying stream flag injection on stream-supporting formats and stripping on Google / AWS formats.
+
 # v0.15.241 (2026-11-10)
 
 ## Prevent zero text content drops on Claude tool streams and whole-message frames
