@@ -428,16 +428,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   ]);
 
   // Ensure stream flag on translated body matches resolved streaming mode and target format capability
-  if (stream && translatedBody && typeof translatedBody === "object") {
+  if (translatedBody && typeof translatedBody === "object") {
     if (formatsWithBodyStream.has(finalFormat)) {
-      if (translatedBody.stream === undefined) {
+      if (stream && translatedBody.stream === undefined) {
         translatedBody.stream = true;
+      } else if (!stream && translatedBody.stream === true) {
+        delete translatedBody.stream;
       }
     } else {
       delete translatedBody.stream;
     }
-  } else if (translatedBody && typeof translatedBody === "object" && (!stream || !formatsWithBodyStream.has(finalFormat))) {
-    delete translatedBody.stream;
   }
   // Validate the actual outbound budget as well as the original client budget.
   const outboundFit = getContextFit(translatedBody, { provider, model: upstreamModel });

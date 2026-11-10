@@ -143,16 +143,16 @@ describe("Claude tool stream and combo guard integrity", () => {
     ]);
 
     const sanitizeStreamFlag = (translatedBody, finalFormat, stream) => {
-      if (stream && translatedBody && typeof translatedBody === "object") {
+      if (translatedBody && typeof translatedBody === "object") {
         if (formatsWithBodyStream.has(finalFormat)) {
-          if (translatedBody.stream === undefined) {
+          if (stream && translatedBody.stream === undefined) {
             translatedBody.stream = true;
+          } else if (!stream && translatedBody.stream === true) {
+            delete translatedBody.stream;
           }
         } else {
           delete translatedBody.stream;
         }
-      } else if (translatedBody && typeof translatedBody === "object" && (!stream || !formatsWithBodyStream.has(finalFormat))) {
-        delete translatedBody.stream;
       }
       return translatedBody;
     };
@@ -172,7 +172,10 @@ describe("Claude tool stream and combo guard integrity", () => {
     // Streaming to Kiro (strips stream: true)
     expect(sanitizeStreamFlag({ model: "claude-sonnet", stream: true }, FORMATS.KIRO, true).stream).toBeUndefined();
 
-    // Non-streaming to Claude (deletes stream: true)
+    // Non-streaming to Claude preserves stream: false
+    expect(sanitizeStreamFlag({ model: "claude-sonnet", stream: false }, FORMATS.CLAUDE, false).stream).toBe(false);
+
+    // Non-streaming to Claude removes mistaken stream: true
     expect(sanitizeStreamFlag({ model: "claude-sonnet", stream: true }, FORMATS.CLAUDE, false).stream).toBeUndefined();
   });
 });
