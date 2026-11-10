@@ -1,3 +1,14 @@
+# v0.15.241 (2026-11-10)
+
+## Prevent zero text content drops on Claude tool streams and whole-message frames
+- In `open-sse/handlers/chatCore.js`, ensure `translatedBody.stream = true` when `stream === true` (except Gemini) and delete it when `!stream` so same-format upstream requests (such as Claude-to-Claude) consistently preserve the streaming flag and do not receive unexpected non-streaming JSON responses.
+- In `open-sse/handlers/chatCore/streamingHandler.js`, identify native Claude tool streams (`sourceFormat === FORMATS.CLAUDE && targetFormat === FORMATS.CLAUDE`) and bypass `streamToolShim` unless a universal tool prompt was explicitly injected, eliminating redundant buffering and protocol re-shimming on native Claude upstream streams.
+- In `open-sse/transformer/streamToolShim.js`, flush buffered `pendingEmptyTextBlockIndex` upon emitting actual text chunks in `emitTextChunk(text, ...)` and preserve non-empty whitespace-only deltas without stripping via `trim()`, preventing dropped `content_block_start` / `content_block_stop` frames.
+- In `open-sse/services/comboStreamGuard.js`, inspect `Array.isArray(json.content)` (Anthropic whole-completion message frames delivered over SSE) to extract `text`, `thinking`, and `tool_use` blocks, preventing false `sawText = false` flags and spurious `[COMBO] Model cc/claude-sonnet-5-5 returned 200 SSE stream with zero text content, trying next` fallbacks.
+- In `open-sse/utils/stream.js`, accumulate `Array.isArray(parsed.content)` across `accumulateTranslateChunk` and `createClaudeNativeStreamWithLogger` for accurate text length, thinking length, and tool tracking on whole-message frames.
+- In `open-sse/utils/streamHelpers.js`, retain `signature_delta` in `hasValuableContent` for `FORMATS.CLAUDE` so cryptographic thinking signatures are preserved.
+- Added comprehensive unit tests in `tests/unit/claude-tool-stream-guard.test.js`.
+
 # v0.15.240 (2026-11-10)
 
 ## Cap combo wrapper locks to 30s & sanitize Claude Code experimental `advisor_tool`

@@ -102,8 +102,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const declaredTools = translatedBody?._declaredTools
     || body?._declaredTools
     || (Array.isArray(body?.tools) ? body.tools : (Array.isArray(translatedBody?.tools) ? translatedBody.tools : []));
-  const hasTools = (declaredTools && declaredTools.length > 0) || translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected;
-  const hasToolShim = universalToolsMode !== "off" && hasTools;
+  const hasUniversalPrompt = Boolean(translatedBody?._universalToolPromptInjected || body?._universalToolPromptInjected);
+  const isNativeClaudeToolStream = (sourceFormat === FORMATS.CLAUDE && targetFormat === FORMATS.CLAUDE && (provider === "claude" || PROVIDERS[provider]?.format === FORMATS.CLAUDE)) && !hasUniversalPrompt;
+  const hasTools = (declaredTools && declaredTools.length > 0) || hasUniversalPrompt;
+  const hasToolShim = universalToolsMode !== "off" && hasTools && !isNativeClaudeToolStream;
   const isNativeClaudePassthrough = sourceFormat === FORMATS.CLAUDE
     && targetFormat === FORMATS.CLAUDE
     && !(toolNameMap && toolNameMap.size > 0)
@@ -125,7 +127,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // is already gated; this closes the response/stream-side gap so "off" truly
   // disables the whole universal-tools path.
   const toolsEnabled = universalToolsMode !== "off";
-  if (toolsEnabled && hasTools) {
+  if (toolsEnabled && hasToolShim) {
     // Chain the universal tool shim AFTER the translator transform but BEFORE
     // pipeWithDisconnect. Composing via readable.pipeThrough(shim) keeps the
     // disconnect stream's scanForBlockEvents() downstream of the shim, so it

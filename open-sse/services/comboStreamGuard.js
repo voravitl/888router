@@ -158,7 +158,22 @@ export function createComboStreamGuard() {
           : (json.delta && typeof json.delta.partial_json === "string") ? json.delta.partial_json
           : "";
 
-        const textVal = ollamaText || deltaText || messageText || anthropicText;
+        // Anthropic whole completion or non-streaming message body delivered over SSE
+        let anthropicMessageText = "";
+        let anthropicMessageReasoning = "";
+        if (Array.isArray(json.content)) {
+          for (const block of json.content) {
+            if (block?.type === "text" && typeof block.text === "string") {
+              anthropicMessageText += block.text;
+            } else if (block?.type === "thinking" && typeof block.thinking === "string") {
+              anthropicMessageReasoning += block.thinking;
+            } else if (block?.type === "tool_use" || block?.type === "server_tool_use") {
+              sawText = true;
+            }
+          }
+        }
+
+        const textVal = ollamaText || deltaText || messageText || anthropicText || anthropicMessageText;
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
 
         // A refusal is the model's ANSWER ("I can't help with that"), not an
@@ -211,7 +226,8 @@ export function createComboStreamGuard() {
         const anthropicReasoning = (json.delta && typeof json.delta.thinking === "string") ? json.delta.thinking : "";
         const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent))
           || messageReasoning
-          || anthropicReasoning;
+          || anthropicReasoning
+          || anthropicMessageReasoning;
         if (typeof reasoningVal === "string" && reasoningVal.length > 0) sawReasoning = true;
 
         const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || (json.delta && json.delta.stop_reason) || (geminiCandidate && geminiCandidate.finishReason) || null;

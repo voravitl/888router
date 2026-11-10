@@ -285,6 +285,24 @@ export function createSSEStream(options = {}) {
         accumulatedToolCalls.push({ id, name: parsed.content_block.name || null });
       }
     }
+    // Claude format - whole message content
+    if (Array.isArray(parsed.content)) {
+      for (const block of parsed.content) {
+        if (block?.type === "text" && typeof block.text === "string") {
+          totalContentLength += block.text.length;
+          accumulatedContent += block.text;
+        } else if (block?.type === "thinking" && typeof block.thinking === "string") {
+          totalContentLength += block.thinking.length;
+          accumulatedThinking += block.thinking;
+        } else if (block?.type === "tool_use" && (accumulatedToolCalls?.length ?? 0) < MAX_TRACKED_TOOL_CALLS) {
+          if (accumulatedToolCalls === null) accumulatedToolCalls = [];
+          const id = block.id || `tool_${accumulatedToolCalls.length}`;
+          if (!accumulatedToolCalls.some((c) => c.id === id)) {
+            accumulatedToolCalls.push({ id, name: block.name || null });
+          }
+        }
+      }
+    }
     // OpenAI format - content
     if (parsed.choices?.[0]?.delta?.content) {
       totalContentLength += parsed.choices[0].delta.content.length;
@@ -922,6 +940,23 @@ export function createClaudeNativeStreamWithLogger(provider = null, reqLogger = 
         if (typeof delta?.thinking === "string") {
           contentLength += delta.thinking.length;
           if (accumulatedThinking.length < MAX_CAPTURE_CHARS) accumulatedThinking += delta.thinking.slice(0, MAX_CAPTURE_CHARS - accumulatedThinking.length);
+        }
+        if (Array.isArray(parsed?.content)) {
+          for (const block of parsed.content) {
+            if (block?.type === "text" && typeof block.text === "string") {
+              contentLength += block.text.length;
+              if (accumulatedContent.length < MAX_CAPTURE_CHARS) accumulatedContent += block.text.slice(0, MAX_CAPTURE_CHARS - accumulatedContent.length);
+            } else if (block?.type === "thinking" && typeof block.thinking === "string") {
+              contentLength += block.thinking.length;
+              if (accumulatedThinking.length < MAX_CAPTURE_CHARS) accumulatedThinking += block.thinking.slice(0, MAX_CAPTURE_CHARS - accumulatedThinking.length);
+            } else if (block?.type === "tool_use" && (accumulatedToolCalls?.length ?? 0) < MAX_TOOL_CALLS) {
+              accumulatedToolCalls ||= [];
+              const { id, name } = block;
+              if (!accumulatedToolCalls.some((tool) => tool.id === id)) {
+                accumulatedToolCalls.push({ id: id || `tool_${accumulatedToolCalls.length}`, name: name || null });
+              }
+            }
+          }
         }
         const extracted = extractUsage(parsed);
         if (extracted) usage = mergeUsage(usage, extracted);
