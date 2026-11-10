@@ -2,7 +2,7 @@ import { detectFormat, getTargetFormat, resolveTransport } from "../services/pro
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, captureThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
-import { normalizeClaudePassthrough, normalizeClaudeThinkingShape, stripSyntheticClaudeSignatures, anchorClaudeCache } from "../translator/formats/claude.js";
+import { normalizeClaudePassthrough, normalizeClaudeThinkingShape, stripSyntheticClaudeSignatures, sanitizeClaudeTools, anchorClaudeCache } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -266,6 +266,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         // Strip synthetic signatures injected by the router during prior combo turns (e.g. with DeepSeek/OpenAI)
         // that Anthropic rejects with 400 "Invalid signature in thinking block".
         stripSyntheticClaudeSignatures(translatedBody);
+        sanitizeClaudeTools(translatedBody);
       } else {
         normalizeClaudePassthrough(translatedBody, translatedBody.model);
         applyThinking(FORMATS.CLAUDE, translatedBody.model, translatedBody, provider, captureThinking(body));
@@ -482,6 +483,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
   const upstreamPayload = preserveNativeClaudeRequest ? translatedBody : stripPrivateToolFields({ ...translatedBody });
+  if (provider === "claude" && upstreamPayload?.tools) sanitizeClaudeTools(upstreamPayload);
   const effectiveModel = upstreamModel || model;
   const execCredentials = requestCredentials || credentials;
   try {
