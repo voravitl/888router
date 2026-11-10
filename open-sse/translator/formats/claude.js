@@ -1,5 +1,5 @@
 // Claude helper functions for translator
-import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE, DEFAULT_THINKING_GEMINI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
 import { adjustMaxTokens } from "./maxTokens.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
@@ -185,7 +185,8 @@ function buildThinkingPlaceholder(provider) {
 
   // DeepSeek's Anthropic-compatible endpoint requires a thinking block in
   // thinking mode, but it does not need Anthropic's signed-thinking fallback.
-  if (provider !== "deepseek") {
+  // Native Anthropic (claude) validates HMAC signatures and rejects synthetic signatures.
+  if (provider !== "deepseek" && provider !== "claude") {
     block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
   }
 
@@ -202,6 +203,49 @@ const CLAUDE_SERVER_TOOL_USE_ID = /^srvtoolu_[a-zA-Z0-9_]+$/;
 function hasForeignServerToolUseId(block) {
   return block?.type === CLAUDE_BLOCK.SERVER_TOOL_USE
     && !CLAUDE_SERVER_TOOL_USE_ID.test(String(block.id ?? ""));
+}
+
+// Strip synthetic signatures injected by the router during prior combo turns (e.g. with DeepSeek/OpenAI)
+// and foreign server tool uses that Anthropic rejects with 400.
+export function stripSyntheticClaudeSignatures(body) {
+  if (!body || !Array.isArray(body.messages)) return body;
+
+  const droppedServerToolUseIds = new Set();
+  for (const msg of body.messages) {
+    if (msg.role !== ROLE.ASSISTANT || !Array.isArray(msg.content)) continue;
+    const kept = [];
+    for (const block of msg.content) {
+      if (block?.type === CLAUDE_BLOCK.THINKING || block?.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+        if (block.signature === DEFAULT_THINKING_CLAUDE_SIGNATURE || block.signature === DEFAULT_THINKING_GEMINI_SIGNATURE) {
+          continue;
+        }
+      }
+      if (hasForeignServerToolUseId(block)) {
+        if (block.id != null) droppedServerToolUseIds.add(String(block.id));
+        continue;
+      }
+      kept.push(block);
+    }
+    msg.content = kept;
+  }
+
+  if (droppedServerToolUseIds.size > 0) {
+    for (const msg of body.messages) {
+      if (!Array.isArray(msg.content)) continue;
+      msg.content = msg.content.filter(block => !(
+        (block?.type === CLAUDE_BLOCK.TOOL_RESULT || block?.type === CLAUDE_BLOCK.WEB_SEARCH_TOOL_RESULT)
+        && droppedServerToolUseIds.has(String(block.tool_use_id ?? ""))
+      ));
+    }
+  }
+
+  body.messages = body.messages.filter(msg => {
+    if (typeof msg.content === "string") return msg.content.trim().length > 0;
+    if (!Array.isArray(msg.content)) return true;
+    return msg.content.length > 0;
+  });
+
+  return body;
 }
 
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
@@ -278,9 +322,8 @@ export function normalizeClaudePassthrough(body, model = "") {
         kept.push(block);
       }
       msg.content = kept;
-      if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
-        msg.content.unshift(buildThinkingPlaceholder("claude"));
-      }
+      // Do not inject synthetic thinking placeholders here — Anthropic strictly validates
+      // thinking signatures via HMAC, and synthetic signatures cause 400 "Invalid signature in thinking block".
     }
   }
 
@@ -622,8 +665,8 @@ function normalizeClaudeContentBlock(block) {
           }
           msg.content = kept;
 
-          // Add thinking block if thinking enabled + has tool_use but no thinking
-          if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
+          // Add thinking block if thinking enabled + has tool_use but no thinking (non-native providers only)
+          if (thinkingEnabled && !hasKeptThinking && hasToolUse && !isClaudeNative) {
             msg.content.unshift(buildThinkingPlaceholder(provider));
           }
         }

@@ -2,7 +2,7 @@ import { detectFormat, getTargetFormat, resolveTransport } from "../services/pro
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, captureThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
-import { normalizeClaudePassthrough, normalizeClaudeThinkingShape, anchorClaudeCache } from "../translator/formats/claude.js";
+import { normalizeClaudePassthrough, normalizeClaudeThinkingShape, stripSyntheticClaudeSignatures, anchorClaudeCache } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -263,6 +263,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         // target model rejects is not fidelity — coerce only that field
         // (e.g. claude-haiku-5-5 requires adaptive, not enabled+budget).
         normalizeClaudeThinkingShape(translatedBody, translatedBody.model);
+        // Strip synthetic signatures injected by the router during prior combo turns (e.g. with DeepSeek/OpenAI)
+        // that Anthropic rejects with 400 "Invalid signature in thinking block".
+        stripSyntheticClaudeSignatures(translatedBody);
       } else {
         normalizeClaudePassthrough(translatedBody, translatedBody.model);
         applyThinking(FORMATS.CLAUDE, translatedBody.model, translatedBody, provider, captureThinking(body));
