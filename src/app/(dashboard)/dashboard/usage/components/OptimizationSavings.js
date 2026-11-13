@@ -12,26 +12,26 @@ const fmtBytes = (n) => {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-function SavingsCard({ title, icon, color, stats, children }) {
+function SavingsCard({ title, icon, stats, children }) {
   return (
-    <Card className="flex min-w-0 flex-col gap-3 px-4 py-3">
+    <Card className="flex min-w-0 flex-col gap-3 p-4">
       <div className="flex items-center gap-2">
-        <span className={`material-symbols-outlined text-[20px] ${color}`}>{icon}</span>
-        <span className="text-text-muted text-sm uppercase font-semibold">{title}</span>
+        <span className="material-symbols-outlined text-[18px] text-text-main">{icon}</span>
+        <span className="text-text-main text-xs font-semibold">{title}</span>
       </div>
       {stats && (
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>
             <span className="text-text-muted">Before</span>
-            <span className="block font-mono font-bold">{stats.before}</span>
+            <span className="block font-mono font-semibold text-text-main">{stats.before}</span>
           </div>
           <div>
             <span className="text-text-muted">After</span>
-            <span className="block font-mono font-bold">{stats.after}</span>
+            <span className="block font-mono font-semibold text-text-main">{stats.after}</span>
           </div>
           <div className="col-span-2">
             <span className="text-text-muted">Saved</span>
-            <span className={`block font-mono font-bold ${stats.savedPctNum > 0 ? "text-success" : "text-text-muted"}`}>
+            <span className={`block font-mono font-semibold ${stats.savedPctNum > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-text-muted"}`}>
               {stats.saved} ({stats.savedPct})
             </span>
           </div>
@@ -74,8 +74,8 @@ export default function OptimizationSavings({ period = "7d" }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <span className="material-symbols-outlined text-[20px] text-primary">speed</span>
-        <span className="text-sm font-semibold uppercase tracking-wide text-text-muted">Token & Bandwidth Savings</span>
+        <span className="material-symbols-outlined text-[18px] text-text-main">speed</span>
+        <span className="text-sm font-semibold text-text-main">Token & Bandwidth Savings</span>
       </div>
 
       <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -200,19 +200,19 @@ export default function OptimizationSavings({ period = "7d" }) {
       </div>
 
       {/* Summary bar */}
-      <Card className="px-4 py-2">
+      <Card className="px-4 py-3">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
           <span className="text-text-muted">
-            <span className="font-semibold text-info">{fmtBytes(rtk?.bytesSaved)}</span> saved by RTK
+            <span className="font-mono font-semibold text-text-main">{fmtBytes(rtk?.bytesSaved)}</span> saved by RTK
           </span>
           <span className="text-text-muted">
-            <span className="font-semibold text-warning">{fmt(pruner?.tokensSaved)}</span> tokens pruned
+            <span className="font-mono font-semibold text-text-main">{fmt(pruner?.tokensSaved)}</span> tokens pruned
           </span>
           <span className="text-text-muted">
-            <span className="font-semibold text-primary">{fmtBytes(headroom?.bytesSaved)}</span> via Headroom
+            <span className="font-mono font-semibold text-text-main">{fmtBytes(headroom?.bytesSaved)}</span> via Headroom
           </span>
           <span className="text-text-muted">
-            Scanned <span className="font-semibold">{fmt(data?.period?.scanned)}</span> requests
+            Scanned <span className="font-mono font-semibold text-text-main">{fmt(data?.period?.scanned)}</span> requests
             {data?.period?.truncated && " (truncated)"}
           </span>
         </div>

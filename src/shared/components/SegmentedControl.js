@@ -37,7 +37,7 @@ export default function SegmentedControl({
       value={value}
       onChange={(nextVal) => onChange?.(nextVal)}
       size={SIZE_MAP[size] || "medium"}
-      className={cn("hyperion-segmented !bg-surface-2/90 !border !border-border/70", className)}
+      className={cn("mono-segmented !rounded-lg !bg-surface-2 !border !border-border-subtle", className)}
     />
   );
 }

@@ -46,12 +46,12 @@ export default function Select({
           label: opt.label,
           disabled: opt.disabled,
         }))}
-        suffixIcon={
+        suffix={
           <span className="material-symbols-outlined text-[18px] text-text-muted">
             expand_more
           </span>
         }
-        className={cn("w-full hyperion-select", selectClassName)}
+        className={cn("w-full mono-select !rounded-lg", selectClassName)}
         {...props}
       />
       {error && (

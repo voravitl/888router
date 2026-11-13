@@ -25,16 +25,16 @@ function ValueCells({ item, viewMode, isSummary = false }) {
   if (viewMode === "tokens") {
     return (
       <>
-        <td className="px-6 py-3 text-right text-text-muted">
+        <td className="px-4 py-2.5 text-right text-text-muted">
           {isSummary && item.promptTokens === undefined ? "—" : fmt(item.promptTokens)}
         </td>
-        <td className="px-6 py-3 text-right text-text-muted">
+        <td className="px-4 py-2.5 text-right text-text-muted">
           {item.cachedTokens ? fmt(item.cachedTokens) : "—"}
         </td>
-        <td className="px-6 py-3 text-right text-text-muted">
+        <td className="px-4 py-2.5 text-right text-text-muted">
           {isSummary && item.completionTokens === undefined ? "—" : fmt(item.completionTokens)}
         </td>
-        <td className="px-6 py-3 text-right font-medium">
+        <td className="px-4 py-2.5 text-right font-semibold text-text-main">
           {fmt(item.totalTokens)}
         </td>
       </>
@@ -42,16 +42,16 @@ function ValueCells({ item, viewMode, isSummary = false }) {
   }
   return (
     <>
-      <td className="px-6 py-3 text-right text-text-muted">
+      <td className="px-4 py-2.5 text-right text-text-muted">
         {isSummary && item.inputCost === undefined ? "—" : fmtCost(item.inputCost)}
       </td>
-      <td className="px-6 py-3 text-right text-text-muted">
+      <td className="px-4 py-2.5 text-right text-text-muted">
         {item.cachedCost ? fmtCost(item.cachedCost) : "—"}
       </td>
-      <td className="px-6 py-3 text-right text-text-muted">
+      <td className="px-4 py-2.5 text-right text-text-muted">
         {isSummary && item.outputCost === undefined ? "—" : fmtCost(item.outputCost)}
       </td>
-      <td className="px-6 py-3 text-right font-medium text-warning">
+      <td className="px-4 py-2.5 text-right font-semibold text-text-main tabular-nums">
         {fmtCost(item.totalCost || item.cost)}
       </td>
     </>
@@ -145,18 +145,25 @@ export default function UsageTable({
   const totalColSpan = columns.length + valueColumns.length;
 
   return (
-    <Card className="overflow-hidden">
-      <div className="p-4 border-b border-border bg-bg-subtle/50">
-        <h3 className="font-semibold">{title}</h3>
-      </div>
+    <div className="bg-surface overflow-hidden">
+      {title && (
+        <div className="px-4 py-2.5 border-b border-border bg-bg-alt flex items-center justify-between">
+          <h3 className="text-xs font-semibold text-text-main m-0">
+            {title}
+          </h3>
+          <span className="text-[11px] text-text-muted tabular-nums">
+            {groupedData.length} groups
+          </span>
+        </div>
+      )}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-bg-subtle/30 text-text-muted uppercase text-xs">
+        <table className="w-full text-xs text-left tabular-nums">
+          <thead className="bg-bg-alt text-text-muted text-[11px] font-medium border-b border-border">
             <tr>
               {columns.map((col) => (
                 <th
                   key={col.field}
-                  className={`px-6 py-3 cursor-pointer hover:bg-bg-subtle/50 ${col.align === "right" ? "text-right" : ""}`}
+                  className={`px-4 py-2.5 cursor-pointer hover:text-text-main whitespace-nowrap ${col.align === "right" ? "text-right" : ""}`}
                   onClick={() => onToggleSort(tableType, col.field)}
                 >
                   {col.label}{" "}
@@ -166,7 +173,7 @@ export default function UsageTable({
               {valueColumns.map((col) => (
                 <th
                   key={col.field}
-                  className="px-6 py-3 text-right cursor-pointer hover:bg-bg-subtle/50"
+                  className="px-4 py-2.5 text-right cursor-pointer hover:text-text-main whitespace-nowrap"
                   onClick={() => onToggleSort(tableType, col.field)}
                 >
                   {col.label}{" "}
@@ -175,20 +182,22 @@ export default function UsageTable({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-border">
+          <tbody className="divide-y divide-border-subtle">
             {groupedData.map((group) => (
               <Fragment key={group.groupKey}>
-                {/* Group summary row */}
                 <tr
-                  className="group-summary cursor-pointer hover:bg-bg-subtle/50 transition-colors"
+                  className="group-summary cursor-pointer hover:bg-surface-2/60 transition-colors"
                   onClick={() => toggleGroup(group.groupKey)}
                 >
-                  <td className="px-6 py-3">
+                  <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2">
-                      <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${expanded.has(group.groupKey) ? "rotate-90" : ""}`}>
+                      <span className={`material-symbols-outlined text-[16px] text-text-muted transition-transform ${expanded.has(group.groupKey) ? "rotate-90" : ""}`}>
                         chevron_right
                       </span>
-                      <span className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}>
+                      {group.summary.pending > 0 && (
+                        <span className="size-1.5 rounded-full bg-[#a6c23f] shrink-0" title="In-flight" />
+                      )}
+                      <span className="font-medium text-text-main">
                         {group.groupKey}
                       </span>
                     </div>
@@ -196,11 +205,10 @@ export default function UsageTable({
                   {renderSummaryCells(group)}
                   <ValueCells item={group.summary} viewMode={viewMode} isSummary />
                 </tr>
-                {/* Detail rows */}
                 {expanded.has(group.groupKey) && group.items.map((item) => (
                   <tr
                     key={`detail-${item.key}`}
-                    className="group-detail hover:bg-bg-subtle/20 transition-colors"
+                    className="group-detail bg-bg-alt/50 hover:bg-surface-2 transition-colors"
                   >
                     {renderDetailCells(item)}
                     <ValueCells item={item} viewMode={viewMode} />
@@ -210,7 +218,7 @@ export default function UsageTable({
             ))}
             {groupedData.length === 0 && (
               <tr>
-                <td colSpan={totalColSpan} className="px-6 py-8 text-center text-text-muted">
+                <td colSpan={totalColSpan} className="px-4 py-8 text-center text-text-muted">
                   {emptyMessage}
                 </td>
               </tr>
@@ -218,7 +226,7 @@ export default function UsageTable({
           </tbody>
         </table>
       </div>
-    </Card>
+    </div>
   );
 }
 

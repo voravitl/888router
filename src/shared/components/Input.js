@@ -42,8 +42,8 @@ export default function Input({
           ) : undefined
         }
         className={cn(
-          "!rounded-[10px] !text-[16px] sm:!text-sm !bg-surface-2/85 !border-border/80 hover:!border-amber-500/45 focus-within:!border-amber-500 focus-within:!shadow-[0_0_0_2px_rgba(245,158,11,0.16)] transition-all duration-150",
-          error && "!border-red-500/70 focus-within:!shadow-[0_0_0_2px_rgba(239,68,68,0.2)]",
+          "!rounded-lg !text-sm !bg-surface !border-border hover:!border-text-subtle focus-within:!border-text-main transition-colors",
+          error && "!border-red-500",
           inputClassName
         )}
         {...props}

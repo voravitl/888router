@@ -11,37 +11,39 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 
-// const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
-// Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web
-const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
+const COMBINED_WEB_ITEM = {
+  id: "web",
+  label: "Web Fetch & Search",
+  icon: "travel_explore",
+  href: "/dashboard/media-providers/web",
+};
 
-const navItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
-  { href: "/dashboard/providers", label: "Providers", icon: "dns" },
-  { href: "/dashboard/combos", label: "Combos", icon: "layers" },
-  // Playground: test combos/models + see token-save meta (was Hidden — feature incomplete without nav)
-  { href: "/dashboard/basic-chat", label: "Test Chat", icon: "chat" },
-  { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
-  { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
-  // Savings report + toggles (RTK / Headroom / Caveman / Ponytail) — before/after aggregate
-  { href: "/dashboard/token-saver", label: "Token Savings", icon: "savings" },
-  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+const TELEMETRY_ITEMS = [
+  { code: "01", href: "/dashboard/usage", label: "Usage & Traces", icon: "analytics" },
+  { code: "02", href: "/dashboard/endpoint", label: "Gateway & Keys", icon: "api" },
+  { code: "03", href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
+  { code: "04", href: "/dashboard/token-saver", label: "Token Savings", icon: "compress" },
 ];
 
-const debugItems = [
-  { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
-  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
+const ROUTING_ITEMS = [
+  { code: "05", href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  { code: "06", href: "/dashboard/combos", label: "Combos", icon: "layers" },
+  { code: "07", href: "/dashboard/basic-chat", label: "Test Chat", icon: "chat" },
+  { code: "08", href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
 ];
 
-const systemItems = [
-  { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
-  { href: "/dashboard/skills", label: "Skills", icon: "extension" },
+const SYSTEM_ITEMS = [
+  { code: "10", href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
+  { code: "11", href: "/dashboard/skills", label: "Skills", icon: "extension" },
+  { code: "12", href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
+  { code: "13", href: "/dashboard/translator", label: "Translator", icon: "translate", requiresTranslator: true },
+  { code: "14", href: "/dashboard/profile", label: "Settings", icon: "settings" },
 ];
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
-  const [mediaOpen, setMediaOpen] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(() => pathname?.startsWith("/dashboard/media-providers") || false);
   const [collapsed, setCollapsed] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
@@ -55,16 +57,19 @@ export default function Sidebar({ onClose }) {
 
   useEffect(() => {
     fetch("/api/settings")
-      .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.enableTranslator) setEnableTranslator(true);
+      })
       .catch(() => {});
   }, []);
 
-  // Lazy check for new npm version on mount
   useEffect(() => {
     fetch("/api/version")
-      .then(res => res.json())
-      .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hasUpdate) setUpdateInfo(data);
+      })
       .catch(() => {});
   }, []);
 
@@ -75,15 +80,17 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
   const handleUpdate = () => {
     setShowUpdateModal(false);
     setIsUpdating(true);
   };
 
-  // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
   const handleCopyAndShutdown = async () => {
-    try { await navigator.clipboard.writeText(INSTALL_CMD); } catch { /* clipboard blocked */ }
+    try {
+      await navigator.clipboard.writeText(INSTALL_CMD);
+    } catch {
+      /* clipboard blocked */
+    }
     copy(INSTALL_CMD);
     let remaining = UPDATER_CONFIG.shutdownCountdownSec;
     setShutdownCountdown(remaining);
@@ -103,288 +110,226 @@ export default function Sidebar({ onClose }) {
     setShutdownCountdown(0);
   };
 
-  // Note: legacy updater poll removed. New flow: copy install cmd + shutdown server,
-  // user runs the command manually in another terminal.
-
-
   const isCompact = collapsed && !onClose;
+
+  const renderLink = (item) => {
+    const active = isActive(item.href);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onClose}
+        title={item.label}
+        className={cn(
+          "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg border transition-colors",
+          isCompact && "justify-center px-0",
+          active
+            ? "border-border-subtle bg-surface-2 text-text-main font-medium"
+            : "border-transparent text-text-muted hover:text-text-main hover:bg-surface-2/60"
+        )}
+      >
+        <span className={cn("material-symbols-outlined text-[17px] shrink-0", active ? "text-text-main" : "text-text-muted")}>
+          {item.icon}
+        </span>
+        {!isCompact && (
+          <span className="text-[13px] font-medium truncate">{item.label}</span>
+        )}
+      </Link>
+    );
+  };
 
   return (
     <>
       <aside
         className={cn(
-          "flex flex-col border-r border-border-subtle bg-sidebar/95 backdrop-blur-2xl transition-all duration-300 min-h-full relative overflow-hidden",
-          "lg:my-3 lg:ml-3 lg:rounded-2xl lg:border lg:border-white/[0.08] lg:shadow-[0_24px_60px_-15px_rgba(0,0,0,0.65)] lg:min-h-0",
-          isCompact ? "w-[74px]" : "w-64"
+          "flex flex-col border-r border-border bg-sidebar min-h-full transition-all duration-200 select-none",
+          isCompact ? "w-[56px]" : "w-[228px]"
         )}
       >
-        {/* Subtle top ambient glow */}
+        {/* Brand Bar */}
         <div
-          className="pointer-events-none absolute -top-20 -left-20 w-56 h-56 rounded-full opacity-30 blur-3xl"
-          style={{ background: "radial-gradient(circle, rgba(245,158,11,0.45), rgba(6,182,212,0.22), transparent 70%)" }}
-          aria-hidden="true"
-        />
-
-        {/* Brand Header */}
-        <div className={cn("pt-4 pb-3.5 flex flex-col gap-2 relative z-10 border-b border-border-subtle/70", isCompact ? "px-3 items-center" : "px-4")}>
-          <div className="flex items-center justify-between gap-2 w-full">
-            <Link href="/dashboard" className={cn("flex items-center gap-2.5 group min-w-0", isCompact && "mx-auto")}>
-              <div
-                className="flex items-center justify-center size-9 rounded-xl font-bold text-xs text-white shadow-lg transition-transform duration-300 group-hover:scale-105 shrink-0"
-                style={{ background: "linear-gradient(135deg, #f59e0b 0%, #06b6d4 100%)", boxShadow: "0 8px 20px -6px rgba(245, 158, 11, 0.45)" }}
-              >
-                888
-              </div>
-              {!isCompact && (
-                <div className="flex flex-col min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-sm font-bold tracking-tight text-text-main truncate">
-                      {APP_CONFIG.name}
-                    </h1>
-                    <span className="beacon-dot bg-emerald-400" title="Gateway Online" />
-                  </div>
-                  <span className="text-[10px] font-mono text-cyan-400/90">v{APP_CONFIG.version} · HYPERION</span>
-                </div>
-              )}
-            </Link>
-            {!onClose && (
-              <button
-                type="button"
-                onClick={() => setCollapsed((v) => !v)}
-                className={cn(
-                  "hidden lg:flex size-7 items-center justify-center rounded-lg border border-border/60 text-text-muted hover:text-cyan-400 hover:border-cyan-500/40 transition-colors cursor-pointer shrink-0",
-                  isCompact && "mt-1"
-                )}
-                title={collapsed ? "Expand Navigation" : "Compact Dock Mode"}
-                aria-label="Toggle sidebar width"
-              >
-                <span className="material-symbols-outlined text-[15px]">
-                  {collapsed ? "dock_to_right" : "dock_to_left"}
+          className={cn(
+            "h-[52px] shrink-0 flex items-center justify-between border-b border-border",
+            isCompact ? "px-1.5 justify-center" : "px-3.5"
+          )}
+        >
+          <Link href="/dashboard/usage" className="flex items-center gap-2.5 min-w-0">
+            <span className="inline-flex items-center justify-center size-7 bg-[#111111] text-white dark:bg-[#fafafa] dark:text-[#111111] rounded-lg font-mono text-[11px] font-bold tracking-tight shrink-0">
+              888
+            </span>
+            {!isCompact && (
+              <div className="flex items-baseline gap-1.5 min-w-0">
+                <span className="text-[13px] font-semibold tracking-tight text-text-main truncate">
+                  {APP_CONFIG.name}
                 </span>
-              </button>
-            )}
-          </div>
-          {!isCompact && updateInfo && (
-            <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
-              <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
-                ↑ New version available: v{updateInfo.latestVersion}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowUpdateModal(true)}
-                  className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer"
-                >
-                  Update now
-                </button>
-                <button
-                  onClick={() => copy(INSTALL_CMD)}
-                  title="Copy install command"
-                  className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
-                >
-                  <code className="block text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono truncate">
-                    {copied ? "✓ copied!" : INSTALL_CMD}
-                  </code>
-                </button>
+                <span className="font-mono text-[10px] text-text-subtle tabular-nums">
+                  v{APP_CONFIG.version}
+                </span>
               </div>
-            </div>
+            )}
+          </Link>
+
+          {!onClose && !isCompact && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(true)}
+              className="size-7 rounded-lg flex items-center justify-center border border-transparent hover:border-border hover:bg-surface-2 text-text-muted hover:text-text-main transition-colors"
+              title="Collapse navigation"
+              aria-label="Collapse sidebar"
+            >
+              <span className="material-symbols-outlined text-[16px]">dock_to_left</span>
+            </button>
           )}
         </div>
 
-        {/* Navigation */}
-        <nav className={cn("flex-1 py-3 space-y-1 overflow-y-auto custom-scrollbar relative z-10", isCompact ? "px-2" : "px-3")}>
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              title={item.label}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 group border",
-                isCompact && "justify-center px-0",
-                isActive(item.href)
-                  ? "bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-cyan-500/10 text-amber-400 border-amber-500/35 shadow-[0_0_20px_-8px_rgba(245,158,11,0.5)]"
-                  : "text-text-muted border-transparent hover:bg-surface-2/80 hover:text-text-main"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px] transition-transform duration-200 group-hover:scale-110",
-                  isActive(item.href) ? "fill-1 text-amber-400" : "group-hover:text-cyan-400"
-                )}
-              >
-                {item.icon}
-              </span>
-              {!isCompact && <span className="text-[13px] font-medium truncate">{item.label}</span>}
-            </Link>
-          ))}
-
-          {/* System section */}
-          <div className="pt-3 mt-2 space-y-0.5 border-t border-border-subtle/60">
-            {!isCompact && (
-              <p className="px-3 text-[10px] font-mono font-semibold text-cyan-400/75 uppercase tracking-[0.2em] mb-2">
-                System Modules
-              </p>
-            )}
-
-            {/* Media Providers accordion */}
+        {isCompact && !onClose && (
+          <div className="flex justify-center py-1.5 border-b border-border-subtle">
             <button
-              onClick={() => {
-                if (isCompact) setCollapsed(false);
-                setMediaOpen((v) => !v);
-              }}
-              title="Media Providers"
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all group",
-                isCompact && "justify-center px-0",
-                pathname.startsWith("/dashboard/media-providers")
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
+              type="button"
+              onClick={() => setCollapsed(false)}
+              className="size-6 flex items-center justify-center border border-transparent hover:border-border text-text-muted hover:text-text-main transition-colors"
+              title="Expand catalog rail"
+              aria-label="Expand sidebar"
             >
-              <span className="material-symbols-outlined text-[18px]">perm_media</span>
-              {!isCompact && (
-                <>
-                  <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
-                  <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-                    expand_more
-                  </span>
-                </>
-              )}
+              <span className="material-symbols-outlined text-[15px]">dock_to_right</span>
             </button>
-            {mediaOpen && !isCompact && (
-              <div className="pl-4">
-                {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
-                  <Link
-                    key={kind.id}
-                    href={`/dashboard/media-providers/${kind.id}`}
-                    onClick={onClose}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                      pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                    )}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
-                    <span className="text-sm">{kind.label}</span>
-                  </Link>
-                ))}
-                <Link
-                  key={COMBINED_WEB_ITEM.id}
-                  href={COMBINED_WEB_ITEM.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                    pathname.startsWith(COMBINED_WEB_ITEM.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                  )}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{COMBINED_WEB_ITEM.icon}</span>
-                  <span className="text-sm">{COMBINED_WEB_ITEM.label}</span>
-                </Link>
-              </div>
-            )}
-
-            {systemItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                title={item.label}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all group border",
-                  isCompact && "justify-center px-0",
-                  isActive(item.href)
-                    ? "bg-cyan-500/12 text-cyan-400 border-cyan-500/30"
-                    : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
-                )}
-              >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1 text-cyan-400" : "group-hover:text-cyan-400 transition-colors"
-                  )}
-                >
-                  {item.icon}
-                </span>
-                {!isCompact && <span className="text-[13px] font-medium truncate">{item.label}</span>}
-              </Link>
-            ))}
-
-            {/* Debug items (inside System section, before Settings) */}
-            {debugItems.map((item) => {
-              const show = item.href !== "/dashboard/translator" || enableTranslator;
-              return show ? (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  title={item.label}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all group border",
-                    isCompact && "justify-center px-0",
-                    isActive(item.href)
-                      ? "bg-cyan-500/12 text-cyan-400 border-cyan-500/30"
-                      : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1 text-cyan-400" : "group-hover:text-cyan-400 transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  {!isCompact && <span className="text-[13px] font-medium truncate">{item.label}</span>}
-                </Link>
-              ) : null;
-            })}
-
-            {/* Settings */}
-            <Link
-              href="/dashboard/profile"
-              onClick={onClose}
-              title="Settings"
-              className={cn(
-                "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all duration-200 group border",
-                isCompact && "justify-center px-0",
-                isActive("/dashboard/profile")
-                  ? "bg-amber-500/12 text-amber-400 border-amber-500/30 shadow-[0_0_20px_-8px_rgba(245,158,11,0.45)]"
-                  : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive("/dashboard/profile") ? "fill-1 text-amber-400" : "group-hover:text-cyan-400 transition-colors"
-                )}
-              >
-                settings
-              </span>
-              {!isCompact && <span className="text-[13px] font-medium">Settings</span>}
-            </Link>
           </div>
-        </nav>
+        )}
 
-        {/* Hyperion Status Footer */}
-        {!isCompact && (
-          <div className="m-3 p-3 rounded-xl border border-cyan-500/20 bg-surface-2/60 text-xs space-y-1.5 relative z-10">
-            <div className="flex items-center justify-between">
-              <span className="text-text-muted">AG Hub Profile</span>
-              <span className="font-mono font-semibold text-cyan-400">2.31.2</span>
+        {!isCompact && updateInfo && (
+          <div className="mx-2.5 mt-2.5 p-2.5 rounded-lg border border-border bg-bg-alt space-y-1.5">
+            <div className="flex items-center gap-1.5 text-[11px] text-text-main font-medium">
+              <span className="size-1.5 rounded-full bg-[#a6c23f] shrink-0" />
+              <span>Update v{updateInfo.latestVersion} ready</span>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-text-muted">Gemini 4 Hydrogen</span>
-              <span className="font-mono font-semibold text-amber-400">xhigh ready</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowUpdateModal(true)}
+                className="px-2 py-0.5 bg-[#111111] text-white dark:bg-[#fafafa] dark:text-[#111111] rounded-md text-[11px] font-medium cursor-pointer"
+              >
+                Update
+              </button>
+              <button
+                type="button"
+                onClick={() => copy(INSTALL_CMD)}
+                className="flex-1 text-left font-mono text-[10px] text-text-muted truncate hover:text-text-main cursor-pointer"
+                title="Copy install command"
+              >
+                {copied ? "Copied" : INSTALL_CMD}
+              </button>
             </div>
           </div>
         )}
 
+        {/* Navigation */}
+        <nav className={cn("flex-1 overflow-y-auto custom-scrollbar py-3 space-y-4", isCompact ? "px-1.5" : "px-2.5")}>
+          <div>
+            {!isCompact && (
+              <div className="px-2.5 pb-1.5 text-[11px] font-medium text-text-subtle">
+                Observability
+              </div>
+            )}
+            <div className="space-y-0.5">{TELEMETRY_ITEMS.map(renderLink)}</div>
+          </div>
+
+          <div className="pt-2.5 border-t border-border-subtle">
+            {!isCompact && (
+              <div className="px-2.5 pb-1.5 text-[11px] font-medium text-text-subtle">
+                Routing
+              </div>
+            )}
+            <div className="space-y-0.5">{ROUTING_ITEMS.map(renderLink)}</div>
+          </div>
+
+          <div className="pt-2.5 border-t border-border-subtle">
+            {!isCompact && (
+              <div className="px-2.5 pb-1.5 text-[11px] font-medium text-text-subtle">
+                System
+              </div>
+            )}
+            <div className="space-y-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isCompact) setCollapsed(false);
+                  setMediaOpen((v) => !v);
+                }}
+                title="Media Routing"
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg border transition-colors cursor-pointer",
+                  isCompact && "justify-center px-0",
+                  pathname.startsWith("/dashboard/media-providers")
+                    ? "border-border-subtle bg-surface-2 text-text-main font-medium"
+                    : "border-transparent text-text-muted hover:text-text-main hover:bg-surface-2/60"
+                )}
+              >
+                <span className="material-symbols-outlined text-[17px] shrink-0">perm_media</span>
+                {!isCompact && (
+                  <>
+                    <span className="text-[13px] font-medium flex-1 text-left truncate">Media Routing</span>
+                    <span
+                      className="material-symbols-outlined text-[15px] transition-transform"
+                      style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                    >
+                      expand_more
+                    </span>
+                  </>
+                )}
+              </button>
+
+              {mediaOpen && !isCompact && (
+                <div className="pl-3 space-y-0.5 border-l border-border ml-4">
+                  {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
+                    <Link
+                      key={kind.id}
+                      href={`/dashboard/media-providers/${kind.id}`}
+                      onClick={onClose}
+                      className={cn(
+                        "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors",
+                        pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
+                          ? "text-text-main font-medium bg-surface-2"
+                          : "text-text-muted hover:text-text-main hover:bg-surface-2/50"
+                      )}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">{kind.icon}</span>
+                      <span className="truncate">{kind.label}</span>
+                    </Link>
+                  ))}
+                  <Link
+                    key={COMBINED_WEB_ITEM.id}
+                    href={COMBINED_WEB_ITEM.href}
+                    onClick={onClose}
+                    className={cn(
+                      "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors",
+                      pathname.startsWith(COMBINED_WEB_ITEM.href)
+                        ? "text-text-main font-medium bg-surface-2"
+                        : "text-text-muted hover:text-text-main hover:bg-surface-2/50"
+                    )}
+                  >
+                    <span className="material-symbols-outlined text-[14px]">{COMBINED_WEB_ITEM.icon}</span>
+                    <span className="truncate">{COMBINED_WEB_ITEM.label}</span>
+                  </Link>
+                </div>
+              )}
+
+              {SYSTEM_ITEMS.filter((item) => !item.requiresTranslator || enableTranslator).map(renderLink)}
+            </div>
+          </div>
+        </nav>
+
+        {/* Bottom Gateway Status */}
+        {!isCompact && (
+          <div className="px-3.5 py-2.5 border-t border-border bg-bg-alt flex items-center justify-between text-[11px] text-text-muted">
+            <span className="font-medium">Local Gateway</span>
+            <span className="inline-flex items-center gap-1.5 font-medium text-text-main">
+              <span className="size-2 rounded-full bg-[#a6c23f] inline-block" />
+              Online
+            </span>
+          </div>
+        )}
       </aside>
 
-      {/* Update Confirmation Modal */}
       <ConfirmModal
         isOpen={showUpdateModal}
         onClose={() => setShowUpdateModal(false)}
@@ -396,9 +341,8 @@ export default function Sidebar({ onClose }) {
         variant="primary"
       />
 
-      {/* Disconnected / Updating Overlay */}
       {(isDisconnected || isUpdating) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
           {isUpdating ? (
             <ManualUpdatePanel
               latestVersion={updateInfo?.latestVersion}
@@ -410,12 +354,12 @@ export default function Sidebar({ onClose }) {
               isDisconnected={isDisconnected}
             />
           ) : (
-            <div className="text-center p-8">
-              <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
-                <span className="material-symbols-outlined text-[32px]">power_off</span>
+            <div className="text-center p-8 rounded-xl border border-border bg-surface max-w-sm shadow-lg">
+              <div className="flex items-center justify-center size-12 rounded-xl border border-red-500/30 bg-red-500/10 text-red-500 mx-auto mb-4">
+                <span className="material-symbols-outlined text-[24px]">power_off</span>
               </div>
-              <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-              <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
+              <h2 className="text-base font-semibold text-text-main mb-2">Server Disconnected</h2>
+              <p className="text-xs text-text-muted mb-5">The proxy server has been stopped.</p>
               <Button variant="secondary" onClick={() => globalThis.location.reload()}>
                 Reload Page
               </Button>
@@ -434,32 +378,32 @@ Sidebar.propTypes = {
 function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {
   const isCountingDown = countdown > 0;
   return (
-    <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex items-center justify-center size-11 rounded-full bg-amber-500/20 text-amber-400">
-          <span className="material-symbols-outlined text-[24px]">content_copy</span>
+    <div className="w-full max-w-lg rounded-xl bg-surface border border-border p-6 text-text-main shadow-xl">
+      <div className="flex items-center gap-3 mb-4 pb-3 border-b border-border-subtle">
+        <div className="flex items-center justify-center size-10 rounded-lg border border-border bg-surface-2 text-text-main">
+          <span className="material-symbols-outlined text-[20px]">content_copy</span>
         </div>
         <div>
-          <h2 className="text-lg font-semibold">Update 888router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
-          <p className="text-xs text-white/60">
+          <h2 className="text-base font-semibold">Update 888router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
+          <p className="text-xs text-text-muted">
             {isDisconnected
               ? "Server stopped. Paste the command into a terminal to install."
               : isCountingDown
                 ? `Command copied. Server will stop in ${countdown}s...`
-                : "Click the button below to copy the install command and shutdown."}
+                : "Copy the install command and shutdown."}
           </p>
         </div>
       </div>
 
-      <p className="text-sm text-white/80 mb-2">Install command:</p>
-      <div className="w-full px-3 py-2 rounded bg-white/5 mb-4">
-        <code className="text-xs font-mono text-amber-400 break-all">{installCmd}</code>
+      <p className="text-xs font-medium text-text-muted mb-2">Install command</p>
+      <div className="w-full px-3 py-2 rounded-lg border border-border bg-bg-alt mb-4">
+        <code className="text-xs font-mono text-text-main break-all">{installCmd}</code>
       </div>
 
-      <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
+      <ol className="text-xs text-text-muted space-y-1 list-decimal list-inside mb-4">
         <li>Click <strong>Copy & Shutdown</strong> below.</li>
         <li>Paste the command into your terminal and press Enter.</li>
-        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">888router</code> again after install.</li>
+        <li>Run <code className="px-1.5 py-0.5 rounded border border-border bg-surface-2">888router</code> again after install.</li>
       </ol>
 
       {isDisconnected ? (
@@ -472,7 +416,7 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
             Cancel
           </Button>
           <Button variant="primary" fullWidth onClick={onCopyAndShutdown} disabled={isCountingDown}>
-            {copied ? "✓ Copied — shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
+            {copied ? "Copied — shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
           </Button>
         </div>
       )}

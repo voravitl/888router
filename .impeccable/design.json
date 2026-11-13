@@ -1,0 +1,55 @@
+{
+  "name": "888router Monochrome Control Plane",
+  "direction": "digital-design-canon-monochrome-product-marketing",
+  "framework": "antd-v6-tailwind-v4",
+  "tokens": {
+    "light": {
+      "bg": "#fafafa",
+      "bgAlt": "#f2f2f2",
+      "surface": "#ffffff",
+      "surface2": "#f4f4f4",
+      "surface3": "#e6e6e6",
+      "sidebar": "#fafafa",
+      "border": "#e2e2e2",
+      "borderSubtle": "#efefef",
+      "text": "#111111",
+      "textMuted": "#6b6b6b",
+      "textSubtle": "#a6a6a6",
+      "primary": "#111111",
+      "primaryHover": "#262626"
+    },
+    "dark": {
+      "bg": "#0a0a0b",
+      "bgAlt": "#111114",
+      "surface": "#121215",
+      "surface2": "#18181c",
+      "surface3": "#242429",
+      "sidebar": "#0a0a0b",
+      "border": "#26262c",
+      "borderSubtle": "#1c1c21",
+      "text": "#fafafa",
+      "primary": "#fafafa",
+      "primaryHover": "#e4e4e7"
+    },
+    "accent": {
+      "olive": "#a6c23f",
+      "danger": "#dc2626",
+      "warning": "#d97706",
+      "success": "#16a34a"
+    },
+    "radius": {
+      "brand": "8px",
+      "brandLg": "10px"
+    },
+    "fonts": {
+      "sans": "Inter",
+      "mono": "JetBrains Mono"
+    }
+  },
+  "signatures": {
+    "topology": "3-stage-directed-gateway-flow-map",
+    "combos": "clarivo-numbered-step-pipelines",
+    "providers": "antd-matrix-table-with-drawer",
+    "hero": "page-hero-with-4col-stats-rail"
+  }
+}

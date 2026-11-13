@@ -243,7 +243,7 @@ export default function TranslatorPage() {
         const content = contents[step.id] || "";
 
         return (
-          <Card key={step.id} className="hyperion-card border border-border/70">
+          <Card key={step.id} className="border border-border bg-surface">
             <div className="p-4 space-y-3">
               {/* Step header */}
               <div className="flex items-center justify-between">

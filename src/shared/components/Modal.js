@@ -29,10 +29,10 @@ export default function Modal({
       title={title ? <span className="text-base font-semibold tracking-tight">{title}</span> : null}
       footer={footer ?? null}
       width={SIZE_WIDTHS[size] || SIZE_WIDTHS.md}
-      mask={{ closable: closeOnOverlay, blur: true }}
+      mask={{ closable: closeOnOverlay, blur: false }}
       destroyOnHidden
       centered
-      className={cn("hyperion-modal", className)}
+      className={cn("mono-modal", className)}
     >
       <div className="max-h-[calc(85vh-120px)] overflow-y-auto custom-scrollbar pt-2">
         {children}

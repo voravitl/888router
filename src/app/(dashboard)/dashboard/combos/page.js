@@ -20,6 +20,20 @@ import ComboLocksPanel from "./ComboLocksPanel.jsx";
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
+function getComboModelName(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry && typeof entry === "object") return String(entry.model || entry.id || "");
+  return "";
+}
+
+function getComboModelWeight(entry) {
+  if (entry && typeof entry === "object" && entry.weight !== undefined && entry.weight !== null) {
+    const n = Number(entry.weight);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -236,7 +250,7 @@ export default function CombosPage() {
       if (!q) return true;
       return (
         combo.name.toLowerCase().includes(q) ||
-        (Array.isArray(combo.models) && combo.models.some((m) => String(m).toLowerCase().includes(q)))
+        (Array.isArray(combo.models) && combo.models.some((m) => getComboModelName(m).toLowerCase().includes(q)))
       );
     });
   }, [combos, comboStrategies, globalComboStrategy, strategyFilter, searchQuery]);
@@ -251,23 +265,20 @@ export default function CombosPage() {
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-5 px-1 sm:px-0">
       <PageHero
-        eyebrow="NEURAL ROUTING PIPELINES · COMBO ORCHESTRATOR"
         title="Model Combo Pipelines"
         description="Orchestrate multi-provider model failover chains, cache-affinity pools, and LLM fusion panels under single virtual model aliases."
         icon={<NodeIndexOutlined />}
-        accent="cyan"
         badge={{
-          label: `${combos.length} ACTIVE PIPELINES`,
-          color: "cyan",
-          pulse: combos.length > 0,
+          text: `${combos.length} Active Pipelines`,
+          color: combos.length > 0 ? "green" : "neutral",
         }}
         stats={[
-          { label: "Active Combos", value: combos.length, color: "#06b6d4" },
-          { label: "Total Model Hops", value: totalHops, color: "#f59e0b" },
-          { label: "Default Strategy", value: (globalComboStrategy || "fallback").toUpperCase(), color: "#10b981" },
-          { label: "Active Providers", value: activeProviders.length, color: "#a855f7" },
+          { label: "Active Combos", value: combos.length },
+          { label: "Total Model Hops", value: totalHops },
+          { label: "Default Strategy", value: (globalComboStrategy || "fallback").toUpperCase() },
+          { label: "Active Providers", value: activeProviders.length },
         ]}
         actions={
           <div className="flex flex-wrap items-center gap-2">
@@ -298,8 +309,8 @@ export default function CombosPage() {
           </div>
         }
         toolbar={
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="overflow-x-auto">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between w-full min-w-0">
+            <div className="max-w-full overflow-x-auto pb-0.5">
               <Segmented
                 size="small"
                 value={strategyFilter}
@@ -329,25 +340,25 @@ export default function CombosPage() {
         }
       />
 
-      {/* 2-Column Neural Pipeline Studio */}
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
+      {/* 2-Column Monochrome Workflow Studio */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_350px] gap-5 items-start">
         {/* Left: Configured Combo Pipelines */}
-        <div className="min-w-0 flex flex-col gap-4">
+        <div className="min-w-0 flex flex-col gap-3.5">
           {combos.length === 0 ? (
-            <Card className="hyperion-card">
+            <Card className="border border-border bg-surface">
               <div className="text-center py-12">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mb-4">
-                  <span className="material-symbols-outlined text-[32px]">layers</span>
+                <div className="inline-flex items-center justify-center size-12 rounded-xl bg-surface-2 text-text-main border border-border mb-4">
+                  <span className="material-symbols-outlined text-[24px]">layers</span>
                 </div>
-                <p className="text-text-main font-medium mb-1">No combos yet</p>
-                <p className="text-sm text-text-muted mb-4">Create model combos with failover and smart routing pipelines</p>
+                <p className="text-text-main font-semibold mb-1">No combos configured</p>
+                <p className="text-xs text-text-muted mb-4">Create model combos with failover chains and routing strategies.</p>
                 <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
                   Create Combo
                 </Button>
               </div>
             </Card>
           ) : filteredCombos.length === 0 ? (
-            <Card className="hyperion-card">
+            <Card className="border border-border bg-surface">
               <div className="text-center py-10">
                 <p className="text-sm font-medium text-text-main">No combos match &ldquo;{searchQuery || strategyFilter}&rdquo;</p>
                 <p className="text-xs text-text-muted mt-1 mb-3">Reset filters to view all {combos.length} configured pipelines.</p>
@@ -364,7 +375,7 @@ export default function CombosPage() {
               </div>
             </Card>
           ) : (
-            <div className="flex flex-col gap-3.5">
+            <div className="flex flex-col gap-3">
               {filteredCombos.map((combo) => (
                 <ComboCard
                   key={combo.id}
@@ -387,26 +398,26 @@ export default function CombosPage() {
           )}
         </div>
 
-        {/* Right: Sticky Inspector Rail (Strategy Mix, Circuit-Breaker Locks, Zero-Config Catalog) */}
+        {/* Right: Sticky Inspector Rail (Strategy Matrix, Locks, Templates) */}
         <aside className="flex flex-col gap-4 xl:sticky xl:top-4">
-          <Card padding="sm" className="hyperion-card border border-border/70">
-            <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+          <Card padding="sm" className="border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+            <div className="flex items-center justify-between border-b border-border pb-2.5 mb-3">
               <div>
-                <div className="font-mono text-[10px] uppercase tracking-wider text-cyan-400">Strategy Matrix</div>
-                <div className="text-sm font-semibold text-text-main">Pipeline Routing Mix</div>
+                <div className="text-xs font-semibold text-text-main">Strategy Mix</div>
+                <div className="text-[11px] text-text-muted">Click to filter pipeline routing</div>
               </div>
-              <span className="rounded-md bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 font-mono text-[10px] text-cyan-400">
-                {combos.length} total
+              <span className="rounded-md bg-bg-alt border border-border px-2 py-0.5 text-[11px] font-medium text-text-main tabular-nums">
+                {combos.length}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: "fallback", label: "Fallback", dot: "bg-amber-400" },
-                { id: "round-robin", label: "Round Robin", dot: "bg-cyan-400" },
-                { id: "cache-optimized", label: "Cache-Opt", dot: "bg-emerald-400" },
-                { id: "p2c", label: "P2C", dot: "bg-violet-400" },
-                { id: "fusion", label: "Fusion", dot: "bg-fuchsia-400" },
-                { id: "other", label: "Other", dot: "bg-slate-400" },
+                { id: "fallback", label: "Fallback", dot: "bg-text-main" },
+                { id: "round-robin", label: "Round Robin", dot: "bg-text-muted" },
+                { id: "cache-optimized", label: "Cache-Opt", dot: "bg-[#a6c23f]" },
+                { id: "p2c", label: "P2C", dot: "bg-text-subtle" },
+                { id: "fusion", label: "Fusion", dot: "bg-text-main" },
+                { id: "other", label: "Other", dot: "bg-border-strong" },
               ].map((s) => {
                 const count = strategyBreakdown[s.id] || 0;
                 const active = strategyFilter === s.id;
@@ -415,17 +426,17 @@ export default function CombosPage() {
                     key={s.id}
                     type="button"
                     onClick={() => setStrategyFilter(active ? "all" : s.id)}
-                    className={`flex items-center justify-between rounded-xl border px-2.5 py-2 text-left text-xs transition-all ${
+                    className={`flex items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs transition-colors cursor-pointer ${
                       active
-                        ? "border-cyan-400/50 bg-cyan-500/12 text-text-main"
-                        : "border-border/60 bg-black/[0.02] dark:bg-white/[0.02] text-text-muted hover:border-border"
+                        ? "border-text-main bg-surface-2 text-text-main font-medium"
+                        : "border-border bg-bg-alt/60 text-text-muted hover:text-text-main hover:bg-surface-2/60"
                     }`}
                   >
                     <span className="flex items-center gap-1.5 truncate">
                       <span className={`size-2 rounded-full ${s.dot}`} />
                       <span className="truncate">{s.label}</span>
                     </span>
-                    <span className="font-mono font-bold text-text-main">{count}</span>
+                    <span className="font-mono font-semibold text-text-main tabular-nums">{count}</span>
                   </button>
                 );
               })}
@@ -518,7 +529,8 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
 
   const maxContext = useMemo(() => {
     let maxCw = 0;
-    for (const m of combo.models || []) {
+    for (const entry of combo.models || []) {
+      const m = getComboModelName(entry);
       const cw = modelCaps[m]?.contextWindow ||
                  contextByFullModel[m] ||
                  resolveContextWindow(contextByFullModel, m) ||
@@ -530,98 +542,99 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
 
   const copyText = withClaudeCodeSuffix(combo.name, maxContext);
 
-  const stratColorMap = {
-    fallback: "from-amber-400/80 via-cyan-400/70 to-emerald-400/70",
-    "round-robin": "from-cyan-400/80 via-sky-400/70 to-indigo-400/70",
-    p2c: "from-violet-400/80 via-fuchsia-400/70 to-cyan-400/70",
-    "cache-optimized": "from-emerald-400/80 via-teal-400/70 to-cyan-400/70",
-    fusion: "from-fuchsia-500/85 via-amber-400/75 to-cyan-400/75",
-  };
-  const topStrip = stratColorMap[current] || "from-cyan-400/70 via-amber-400/60 to-emerald-400/60";
-
   return (
     <Card
       padding="none"
-      className="group hyperion-card relative overflow-hidden border border-border/70 hover:border-cyan-500/40 transition-all"
+      className="group relative overflow-hidden border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-border-strong transition-colors"
     >
-      <div className={`h-0.5 w-full bg-gradient-to-r ${topStrip}`} />
       <div className="p-4 flex min-w-0 flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="size-10 rounded-xl bg-gradient-to-br from-cyan-500/15 to-amber-500/10 border border-cyan-500/25 flex flex-col items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-cyan-400 text-[18px]">hub</span>
-            <span className="text-[9px] font-mono text-text-muted leading-none mt-0.5">{combo.models.length}h</span>
+          <div className="size-10 rounded-lg bg-bg-alt border border-border flex flex-col items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-text-main text-[17px]">hub</span>
+            <span className="text-[9px] font-mono text-text-muted leading-none mt-0.5 tabular-nums">{combo.models.length}h</span>
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <code
                 onClick={(e) => { e.stopPropagation(); onCopy(copyText, `combo-${combo.id}`); }}
-                className="inline-flex items-center gap-1.5 cursor-pointer truncate rounded-lg bg-black/5 dark:bg-white/[0.04] border border-border/60 px-2.5 py-0.5 font-mono text-sm font-semibold text-text-main hover:border-cyan-500/40 hover:text-cyan-400 transition-colors"
+                className="inline-flex items-center gap-1.5 cursor-pointer truncate rounded-lg bg-bg-alt border border-border px-2.5 py-0.5 font-mono text-sm font-semibold text-text-main hover:border-text-main transition-colors"
                 title={`Click to copy combo name (${copyText})`}
               >
                 <span>{combo.name}</span>
                 {copied === `combo-${combo.id}` && (
-                  <span className="text-[10px] font-sans font-medium text-emerald-400">Copied</span>
+                  <span className="text-[10px] font-sans font-medium text-[#6c8618] dark:text-[#a6c23f]">Copied</span>
                 )}
               </code>
               {maxContext > 0 && (
-                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10px] ${
-                  maxContext >= 1000000
-                    ? "bg-purple-500/15 text-purple-400 border border-purple-500/30 font-semibold"
-                    : maxContext >= 200000
-                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                    : "bg-sidebar text-text-muted border border-border/60"
-                }`}>
+                <span className="inline-flex items-center rounded-md px-2 py-0.5 font-mono text-[11px] bg-bg-alt text-text-main border border-border">
                   {maxContext >= 1000000 ? `${(maxContext / 1000000).toFixed(1).replace(/\.0$/, "")}M` : `${Math.round(maxContext / 1000)}k`}
                 </span>
               )}
-              <span className="rounded-md bg-white/[0.03] border border-border/50 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+              <span className="rounded-md bg-bg-alt border border-border px-2 py-0.5 text-[11px] font-medium text-text-muted">
                 {combo.models.length} {combo.models.length === 1 ? "node" : "hops"}
               </span>
             </div>
 
-            {/* Visual Routing Pipeline Chain */}
-            <div className="mt-2.5 flex min-w-0 flex-wrap items-center gap-1.5">
+            {/* Clarivo Workflow Editor Connected Pipeline Chain */}
+            <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No pipeline hops configured</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <div key={index} className="inline-flex items-center gap-1.5 min-w-0">
-                    {index > 0 && (
-                      <span className="text-[11px] font-mono text-cyan-400/70 select-none">→</span>
-                    )}
-                    <code className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-black/[0.03] dark:bg-white/[0.03] px-2 py-1 font-mono text-[11px] text-text-main">
-                      <span className="inline-flex size-4 items-center justify-center rounded bg-cyan-500/15 text-[9px] font-bold text-cyan-400">
-                        {index + 1}
-                      </span>
-                      <span className="truncate max-w-[220px]">{model}</span>
-                      <CapacityBadges caps={modelCaps[model]} />
-                    </code>
-                  </div>
-                ))
+                combo.models.slice(0, 3).map((entry, index) => {
+                  const modelName = getComboModelName(entry);
+                  const weight = getComboModelWeight(entry);
+                  return (
+                    <div key={index} className="inline-flex items-center gap-2 min-w-0">
+                      {index > 0 && (
+                        <span className="material-symbols-outlined text-[14px] text-text-subtle select-none">
+                          arrow_forward
+                        </span>
+                      )}
+                      <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg-alt px-2.5 py-1.5 text-[11px] text-text-main">
+                        <span
+                          className={`inline-flex h-4 px-1.5 items-center justify-center rounded font-mono text-[10px] font-semibold ${
+                            index === 0
+                              ? "bg-[#111111] text-white dark:bg-[#fafafa] dark:text-[#111111]"
+                              : "bg-surface border border-border text-text-muted"
+                          }`}
+                        >
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <code className="font-mono truncate max-w-[210px]">{modelName}</code>
+                        {weight !== null && (
+                          <span className="rounded bg-surface border border-border px-1.5 py-0.2 font-mono text-[10px] text-text-muted">
+                            {weight}%
+                          </span>
+                        )}
+                        <CapacityBadges caps={modelCaps[modelName]} />
+                      </div>
+                    </div>
+                  );
+                })
               )}
               {combo.models.length > 3 && (
-                <span className="inline-flex items-center rounded-lg border border-dashed border-border/60 px-2 py-1 font-mono text-[10px] text-text-muted">
-                  +{combo.models.length - 3} more hops
+                <span className="inline-flex items-center rounded-lg border border-dashed border-border px-2.5 py-1 font-mono text-[11px] text-text-muted">
+                  +{combo.models.length - 3} more
                 </span>
               )}
             </div>
 
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
-              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-medium text-fuchsia-400">Fusion Judge</span>
+              <div className="mt-2.5 flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-medium text-text-muted">Fusion Judge</span>
                 <button
                   onClick={() => setShowJudgeSelect(true)}
-                  className="inline-flex max-w-full items-center gap-1 rounded-md border border-dashed border-fuchsia-400/40 bg-fuchsia-500/5 px-2 py-0.5 font-mono text-[11px] text-fuchsia-300 hover:border-fuchsia-400 hover:bg-fuchsia-500/10 transition-colors"
+                  className="inline-flex max-w-full items-center gap-1 rounded-md border border-dashed border-border bg-bg-alt px-2 py-0.5 font-mono text-[11px] text-text-main hover:border-text-main transition-colors cursor-pointer"
                   title="Pick the model that fuses panel answers"
                 >
                   <span className="material-symbols-outlined text-[13px]">gavel</span>
-                  <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
+                  <span className="truncate">{judge || `Auto — ${getComboModelName(combo.models[0]) || "first model"}`}</span>
                 </button>
                 {judge && (
                   <button
                     onClick={() => onSetStrategy({ judgeModel: "" })}
-                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
                     title="Reset judge to Auto"
                   >
                     <span className="material-symbols-outlined text-[13px]">close</span>
@@ -633,7 +646,7 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
         </div>
 
         {/* Actions Capsule */}
-        <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:items-center lg:gap-3 lg:shrink-0">
+        <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:items-center lg:gap-2.5 lg:shrink-0">
           <div className="flex items-center gap-1.5 w-full lg:w-[225px]">
             <div className="flex-1 min-w-0">
               <Select
@@ -650,7 +663,7 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
                   e.stopPropagation();
                   onOpenStrategyHelp(current, combo.name);
                 }}
-                className="size-8 rounded-lg text-text-muted hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors flex items-center justify-center shrink-0 border border-border/60 hover:border-cyan-500/30"
+                className="size-8 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors flex items-center justify-center shrink-0 border border-border cursor-pointer"
                 title="Strategy Guide & Details"
                 aria-label="Strategy Guide"
               >
@@ -659,31 +672,31 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-1 rounded-xl border border-border/60 bg-black/[0.02] dark:bg-white/[0.02] p-1 lg:flex">
+          <div className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-bg-alt p-1 lg:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(copyText, `combo-${combo.id}`); }}
-              className="flex flex-col items-center rounded-lg px-2.5 py-1 text-text-muted transition-colors hover:bg-cyan-500/10 hover:text-cyan-400"
+              className="flex flex-col items-center rounded-md px-2.5 py-1 text-text-muted transition-colors hover:bg-surface hover:text-text-main cursor-pointer"
               title={`Copy combo name (${copyText})`}
             >
-              <span className="material-symbols-outlined text-[17px]">
+              <span className="material-symbols-outlined text-[16px]">
                 {copied === `combo-${combo.id}` ? "check" : "content_copy"}
               </span>
               <span className="text-[10px] leading-tight">Copy</span>
             </button>
             <button
               onClick={onEdit}
-              className="flex flex-col items-center rounded-lg px-2.5 py-1 text-text-muted transition-colors hover:bg-amber-500/10 hover:text-amber-400"
+              className="flex flex-col items-center rounded-md px-2.5 py-1 text-text-muted transition-colors hover:bg-surface hover:text-text-main cursor-pointer"
               title="Edit"
             >
-              <span className="material-symbols-outlined text-[17px]">edit</span>
+              <span className="material-symbols-outlined text-[16px]">edit</span>
               <span className="text-[10px] leading-tight">Edit</span>
             </button>
             <button
               onClick={onDelete}
-              className="flex flex-col items-center rounded-lg px-2.5 py-1 text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+              className="flex flex-col items-center rounded-md px-2.5 py-1 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500 cursor-pointer"
               title="Delete"
             >
-              <span className="material-symbols-outlined text-[17px]">delete</span>
+              <span className="material-symbols-outlined text-[16px]">delete</span>
               <span className="text-[10px] leading-tight">Delete</span>
             </button>
           </div>
@@ -715,18 +728,23 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 999 : undefined,
   };
+  const modelName = getComboModelName(model);
+  const weight = getComboModelWeight(model);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(model);
+  const [draft, setDraft] = useState(modelName);
   const commit = () => {
     const trimmed = draft.trim();
-    if (trimmed && trimmed !== model) onEdit(trimmed);
-    else setDraft(model);
+    if (trimmed && trimmed !== modelName) {
+      onEdit(weight !== null && typeof model === "object" ? { ...model, model: trimmed } : trimmed);
+    } else {
+      setDraft(modelName);
+    }
     setEditing(false);
   };
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter") commit();
-    if (e.key === "Escape") { setDraft(model); setEditing(false); }
+    if (e.key === "Escape") { setDraft(modelName); setEditing(false); }
   };
 
   return (
@@ -769,7 +787,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
           onClick={() => setEditing(true)}
           title="Click to edit"
         >
-          {model}
+          {modelName}{weight !== null ? ` (${weight}%)` : ""}
         </div>
       )}
 
@@ -869,13 +887,13 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) {
+    if (!models.some((m) => getComboModelName(m) === model.value)) {
       setModels([...models, model.value]);
     }
   };
 
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels(models.filter((m) => getComboModelName(m) !== model.value));
   };
 
   const handleRemoveModel = (index) => {
@@ -1001,7 +1019,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           modelAliases={modelAliases}
           title="Add Model to Combo"
           kindFilter={kindFilter}
-          addedModelValues={models}
+          addedModelValues={models.map(getComboModelName)}
           closeOnSelect={false}
         />
       )}
