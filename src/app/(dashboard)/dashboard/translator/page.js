@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Card, Button } from "@/shared/components";
+import { Card, Button, PageHero } from "@/shared/components";
+import { SlidersOutlined } from "@ant-design/icons";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import dynamic from "next/dynamic";
 
@@ -211,23 +212,30 @@ export default function TranslatorPage() {
   };
 
   return (
-    <div className="p-8 space-y-3">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
-          <p className="text-sm text-text-muted mt-1">Replay request flow — matches log files</p>
-        </div>
-        {meta && (
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <MetaBadge label="src" value={meta.sourceFormat} color="blue" />
-            <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
-            <MetaBadge label="dst" value={meta.targetFormat} color="orange" />
-            <MetaBadge label="provider" value={meta.provider} color="green" />
-            <MetaBadge label="model" value={meta.model} color="purple" />
-          </div>
-        )}
-      </div>
+    <div className="p-4 sm:p-6 space-y-4">
+      <PageHero
+        eyebrow="PROTOCOL TRANSLATION SANDBOX · 7-STEP PIPELINE"
+        title="Translator Debugger"
+        description="Step-by-step replay & inspector across Client Request → Source → OpenAI IR → Upstream Target → Client SSE output."
+        icon={<SlidersOutlined />}
+        accent="cyan"
+        badge={{
+          label: meta ? `${meta.sourceFormat} ➔ ${meta.targetFormat}` : "7-STEP REPLAY",
+          color: "cyan",
+          pulse: !!meta,
+        }}
+        actions={
+          meta && (
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <MetaBadge label="src" value={meta.sourceFormat} color="blue" />
+              <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
+              <MetaBadge label="dst" value={meta.targetFormat} color="orange" />
+              <MetaBadge label="provider" value={meta.provider} color="green" />
+              <MetaBadge label="model" value={meta.model} color="purple" />
+            </div>
+          )
+        }
+      />
 
       {STEPS.map((step) => {
         const action = getAction(step.id);
@@ -235,7 +243,7 @@ export default function TranslatorPage() {
         const content = contents[step.id] || "";
 
         return (
-          <Card key={step.id}>
+          <Card key={step.id} className="hyperion-card border border-border/70">
             <div className="p-4 space-y-3">
               {/* Step header */}
               <div className="flex items-center justify-between">

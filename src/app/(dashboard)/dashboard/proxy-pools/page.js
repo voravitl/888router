@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
+import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal, PageHero } from "@/shared/components";
+import { ClusterOutlined } from "@ant-design/icons";
 import { useNotificationStore } from "@/store/notificationStore";
 
 function getStatusVariant(status) {
@@ -572,26 +573,41 @@ export default function ProxyPoolsPage() {
     );
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:gap-6 sm:px-0">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold sm:text-2xl">Proxy Pools</h1>
-        </div>
+  const activeProxyCount = proxyPools.filter((p) => p.isActive !== false).length;
 
-        <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
-          <div className="relative" ref={relayMenuRef}>
-            <Button
-              size="sm"
-              variant="secondary"
-              icon="rocket_launch"
-              onClick={() => setShowRelayMenu(!showRelayMenu)}
-            >
-              Deploy Relay
-              <span className="material-symbols-outlined ml-1 text-[18px]">
-                {showRelayMenu ? "expand_less" : "expand_more"}
-              </span>
-            </Button>
+  return (
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-1 sm:gap-6 sm:px-0">
+      <PageHero
+        eyebrow="OUTBOUND EGRESS & RELAY MESH · PROXY POOLS"
+        title="Proxy Pools & Edge Relays"
+        description="Manage HTTP/SOCKS5 upstream proxy pools, run batch liveness probes, or deploy serverless edge relays (Cloudflare / Vercel / Deno)."
+        icon={<ClusterOutlined />}
+        accent="cyan"
+        badge={{
+          label: `${activeProxyCount} ACTIVE NODES`,
+          color: activeProxyCount > 0 ? "cyan" : "amber",
+          pulse: activeProxyCount > 0,
+        }}
+        stats={[
+          { label: "Total Proxies", value: proxyPools.length, color: "#06b6d4" },
+          { label: "Active", value: activeProxyCount, color: "#10b981" },
+          { label: "Selected", value: selectedIds.length, color: "#f59e0b" },
+          { label: "Health Check", value: healthChecking ? `${healthProgress.current}/${healthProgress.total}` : "IDLE", color: "#a855f7" },
+        ]}
+        actions={
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
+            <div className="relative" ref={relayMenuRef}>
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="rocket_launch"
+                onClick={() => setShowRelayMenu(!showRelayMenu)}
+              >
+                Deploy Relay
+                <span className="material-symbols-outlined ml-1 text-[18px]">
+                  {showRelayMenu ? "expand_less" : "expand_more"}
+                </span>
+              </Button>
 
             {showRelayMenu && (
               <div className="absolute left-0 top-full z-50 mt-1 w-48 rounded-xl border border-black/10 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-zinc-900 sm:left-auto sm:right-0">
@@ -634,9 +650,10 @@ export default function ProxyPoolsPage() {
           </Button>
           <Button size="sm" icon="add" onClick={openCreateModal}>Add Proxy Pool</Button>
         </div>
-      </div>
+        }
+      />
 
-      <Card>
+      <Card className="hyperion-card border border-border/70">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           {proxyPools.length > 0 && (
             <label className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer">

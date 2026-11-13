@@ -879,29 +879,32 @@ export default function BasicChatPageClient() {
     : "Choose a combo or connected provider model";
 
   return (
-    <div className="relative flex-1 flex flex-col h-full min-h-0 min-w-0 bg-[#212121] text-white overflow-hidden">
+    <div className="relative flex-1 flex flex-col h-full min-h-0 min-w-0 bg-[radial-gradient(ellipse_at_top,rgba(6,182,212,0.08),transparent_55%),#090d16] text-white overflow-hidden">
       <div className="relative mx-auto flex flex-1 h-full min-h-0 w-full max-w-4xl flex-col">
-        <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 lg:px-6">
+        <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 lg:px-6 border-b border-white/[0.06]">
           <div ref={modelMenuRef} className="relative">
             <button
               type="button"
               onClick={() => setModelMenuOpen((value) => !value)}
-              className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:bg-white/8"
+              className="flex items-center gap-3 rounded-2xl border border-cyan-500/25 bg-white/[0.04] px-4 py-2.5 text-left transition hover:border-cyan-400/50 hover:bg-white/[0.07] shadow-[0_0_25px_-12px_rgba(6,182,212,0.45)]"
             >
+              <span className="size-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-white">{modelLabel}</span>
-                  <span className="material-symbols-outlined text-[18px] text-white/70">expand_more</span>
+                  <span className="material-symbols-outlined text-[18px] text-cyan-400/80">expand_more</span>
                 </div>
-                <p className="truncate text-xs text-white/55">{modelSubLabel}</p>
+                <p className="truncate font-mono text-[11px] text-white/60">{modelSubLabel}</p>
               </div>
             </button>
 
             {modelMenuOpen ? (
-              <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-[20px] border border-white/10 bg-[#262626] shadow-2xl shadow-black/50">
-                <div className="border-b border-white/10 px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.22em] text-white/45">Models</p>
-                  <p className="text-sm text-white/75">Combos first, then connected providers</p>
+              <div className="absolute left-0 top-[calc(100%+10px)] z-30 w-[min(520px,calc(100vw-2rem))] overflow-hidden rounded-[20px] border border-cyan-500/25 bg-[#0f1623]/95 backdrop-blur-xl shadow-2xl shadow-black/70">
+                <div className="border-b border-white/10 px-4 py-3 flex items-center justify-between">
+                  <div>
+                    <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400">Model Selector</p>
+                    <p className="text-sm text-white/80">Combos first, then connected providers</p>
+                  </div>
                 </div>
                 <div className="max-h-[60vh] overflow-y-auto p-2 custom-scrollbar">
                   {providerGroups.map((group) => (

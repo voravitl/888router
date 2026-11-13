@@ -14,7 +14,8 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { Card, Button, Input, Modal, Toggle } from "@/shared/components";
+import { Card, Button, Input, Modal, Toggle, PageHero } from "@/shared/components";
+import { ThunderboltOutlined } from "@ant-design/icons";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import {
@@ -279,9 +280,28 @@ export default function TokenSaverClient() {
   const keptPct = Math.max(0, 100 - pct);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
+      <PageHero
+        eyebrow="RTK STREAM OPTIMIZER · BANDWIDTH & CONTEXT SAVER"
+        title="Token Saver Studio"
+        description="Measure before/after prompt payload compression across live tool outputs and configure compact response dialects."
+        icon={<ThunderboltOutlined />}
+        accent="emerald"
+        badge={{
+          label: `${pct}% PAYLOAD SAVED (${summaryPeriod.toUpperCase()})`,
+          color: "green",
+          pulse: pct > 0,
+        }}
+        stats={[
+          { label: "Saved Ratio", value: `${pct}%`, color: "#10b981" },
+          { label: "Before Output", value: fmtBytes(rtk?.bytesBefore), color: "#94a3b8" },
+          { label: "After Output", value: fmtBytes(rtk?.bytesAfter), color: "#06b6d4" },
+          { label: "Bytes Saved", value: fmtBytes(rtk?.bytesSaved), color: "#f59e0b" },
+        ]}
+      />
+
       {/* Aggregated before/after savings — primary reason this page is in the sidebar */}
-      <Card id="savings-report">
+      <Card id="savings-report" className="hyperion-card border border-border/70">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-semibold flex items-center gap-2">

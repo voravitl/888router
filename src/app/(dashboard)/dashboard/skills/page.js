@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, Badge } from "@/shared/components";
+import { Card, Badge, PageHero } from "@/shared/components";
+import { BookOutlined } from "@ant-design/icons";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 function absoluteUrl(path) {
@@ -118,10 +119,29 @@ export default function SkillsPage() {
   const entryPath = entrySkill ? `${data.rawBase}/${entrySkill.id}` : "";
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <Card padding="md">
-        <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
-        <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">
+    <div className="max-w-5xl mx-auto space-y-6">
+      <PageHero
+        eyebrow="GATEWAY KNOWLEDGE INJECTION · AGENT SKILLS"
+        title="Router Agent Skills"
+        description="Serve live markdown playbooks and API integration skills directly from your 888router node to Claude Code, Cursor, or Codex."
+        icon={<BookOutlined />}
+        accent="violet"
+        badge={{
+          label: `${data?.skills?.length || 0} SKILLS PUBLISHED`,
+          color: "violet",
+          pulse: (data?.skills?.length || 0) > 0,
+        }}
+        stats={[
+          { label: "Total Skills", value: data?.skills?.length || 0, color: "#a855f7" },
+          { label: "Entry Skill", value: entrySkill?.id || "—", color: "#06b6d4" },
+          { label: "Status", value: error ? "ERROR" : "ONLINE", color: error ? "#ef4444" : "#10b981" },
+          { label: "Endpoint", value: "RAW MD", color: "#f59e0b" },
+        ]}
+      />
+
+      <Card padding="md" className="hyperion-card border border-cyan-500/25">
+        <div className="text-[11px] font-mono uppercase tracking-wider text-cyan-400 mb-2">Quick Boot Prompt (Paste into AI Client)</div>
+        <div className="px-3.5 py-2.5 rounded-xl bg-black/30 border border-border/60 font-mono text-[12px] text-text-main">
           {data ? `Read this skill and use it: ${entryPath}` : "Loading…"}
         </div>
       </Card>
