@@ -486,6 +486,7 @@ export default function ProvidersPage() {
             </div>
             <Link
               href={`/dashboard/providers/${record.id}`}
+              prefetch={false}
               onClick={(e) => e.stopPropagation()}
               className="font-medium text-text-main hover:underline truncate"
             >
@@ -578,6 +579,7 @@ export default function ProvidersPage() {
           </button>
           <Link
             href={`/dashboard/providers/${record.id}`}
+            prefetch={false}
             className="px-2.5 py-1 rounded-md bg-[#111111] text-white dark:bg-[#fafafa] dark:text-[#111111] text-[11px] font-medium hover:opacity-85 transition-opacity"
           >
             Config →
@@ -711,14 +713,14 @@ export default function ProvidersPage() {
         </div>
       )}
 
-      <AntDrawer
-        open={Boolean(drawerProvider)}
-        onClose={() => setDrawerProvider(null)}
-        title={drawerProvider ? drawerProvider.name : "Provider"}
-        size="default"
-        destroyOnHidden
-      >
-        {drawerProvider && (
+      {Boolean(drawerProvider) && (
+        <AntDrawer
+          open
+          onClose={() => setDrawerProvider(null)}
+          title={drawerProvider.name}
+          size="default"
+          destroyOnHidden
+        >
           <div className="space-y-4 font-mono text-xs">
             <div className="border border-border divide-y divide-border-subtle">
               <div className="flex justify-between px-3 py-2">
@@ -738,7 +740,7 @@ export default function ProvidersPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Link href={`/dashboard/providers/${drawerProvider.id}`} className="flex-1">
+              <Link href={`/dashboard/providers/${drawerProvider.id}`} prefetch={false} className="flex-1">
                 <Button variant="primary" fullWidth icon="settings">
                   Manage Accounts & OAuth
                 </Button>
@@ -792,8 +794,8 @@ export default function ProvidersPage() {
               )}
             </div>
           </div>
-        )}
-      </AntDrawer>
+        </AntDrawer>
+      )}
 
       {/* Connected Backends Strip (Cards view) */}
       {viewMode === "grid" && connectedProviderCount > 0 && (
@@ -814,6 +816,7 @@ export default function ProvidersPage() {
                 <Link
                   key={provId}
                   href={`/dashboard/providers/${provId}`}
+                  prefetch={false}
                   className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg-alt px-2 py-1 text-xs hover:border-text-main transition-colors"
                 >
                   <span
@@ -1149,7 +1152,7 @@ function ProviderCard({ providerId, provider, stats, authType, compact = false, 
   const accentColor = provider.color || "#f59e0b";
 
   return (
-    <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
+    <Link href={`/dashboard/providers/${providerId}`} prefetch={false} className="group min-w-0">
       <Card
         padding="xs"
         hover
@@ -1275,7 +1278,7 @@ function ApiKeyProviderCard({
   };
 
   return (
-    <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
+    <Link href={`/dashboard/providers/${providerId}`} prefetch={false} className="group min-w-0">
       <Card
         padding="xs"
         hover

@@ -9,7 +9,12 @@ import { resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
 let cache = null;
 let inflight = null;
 
-async function loadContextWindows() {
+export function resetModelsPayloadCacheForTest() {
+  cache = null;
+  inflight = null;
+}
+
+export async function loadModelsPayload() {
   if (cache) return cache;
   if (inflight) return inflight;
   inflight = (async () => {
@@ -22,15 +27,17 @@ async function loadContextWindows() {
         return null;
       }
       const data = await res.json();
-      const map = {};
+      const contextByFullModel = {};
+      const capsByFullModel = {};
       for (const m of data.models || []) {
         const id = m?.fullModel || m?.id;
         if (!id) continue;
+        if (m?.caps) capsByFullModel[id] = m.caps;
         const cw = m?.caps?.contextWindow;
-        if (cw) map[id] = cw;
+        if (cw) contextByFullModel[id] = cw;
       }
-      cache = map;
-      return map;
+      cache = { contextByFullModel, capsByFullModel };
+      return cache;
     } catch (e) {
       console.warn("[useModelContextWindows] /api/models fetch error", e);
       return null;
@@ -48,7 +55,7 @@ async function loadContextWindows() {
  * (dispatched by the providers page when models are added/removed/aliased).
  */
 export function useModelContextWindows() {
-  const [map, setMap] = useState(cache);
+  const [map, setMap] = useState(cache?.contextByFullModel || null);
   const [ready, setReady] = useState(!!cache);
 
   useEffect(() => {
@@ -57,18 +64,18 @@ export function useModelContextWindows() {
       cache = null;
       setMap(null);
       setReady(false);
-      loadContextWindows().then((m) => {
-        if (alive && m) {
-          setMap(m);
+      loadModelsPayload().then((payload) => {
+        if (alive && payload) {
+          setMap(payload.contextByFullModel);
           setReady(true);
         }
       });
     };
 
     if (!cache) {
-      loadContextWindows().then((m) => {
-        if (alive && m) {
-          setMap(m);
+      loadModelsPayload().then((payload) => {
+        if (alive && payload) {
+          setMap(payload.contextByFullModel);
           setReady(true);
         }
       });

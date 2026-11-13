@@ -28,7 +28,7 @@ import {
 } from "@ant-design/icons";
 import { Card, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, StrategyHelpModal, PageHero } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { useModelContextWindows, resolveContextWindow } from "@/shared/hooks/useModelContextWindows";
+import { useModelContextWindows, resolveContextWindow, loadModelsPayload } from "@/shared/hooks/useModelContextWindows";
 import { withClaudeCodeSuffix } from "@/shared/utils/claudeCodeModelId";
 import { ACTIVE_STRATEGY_IDS } from "@/shared/constants/comboStrategies";
 
@@ -139,11 +139,11 @@ export default function CombosPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [combosRes, providersRes, settingsRes, modelsRes, aliasesRes, locksRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes, modelsPayload, aliasesRes, locksRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
         fetch("/api/settings"),
-        fetch("/api/models"),
+        loadModelsPayload(),
         fetch("/api/models/alias"),
         fetch("/api/combos/locks"),
       ]);
@@ -161,11 +161,8 @@ export default function CombosPage() {
       if (providersRes.ok) setActiveProviders(providersData.connections || []);
       if (aliasesRes.ok) setModelAliases(aliasesData.aliases || {});
       if (locksRes.ok) setLocks(locksData.locks || []);
-      if (modelsRes.ok) {
-        const md = await modelsRes.json();
-        const map = {};
-        for (const m of md.models || []) if (m.caps) map[m.fullModel] = m.caps;
-        setModelCaps(map);
+      if (modelsPayload?.capsByFullModel) {
+        setModelCaps(modelsPayload.capsByFullModel);
       }
       setComboStrategies(settingsData.comboStrategies || {});
       setGlobalComboStrategy(settingsData.comboStrategy || "fallback");

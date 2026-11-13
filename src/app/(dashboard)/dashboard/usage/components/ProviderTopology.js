@@ -85,24 +85,24 @@ export default function ProviderTopology({
   const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
 
   const firstSeenRef = useRef({});
-  const [tick, setTick] = useState(0);
+  const [expiryTick, setExpiryTick] = useState(0);
 
   useEffect(() => {
     const seen = firstSeenRef.current;
     const now = Date.now();
+    let nextExpiryAt = Number.POSITIVE_INFINITY;
     for (const p of rawActiveSet) {
       if (!seen[p]) seen[p] = now;
+      const exp = seen[p] + FE_ACTIVE_TIMEOUT_MS;
+      if (exp > now && exp < nextExpiryAt) nextExpiryAt = exp;
     }
     for (const p of Object.keys(seen)) {
       if (!rawActiveSet.has(p)) delete seen[p];
     }
-  }, [rawActiveSet]);
-
-  useEffect(() => {
-    if (rawActiveSet.size === 0) return;
-    const id = setInterval(() => setTick((t) => t + 1), FE_ACTIVE_TICK_MS);
-    return () => clearInterval(id);
-  }, [rawActiveSet]);
+    if (!Number.isFinite(nextExpiryAt)) return undefined;
+    const id = setTimeout(() => setExpiryTick((t) => t + 1), Math.max(50, nextExpiryAt - now + 10));
+    return () => clearTimeout(id);
+  }, [rawActiveSet, expiryTick]);
 
   const activeSet = useMemo(() => {
     const now = Date.now();
@@ -112,7 +112,7 @@ export default function ProviderTopology({
       if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
     }
     return filtered;
-  }, [rawActiveSet, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rawActiveSet, expiryTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Aggregate active in-flight counts per provider
   const activeCountByProvider = useMemo(() => {
@@ -262,6 +262,18 @@ export default function ProviderTopology({
   const targetPortRefs = useRef([]);
   const [busPaths, setBusPaths] = useState({ width: 0, height: 0, left: [], right: [] });
 
+  const visibleTargetMap = useMemo(() => {
+    const map = new Map();
+    for (const target of visibleTargets) map.set(target.id, target);
+    return map;
+  }, [visibleTargets]);
+
+  const busStructureKey = useMemo(
+    () =>
+      `${ingressNodes.map((n) => n.endpoint).join("|")}::${visibleTargets.map((t) => t.id).join("|")}`,
+    [ingressNodes, visibleTargets]
+  );
+
   const recomputeBus = useCallback(() => {
     const container = canvasRef.current;
     const coreIn = coreInPortRef.current;
@@ -294,9 +306,7 @@ export default function ProviderTopology({
         return {
           id: `in-${node.endpoint}`,
           d: `M ${p.x} ${p.y} C ${cx} ${p.y}, ${cx} ${inPt.y}, ${inPt.x} ${inPt.y}`,
-          active: activeSet.size > 0 && node.requests > 0,
           hasTraffic: node.requests > 0,
-          end: p,
         };
       })
       .filter(Boolean);
@@ -309,9 +319,8 @@ export default function ProviderTopology({
         const cx = (outPt.x + p.x) / 2;
         return {
           id: `out-${target.id}`,
+          targetId: target.id,
           d: `M ${outPt.x} ${outPt.y} C ${cx} ${outPt.y}, ${cx} ${p.y}, ${p.x} ${p.y}`,
-          target,
-          end: p,
         };
       })
       .filter(Boolean);
@@ -322,7 +331,7 @@ export default function ProviderTopology({
       left: leftCurves,
       right: rightCurves,
     });
-  }, [ingressNodes, visibleTargets, activeSet]);
+  }, [busStructureKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (viewMode !== "flow") return;
@@ -335,7 +344,7 @@ export default function ProviderTopology({
       cancelAnimationFrame(id);
       ro.disconnect();
     };
-  }, [viewMode, recomputeBus, selectedTarget]);
+  }, [viewMode, recomputeBus, selectedTarget?.id]);
 
   const activeTotalCount = Object.values(activeCountByProvider).reduce((s, n) => s + n, 0);
 
@@ -440,20 +449,25 @@ export default function ProviderTopology({
                 height={busPaths.height}
                 viewBox={`0 0 ${busPaths.width} ${busPaths.height}`}
               >
-                {busPaths.left.map((edge) => (
-                  <g key={edge.id}>
-                    <path
-                      d={edge.d}
-                      fill="none"
-                      stroke={edge.active ? "#a6c23f" : edge.hasTraffic ? "var(--color-text-muted)" : "var(--color-border-strong)"}
-                      strokeWidth={edge.active ? 2 : edge.hasTraffic ? 1.5 : 1}
-                      strokeDasharray={edge.active ? "6 5" : edge.hasTraffic ? undefined : "3 4"}
-                      className={edge.active ? "mono-flow-dash" : undefined}
-                      strokeLinecap="round"
-                    />
-                  </g>
-                ))}
-                {busPaths.right.map(({ id, d, target }) => {
+                {busPaths.left.map((edge) => {
+                  const isEdgeActive = activeSet.size > 0 && edge.hasTraffic;
+                  return (
+                    <g key={edge.id}>
+                      <path
+                        d={edge.d}
+                        fill="none"
+                        stroke={isEdgeActive ? "#a6c23f" : edge.hasTraffic ? "var(--color-text-muted)" : "var(--color-border-strong)"}
+                        strokeWidth={isEdgeActive ? 2 : edge.hasTraffic ? 1.5 : 1}
+                        strokeDasharray={isEdgeActive ? "6 5" : edge.hasTraffic ? undefined : "3 4"}
+                        className={isEdgeActive ? "mono-flow-dash" : undefined}
+                        strokeLinecap="round"
+                      />
+                    </g>
+                  );
+                })}
+                {busPaths.right.map(({ id, d, targetId }) => {
+                  const target = visibleTargetMap.get(targetId);
+                  if (!target) return null;
                   const stroke = target.error
                     ? "#dc2626"
                     : target.active

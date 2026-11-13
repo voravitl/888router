@@ -1,3 +1,15 @@
+# v0.15.248 (2026-11-13)
+
+## Kiro Quota Reconnect Visibility & Dashboard UI Performance Fix
+- **Kiro OIDC Registration Expiry Persistence & Quota Tracker CTA (`src/lib/oauth/providers.js`, `src/app/api/providers/client/route.js`, `ProviderLimits/utils.js`, `ProviderLimits/index.js`)**:
+  - Persisted `clientSecretExpiresAt` (normalized to ISO UTC) across Kiro device-code OAuth registration -> token polling -> `providerSpecificData`, and projected `clientSecretExpiresAt` in `GET /api/providers/client` without exposing `clientSecret`, `clientId`, or tokens.
+  - Added `getKiroReconnectInfo()` and rendered an inline `Reconnect Kiro` action link (`/dashboard/providers/kiro`) plus `OIDC registration expired <date>` warning when Kiro quota is unavailable due to IAM Identity Center / OIDC expiry.
+- **Dashboard Performance & SPA Navigation Fixes (`ProviderLimits`, `ProviderTopology`, `Header`, `DashboardLayout`, `Sidebar`, `Modal`, `combos`, `providers`)**:
+  - Eliminated 1 Hz full-table Ant Design re-renders on `/dashboard/quota` by extracting `<AutoSyncCountdown>` into an isolated leaf component, stabilizing `refreshAll` (`refreshingAllRef`), memoizing `expandableConfig`, deferring search filtering with `useDeferredValue`, replacing per-row `<AntTooltip>` wrappers with native `title` tooltips, and hydrating `getQuotaCache()` immediately (`hydrateQuotaCacheForConnections`) so accounts display before background refresh completes.
+  - Added `prefetch={false}` on sidebar navigation and provider directory links to prevent `_rsc` prefetch storms over HTTP/1.1, and deduplicated concurrent `/api/models` fetches via `loadModelsPayload()` in `useModelContextWindows.js` + `combos/page.js`.
+  - Removed `key={pathname}` from `<Header>` in `DashboardLayout.js` (stopping `/api/auth/status` refetch on SPA transitions) while keying the `<Header>` breadcrumb node by `pathname` so `RuntimeI18nProvider` never restores stale page titles.
+  - Replaced `ProviderTopology.js` 1s `setInterval` active polling with expiry-scheduled `setTimeout` and structural `busStructureKey` recalculation, and deferred mounting closed `<Modal>`, `<AntDrawer>`, and `<CommandPalette>` overlays.
+
 # v0.15.247 (2026-11-13)
 
 ## Dark Mode Chart Contrast Fix & Monochrome Redesign of Quota Tracker & Combos

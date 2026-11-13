@@ -100,7 +100,7 @@ export default function DashboardLayout({ children }) {
 
       {/* Main Content */}
       <main className="flex flex-col flex-1 h-full min-w-0 overflow-hidden bg-bg">
-        <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} />
+        <Header onMenuClick={() => setSidebarOpen(true)} />
         <div
           className={`flex-1 overflow-y-auto custom-scrollbar ${
             isBasicChat ? "flex flex-col overflow-hidden p-0" : "p-4 lg:p-6"

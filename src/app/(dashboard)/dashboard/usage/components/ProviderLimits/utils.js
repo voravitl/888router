@@ -109,6 +109,53 @@ export function filterQuotaStateByConnections(state, connections) {
   );
 }
 
+export function hydrateQuotaCacheForConnections(cache, connections) {
+  const sourceCache = cache && typeof cache === "object" ? cache : {};
+  const cachedQuotaData = {};
+  const loadingState = {};
+
+  for (const connection of connections || []) {
+    const entry = sourceCache[connection.id];
+    const hasUsableQuota =
+      entry &&
+      typeof entry === "object" &&
+      (Array.isArray(entry.quotas) || typeof entry.message === "string");
+    if (hasUsableQuota) {
+      cachedQuotaData[connection.id] = entry;
+    } else {
+      loadingState[connection.id] = true;
+    }
+  }
+
+  return { cachedQuotaData, loadingState };
+}
+
+export function getKiroReconnectInfo(connection, quotaEntry, nowMs = Date.now()) {
+  if (connection?.provider !== "kiro") {
+    return { needsReconnect: false, href: null, secretExpired: false, expiresAt: null };
+  }
+  const expiresAt = connection?.providerSpecificData?.clientSecretExpiresAt || null;
+  const expMs = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  const secretExpired = Number.isFinite(expMs) && expMs <= nowMs;
+  const msg = typeof quotaEntry?.message === "string" ? quotaEntry.message.toLowerCase() : "";
+  const hasReconnectMessage =
+    msg.includes("reconnect kiro") ||
+    msg.includes("identity center session") ||
+    msg.includes("authentication expired") ||
+    msg.includes("rejected the current token");
+  const hasBadStatus =
+    connection?.testStatus === "expired" || connection?.testStatus === "unavailable";
+  const hasQuotas = Array.isArray(quotaEntry?.quotas) && quotaEntry.quotas.length > 0;
+  const needsReconnect = Boolean(secretExpired || hasReconnectMessage || (hasBadStatus && !hasQuotas));
+
+  return {
+    needsReconnect,
+    href: needsReconnect ? "/dashboard/providers/kiro" : null,
+    secretExpired,
+    expiresAt: Number.isFinite(expMs) ? new Date(expMs).toISOString() : null,
+  };
+}
+
 export function getConnectionsPageRange(pagination) {
   if (!pagination.total) {
     return { start: 0, end: 0 };
