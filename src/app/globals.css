@@ -42,11 +42,13 @@
 
   /* Borders */
   --color-border: #e2e2e2;
+  --color-border-strong: #c4c4c4;
   --color-border-subtle: #efefef;
 
   /* Text */
   --color-text: #111111;
   --color-text-main: #111111;
+  --color-text-primary: #111111;
   --color-text-muted: #6b6b6b;
   --color-text-subtle: #a6a6a6;
 
@@ -95,10 +97,12 @@
   --color-sidebar: #0a0a0b;
 
   --color-border: #26262c;
+  --color-border-strong: #52525b;
   --color-border-subtle: #1c1c21;
 
   --color-text: #fafafa;
   --color-text-main: #fafafa;
+  --color-text-primary: #fafafa;
   --color-text-muted: #a1a1aa;
   --color-text-subtle: #71717a;
 
@@ -157,9 +161,11 @@ select {
   --color-surface-3: var(--color-surface-3);
   --color-sidebar: var(--color-sidebar);
   --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
   --color-border-subtle: var(--color-border-subtle);
   --color-text: var(--color-text);
   --color-text-main: var(--color-text-main);
+  --color-text-primary: var(--color-text-primary);
   --color-text-muted: var(--color-text-muted);
   --color-text-subtle: var(--color-text-subtle);
   --color-accent: #a6c23f;
@@ -509,4 +515,19 @@ button:disabled,
 
 .scan-sweep {
   position: relative;
+}
+
+/* Recharts dark/light tooltip contrast guarantee */
+.recharts-default-tooltip {
+  background-color: var(--color-surface) !important;
+  border-color: var(--color-border) !important;
+  color: var(--color-text-main) !important;
+}
+.recharts-tooltip-label {
+  color: var(--color-text-muted) !important;
+  font-weight: 600 !important;
+}
+.recharts-tooltip-item {
+  color: var(--color-text-main) !important;
+  font-family: var(--font-mono) !important;
 }

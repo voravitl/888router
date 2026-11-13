@@ -377,15 +377,19 @@ export default function HyperionBentoHero({
                   axisLine={false}
                 />
                 <Tooltip
-                  cursor={{ fill: "var(--color-surface-2)", opacity: 0.6 }}
+                  cursor={{ fill: "var(--color-surface-2)", opacity: 0.55 }}
                   contentStyle={{
                     backgroundColor: "var(--color-surface)",
                     border: "1px solid var(--color-border)",
                     borderRadius: "8px",
+                    boxShadow: "var(--shadow-elevated)",
                     fontSize: "12px",
+                    color: "var(--color-text-main)",
                   }}
+                  labelStyle={{ color: "var(--color-text-muted)", fontWeight: 600 }}
+                  itemStyle={{ color: "var(--color-text-main)", fontFamily: "var(--font-mono)" }}
                 />
-                <Bar dataKey="requests" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
+                <Bar dataKey="requests" fill="var(--color-text-main)" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
                   {pulseChart.map((entry, idx) => (
                     <Cell
                       key={entry.label}

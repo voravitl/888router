@@ -390,7 +390,9 @@ export default function TokenSaverClient() {
                       <YAxis tickFormatter={fmtChartBytes} tick={{ fontSize: 11 }} width={40} />
                       <Tooltip
                         formatter={(v) => fmtBytes(v)}
-                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                        contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text-main)" }}
+                        labelStyle={{ color: "var(--color-text-muted)", fontWeight: 600 }}
+                        itemStyle={{ color: "var(--color-text-main)" }}
                       />
                       <Bar dataKey="bytes" name="Size" radius={[6, 6, 0, 0]}>
                         {beforeAfterChart.map((entry) => (
@@ -423,7 +425,9 @@ export default function TokenSaverClient() {
                       <Tooltip
                         formatter={(v, name) => [fmtBytes(v), name === "saved" ? "Saved" : name]}
                         labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ""}
-                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                        contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text-main)" }}
+                        labelStyle={{ color: "var(--color-text-muted)", fontWeight: 600 }}
+                        itemStyle={{ color: "var(--color-text-main)" }}
                       />
                       <Area
                         type="monotone"
@@ -456,7 +460,11 @@ export default function TokenSaverClient() {
                       <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                       <XAxis type="number" tick={{ fontSize: 11 }} />
                       <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 11 }} />
-                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                      <Tooltip
+                        contentStyle={{ fontSize: 12, borderRadius: 8, backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text-main)" }}
+                        labelStyle={{ color: "var(--color-text-muted)", fontWeight: 600 }}
+                        itemStyle={{ color: "var(--color-text-main)" }}
+                      />
                       <Bar dataKey="hits" name="Hits" fill="#6366f1" radius={[0, 6, 6, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
