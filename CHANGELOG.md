@@ -1,3 +1,17 @@
+# v0.15.246 (2026-11-13)
+
+## Monochrome Proof & Precision Slate Redesign + 3-Stage Directed Gateway Flow Topology
+- **Design System & Shell Overhaul (`Ant Design v6` + `Tailwind v4`)**:
+  - Switched default theme to Light Archival Neutral (`#fafafa` / `#ffffff` / `#f2f2f2` / `#e2e2e2` / `#111111`) paired with Dark Obsidian Slate (`#0a0a0b` / `#121215` / `#18181c` / `#26262c` / `#fafafa`), synced across CSS tokens and AntD `darkAlgorithm` (`src/app/globals.css`, `src/shared/components/AntdProvider.js`, `src/shared/constants/config.js`, `src/app/layout.js`).
+  - Reserved `#a6c23f` exclusively as the live operational accent (status dots, active SVG paths, cache-hit meter) while keeping `#dc2626` scoped to error/circuit states.
+  - Added `src/shared/components/CommandPalette.js` (`⌘K` route, provider, and combo quick-switcher) and modernized `Sidebar.js`, `Header.js`, `DashboardLayout.js`, `PageHero.js`, and shared AntD primitives (`Button`, `Card`, `Modal`, `Drawer`, `Input`, `Select`, `Badge`, `SegmentedControl`).
+- **3-Stage Directed Gateway Flow Topology (`ProviderTopology.js`)**:
+  - Replaced legacy `@xyflow/react` radial circle topology with a horizontal 3-stage linear bus (`Ingress Channels` ➔ solid `Policy Core` ➔ ranked `Upstream Targets`) featuring `ResizeObserver`-measured SVG cubic bezier paths, animated `.mono-flow-dash` lines, `Flow | Paths` matrix toggle, standby pool drawer, and node micro-inspector footer wired to real `byProvider`, `byModel`, and `byEndpoint` telemetry (`UsageStats.js`).
+- **Combos, Providers Matrix, Gateway & Usage Surfaces**:
+  - Added `getComboModelName` / `getComboModelWeight` normalization in `src/app/(dashboard)/dashboard/combos/page.js` (eliminating React Error #31 on `{ model, weight }` hops), updated Clarivo-style numbered hop pipelines, and fixed `PageHero` mobile action wrapping (`src/shared/components/PageHero.js`).
+  - Upgraded `dashboard/providers/page.js` to an AntD Matrix `Table` + `Drawer` inspector, `HyperionBentoHero.js` 10-minute Recharts cadence chart with Y-axis headroom, `OverviewCards.js` cache-hit segments, `BasicChatPageClient.js` monochrome studio, `RequestLogger.js`, `UsageTable.js`, `UsageChart.js`, `RequestDetailsTab.js`, `OptimizationSavings.js`, and `/login`.
+  - Documented the system in `DESIGN.md`, `PRODUCT.md`, and `.impeccable/design.json`.
+
 # v0.15.245 (2026-11-13)
 
 ## Fix `/dashboard/combos` React Error #310 & Floating Obsidian Cockpit Shell
