@@ -5,7 +5,9 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, StrategyHelpModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, StrategyHelpModal, PageHero } from "@/shared/components";
+import { Input as AntInput, Segmented } from "antd";
+import { NodeIndexOutlined, PlusOutlined, ReloadOutlined, BookOutlined, SearchOutlined } from "@ant-design/icons";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelContextWindows, resolveContextWindow } from "@/shared/hooks/useModelContextWindows";
 import { withClaudeCodeSuffix } from "@/shared/utils/claudeCodeModelId";
@@ -33,6 +35,8 @@ export default function CombosPage() {
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
   const { contextByFullModel } = useModelContextWindows();
+  const [strategyFilter, setStrategyFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     fetchData();
@@ -214,81 +218,146 @@ export default function CombosPage() {
     );
   }
 
+  const totalHops = useMemo(
+    () => combos.reduce((acc, c) => acc + (Array.isArray(c.models) ? c.models.length : 0), 0),
+    [combos]
+  );
+
+  const filteredCombos = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return combos.filter((combo) => {
+      const strat = comboStrategies[combo.name]?.fallbackStrategy || globalComboStrategy || "fallback";
+      if (strategyFilter === "other") {
+        if (["fallback", "round-robin", "p2c", "cache-optimized", "fusion"].includes(strat)) return false;
+      } else if (strategyFilter !== "all" && strat !== strategyFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        combo.name.toLowerCase().includes(q) ||
+        (Array.isArray(combo.models) && combo.models.some((m) => String(m).toLowerCase().includes(q)))
+      );
+    });
+  }, [combos, comboStrategies, globalComboStrategy, strategyFilter, searchQuery]);
+
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-text-muted mt-1">
-            Group models under one name, then choose a load balancing & failover strategy per combo:
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
-              <span>🥇 Fallback (Order)</span>
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
-              <span>🔄 Round Robin</span>
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
-              <span>🎯 Cache-Optimized</span>
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
-              <span>⚡ P2C</span>
-            </span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-black/5 px-2 py-0.5 text-text-muted dark:bg-white/5">
-              <span>🧬 Fusion Panel</span>
-            </span>
-            <button
-              onClick={() => handleOpenStrategyHelp(null, null)}
-              className="text-primary hover:underline font-medium inline-flex items-center gap-0.5"
+      <PageHero
+        eyebrow="NEURAL ROUTING PIPELINES · COMBO ORCHESTRATOR"
+        title="Model Combo Pipelines"
+        description="Orchestrate multi-provider model failover chains, cache-affinity pools, and LLM fusion panels under single virtual model aliases."
+        icon={<NodeIndexOutlined />}
+        accent="cyan"
+        badge={{
+          label: `${combos.length} ACTIVE PIPELINES`,
+          color: "cyan",
+          pulse: combos.length > 0,
+        }}
+        stats={[
+          { label: "Active Combos", value: combos.length, color: "#06b6d4" },
+          { label: "Total Model Hops", value: totalHops, color: "#f59e0b" },
+          { label: "Default Strategy", value: (globalComboStrategy || "fallback").toUpperCase(), color: "#10b981" },
+          { label: "Active Providers", value: activeProviders.length, color: "#a855f7" },
+        ]}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSyncOpencode}
+              disabled={syncing}
+              className="whitespace-nowrap"
             >
-              <span>View all 10 strategies &rarr;</span>
-            </button>
+              <ReloadOutlined className={`mr-1 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Syncing..." : "Sync OpenCode"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenStrategyHelp(null, null)}
+              className="whitespace-nowrap"
+              title="Load Balancing & Failover Strategy Guide"
+            >
+              <BookOutlined className="mr-1" />
+              Strategy Guide
+            </Button>
+            <Button size="sm" onClick={() => setShowCreateModal(true)} className="whitespace-nowrap">
+              <PlusOutlined className="mr-1" />
+              Create Combo
+            </Button>
           </div>
-        </div>
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto shrink-0">
-          <Button
-            variant="secondary"
-            icon="help"
-            onClick={() => handleOpenStrategyHelp(null, null)}
-            className="w-full sm:w-auto whitespace-nowrap"
-            title="Load Balancing & Failover Strategy Guide"
-          >
-            Strategy Guide
-          </Button>
-          <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-            Create Combo
-          </Button>
-        </div>
-      </div>
+        }
+        toolbar={
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="overflow-x-auto">
+              <Segmented
+                size="small"
+                value={strategyFilter}
+                onChange={setStrategyFilter}
+                options={[
+                  { label: `All (${combos.length})`, value: "all" },
+                  { label: "Fallback", value: "fallback" },
+                  { label: "Round Robin", value: "round-robin" },
+                  { label: "Cache-Opt", value: "cache-optimized" },
+                  { label: "P2C", value: "p2c" },
+                  { label: "Fusion", value: "fusion" },
+                  { label: "Other", value: "other" },
+                ]}
+              />
+            </div>
+            <div className="w-full lg:w-72">
+              <AntInput
+                allowClear
+                size="small"
+                prefix={<SearchOutlined className="text-text-muted" />}
+                placeholder="Filter combos or hop models..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+          </div>
+        }
+      />
 
       {/* Zero-config auto/* templates (OmniRoute parity) — call directly without saving */}
       <ComboLocksPanel />
 
       <AutoComboCatalog onDuplicate={handleSnapshotTemplate} onCopy={copy} copiedId={copied} />
-      <div className="mt-2 flex justify-end">
-        <Button variant="secondary" size="sm" onClick={handleSyncOpencode} disabled={syncing}>
-          {syncing ? "Syncing..." : "Sync OpenCode Catalog"}
-        </Button>
-      </div>
 
       {/* Combos List */}
       {combos.length === 0 ? (
-        <Card>
+        <Card className="hyperion-card">
           <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mb-4">
               <span className="material-symbols-outlined text-[32px]">layers</span>
             </div>
             <p className="text-text-main font-medium mb-1">No combos yet</p>
-            <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
+            <p className="text-sm text-text-muted mb-4">Create model combos with failover and smart routing pipelines</p>
             <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
               Create Combo
             </Button>
           </div>
         </Card>
+      ) : filteredCombos.length === 0 ? (
+        <Card className="hyperion-card">
+          <div className="text-center py-10">
+            <p className="text-sm font-medium text-text-main">No combos match &ldquo;{searchQuery || strategyFilter}&rdquo;</p>
+            <p className="text-xs text-text-muted mt-1 mb-3">Reset filters to view all {combos.length} configured pipelines.</p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setStrategyFilter("all");
+                setSearchQuery("");
+              }}
+            >
+              Reset Filters
+            </Button>
+          </div>
+        </Card>
       ) : (
-        <div className="flex flex-col gap-4">
-          {combos.map((combo) => (
+        <div className="flex flex-col gap-3.5">
+          {filteredCombos.map((combo) => (
             <ComboCard
               key={combo.id}
               combo={combo}
@@ -401,56 +470,89 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
 
   const copyText = withClaudeCodeSuffix(combo.name, maxContext);
 
+  const stratColorMap = {
+    fallback: "from-amber-400/80 via-cyan-400/70 to-emerald-400/70",
+    "round-robin": "from-cyan-400/80 via-sky-400/70 to-indigo-400/70",
+    p2c: "from-violet-400/80 via-fuchsia-400/70 to-cyan-400/70",
+    "cache-optimized": "from-emerald-400/80 via-teal-400/70 to-cyan-400/70",
+    fusion: "from-fuchsia-500/85 via-amber-400/75 to-cyan-400/75",
+  };
+  const topStrip = stratColorMap[current] || "from-cyan-400/70 via-amber-400/60 to-emerald-400/60";
+
   return (
-    <Card padding="sm" className="group">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
-          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
+    <Card
+      padding="none"
+      className="group hyperion-card relative overflow-hidden border border-border/70 hover:border-cyan-500/40 transition-all"
+    >
+      <div className={`h-0.5 w-full bg-gradient-to-r ${topStrip}`} />
+      <div className="p-4 flex min-w-0 flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div className="size-10 rounded-xl bg-gradient-to-br from-cyan-500/15 to-amber-500/10 border border-cyan-500/25 flex flex-col items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-cyan-400 text-[18px]">hub</span>
+            <span className="text-[9px] font-mono text-text-muted leading-none mt-0.5">{combo.models.length}h</span>
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <code
                 onClick={(e) => { e.stopPropagation(); onCopy(copyText, `combo-${combo.id}`); }}
-                className="block cursor-pointer truncate font-mono text-sm font-medium hover:text-primary transition-colors"
+                className="inline-flex items-center gap-1.5 cursor-pointer truncate rounded-lg bg-black/5 dark:bg-white/[0.04] border border-border/60 px-2.5 py-0.5 font-mono text-sm font-semibold text-text-main hover:border-cyan-500/40 hover:text-cyan-400 transition-colors"
                 title={`Click to copy combo name (${copyText})`}
               >
-                {combo.name}
+                <span>{combo.name}</span>
+                {copied === `combo-${combo.id}` && (
+                  <span className="text-[10px] font-sans font-medium text-emerald-400">Copied</span>
+                )}
               </code>
               {maxContext > 0 && (
                 <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10px] ${
                   maxContext >= 1000000
-                    ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30 font-semibold"
+                    ? "bg-purple-500/15 text-purple-400 border border-purple-500/30 font-semibold"
                     : maxContext >= 200000
-                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                    ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                     : "bg-sidebar text-text-muted border border-border/60"
                 }`}>
                   {maxContext >= 1000000 ? `${(maxContext / 1000000).toFixed(1).replace(/\.0$/, "")}M` : `${Math.round(maxContext / 1000)}k`}
                 </span>
               )}
+              <span className="rounded-md bg-white/[0.03] border border-border/50 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-muted">
+                {combo.models.length} {combo.models.length === 1 ? "node" : "hops"}
+              </span>
             </div>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+
+            {/* Visual Routing Pipeline Chain */}
+            <div className="mt-2.5 flex min-w-0 flex-wrap items-center gap-1.5">
               {combo.models.length === 0 ? (
-                <span className="text-xs text-text-muted italic">No models</span>
+                <span className="text-xs text-text-muted italic">No pipeline hops configured</span>
               ) : (
                 combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
-                    <span>{model}</span>
-                    <CapacityBadges caps={modelCaps[model]} />
-                  </code>
+                  <div key={index} className="inline-flex items-center gap-1.5 min-w-0">
+                    {index > 0 && (
+                      <span className="text-[11px] font-mono text-cyan-400/70 select-none">→</span>
+                    )}
+                    <code className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-black/[0.03] dark:bg-white/[0.03] px-2 py-1 font-mono text-[11px] text-text-main">
+                      <span className="inline-flex size-4 items-center justify-center rounded bg-cyan-500/15 text-[9px] font-bold text-cyan-400">
+                        {index + 1}
+                      </span>
+                      <span className="truncate max-w-[220px]">{model}</span>
+                      <CapacityBadges caps={modelCaps[model]} />
+                    </code>
+                  </div>
                 ))
               )}
               {combo.models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
+                <span className="inline-flex items-center rounded-lg border border-dashed border-border/60 px-2 py-1 font-mono text-[10px] text-text-muted">
+                  +{combo.models.length - 3} more hops
+                </span>
               )}
             </div>
+
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-medium text-text-muted">Judge</span>
+                <span className="text-[11px] font-medium text-fuchsia-400">Fusion Judge</span>
                 <button
                   onClick={() => setShowJudgeSelect(true)}
-                  className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
+                  className="inline-flex max-w-full items-center gap-1 rounded-md border border-dashed border-fuchsia-400/40 bg-fuchsia-500/5 px-2 py-0.5 font-mono text-[11px] text-fuchsia-300 hover:border-fuchsia-400 hover:bg-fuchsia-500/10 transition-colors"
                   title="Pick the model that fuses panel answers"
                 >
                   <span className="material-symbols-outlined text-[13px]">gavel</span>
@@ -470,10 +572,9 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3 sm:shrink-0">
-          {/* Strategy selector with Help icon */}
-          <div className="flex items-center gap-1.5 w-full sm:w-[225px]">
+        {/* Actions Capsule */}
+        <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:items-center lg:gap-3 lg:shrink-0">
+          <div className="flex items-center gap-1.5 w-full lg:w-[225px]">
             <div className="flex-1 min-w-0">
               <Select
                 options={STRATEGY_OPTIONS}
@@ -489,7 +590,7 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
                   e.stopPropagation();
                   onOpenStrategyHelp(current, combo.name);
                 }}
-                className="size-7 rounded-lg text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center justify-center shrink-0 border border-transparent hover:border-border/60"
+                className="size-8 rounded-lg text-text-muted hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors flex items-center justify-center shrink-0 border border-border/60 hover:border-cyan-500/30"
                 title="Strategy Guide & Details"
                 aria-label="Strategy Guide"
               >
@@ -498,31 +599,31 @@ function ComboCard({ combo, modelCaps = {}, contextByFullModel = {}, activeProvi
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-3 gap-1 rounded-xl border border-border/60 bg-black/[0.02] dark:bg-white/[0.02] p-1 lg:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(copyText, `combo-${combo.id}`); }}
-              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+              className="flex flex-col items-center rounded-lg px-2.5 py-1 text-text-muted transition-colors hover:bg-cyan-500/10 hover:text-cyan-400"
               title={`Copy combo name (${copyText})`}
             >
-              <span className="material-symbols-outlined text-[18px]">
+              <span className="material-symbols-outlined text-[17px]">
                 {copied === `combo-${combo.id}` ? "check" : "content_copy"}
               </span>
               <span className="text-[10px] leading-tight">Copy</span>
             </button>
             <button
               onClick={onEdit}
-              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+              className="flex flex-col items-center rounded-lg px-2.5 py-1 text-text-muted transition-colors hover:bg-amber-500/10 hover:text-amber-400"
               title="Edit"
             >
-              <span className="material-symbols-outlined text-[18px]">edit</span>
+              <span className="material-symbols-outlined text-[17px]">edit</span>
               <span className="text-[10px] leading-tight">Edit</span>
             </button>
             <button
               onClick={onDelete}
-              className="flex flex-col items-center rounded px-2 py-1 text-red-500 transition-colors hover:bg-red-500/10"
+              className="flex flex-col items-center rounded-lg px-2.5 py-1 text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
               title="Delete"
             >
-              <span className="material-symbols-outlined text-[18px]">delete</span>
+              <span className="material-symbols-outlined text-[17px]">delete</span>
               <span className="text-[10px] leading-tight">Delete</span>
             </button>
           </div>

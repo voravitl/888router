@@ -1,6 +1,13 @@
 "use client";
 
+import { Segmented } from "antd";
 import { cn } from "@/shared/utils/cn";
+
+const SIZE_MAP = {
+  sm: "small",
+  md: "medium",
+  lg: "large",
+};
 
 export default function SegmentedControl({
   options = [],
@@ -9,40 +16,28 @@ export default function SegmentedControl({
   size = "md",
   className,
 }) {
-  const sizes = {
-    sm: "h-7 text-xs",
-    md: "h-9 text-sm",
-    lg: "h-11 text-base",
-  };
+  const mappedOptions = options.map((option) => ({
+    value: option.value,
+    disabled: option.disabled,
+    label: (
+      <span className="inline-flex items-center gap-1.5">
+        {option.icon && (
+          <span className="material-symbols-outlined text-[15px] leading-none">
+            {option.icon}
+          </span>
+        )}
+        <span>{option.label}</span>
+      </span>
+    ),
+  }));
 
   return (
-    <div
-      className={cn(
-        "inline-flex items-center p-1 rounded-[10px] overflow-x-auto",
-        "bg-surface-2",
-        className
-      )}
-    >
-      {options.map((option) => (
-        <button
-          key={option.value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            "shrink-0 px-4 rounded-[8px] font-medium transition-all",
-            sizes[size],
-            value === option.value
-              ? "bg-surface text-text-main shadow-sm"
-              : "text-text-muted hover:text-text-main"
-          )}
-        >
-          {option.icon && (
-            <span className="material-symbols-outlined text-[16px] mr-1.5">
-              {option.icon}
-            </span>
-          )}
-          {option.label}
-        </button>
-      ))}
-    </div>
+    <Segmented
+      options={mappedOptions}
+      value={value}
+      onChange={(nextVal) => onChange?.(nextVal)}
+      size={SIZE_MAP[size] || "medium"}
+      className={cn("hyperion-segmented !bg-surface-2/90 !border !border-border/70", className)}
+    />
   );
 }

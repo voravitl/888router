@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button } from "@/shared/components";
+import { Card, Button, PageHero } from "@/shared/components";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config";
+import { FileTextOutlined } from "@ant-design/icons";
 
 const LOG_LEVEL_COLORS = {
   LOG: "text-green-400",
@@ -68,20 +69,61 @@ export default function ConsoleLogClient() {
     logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
 
+  const handleCopyAll = async () => {
+    try {
+      await navigator.clipboard?.writeText(logs.join("\n"));
+    } catch {
+      // ignore clipboard restrictions
+    }
+  };
+
   return (
-    <div className="">
-      <Card>
-        <div className="flex items-center justify-end px-4 pt-3 pb-2">
-          <Button size="sm" variant="outline" icon="delete" onClick={handleClear}>
-            Clear
-          </Button>
+    <div className="flex flex-col gap-5">
+      <PageHero
+        eyebrow="LIVE TRANSLATOR STREAM · SSE CONSOLE"
+        title="System Console Stream"
+        description="Real-time proxy translator, failover, and upstream execution logs streamed live via Server-Sent Events."
+        icon={<FileTextOutlined />}
+        accent={connected ? "emerald" : "amber"}
+        badge={{
+          label: connected ? "SSE STREAM LIVE" : "RECONNECTING...",
+          color: connected ? "green" : "amber",
+          pulse: connected,
+        }}
+        stats={[
+          { label: "Stream State", value: connected ? "LIVE" : "WAIT", color: connected ? "#10b981" : "#f59e0b" },
+          { label: "Buffered Lines", value: logs.length, color: "#06b6d4" },
+          { label: "Ring Buffer Cap", value: CONSOLE_LOG_CONFIG.maxLines, color: "#a855f7" },
+          { label: "Transport", value: "SSE", color: "#38bdf8" },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" icon="content_copy" onClick={handleCopyAll} disabled={logs.length === 0}>
+              Copy Logs
+            </Button>
+            <Button size="sm" variant="outline" icon="delete" onClick={handleClear}>
+              Clear
+            </Button>
+          </div>
+        }
+      />
+
+      <Card padding="none" className="hyperion-card overflow-hidden border border-border/70">
+        <div className="flex items-center justify-between border-b border-border/70 bg-black/40 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="size-2.5 rounded-full bg-rose-500/80" />
+            <span className="size-2.5 rounded-full bg-amber-400/80" />
+            <span className="size-2.5 rounded-full bg-emerald-400/80" />
+            <span className="ml-2 font-mono text-[11px] text-text-muted">/api/translator/console-logs/stream</span>
+          </div>
+          <span className="font-mono text-[11px] text-cyan-400">{logs.length} / {CONSOLE_LOG_CONFIG.maxLines} lines</span>
         </div>
         <div
           ref={logRef}
-          className="bg-black rounded-b-lg p-4 text-xs font-mono h-[calc(100vh-220px)] overflow-y-auto"
+          className="bg-[#05080f] p-4 text-xs font-mono h-[calc(100vh-340px)] min-h-[360px] overflow-y-auto leading-relaxed"
         >
           {logs.length === 0 ? (
-            <span className="text-text-muted">No console logs yet.</span>
+            <span className="text-text-muted">Waiting for live translator or proxy console output...</span>
           ) : (
             <div className="space-y-0.5">
               {logs.map((line, i) => (

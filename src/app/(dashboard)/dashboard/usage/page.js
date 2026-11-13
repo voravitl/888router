@@ -2,7 +2,9 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
+import { UsageStats, RequestLogger, CardSkeleton, PageHero } from "@/shared/components";
+import { Segmented } from "antd";
+import { RadarChartOutlined } from "@ant-design/icons";
 import RequestDetailsTab from "./components/RequestDetailsTab";
 import OptimizationSavings from "./components/OptimizationSavings";
 
@@ -26,7 +28,7 @@ function UsageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [period, setPeriod] = useState("today");
+  const [period, setPeriod] = useState("7d");
 
   const tabFromUrl = searchParams.get("tab");
   const activeTab = tabFromUrl && ["overview", "logs", "details", "savings"].includes(tabFromUrl)
@@ -42,28 +44,45 @@ function UsageContent() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      {/* Tabs + period selector on same row */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <SegmentedControl
-          options={[
-            { value: "overview", label: "Overview" },
-            { value: "savings", label: "Savings" },
-            { value: "details", label: "Details" },
-          ]}
-          value={activeTab}
-          onChange={handleTabChange}
-          className="w-full sm:w-auto"
-        />
-        {activeTab === "overview" && (
-          <SegmentedControl
-            options={PERIODS}
-            value={period}
-            onChange={setPeriod}
-            size="sm"
-            className="w-full sm:w-auto"
-          />
-        )}
-      </div>
+      <PageHero
+        eyebrow="TELEMETRY & COST OBSERVATORY · LIVE STREAM"
+        title="Usage & Analytics Cockpit"
+        description="Real-time token burn, latency topology, model cost attribution, optimization savings, and full request audit inspection."
+        icon={<RadarChartOutlined />}
+        accent="amber"
+        badge={{
+          label: `WINDOW: ${period.toUpperCase()}`,
+          color: "amber",
+          pulse: true,
+        }}
+        toolbar={
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="overflow-x-auto">
+              <Segmented
+                size="small"
+                value={activeTab}
+                onChange={handleTabChange}
+                options={[
+                  { value: "overview", label: "Overview" },
+                  { value: "savings", label: "Savings" },
+                  { value: "details", label: "Request Details" },
+                  { value: "logs", label: "Request Logs" },
+                ]}
+              />
+            </div>
+            {(activeTab === "overview" || activeTab === "savings") && (
+              <div className="overflow-x-auto">
+                <Segmented
+                  size="small"
+                  value={period}
+                  onChange={setPeriod}
+                  options={PERIODS}
+                />
+              </div>
+            )}
+          </div>
+        }
+      />
 
       {activeTab === "overview" && (
         <Suspense fallback={<CardSkeleton />}>

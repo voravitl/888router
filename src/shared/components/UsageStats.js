@@ -39,40 +39,46 @@ function TimeAgo({ timestamp }) {
 
 function RecentRequests({ requests = [] }) {
   return (
-    <Card className="flex min-w-0 flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
+    <Card className="hyperion-card flex min-w-0 flex-col overflow-hidden border border-border/70" padding="none" style={{ height: 480 }}>
       {/* Header */}
-      <div className="px-1 py-2 border-b border-border shrink-0">
-        <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
+      <div className="px-4 py-3 border-b border-border/70 shrink-0 flex items-center justify-between bg-black/[0.02] dark:bg-white/[0.02]">
+        <div className="flex items-center gap-2">
+          <span className="inline-block size-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-xs font-mono font-semibold text-text-main uppercase tracking-wider">Recent Live Calls</span>
+        </div>
+        <span className="rounded-md border border-border/60 bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10px] text-text-muted">
+          {requests.length} rows
+        </span>
       </div>
 
       {!requests.length ? (
         <div className="flex-1 flex items-center justify-center text-text-muted text-sm">No requests yet.</div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-3 pb-2">
           <table className="w-full min-w-[300px] border-collapse text-xs">
             <thead className="sticky top-0 bg-bg z-10">
-              <tr className="border-b border-border">
-                <th className="py-1.5 text-left font-semibold text-text-muted w-2"></th>
-                <th className="py-1.5 text-left font-semibold text-text-muted">Model</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted">When</th>
+              <tr className="border-b border-border/60">
+                <th className="py-2 text-left font-mono text-[10px] uppercase tracking-wider text-text-muted w-3"></th>
+                <th className="py-2 text-left font-mono text-[10px] uppercase tracking-wider text-text-muted">Model</th>
+                <th className="py-2 text-right font-mono text-[10px] uppercase tracking-wider text-text-muted whitespace-nowrap">In / Out</th>
+                <th className="py-2 text-right font-mono text-[10px] uppercase tracking-wider text-text-muted">When</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/50">
+            <tbody className="divide-y divide-border/40">
               {requests.map((r, i) => {
                 const ok = !r.status || r.status === "ok" || r.status === "success";
                 return (
-                  <tr key={i} className="hover:bg-bg-subtle transition-colors">
-                    <td className="py-1.5">
-                      <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
+                  <tr key={i} className="hover:bg-cyan-500/5 transition-colors">
+                    <td className="py-2">
+                      <span className={`block w-2 h-2 rounded-full ${ok ? "bg-emerald-400" : "bg-rose-500"}`} />
                     </td>
-                    <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
-                    <td className="py-1.5 text-right whitespace-nowrap">
-                      <span className="text-primary">{fmt(r.promptTokens)}↑</span>
+                    <td className="py-2 font-mono text-[11px] text-text-main truncate max-w-[140px]" title={r.model}>{r.model}</td>
+                    <td className="py-2 text-right font-mono text-[11px] tabular-nums whitespace-nowrap">
+                      <span className="text-amber-400">{fmt(r.promptTokens)}↑</span>
                       {" "}
-                      <span className="text-success">{fmt(r.completionTokens)}↓</span>
+                      <span className="text-emerald-400">{fmt(r.completionTokens)}↓</span>
                     </td>
-                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
+                    <td className="py-2 text-right font-mono text-[11px] text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
                   </tr>
                 );
               })}
@@ -482,28 +488,31 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {loading ? spinner : <UsageChart period={period} />}
 
       {/* Table with dropdown selector */}
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <select
-            value={tableView}
-            onChange={(e) => setTableView(e.target.value)}
-            className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-main focus:outline-none focus:ring-2 focus:ring-primary/50 sm:w-auto"
-            style={{ colorScheme: 'auto' }}
-          >
-            {TABLE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex">
+      <div className="hyperion-card rounded-2xl border border-border/70 p-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border/60 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs uppercase tracking-wider text-text-muted">Breakdown Matrix</span>
+            <select
+              value={tableView}
+              onChange={(e) => setTableView(e.target.value)}
+              className="rounded-xl border border-border/80 bg-surface px-3 py-1.5 text-xs font-mono font-medium text-text-main focus:outline-none focus:ring-2 focus:ring-cyan-500/40 sm:w-auto"
+              style={{ colorScheme: 'auto' }}
+            >
+              {TABLE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 items-center gap-1 rounded-xl border border-border/70 bg-black/[0.03] dark:bg-white/[0.03] p-1 sm:flex">
             <button
               onClick={() => setViewMode("costs")}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "costs" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+              className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-all ${viewMode === "costs" ? "bg-amber-500/20 text-amber-300 border border-amber-500/35 shadow-sm" : "text-text-muted hover:text-text-main"}`}
             >
               Costs
             </button>
             <button
               onClick={() => setViewMode("tokens")}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
+              className={`px-3 py-1 rounded-lg text-xs font-mono font-medium transition-all ${viewMode === "tokens" ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/35 shadow-sm" : "text-text-muted hover:text-text-main"}`}
             >
               Tokens
             </button>

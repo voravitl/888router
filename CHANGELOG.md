@@ -1,3 +1,16 @@
+# v0.15.244 (2026-11-13)
+
+## Real SSE Control Telemetry & Full Hyperion Bento Control-Plane Redesign
+- **100% Real Control Telemetry (`HyperionBentoHero.js`)**:
+  - Replaced mock telemetry labels (`~2.6s TTFT`, `READY`, `ROUTED`) and synthetic `Simulate Burst` animation with real-time `/api/usage/stats?period=...` aggregates and live `/api/usage/stream` SSE updates (`LIVE SSE TELEMETRY` vs `DB SNAPSHOT`).
+  - Defaulted period window to `7d` (with `Today | 24h | 7D | All` switcher), wired live Top 3 active upstream providers (falling back to configured `/api/providers` connections), real 10-minute request pulse histogram (`last10Minutes`), latest 3 routed calls feed, and clickable model ID chips for `ag/gemini-4-hydrogen-{low,medium,high,xhigh}`.
+- **Full Hyperion Bento + Ant Design v6 Cockpit Redesign (All Existing Functionality Preserved)**:
+  - Added reusable `src/shared/components/PageHero.js` cockpit banner (`Card variant="borderless"`, live status beacon, 4-column telemetry metrics, action strip, toolbar slot) and upgraded `SegmentedControl` to Ant Design v6 `Segmented` (`small | medium | large`).
+  - **Providers (`dashboard/providers/page.js`)**: Redesigned into Hyperion Bento cockpit with category `Segmented` filter, instant search filter, Grid/Dense view switcher, and provider-colored obsidian cards (`ProviderCard`, `ApiKeyProviderCard`) preserving batch testing and compatible node creation modals.
+  - **Combos (`dashboard/combos/page.js`, `ComboLocksPanel.jsx`, `AutoComboCatalog.jsx`)**: Redesigned with strategy filter `Segmented` + search, visual horizontal pipeline hop chains (`1 ➔ 2 ➔ 3`) on `ComboCard`, circuit-breaker alert cards (`ComboLocksPanel`), and dynamic `auto/*` catalog grid while preserving all failover/fusion/edit/delete flows.
+  - **Usage & Analytics (`dashboard/usage/page.js`, `OverviewCards.js`, `UsageStats.js`)**: Upgraded with `PageHero` tab/period bar (including `Request Logs` tab access), Obsidian KPI cards, live pulse `Recent Live Calls` feed, and Hyperion breakdown matrix controls.
+  - **Quota, Console Log, CLI Tools, Proxy Pools, Token Saver, Translator, MITM, Skills & Basic Chat**: Applied consistent Hyperion Bento `PageHero` cockpits, live SSE log terminal chrome (`ConsoleLogClient.js`), MITM circuit framing (`CLIToolsPageClient.js`, `MitmPageClient.js`), and radial obsidian chat workspace (`BasicChatPageClient.js`).
+
 # v0.15.243 (2026-11-13)
 
 ## Support Gemini 4 Hydrogen (`xhigh` thinking) & Hyperion Bento Ant Design v6 UI

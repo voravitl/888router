@@ -36,7 +36,8 @@ import {
   QUOTA_SORT_OPTIONS,
 } from "./utils";
 import Card from "@/shared/components/Card";
-import { ConfirmModal, EditConnectionModal } from "@/shared/components";
+import { ConfirmModal, EditConnectionModal, PageHero } from "@/shared/components";
+import { DashboardOutlined } from "@ant-design/icons";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
@@ -738,6 +739,25 @@ export default function ProviderLimits() {
 
   return (
     <div className="space-y-6">
+      <PageHero
+        eyebrow="LIVE QUOTA & COOLDOWN TELEMETRY · RATE GUARD"
+        title="Provider Quotas & Limits"
+        description="Monitor per-account 5-hour/daily quota windows, rate-limit cooldowns, and auto-ping triggers across connected OAuth & API accounts."
+        icon={<DashboardOutlined />}
+        accent="emerald"
+        badge={{
+          label: autoRefresh ? `AUTO SYNC ${countdown}S` : "MANUAL SYNC",
+          color: autoRefresh ? "green" : "amber",
+          pulse: autoRefresh,
+        }}
+        stats={[
+          { label: "Eligible Accounts", value: totals.eligibleConnections ?? connections.length, color: "#10b981" },
+          { label: "Filtered Pool", value: totals.providerFilteredConnections ?? connections.length, color: "#06b6d4" },
+          { label: "Proxy Pools", value: proxyPools.length, color: "#f59e0b" },
+          { label: "Page / Total", value: `${pagination.page}/${Math.max(1, pagination.totalPages)}`, color: "#a855f7" },
+        ]}
+      />
+
       {/* Header Controls */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
         <div className="flex flex-wrap items-center gap-1.5">

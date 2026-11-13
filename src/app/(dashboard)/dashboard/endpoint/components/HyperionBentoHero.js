@@ -4,14 +4,16 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { Card, Tag, Statistic, Segmented, Button, Tooltip } from "antd";
 import {
-  ThunderboltOutlined,
   BranchesOutlined,
   FileTextOutlined,
   ReloadOutlined,
   RocketOutlined,
   ApiOutlined,
-  SafetyCertificateOutlined,
+  CopyOutlined,
+  CheckOutlined,
   DashboardOutlined,
+  HistoryOutlined,
+  RadarChartOutlined,
 } from "@ant-design/icons";
 
 function formatCompactNumber(num) {
@@ -27,46 +29,49 @@ const THINKING_TIERS = {
     alias: "gemini-4-hydrogen-low",
     upstream: "gemini-4-hydrogen(low)",
     badge: "FAST · 1M CTX",
-    latency: "~0.8s TTFT",
     color: "cyan",
   },
   medium: {
     alias: "gemini-4-hydrogen-medium",
     upstream: "gemini-4-hydrogen(medium)",
     badge: "BALANCED · 1M CTX",
-    latency: "~1.4s TTFT",
     color: "blue",
   },
   high: {
     alias: "gemini-4-hydrogen",
     upstream: "gemini-4-hydrogen(high)",
     badge: "DEFAULT · 64K OUT",
-    latency: "~2.6s TTFT",
     color: "gold",
   },
   xhigh: {
     alias: "gemini-4-hydrogen-xhigh",
     upstream: "gemini-4-hydrogen(xhigh)",
     badge: "MAX REASONING",
-    latency: "Deep CoT",
     color: "purple",
   },
 };
 
+const MESH_COLORS = ["#f59e0b", "#06b6d4", "#a855f7"];
+
 export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false }) {
-  const [period, setPeriod] = useState("24h");
+  const [period, setPeriod] = useState("7d");
   const [thinkingTier, setThinkingTier] = useState("xhigh");
-  const [burstMode, setBurstMode] = useState(false);
+  const [copiedModel, setCopiedModel] = useState(false);
+  const [sseConnected, setSseConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [telemetry, setTelemetry] = useState({
     totalRequests: 0,
     totalTokens: 0,
     cachedTokens: 0,
-    activeRequests: 0,
+    activeRequests: [],
+    recentRequests: [],
+    last10Minutes: [],
+    byProvider: {},
+    topModels: [],
+    activeProvidersList: [],
     providersActive: 0,
     providersTotal: 0,
     comboCount: 0,
-    topModels: [],
   });
 
   const loadTelemetry = useCallback(async (selectedPeriod) => {
@@ -100,17 +105,36 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
         .sort((a, b) => b.requests - a.requests)
         .slice(0, 3);
 
+      // Count active connections per provider as fallback mesh nodes
+      const providerCounts = {};
+      for (const c of activeConns) {
+        const key = c.provider || "unknown";
+        providerCounts[key] = (providerCounts[key] || 0) + 1;
+      }
+      const activeProvidersList = Object.entries(providerCounts)
+        .map(([provider, connCount]) => ({ provider, connCount }))
+        .sort((a, b) => b.connCount - a.connCount)
+        .slice(0, 3);
+
       setTelemetry({
         totalRequests: Number(statsData?.totalRequests) || 0,
         totalTokens: totalPrompt + totalCompletion,
         cachedTokens: cached,
         activeRequests: Array.isArray(statsData?.activeRequests)
-          ? statsData.activeRequests.length
-          : 0,
+          ? statsData.activeRequests
+          : [],
+        recentRequests: Array.isArray(statsData?.recentRequests)
+          ? statsData.recentRequests.slice(0, 4)
+          : [],
+        last10Minutes: Array.isArray(statsData?.last10Minutes)
+          ? statsData.last10Minutes
+          : [],
+        byProvider: statsData?.byProvider || {},
+        topModels: byModelEntries,
+        activeProvidersList,
         providersActive: activeConns.length,
         providersTotal: connections.length,
         comboCount: combos.length,
-        topModels: byModelEntries,
       });
     } finally {
       setLoading(false);
@@ -121,23 +145,100 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
     loadTelemetry(period);
   }, [period, loadTelemetry]);
 
+  // Real-time SSE stream for live inflight & recent requests + 10m pulse
   useEffect(() => {
-    if (!burstMode) return undefined;
-    const timer = setTimeout(() => setBurstMode(false), 6500);
-    return () => clearTimeout(timer);
-  }, [burstMode]);
+    let es;
+    try {
+      es = new EventSource("/api/usage/stream");
+      es.onopen = () => setSseConnected(true);
+      es.onmessage = (event) => {
+        try {
+          const live = JSON.parse(event.data);
+          setTelemetry((prev) => ({
+            ...prev,
+            activeRequests: Array.isArray(live?.activeRequests)
+              ? live.activeRequests
+              : prev.activeRequests,
+            recentRequests: Array.isArray(live?.recentRequests)
+              ? live.recentRequests.slice(0, 4)
+              : prev.recentRequests,
+            last10Minutes: Array.isArray(live?.last10Minutes)
+              ? live.last10Minutes
+              : prev.last10Minutes,
+          }));
+        } catch {
+          // Ignore malformed keepalive/partial events
+        }
+      };
+      es.onerror = () => setSseConnected(false);
+    } catch {
+      setSseConnected(false);
+    }
+    return () => {
+      if (es) es.close();
+    };
+  }, []);
 
   const activeTierMeta = useMemo(
     () => THINKING_TIERS[thinkingTier] || THINKING_TIERS.xhigh,
     [thinkingTier]
   );
 
+  // Build real mesh targets from byProvider usage in selected period,
+  // falling back to active configured providers when period has 0 requests.
+  const meshNodes = useMemo(() => {
+    const usageTargets = Object.entries(telemetry.byProvider || {})
+      .map(([provider, stats]) => ({
+        provider,
+        requests: Number(stats?.requests) || 0,
+        tokens:
+          (Number(stats?.promptTokens) || 0) +
+          (Number(stats?.completionTokens) || 0),
+        mode: "traffic",
+      }))
+      .sort((a, b) => b.requests - a.requests)
+      .slice(0, 3);
+
+    if (usageTargets.length > 0) return usageTargets;
+
+    return telemetry.activeProvidersList.map((item) => ({
+      provider: item.provider,
+      requests: item.connCount,
+      tokens: 0,
+      mode: "configured",
+    }));
+  }, [telemetry.byProvider, telemetry.activeProvidersList]);
+
+  const pulseBars = useMemo(() => {
+    const bars = telemetry.last10Minutes.length
+      ? telemetry.last10Minutes
+      : Array.from({ length: 10 }, () => ({ requests: 0 }));
+    const maxReq = Math.max(1, ...bars.map((b) => Number(b?.requests) || 0));
+    return bars.map((b) => ({
+      requests: Number(b?.requests) || 0,
+      pct: Math.max(12, Math.round(((Number(b?.requests) || 0) / maxReq) * 100)),
+    }));
+  }, [telemetry.last10Minutes]);
+
+  const handleCopyModel = async () => {
+    const value = `ag/${activeTierMeta.alias}`;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedModel(true);
+      setTimeout(() => setCopiedModel(false), 1800);
+    } catch {
+      // Clipboard blocked in non-HTTPS contexts
+    }
+  };
+
+  const hasTraffic = telemetry.totalRequests > 0;
+  const activeCount = telemetry.activeRequests.length;
+
   return (
     <section className="stagger-in flex flex-col gap-4">
-      {/* Main Obsidian Aurora Hero Command Deck */}
       <Card
         variant="borderless"
-        className="hyperion-card aurora-border scan-sweep !bg-surface/90 backdrop-blur-xl"
+        className="hyperion-card aurora-border !bg-surface/90 backdrop-blur-xl"
         styles={{ body: { padding: "22px 24px" } }}
       >
         <div className="relative z-10 flex flex-col gap-5">
@@ -150,28 +251,34 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
               <div className="flex flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-amber-400/90 font-semibold">
-                    Hyperion Neural Mesh
+                    Hyperion Control Plane
                   </span>
                   <Tag
-                    color="gold"
+                    color={sseConnected ? "green" : "gold"}
                     variant="filled"
                     className="!m-0 !rounded-full !text-[10px] !font-mono !px-2"
                   >
                     <span className="inline-flex items-center gap-1.5">
-                      <span className="beacon-dot size-1.5 rounded-full bg-amber-400" />
-                      GATEWAY ONLINE
+                      <span
+                        className={`beacon-dot size-1.5 rounded-full ${
+                          sseConnected ? "bg-emerald-400" : "bg-amber-400"
+                        }`}
+                      />
+                      {sseConnected ? "LIVE SSE TELEMETRY" : "DB SNAPSHOT"}
                     </span>
                   </Tag>
-                  <Tag
-                    color="cyan"
-                    variant="filled"
-                    className="!m-0 !rounded-full !text-[10px] !font-mono !px-2"
-                  >
-                    ANTIGRAVITY 2.31.2 · HYDROGEN
-                  </Tag>
+                  {activeCount > 0 && (
+                    <Tag
+                      color="cyan"
+                      variant="filled"
+                      className="!m-0 !rounded-full !text-[10px] !font-mono !px-2"
+                    >
+                      {activeCount} INFLIGHT
+                    </Tag>
+                  )}
                 </div>
                 <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text-main m-0">
-                  888router Control Telemetry
+                  888router Live Telemetry
                 </h1>
               </div>
             </div>
@@ -182,33 +289,25 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
                 value={period}
                 onChange={setPeriod}
                 options={[
+                  { label: "Today", value: "today" },
                   { label: "24h", value: "24h" },
                   { label: "7d", value: "7d" },
                   { label: "All", value: "all" },
                 ]}
               />
-              <Tooltip title="Animate neural packet surge across provider mesh">
-                <Button
-                  size="medium"
-                  type={burstMode ? "primary" : "default"}
-                  icon={<ThunderboltOutlined />}
-                  onClick={() => setBurstMode((v) => !v)}
-                  className={burstMode ? "!shadow-[0_0_20px_rgba(245,158,11,0.45)]" : ""}
-                >
-                  {burstMode ? "Surge Active" : "Simulate Burst"}
-                </Button>
-              </Tooltip>
-              <Tooltip title="Refresh live metrics">
+              <Tooltip title="Refresh live metrics from SQLite">
                 <Button
                   size="medium"
                   icon={<ReloadOutlined spin={loading} />}
                   onClick={() => loadTelemetry(period)}
-                />
+                >
+                  Refresh
+                </Button>
               </Tooltip>
             </div>
           </div>
 
-          {/* 4-Column Kinetic Bento Metrics */}
+          {/* 4-Column Real DB Bento Metrics */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
             <div className="rounded-xl border border-border/80 bg-surface-2/65 p-3.5 hover:border-amber-500/40 transition-colors">
               <Statistic
@@ -228,10 +327,12 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
                   },
                 }}
                 suffix={
-                  <span className="text-[11px] font-mono text-emerald-400 ml-1">
-                    {telemetry.activeRequests > 0
-                      ? `${telemetry.activeRequests} live`
-                      : "idle"}
+                  <span
+                    className={`text-[11px] font-mono ml-1 ${
+                      activeCount > 0 ? "text-emerald-400" : "text-text-muted"
+                    }`}
+                  >
+                    {activeCount > 0 ? `${activeCount} inflight` : "0 inflight"}
                   </span>
                 }
               />
@@ -266,7 +367,7 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
               <Statistic
                 title={
                   <span className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
-                    Mesh Providers & Combos
+                    Active Providers & Combos
                   </span>
                 }
                 value={telemetry.providersActive}
@@ -291,7 +392,7 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
               <Statistic
                 title={
                   <span className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
-                    Gateway Keys & Isolation
+                    Gateway API Keys
                   </span>
                 }
                 value={apiKeyCount}
@@ -306,140 +407,128 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
                 }}
                 suffix={
                   <span className="text-[11px] font-mono text-text-muted ml-1">
-                    keys · RBAC on
+                    active keys
                   </span>
                 }
               />
             </div>
           </div>
 
-          {/* Interactive Neural Routing Pipeline + Gemini 4 Hydrogen Lab */}
+          {/* Live Mesh Routing + Real Activity Stream & Hydrogen Alias Helper */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
-            {/* Animated SVG Routing Mesh (7 cols) */}
+            {/* Real Provider Mesh SVG + 10m Sparkline (7 cols) */}
             <div className="lg:col-span-7 rounded-xl border border-border/80 bg-black/25 p-4 flex flex-col justify-between gap-3">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <SafetyCertificateOutlined className="text-amber-400" />
+                  <RadarChartOutlined className="text-amber-400" />
                   <span className="text-xs font-mono font-semibold uppercase tracking-wider text-text-main">
-                    Neural Routing Pipeline
+                    {hasTraffic
+                      ? `Live Provider Distribution (${period})`
+                      : "Active Configured Providers"}
                   </span>
                 </div>
-                <span className="text-[11px] font-mono text-cyan-400">
-                  {burstMode ? "⚡ HIGH-VELOCITY BURST" : "SSE / REST STREAM READY"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-text-muted uppercase">
+                    10m Pulse
+                  </span>
+                  <div
+                    className="flex items-end gap-0.5 h-4 px-1.5 py-0.5 rounded bg-surface-2/80 border border-border/60"
+                    title="Real requests per minute over the last 10 minutes"
+                  >
+                    {pulseBars.map((bar, idx) => (
+                      <span
+                        key={idx}
+                        className="w-1 rounded-sm bg-cyan-400/80 transition-all"
+                        style={{ height: `${bar.pct}%` }}
+                        title={`${bar.requests} req`}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <svg
                 viewBox="0 0 640 120"
-                className="w-full h-[108px] overflow-visible select-none"
+                className="w-full h-[112px] overflow-visible select-none"
                 role="img"
-                aria-label="888router Neural Routing Pipeline"
+                aria-label="888router Real Provider Routing Distribution"
               >
                 <defs>
-                  <linearGradient id="hyperionAmberLine" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <linearGradient id="hyperionRealLine" x1="0%" y1="0%" x2="100%" y2="0%">
                     <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.95" />
-                    <stop offset="50%" stopColor="#06b6d4" stopOpacity="0.95" />
-                    <stop offset="100%" stopColor="#a855f7" stopOpacity="0.95" />
+                    <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.95" />
                   </linearGradient>
                 </defs>
 
-                {/* Curved SVG Flow Paths */}
-                <path
-                  d="M 136 60 C 210 60, 225 24, 308 24"
-                  fill="none"
-                  stroke="url(#hyperionAmberLine)"
-                  strokeWidth={burstMode ? "3" : "2"}
-                  className={burstMode ? "flow-line-fast" : "flow-line"}
-                />
-                <path
-                  d="M 136 60 C 215 60, 230 60, 308 60"
-                  fill="none"
-                  stroke="#06b6d4"
-                  strokeWidth={burstMode ? "3" : "2"}
-                  strokeOpacity="0.8"
-                  className={burstMode ? "flow-line-fast" : "flow-line"}
-                />
-                <path
-                  d="M 136 60 C 210 60, 225 96, 308 96"
-                  fill="none"
-                  stroke="#a855f7"
-                  strokeWidth={burstMode ? "3" : "2"}
-                  strokeOpacity="0.75"
-                  className={burstMode ? "flow-line-fast" : "flow-line"}
-                />
+                {[24, 60, 96].map((y, idx) => {
+                  const node = meshNodes[idx];
+                  const color = MESH_COLORS[idx % MESH_COLORS.length];
+                  return (
+                    <path
+                      key={y}
+                      d={`M 136 60 C 215 60, 225 ${y}, 308 ${y}`}
+                      fill="none"
+                      stroke={node ? (idx === 0 ? "url(#hyperionRealLine)" : color) : "#27272a"}
+                      strokeWidth={node ? (activeCount > 0 ? "2.6" : "2") : "1.2"}
+                      strokeOpacity={node ? 0.85 : 0.4}
+                      className={
+                        node
+                          ? activeCount > 0
+                            ? "flow-line-fast"
+                            : "flow-line"
+                          : ""
+                      }
+                    />
+                  );
+                })}
 
-                {/* Ingress Node */}
-                <g transform="translate(8, 36)">
+                {/* Hub Node */}
+                <g transform="translate(8, 34)">
                   <rect
                     width="128"
-                    height="48"
+                    height="52"
                     rx="10"
                     fill="#14141a"
                     stroke="#f59e0b"
-                    strokeOpacity="0.65"
+                    strokeOpacity="0.7"
                   />
-                  <text x="14" y="21" fill="#f59e0b" fontSize="10" fontFamily="monospace" fontWeight="700">
+                  <text x="14" y="22" fill="#f59e0b" fontSize="10" fontFamily="monospace" fontWeight="700">
                     888ROUTER HUB
                   </text>
-                  <text x="14" y="37" fill="#a1a1aa" fontSize="10" fontFamily="monospace">
-                    /v1 · OpenAI / Claude
+                  <text x="14" y="38" fill="#a1a1aa" fontSize="10" fontFamily="monospace">
+                    {telemetry.providersActive} active nodes
                   </text>
                 </g>
 
-                {/* Upstream Model Nodes */}
-                <g transform="translate(308, 6)">
-                  <rect
-                    width="324"
-                    height="34"
-                    rx="8"
-                    fill="#16161e"
-                    stroke="#f59e0b"
-                    strokeOpacity="0.75"
-                  />
-                  <circle cx="16" cy="17" r="4" fill="#f59e0b" />
-                  <text x="28" y="21" fill="#fafafa" fontSize="11" fontFamily="monospace" fontWeight="700">
-                    {activeTierMeta.upstream}
-                  </text>
-                  <text x="242" y="21" fill="#fbbf24" fontSize="10" fontFamily="monospace">
-                    {activeTierMeta.latency}
-                  </text>
-                </g>
-
-                <g transform="translate(308, 44)">
-                  <rect
-                    width="324"
-                    height="32"
-                    rx="8"
-                    fill="#14141a"
-                    stroke="#06b6d4"
-                    strokeOpacity="0.45"
-                  />
-                  <circle cx="16" cy="16" r="4" fill="#06b6d4" />
-                  <text x="28" y="20" fill="#e4e4e7" fontSize="11" fontFamily="monospace">
-                    gemini-4-argon(high) · Claude · Codex
-                  </text>
-                  <text x="266" y="20" fill="#22d3ee" fontSize="10" fontFamily="monospace">
-                    READY
-                  </text>
-                </g>
-
-                <g transform="translate(308, 82)">
-                  <rect
-                    width="324"
-                    height="32"
-                    rx="8"
-                    fill="#14141a"
-                    stroke="#a855f7"
-                    strokeOpacity="0.45"
-                  />
-                  <circle cx="16" cy="16" r="4" fill="#a855f7" />
-                  <text x="28" y="20" fill="#e4e4e7" fontSize="11" fontFamily="monospace">
-                    Combos · Auto-Fallback ({telemetry.comboCount})
-                  </text>
-                  <text x="264" y="20" fill="#c084fc" fontSize="10" fontFamily="monospace">
-                    ROUTED
-                  </text>
-                </g>
+                {/* Top 3 Real Providers */}
+                {[0, 1, 2].map((idx) => {
+                  const y = idx === 0 ? 6 : idx === 1 ? 44 : 82;
+                  const node = meshNodes[idx];
+                  const color = MESH_COLORS[idx % MESH_COLORS.length];
+                  return (
+                    <g key={idx} transform={`translate(308, ${y})`}>
+                      <rect
+                        width="324"
+                        height="32"
+                        rx="8"
+                        fill="#14141a"
+                        stroke={node ? color : "#27272a"}
+                        strokeOpacity={node ? 0.6 : 0.5}
+                      />
+                      <circle cx="16" cy="16" r="4" fill={node ? color : "#52525b"} />
+                      <text x="28" y="20" fill={node ? "#fafafa" : "#71717a"} fontSize="11" fontFamily="monospace" fontWeight="700">
+                        {node ? node.provider : "No additional provider"}
+                      </text>
+                      {node && (
+                        <text x="195" y="20" fill={color} fontSize="10" fontFamily="monospace">
+                          {node.mode === "traffic"
+                            ? `${node.requests} req · ${formatCompactNumber(node.tokens)} tok`
+                            : `${node.requests} conn configured`}
+                        </text>
+                      )}
+                    </g>
+                  );
+                })}
               </svg>
 
               {telemetry.topModels.length > 0 && (
@@ -454,44 +543,82 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
               )}
             </div>
 
-            {/* Gemini 4 Hydrogen Thinking Tier Preview & Quick Launchpad (5 cols) */}
+            {/* Right Panel: Live Recent Calls + Hydrogen Copy Shortcut + Quick Nav (5 cols) */}
             <div className="lg:col-span-5 rounded-xl border border-border/80 bg-surface-2/60 p-4 flex flex-col justify-between gap-3">
-              <div className="flex flex-col gap-2">
+              {/* Latest Actual Requests */}
+              <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-mono font-semibold uppercase tracking-wider text-amber-300">
-                    Gemini 4 Hydrogen Effort
+                  <span className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold uppercase tracking-wider text-text-main">
+                    <HistoryOutlined className="text-cyan-400" />
+                    Latest Routed Calls
+                  </span>
+                  <Link href="/dashboard/usage?tab=details" className="text-[11px] font-mono text-amber-400 hover:underline">
+                    View all →
+                  </Link>
+                </div>
+                {telemetry.recentRequests.length === 0 ? (
+                  <div className="rounded-lg bg-black/30 border border-border/60 px-3 py-2 text-xs text-text-muted font-mono">
+                    No recorded requests yet.
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-black/30 border border-border/60 divide-y divide-border/40">
+                    {telemetry.recentRequests.slice(0, 3).map((req, idx) => {
+                      const ok = !req.status || req.status === "ok" || req.status === "success";
+                      return (
+                        <div key={idx} className="px-2.5 py-1.5 flex items-center justify-between gap-2 text-[11px] font-mono">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className={`size-1.5 rounded-full shrink-0 ${ok ? "bg-emerald-400" : "bg-red-400"}`} />
+                            <span className="truncate text-text-main" title={`${req.model} (${req.provider})`}>
+                              {req.model}
+                            </span>
+                          </div>
+                          <span className="text-text-muted shrink-0">
+                            {formatCompactNumber(req.promptTokens)}↑ {formatCompactNumber(req.completionTokens)}↓
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Gemini 4 Hydrogen Quick Copy Selector */}
+              <div className="flex flex-col gap-1.5 pt-2 border-t border-border/60">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-amber-300">
+                    Gemini 4 Hydrogen Alias
                   </span>
                   <Tag color={activeTierMeta.color} variant="filled" className="!m-0 !font-mono !text-[10px]">
                     {activeTierMeta.badge}
                   </Tag>
                 </div>
-
-                <Segmented
-                  block
-                  size="small"
-                  value={thinkingTier}
-                  onChange={setThinkingTier}
-                  options={[
-                    { label: "low", value: "low" },
-                    { label: "medium", value: "medium" },
-                    { label: "high", value: "high" },
-                    { label: "xhigh", value: "xhigh" },
-                  ]}
-                />
-
-                <div className="rounded-lg bg-black/35 border border-border/70 px-3 py-2 font-mono text-[11px] leading-relaxed text-zinc-300">
-                  <div>
-                    <span className="text-zinc-500">model: </span>
-                    <span className="text-amber-300">{`ag/${activeTierMeta.alias}`}</span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500">upstream: </span>
-                    <span className="text-cyan-300">{activeTierMeta.upstream}</span>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <Segmented
+                    block
+                    size="small"
+                    value={thinkingTier}
+                    onChange={setThinkingTier}
+                    className="flex-1"
+                    options={[
+                      { label: "low", value: "low" },
+                      { label: "med", value: "medium" },
+                      { label: "high", value: "high" },
+                      { label: "xhigh", value: "xhigh" },
+                    ]}
+                  />
+                  <Tooltip title={`Copy ag/${activeTierMeta.alias}`}>
+                    <Button
+                      size="small"
+                      icon={copiedModel ? <CheckOutlined /> : <CopyOutlined />}
+                      onClick={handleCopyModel}
+                    >
+                      {copiedModel ? "Copied" : "Copy"}
+                    </Button>
+                  </Tooltip>
                 </div>
               </div>
 
-              {/* Direct Shortcut Strip to Preserved Workflows */}
+              {/* Shortcut Strip */}
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60">
                 <Link href="/dashboard/combos">
                   <Button size="small" icon={<BranchesOutlined />}>
@@ -500,7 +627,7 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
                 </Link>
                 <Link href="/dashboard/console-log">
                   <Button size="small" icon={<FileTextOutlined />}>
-                    Console Log
+                    Logs
                   </Button>
                 </Link>
                 <Link href="/dashboard/usage">
