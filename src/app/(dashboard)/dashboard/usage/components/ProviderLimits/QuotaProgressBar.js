@@ -2,66 +2,7 @@
 
 import { cn } from "@/shared/utils/cn";
 import { formatResetTime } from "./utils";
-
-// Calculate color based on remaining percentage
-const getColorClasses = (remainingPercentage) => {
-  if (remainingPercentage > 70) {
-    return {
-      text: "text-green-500",
-      bg: "bg-green-500",
-      bgLight: "bg-green-500/10",
-      emoji: "🟢"
-    };
-  }
-  
-  if (remainingPercentage >= 30) {
-    return {
-      text: "text-yellow-500",
-      bg: "bg-yellow-500",
-      bgLight: "bg-yellow-500/10",
-      emoji: "🟡"
-    };
-  }
-  
-  // 0-29% including 0% (out of quota) - show red
-  return {
-    text: "text-red-500",
-    bg: "bg-red-500",
-    bgLight: "bg-red-500/10",
-    emoji: "🔴"
-  };
-};
-
-// Format reset time display
-const formatResetTimeDisplay = (resetTime) => {
-  if (!resetTime) return null;
-  
-  try {
-    const resetDate = new Date(resetTime);
-    const now = new Date();
-    const isToday = resetDate.toDateString() === now.toDateString();
-    const isTomorrow = resetDate.toDateString() === new Date(now.getTime() + 86400000).toDateString();
-    
-    const timeStr = resetDate.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
-    
-    if (isToday) return `Today, ${timeStr}`;
-    if (isTomorrow) return `Tomorrow, ${timeStr}`;
-    
-    return resetDate.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-    });
-  } catch {
-    return null;
-  }
-};
+import { formatResetTimeDisplay, getQuotaTone } from "./quotaVisuals";
 
 export default function QuotaProgressBar({
   percentage = 0,
@@ -72,61 +13,41 @@ export default function QuotaProgressBar({
   resetTime = null,
   recurring = true,
 }) {
-  const colors = getColorClasses(percentage);
+  const tone = getQuotaTone(percentage);
   const countdown = formatResetTime(resetTime);
   const resetDisplay = formatResetTimeDisplay(resetTime);
-
-  // recurring defaults true. One-shot packs (e.g. CodeBuddy CN bonus packs)
-  // set recurring:false: resetTime is a hard expiry, so word it as "expires".
   const resetWord = recurring ? "Reset" : "Expires";
+  const remaining = Math.min(Math.max(Number(percentage) || 0, 0), 100);
 
-  // percentage is already remaining percentage (from ProviderLimitCard)
-  const remaining = percentage;
-  
   return (
-    <div className="space-y-2">
-      {/* Label and percentage */}
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold text-text-primary">
-          {label}
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <span className="font-medium text-text-main truncate">{label}</span>
+        <span className={cn("inline-flex items-center gap-1.5 font-mono font-semibold tabular-nums", tone.textClass)}>
+          <span className={cn("size-1.5 rounded-full inline-block", tone.dotClass)} aria-hidden="true" />
+          {remaining}%
         </span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs">{colors.emoji}</span>
-          <span className={cn("font-medium", colors.text)}>
-            {remaining}%
-          </span>
-        </div>
       </div>
 
-      {/* Progress bar */}
       {!unlimited && (
-        <div className={cn("h-2 rounded-full overflow-hidden", colors.bgLight)}>
+        <div className="h-1.5 w-full rounded-full overflow-hidden bg-bg-alt border border-border-subtle">
           <div
-            className={cn("h-full transition-all duration-300", colors.bg)}
-            style={{ width: `${Math.min(remaining, 100)}%` }}
+            className="h-full rounded-full transition-all duration-300"
+            style={{ width: `${remaining}%`, backgroundColor: tone.barColor }}
           />
         </div>
       )}
 
-      {/* Usage details and countdown */}
-      <div className="flex items-center justify-between text-xs text-text-muted">
-        <span>
-          {used.toLocaleString()} / {total.toLocaleString()} requests
+      <div className="flex items-center justify-between text-[11px] text-text-muted tabular-nums">
+        <span className="font-mono">
+          {Number(used || 0).toLocaleString()} / {Number(total || 0).toLocaleString()} req
         </span>
         {countdown !== "-" && (
-          <div className="flex items-center gap-1">
-            <span>•</span>
-            <span className="font-medium">{resetWord} in {countdown}</span>
-          </div>
+          <span className="truncate" title={resetDisplay || ""}>
+            {resetWord} in {countdown}
+          </span>
         )}
       </div>
-
-      {/* Reset time display */}
-      {resetDisplay && (
-        <div className="text-xs text-text-muted/70">
-          {resetWord} at {resetDisplay}
-        </div>
-      )}
     </div>
   );
 }

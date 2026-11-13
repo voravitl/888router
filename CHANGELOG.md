@@ -1,3 +1,16 @@
+# v0.15.247 (2026-11-13)
+
+## Dark Mode Chart Contrast Fix & Monochrome Redesign of Quota Tracker & Combos
+- **Fix Dark Mode Chart & Tooltip Invisibility (`src/app/globals.css`, `UsageChart.js`, `HyperionBentoHero.js`, `TokenSaverClient.js`)**:
+  - Defined missing `--color-border-strong` (`#c4c4c4` light / `#52525b` dark) and `--color-text-primary` (`#111111` light / `#fafafa` dark) CSS tokens and exposed them in `@theme inline`, fixing black SVG `<Cell>` bar fills on dark backgrounds.
+  - Added `.recharts-default-tooltip`, `.recharts-tooltip-label`, and `.recharts-tooltip-item` CSS contrast rules plus explicit `labelStyle`/`itemStyle` props on Recharts tooltips.
+  - Fixed JSX icon element rendering in `src/shared/components/PageHero.js`.
+- **Quota Tracker Monochrome Matrix & Cards (`src/app/(dashboard)/dashboard/usage/components/ProviderLimits/`)**:
+  - Added `quotaVisuals.js` (`getQuotaTone`, `formatResetTimeDisplay`, `pickPrimaryQuota`, `findEarliestResetMs`) replacing emoji status markers and consolidating progress/reset formatting.
+  - Rebuilt `index.js`, `QuotaTable.js`, `QuotaProgressBar.js`, and `ProviderLimitCard.js` around Ant Design v6 `Table` (`Matrix` / `Cards` segmented toggle, expandable sub-quotas), `Select`/`Switch`/`Input`/`Pagination`, `<ConfirmModal>` delete confirmation, and AntD `<Modal>` for Codex Reset Credits while preserving family-rollup-first sorting (#403).
+- **Combos Routing Blueprint & Matrix (`src/app/(dashboard)/dashboard/combos/`)**:
+  - Upgraded `page.js`, `AutoComboCatalog.jsx`, and `ComboLocksPanel.jsx` with a `Pipelines | Auto Routes` workspace switcher, `Flow | Matrix` toggle, sticky `Pipeline Blueprint` hop inspector, live `/api/combos/locks` cross-referencing, AntD `Modal` editor preserving `@dnd-kit` drag-and-drop, and `AntApp.useApp()` notifications.
+
 # v0.15.246 (2026-11-13)
 
 ## Monochrome Proof & Precision Slate Redesign + 3-Stage Directed Gateway Flow Topology

@@ -75,9 +75,20 @@ export default function UsageChart({ period = "7d", chartData: chartDataProp = n
     backgroundColor: "var(--color-surface)",
     border: "1px solid var(--color-border)",
     borderRadius: "8px",
-    boxShadow: "0 4px 16px rgba(0, 0, 0, 0.08)",
+    boxShadow: "var(--shadow-elevated)",
     fontSize: "12px",
     color: "var(--color-text-main)",
+  };
+  const tooltipLabelStyle = {
+    color: "var(--color-text-muted)",
+    fontWeight: 600,
+    marginBottom: "2px",
+  };
+  const tooltipItemStyle = {
+    color: "var(--color-text-main)",
+    fontFamily: "var(--font-mono)",
+    fontSize: "12px",
+    padding: 0,
   };
 
   return (
@@ -143,13 +154,21 @@ export default function UsageChart({ period = "7d", chartData: chartDataProp = n
                   width={56}
                 />
                 <Tooltip
-                  cursor={{ fill: "var(--color-surface-2)", opacity: 0.6 }}
+                  cursor={{ fill: "var(--color-surface-2)", opacity: 0.55 }}
                   contentStyle={tooltipStyle}
+                  labelStyle={tooltipLabelStyle}
+                  itemStyle={tooltipItemStyle}
                   formatter={(value) =>
                     viewMode === "tokens" ? [fmtTokens(value), "Tokens"] : [fmtCost(value), "Cost"]
                   }
                 />
-                <Bar dataKey={metricKey} radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false}>
+                <Bar
+                  dataKey={metricKey}
+                  fill="var(--color-text-main)"
+                  radius={[4, 4, 0, 0]}
+                  maxBarSize={36}
+                  isAnimationActive={false}
+                >
                   {data.map((entry, idx) => (
                     <Cell
                       key={`bar-${entry.label || idx}`}
@@ -187,6 +206,8 @@ export default function UsageChart({ period = "7d", chartData: chartDataProp = n
                 />
                 <Tooltip
                   contentStyle={tooltipStyle}
+                  labelStyle={tooltipLabelStyle}
+                  itemStyle={tooltipItemStyle}
                   formatter={(value) =>
                     viewMode === "tokens" ? [fmtTokens(value), "Tokens"] : [fmtCost(value), "Cost"]
                   }

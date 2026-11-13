@@ -25,10 +25,12 @@ export default function PageHero({
       <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
         <div className="flex items-start sm:items-center gap-3.5 min-w-0">
           {icon && (
-            <div className="size-9 rounded-lg border border-border-subtle bg-surface-2 flex items-center justify-center shrink-0 text-text-main">
-              <span className="material-symbols-outlined text-[19px]">
-                {typeof icon === "string" ? icon : "tune"}
-              </span>
+            <div className="size-9 rounded-lg border border-border-subtle bg-surface-2 flex items-center justify-center shrink-0 text-text-main text-[17px]">
+              {typeof icon === "string" ? (
+                <span className="material-symbols-outlined text-[19px]">{icon}</span>
+              ) : (
+                icon
+              )}
             </div>
           )}
           <div className="min-w-0">
