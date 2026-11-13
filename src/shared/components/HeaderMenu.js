@@ -71,14 +71,15 @@ export default function HeaderMenu({ onLogout }) {
       <div className="relative" ref={menuRef}>
         <button
           onClick={() => setIsOpen((v) => !v)}
-          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all"
+          className="flex items-center justify-center size-8 rounded-lg border border-border bg-surface text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors cursor-pointer"
           title="Menu"
+          aria-label="Open system menu"
         >
-          <span className="material-symbols-outlined">grid_view</span>
+          <span className="material-symbols-outlined text-[16px]">grid_view</span>
         </button>
 
         {isOpen && (
-          <div className="absolute right-0 top-full mt-2 w-60 bg-surface border border-black/10 dark:border-white/10 rounded-xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden py-1">
+          <div className="absolute right-0 top-full mt-1.5 w-56 rounded-xl bg-surface border border-border shadow-[0_8px_24px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_32px_rgba(0,0,0,0.45)] z-50 overflow-hidden py-1 divide-y divide-border-subtle">
             <MenuItem
               icon="history"
               label="Change Log"

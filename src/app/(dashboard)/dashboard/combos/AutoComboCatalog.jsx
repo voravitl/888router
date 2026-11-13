@@ -9,20 +9,20 @@ export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null,
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <Card padding="sm" className="hyperion-card border border-border/70">
+    <Card padding="sm" className="border border-border bg-surface">
       <button
         type="button"
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between gap-3 text-left"
       >
         <div className="flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-400">
+          <div className="flex size-9 items-center justify-center rounded-lg border border-border bg-surface-2 text-text-main">
             <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
           </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-text-main">Zero-Config Auto Combos</span>
-              <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-0.5 font-mono text-[10px] font-semibold text-cyan-400">
+              <span className="rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[11px] font-medium text-text-main">
                 {AUTO_COMBO_TEMPLATES.length} Dynamic Routes
               </span>
             </div>
@@ -41,11 +41,11 @@ export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null,
           {AUTO_COMBO_TEMPLATES.map((tpl) => (
             <div
               key={tpl.name}
-              className="flex flex-col justify-between rounded-xl border border-border/70 bg-black/[0.03] dark:bg-white/[0.02] p-3.5 hover:border-cyan-500/35 transition-colors"
+              className="flex flex-col justify-between rounded-xl border border-border bg-bg-alt/60 p-3.5 hover:border-border-strong transition-colors"
             >
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-xs font-bold text-cyan-400">{tpl.name}</span>
+                  <span className="font-mono text-xs font-semibold text-text-main">{tpl.name}</span>
                   <span className="rounded-md border border-border/60 bg-white/[0.03] px-1.5 py-0.5 text-[10px] font-mono text-text-muted">
                     {tpl.strategy}
                   </span>

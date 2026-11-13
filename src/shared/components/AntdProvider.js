@@ -12,7 +12,7 @@ function resolveDark(themeValue) {
   if (typeof window !== "undefined") {
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
-  return true;
+  return false;
 }
 
 export default function AntdProvider({ children }) {
@@ -22,60 +22,64 @@ export default function AntdProvider({ children }) {
   const themeConfig = useMemo(() => ({
     algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
     token: {
-      colorPrimary: "#f59e0b",
-      colorInfo: "#06b6d4",
-      colorSuccess: "#10b981",
-      colorWarning: "#fbbf24",
-      colorError: "#f43f5e",
-      borderRadius: 12,
-      borderRadiusLG: 16,
-      borderRadiusSM: 8,
-      fontFamily: "var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-      motionDurationMid: "0.22s",
-      motionEaseOut: "cubic-bezier(0.22, 1, 0.36, 1)",
-      ...(isDark
-        ? {
-            colorBgBase: "#09090b",
-            colorBgLayout: "#09090b",
-            colorBgContainer: "#14141a",
-            colorBgElevated: "#1c1c24",
-            colorBorder: "rgba(255, 255, 255, 0.1)",
-            colorBorderSecondary: "rgba(255, 255, 255, 0.06)",
-            colorText: "#fafafa",
-            colorTextSecondary: "#a1a1aa",
-          }
-        : {
-            colorBgLayout: "#f8fafc",
-            colorBgContainer: "#ffffff",
-            colorBgElevated: "#ffffff",
-            colorBorder: "#e2e8f0",
-            colorBorderSecondary: "#f1f5f9",
-          }),
+      colorPrimary: isDark ? "#fafafa" : "#111111",
+      colorInfo: isDark ? "#a1a1aa" : "#52525b",
+      colorSuccess: isDark ? "#4ade80" : "#16a34a",
+      colorWarning: isDark ? "#fbbf24" : "#d97706",
+      colorError: isDark ? "#f87171" : "#dc2626",
+      borderRadius: 8,
+      borderRadiusLG: 10,
+      borderRadiusSM: 6,
+      borderRadiusXS: 4,
+      fontFamily: "var(--font-inter), 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      fontFamilyCode: "var(--font-mono), 'JetBrains Mono', ui-monospace, monospace",
+      colorBgBase: isDark ? "#0a0a0b" : "#fafafa",
+      colorBgContainer: isDark ? "#121215" : "#ffffff",
+      colorBgElevated: isDark ? "#18181c" : "#ffffff",
+      colorBgLayout: isDark ? "#0a0a0b" : "#fafafa",
+      colorBorder: isDark ? "#26262c" : "#e2e2e2",
+      colorBorderSecondary: isDark ? "#1c1c21" : "#efefef",
+      colorText: isDark ? "#fafafa" : "#111111",
+      colorTextSecondary: isDark ? "#a1a1aa" : "#6b6b6b",
+      colorTextLightSolid: isDark ? "#111111" : "#ffffff",
     },
     components: {
-      Card: {
-        borderRadiusLG: 16,
-        paddingLG: 20,
-      },
-      Modal: {
-        borderRadiusLG: 16,
-      },
       Button: {
-        borderRadius: 10,
-        controlHeight: 36,
-        fontWeight: 600,
+        borderRadius: 8,
+        borderRadiusSM: 6,
+        borderRadiusLG: 10,
+        controlHeight: 34,
+        primaryBg: isDark ? "#fafafa" : "#111111",
+        primaryColor: isDark ? "#111111" : "#ffffff",
       },
-      Input: {
-        borderRadius: 10,
-        controlHeight: 38,
-      },
-      Select: {
-        borderRadius: 10,
-        controlHeight: 38,
-      },
+      Input: { borderRadius: 8, borderRadiusSM: 6, borderRadiusLG: 10 },
+      Select: { borderRadius: 8, borderRadiusSM: 6, borderRadiusLG: 10 },
+      Modal: { borderRadiusLG: 12 },
+      Drawer: { colorBgElevated: isDark ? "#121215" : "#ffffff" },
       Table: {
-        borderRadiusLG: 14,
+        borderRadius: 8,
+        borderRadiusLG: 10,
+        headerBg: isDark ? "#141418" : "#f7f7f7",
+        headerColor: isDark ? "#a1a1aa" : "#6b6b6b",
+        headerSplitColor: isDark ? "#26262c" : "#e6e6e6",
+        borderColor: isDark ? "#26262c" : "#e6e6e6",
+        rowHoverBg: isDark ? "#18181d" : "#f5f5f5",
+        cellPaddingBlockSM: 10,
+        cellPaddingInlineSM: 14,
       },
+      Segmented: {
+        borderRadius: 8,
+        borderRadiusSM: 6,
+        trackBg: isDark ? "#16161a" : "#f2f2f2",
+        itemSelectedBg: isDark ? "#26262d" : "#ffffff",
+        itemSelectedColor: isDark ? "#fafafa" : "#111111",
+      },
+      Tabs: {
+        inkBarColor: isDark ? "#fafafa" : "#111111",
+        itemSelectedColor: isDark ? "#fafafa" : "#111111",
+      },
+      Tag: { borderRadiusSM: 6 },
+      Card: { borderRadiusLG: 10, paddingLG: 20 },
     },
   }), [isDark]);
 

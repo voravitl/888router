@@ -653,7 +653,7 @@ export default function ProxyPoolsPage() {
         }
       />
 
-      <Card className="hyperion-card border border-border/70">
+      <Card className="border border-border bg-surface">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           {proxyPools.length > 0 && (
             <label className="flex items-center gap-1.5 text-xs text-text-muted cursor-pointer">

@@ -108,19 +108,17 @@ export default function ConsoleLogClient() {
         }
       />
 
-      <Card padding="none" className="hyperion-card overflow-hidden border border-border/70">
-        <div className="flex items-center justify-between border-b border-border/70 bg-black/40 px-4 py-2.5">
+      <Card padding="none" className="overflow-hidden border border-border">
+        <div className="flex items-center justify-between border-b border-border bg-bg-alt px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full bg-rose-500/80" />
-            <span className="size-2.5 rounded-full bg-amber-400/80" />
-            <span className="size-2.5 rounded-full bg-emerald-400/80" />
-            <span className="ml-2 font-mono text-[11px] text-text-muted">/api/translator/console-logs/stream</span>
+            <span className="size-2 rounded-full bg-[#a6c23f]" />
+            <span className="font-mono text-[11px] text-text-muted">/api/translator/console-logs/stream</span>
           </div>
-          <span className="font-mono text-[11px] text-cyan-400">{logs.length} / {CONSOLE_LOG_CONFIG.maxLines} lines</span>
+          <span className="font-mono text-[11px] text-text-main font-medium tabular-nums">{logs.length} / {CONSOLE_LOG_CONFIG.maxLines} lines</span>
         </div>
         <div
           ref={logRef}
-          className="bg-[#05080f] p-4 text-xs font-mono h-[calc(100vh-340px)] min-h-[360px] overflow-y-auto leading-relaxed"
+          className="bg-[#0e0f11] text-[#e4e4e7] p-4 text-xs font-mono h-[calc(100vh-340px)] min-h-[360px] overflow-y-auto leading-relaxed"
         >
           {logs.length === 0 ? (
             <span className="text-text-muted">Waiting for live translator or proxy console output...</span>

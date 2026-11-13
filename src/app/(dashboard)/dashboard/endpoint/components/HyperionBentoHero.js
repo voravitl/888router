@@ -2,19 +2,23 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Card, Tag, Statistic, Segmented, Button, Tooltip } from "antd";
+import { Segmented } from "antd";
 import {
-  BranchesOutlined,
-  FileTextOutlined,
   ReloadOutlined,
-  RocketOutlined,
-  ApiOutlined,
   CopyOutlined,
   CheckOutlined,
-  DashboardOutlined,
-  HistoryOutlined,
-  RadarChartOutlined,
 } from "@ant-design/icons";
+import {
+  BarChart,
+  Bar,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { cn } from "@/shared/utils/cn";
 
 function formatCompactNumber(num) {
   const n = Number(num) || 0;
@@ -25,35 +29,28 @@ function formatCompactNumber(num) {
 }
 
 const THINKING_TIERS = {
-  low: {
-    alias: "gemini-4-hydrogen-low",
-    upstream: "gemini-4-hydrogen(low)",
-    badge: "FAST · 1M CTX",
-    color: "cyan",
-  },
-  medium: {
-    alias: "gemini-4-hydrogen-medium",
-    upstream: "gemini-4-hydrogen(medium)",
-    badge: "BALANCED · 1M CTX",
-    color: "blue",
-  },
-  high: {
-    alias: "gemini-4-hydrogen",
-    upstream: "gemini-4-hydrogen(high)",
-    badge: "DEFAULT · 64K OUT",
-    color: "gold",
-  },
-  xhigh: {
-    alias: "gemini-4-hydrogen-xhigh",
-    upstream: "gemini-4-hydrogen(xhigh)",
-    badge: "MAX REASONING",
-    color: "purple",
-  },
+  low: { alias: "gemini-4-hydrogen-low" },
+  medium: { alias: "gemini-4-hydrogen-medium" },
+  high: { alias: "gemini-4-hydrogen" },
+  xhigh: { alias: "gemini-4-hydrogen-xhigh" },
 };
 
-const MESH_COLORS = ["#f59e0b", "#06b6d4", "#a855f7"];
+const SDK_OPTIONS = [
+  { label: "cURL", value: "curl" },
+  { label: "Claude Code", value: "claude" },
+  { label: "Codex", value: "codex" },
+  { label: "Cursor", value: "cursor" },
+  { label: "OpenCode", value: "opencode" },
+];
 
-export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false }) {
+export default function HyperionBentoHero({
+  apiKeyCount = 0,
+  loadingKeys = false,
+  baseUrl = "",
+  sampleKey = "sk-888-your-key",
+}) {
+  const [sdkTab, setSdkTab] = useState("curl");
+  const [copiedSdk, setCopiedSdk] = useState(false);
   const [period, setPeriod] = useState("7d");
   const [thinkingTier, setThinkingTier] = useState("xhigh");
   const [copiedModel, setCopiedModel] = useState(false);
@@ -105,7 +102,6 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
         .sort((a, b) => b.requests - a.requests)
         .slice(0, 3);
 
-      // Count active connections per provider as fallback mesh nodes
       const providerCounts = {};
       for (const c of activeConns) {
         const key = c.provider || "unknown";
@@ -114,7 +110,7 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
       const activeProvidersList = Object.entries(providerCounts)
         .map(([provider, connCount]) => ({ provider, connCount }))
         .sort((a, b) => b.connCount - a.connCount)
-        .slice(0, 3);
+        .slice(0, 4);
 
       setTelemetry({
         totalRequests: Number(statsData?.totalRequests) || 0,
@@ -145,7 +141,6 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
     loadTelemetry(period);
   }, [period, loadTelemetry]);
 
-  // Real-time SSE stream for live inflight & recent requests + 10m pulse
   useEffect(() => {
     let es;
     try {
@@ -167,7 +162,7 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
               : prev.last10Minutes,
           }));
         } catch {
-          // Ignore malformed keepalive/partial events
+          // Ignore malformed keepalive events
         }
       };
       es.onerror = () => setSseConnected(false);
@@ -184,41 +179,38 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
     [thinkingTier]
   );
 
-  // Build real mesh targets from byProvider usage in selected period,
-  // falling back to active configured providers when period has 0 requests.
   const meshNodes = useMemo(() => {
     const usageTargets = Object.entries(telemetry.byProvider || {})
       .map(([provider, stats]) => ({
         provider,
         requests: Number(stats?.requests) || 0,
-        tokens:
-          (Number(stats?.promptTokens) || 0) +
-          (Number(stats?.completionTokens) || 0),
-        mode: "traffic",
       }))
       .sort((a, b) => b.requests - a.requests)
-      .slice(0, 3);
+      .slice(0, 4);
 
     if (usageTargets.length > 0) return usageTargets;
 
     return telemetry.activeProvidersList.map((item) => ({
       provider: item.provider,
       requests: item.connCount,
-      tokens: 0,
-      mode: "configured",
     }));
   }, [telemetry.byProvider, telemetry.activeProvidersList]);
 
-  const pulseBars = useMemo(() => {
+  const pulseChart = useMemo(() => {
     const bars = telemetry.last10Minutes.length
       ? telemetry.last10Minutes
-      : Array.from({ length: 10 }, () => ({ requests: 0 }));
-    const maxReq = Math.max(1, ...bars.map((b) => Number(b?.requests) || 0));
-    return bars.map((b) => ({
+      : Array.from({ length: 10 }, () => ({ requests: 0, promptTokens: 0, completionTokens: 0 }));
+    return bars.map((b, i) => ({
+      label: `-${bars.length - 1 - i}m`.replace("-0m", "now"),
       requests: Number(b?.requests) || 0,
-      pct: Math.max(12, Math.round(((Number(b?.requests) || 0) / maxReq) * 100)),
+      tokens: (Number(b?.promptTokens) || 0) + (Number(b?.completionTokens) || 0),
     }));
   }, [telemetry.last10Minutes]);
+
+  const req10m = useMemo(
+    () => pulseChart.reduce((sum, b) => sum + b.requests, 0),
+    [pulseChart]
+  );
 
   const handleCopyModel = async () => {
     const value = `ag/${activeTierMeta.alias}`;
@@ -227,424 +219,293 @@ export default function HyperionBentoHero({ apiKeyCount = 0, loadingKeys = false
       setCopiedModel(true);
       setTimeout(() => setCopiedModel(false), 1800);
     } catch {
-      // Clipboard blocked in non-HTTPS contexts
+      // Clipboard blocked
     }
   };
 
-  const hasTraffic = telemetry.totalRequests > 0;
   const activeCount = telemetry.activeRequests.length;
+  const endpointV1 = useMemo(() => {
+    const clean = String(
+      baseUrl || (typeof window !== "undefined" ? `${window.location.origin}/v1` : "http://localhost:20129/v1")
+    ).replace(/\/+$/, "");
+    return clean.endsWith("/v1") ? clean : `${clean}/v1`;
+  }, [baseUrl]);
+
+  const baseOrigin = endpointV1.replace(/\/v1$/, "");
+
+  const sdkSnippets = useMemo(
+    () => ({
+      curl: `curl ${endpointV1}/chat/completions \\\n  -H "Authorization: Bearer ${sampleKey}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"ag/${activeTierMeta.alias}","messages":[{"role":"user","content":"ping"}]}'`,
+      claude: `export ANTHROPIC_BASE_URL="${baseOrigin}"\nexport ANTHROPIC_AUTH_TOKEN="${sampleKey}"\nclaude --model "ag/${activeTierMeta.alias}"`,
+      codex: `export OPENAI_BASE_URL="${endpointV1}"\nexport OPENAI_API_KEY="${sampleKey}"\ncodex -m "ag/${activeTierMeta.alias}"`,
+      cursor: `// Cursor Settings -> Models -> Override OpenAI Base URL\nBase URL: ${endpointV1}\nAPI Key:  ${sampleKey}\nModel:    ag/${activeTierMeta.alias}`,
+      opencode: `// ~/.config/opencode/opencode.json\n{\n  "provider": {\n    "888router": {\n      "options": { "baseURL": "${endpointV1}", "apiKey": "${sampleKey}" }\n    }\n  }\n}`,
+    }),
+    [activeTierMeta.alias, baseOrigin, endpointV1, sampleKey]
+  );
+
+  const handleCopySdk = async () => {
+    try {
+      await navigator.clipboard.writeText(sdkSnippets[sdkTab] || "");
+      setCopiedSdk(true);
+      setTimeout(() => setCopiedSdk(false), 1800);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
 
   return (
-    <section className="stagger-in flex flex-col gap-4">
-      <Card
-        variant="borderless"
-        className="hyperion-card aurora-border !bg-surface/90 backdrop-blur-xl"
-        styles={{ body: { padding: "22px 24px" } }}
-      >
-        <div className="relative z-10 flex flex-col gap-5">
-          {/* Top Command Header */}
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-start gap-3.5">
-              <div className="size-11 rounded-xl bg-gradient-to-br from-amber-500/20 via-amber-500/10 to-cyan-500/20 border border-amber-500/35 flex items-center justify-center shrink-0 shadow-[0_0_24px_rgba(245,158,11,0.18)]">
-                <ApiOutlined className="text-xl text-amber-400" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-amber-400/90 font-semibold">
-                    Hyperion Control Plane
-                  </span>
-                  <Tag
-                    color={sseConnected ? "green" : "gold"}
-                    variant="filled"
-                    className="!m-0 !rounded-full !text-[10px] !font-mono !px-2"
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <span
-                        className={`beacon-dot size-1.5 rounded-full ${
-                          sseConnected ? "bg-emerald-400" : "bg-amber-400"
-                        }`}
-                      />
-                      {sseConnected ? "LIVE SSE TELEMETRY" : "DB SNAPSHOT"}
-                    </span>
-                  </Tag>
-                  {activeCount > 0 && (
-                    <Tag
-                      color="cyan"
-                      variant="filled"
-                      className="!m-0 !rounded-full !text-[10px] !font-mono !px-2"
-                    >
-                      {activeCount} INFLIGHT
-                    </Tag>
-                  )}
-                </div>
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text-main m-0">
-                  888router Live Telemetry
-                </h1>
-              </div>
-            </div>
+    <section className="flex flex-col gap-4">
+      {/* Control Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+        <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+          <h1 className="text-sm font-semibold tracking-tight text-text-main m-0">
+            Gateway Control & Virtual Keys
+          </h1>
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[11px] font-medium text-text-main">
+            <span className={cn("size-1.5 rounded-full inline-block", sseConnected ? "bg-[#a6c23f]" : "bg-text-subtle")} />
+            {sseConnected ? "Live SSE" : "Snapshot"}
+          </span>
+          {activeCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-[#a6c23f]/50 bg-[#a6c23f]/15 px-2 py-0.5 text-[11px] font-medium text-text-main tabular-nums">
+              {activeCount} active
+            </span>
+          )}
+        </div>
 
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Segmented
-                size="small"
-                value={period}
-                onChange={setPeriod}
-                options={[
-                  { label: "Today", value: "today" },
-                  { label: "24h", value: "24h" },
-                  { label: "7d", value: "7d" },
-                  { label: "All", value: "all" },
-                ]}
-              />
-              <Tooltip title="Refresh live metrics from SQLite">
-                <Button
-                  size="medium"
-                  icon={<ReloadOutlined spin={loading} />}
-                  onClick={() => loadTelemetry(period)}
-                >
-                  Refresh
-                </Button>
-              </Tooltip>
-            </div>
-          </div>
-
-          {/* 4-Column Real DB Bento Metrics */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div className="rounded-xl border border-border/80 bg-surface-2/65 p-3.5 hover:border-amber-500/40 transition-colors">
-              <Statistic
-                title={
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
-                    Routed Requests ({period})
-                  </span>
-                }
-                value={telemetry.totalRequests}
-                loading={loading}
-                styles={{
-                  content: {
-                    color: "#f59e0b",
-                    fontSize: "24px",
-                    fontWeight: 700,
-                    fontFamily: "var(--font-jetbrains-mono), monospace",
-                  },
-                }}
-                suffix={
-                  <span
-                    className={`text-[11px] font-mono ml-1 ${
-                      activeCount > 0 ? "text-emerald-400" : "text-text-muted"
-                    }`}
-                  >
-                    {activeCount > 0 ? `${activeCount} inflight` : "0 inflight"}
-                  </span>
-                }
-              />
-            </div>
-
-            <div className="rounded-xl border border-border/80 bg-surface-2/65 p-3.5 hover:border-cyan-500/40 transition-colors">
-              <Statistic
-                title={
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
-                    Tokens Processed ({period})
-                  </span>
-                }
-                value={formatCompactNumber(telemetry.totalTokens)}
-                loading={loading}
-                styles={{
-                  content: {
-                    color: "#06b6d4",
-                    fontSize: "24px",
-                    fontWeight: 700,
-                    fontFamily: "var(--font-jetbrains-mono), monospace",
-                  },
-                }}
-                suffix={
-                  <span className="text-[11px] font-mono text-text-muted ml-1">
-                    {formatCompactNumber(telemetry.cachedTokens)} cached
-                  </span>
-                }
-              />
-            </div>
-
-            <div className="rounded-xl border border-border/80 bg-surface-2/65 p-3.5 hover:border-emerald-500/40 transition-colors">
-              <Statistic
-                title={
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
-                    Active Providers & Combos
-                  </span>
-                }
-                value={telemetry.providersActive}
-                loading={loading}
-                styles={{
-                  content: {
-                    color: "#10b981",
-                    fontSize: "24px",
-                    fontWeight: 700,
-                    fontFamily: "var(--font-jetbrains-mono), monospace",
-                  },
-                }}
-                suffix={
-                  <span className="text-[11px] font-mono text-text-muted ml-1">
-                    / {telemetry.providersTotal} · {telemetry.comboCount} combos
-                  </span>
-                }
-              />
-            </div>
-
-            <div className="rounded-xl border border-border/80 bg-surface-2/65 p-3.5 hover:border-purple-500/40 transition-colors">
-              <Statistic
-                title={
-                  <span className="text-[11px] font-mono uppercase tracking-wider text-text-muted">
-                    Gateway API Keys
-                  </span>
-                }
-                value={apiKeyCount}
-                loading={loadingKeys}
-                styles={{
-                  content: {
-                    color: "#a855f7",
-                    fontSize: "24px",
-                    fontWeight: 700,
-                    fontFamily: "var(--font-jetbrains-mono), monospace",
-                  },
-                }}
-                suffix={
-                  <span className="text-[11px] font-mono text-text-muted ml-1">
-                    active keys
-                  </span>
-                }
-              />
-            </div>
-          </div>
-
-          {/* Live Mesh Routing + Real Activity Stream & Hydrogen Alias Helper */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5">
-            {/* Real Provider Mesh SVG + 10m Sparkline (7 cols) */}
-            <div className="lg:col-span-7 rounded-xl border border-border/80 bg-black/25 p-4 flex flex-col justify-between gap-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <RadarChartOutlined className="text-amber-400" />
-                  <span className="text-xs font-mono font-semibold uppercase tracking-wider text-text-main">
-                    {hasTraffic
-                      ? `Live Provider Distribution (${period})`
-                      : "Active Configured Providers"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-text-muted uppercase">
-                    10m Pulse
-                  </span>
-                  <div
-                    className="flex items-end gap-0.5 h-4 px-1.5 py-0.5 rounded bg-surface-2/80 border border-border/60"
-                    title="Real requests per minute over the last 10 minutes"
-                  >
-                    {pulseBars.map((bar, idx) => (
-                      <span
-                        key={idx}
-                        className="w-1 rounded-sm bg-cyan-400/80 transition-all"
-                        style={{ height: `${bar.pct}%` }}
-                        title={`${bar.requests} req`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <svg
-                viewBox="0 0 640 120"
-                className="w-full h-[112px] overflow-visible select-none"
-                role="img"
-                aria-label="888router Real Provider Routing Distribution"
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="inline-flex rounded-lg border border-border bg-bg-alt p-0.5" role="group" aria-label="Gateway metric window">
+            {[
+              { label: "Today", value: "today" },
+              { label: "24H", value: "24h" },
+              { label: "7D", value: "7d" },
+              { label: "All", value: "all" },
+            ].map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => setPeriod(p.value)}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer",
+                  period === p.value
+                    ? "bg-[#111111] text-white dark:bg-[#fafafa] dark:text-[#111111]"
+                    : "text-text-muted hover:text-text-main"
+                )}
               >
-                <defs>
-                  <linearGradient id="hyperionRealLine" x1="0%" y1="0%" x2="100%" y2="0%">
-                    <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.95" />
-                    <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.95" />
-                  </linearGradient>
-                </defs>
+                {p.label}
+              </button>
+            ))}
+          </div>
 
-                {[24, 60, 96].map((y, idx) => {
-                  const node = meshNodes[idx];
-                  const color = MESH_COLORS[idx % MESH_COLORS.length];
-                  return (
-                    <path
-                      key={y}
-                      d={`M 136 60 C 215 60, 225 ${y}, 308 ${y}`}
-                      fill="none"
-                      stroke={node ? (idx === 0 ? "url(#hyperionRealLine)" : color) : "#27272a"}
-                      strokeWidth={node ? (activeCount > 0 ? "2.6" : "2") : "1.2"}
-                      strokeOpacity={node ? 0.85 : 0.4}
-                      className={
-                        node
-                          ? activeCount > 0
-                            ? "flow-line-fast"
-                            : "flow-line"
-                          : ""
+          <button
+            type="button"
+            onClick={() => loadTelemetry(period)}
+            className="h-7 px-3 rounded-lg border border-border bg-surface hover:bg-surface-2 text-xs font-medium text-text-main inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <ReloadOutlined spin={loading} className="text-[11px]" />
+            Sync
+          </button>
+        </div>
+      </div>
+
+      {/* 4-Up Monochrome KPI Strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 tabular-nums">
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+          <div className="text-xs font-medium text-text-muted">Routed ({period})</div>
+          <div className="mt-1 text-2xl font-semibold tracking-tight text-text-main">
+            {formatCompactNumber(telemetry.totalRequests)}
+          </div>
+          <div className="mt-1 text-[11px] text-text-muted">Requests in selected window</div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+          <div className="text-xs font-medium text-text-muted">Total Tokens</div>
+          <div className="mt-1 text-2xl font-semibold tracking-tight text-text-main">
+            {formatCompactNumber(telemetry.totalTokens)}
+          </div>
+          <div className="mt-1 text-[11px] text-text-muted">
+            {formatCompactNumber(telemetry.cachedTokens)} cached hits
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+          <div className="text-xs font-medium text-text-muted">Providers & Combos</div>
+          <div className="mt-1 text-2xl font-semibold tracking-tight text-text-main">
+            {telemetry.providersActive}/{telemetry.providersTotal}
+            <span className="text-sm font-normal text-text-muted ml-2">· {telemetry.comboCount} combos</span>
+          </div>
+          <div className="mt-1 text-[11px] text-text-muted">Active upstreams ready</div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+          <div className="text-xs font-medium text-text-muted">Virtual API Keys</div>
+          <div className="mt-1 text-2xl font-semibold tracking-tight text-text-main">
+            {loadingKeys ? "…" : apiKeyCount}
+          </div>
+          <div className="mt-1 text-[11px] text-text-muted">Scoped gateway credentials</div>
+        </div>
+      </div>
+
+      {/* Split Workspace: 7-col 10m Traffic Cadence + Targets | 5-col SDK Quickstart */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
+        <div className="xl:col-span-7 min-w-0 rounded-xl border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.03)] flex flex-col justify-between overflow-hidden">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border bg-bg-alt">
+            <div>
+              <h2 className="text-xs font-semibold text-text-main m-0">10-Minute Gateway Activity</h2>
+              <p className="text-[11px] text-text-muted m-0">Live request cadence across upstream providers</p>
+            </div>
+            <span className="rounded-md border border-border bg-surface px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-main">
+              {req10m} req / 10m
+            </span>
+          </div>
+
+          <div className="p-4 flex-1 flex flex-col justify-center">
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={pulseChart} margin={{ top: 10, right: 6, left: -24, bottom: 0 }}>
+                <CartesianGrid vertical={false} stroke="var(--color-border-subtle)" strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fontSize: 10, fill: "var(--color-text-muted)" }}
+                  tickLine={false}
+                  axisLine={{ stroke: "var(--color-border-subtle)" }}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  domain={[0, (dataMax) => Math.max((dataMax || 0) + 1, 2)]}
+                  tick={{ fontSize: 10, fill: "var(--color-text-muted)" }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  cursor={{ fill: "var(--color-surface-2)", opacity: 0.6 }}
+                  contentStyle={{
+                    backgroundColor: "var(--color-surface)",
+                    border: "1px solid var(--color-border)",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                  }}
+                />
+                <Bar dataKey="requests" radius={[4, 4, 0, 0]} maxBarSize={22} isAnimationActive={false}>
+                  {pulseChart.map((entry, idx) => (
+                    <Cell
+                      key={entry.label}
+                      fill={
+                        idx === pulseChart.length - 1
+                          ? "var(--color-text-main)"
+                          : "var(--color-border-strong)"
                       }
                     />
-                  );
-                })}
-
-                {/* Hub Node */}
-                <g transform="translate(8, 34)">
-                  <rect
-                    width="128"
-                    height="52"
-                    rx="10"
-                    fill="#14141a"
-                    stroke="#f59e0b"
-                    strokeOpacity="0.7"
-                  />
-                  <text x="14" y="22" fill="#f59e0b" fontSize="10" fontFamily="monospace" fontWeight="700">
-                    888ROUTER HUB
-                  </text>
-                  <text x="14" y="38" fill="#a1a1aa" fontSize="10" fontFamily="monospace">
-                    {telemetry.providersActive} active nodes
-                  </text>
-                </g>
-
-                {/* Top 3 Real Providers */}
-                {[0, 1, 2].map((idx) => {
-                  const y = idx === 0 ? 6 : idx === 1 ? 44 : 82;
-                  const node = meshNodes[idx];
-                  const color = MESH_COLORS[idx % MESH_COLORS.length];
-                  return (
-                    <g key={idx} transform={`translate(308, ${y})`}>
-                      <rect
-                        width="324"
-                        height="32"
-                        rx="8"
-                        fill="#14141a"
-                        stroke={node ? color : "#27272a"}
-                        strokeOpacity={node ? 0.6 : 0.5}
-                      />
-                      <circle cx="16" cy="16" r="4" fill={node ? color : "#52525b"} />
-                      <text x="28" y="20" fill={node ? "#fafafa" : "#71717a"} fontSize="11" fontFamily="monospace" fontWeight="700">
-                        {node ? node.provider : "No additional provider"}
-                      </text>
-                      {node && (
-                        <text x="195" y="20" fill={color} fontSize="10" fontFamily="monospace">
-                          {node.mode === "traffic"
-                            ? `${node.requests} req · ${formatCompactNumber(node.tokens)} tok`
-                            : `${node.requests} conn configured`}
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
-              </svg>
-
-              {telemetry.topModels.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/50">
-                  <span className="text-[11px] font-mono text-text-muted">Top Models:</span>
-                  {telemetry.topModels.map((m) => (
-                    <Tag key={m.name} variant="outlined" className="!m-0 !font-mono !text-[11px]">
-                      {m.name} ({m.requests})
-                    </Tag>
                   ))}
-                </div>
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="border-t border-border bg-bg-alt px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="text-[11px] font-medium text-text-muted">Active Upstreams</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {meshNodes.length === 0 ? (
+                <span className="text-[11px] text-text-subtle">No connected providers</span>
+              ) : (
+                meshNodes.map((n) => (
+                  <span
+                    key={n.provider}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-surface text-[11px] font-medium text-text-main"
+                  >
+                    <span className="size-1.5 rounded-full bg-[#a6c23f] inline-block" />
+                    {n.provider}
+                    <span className="font-mono text-text-muted tabular-nums">{n.requests}</span>
+                  </span>
+                ))
               )}
             </div>
+          </div>
+        </div>
 
-            {/* Right Panel: Live Recent Calls + Hydrogen Copy Shortcut + Quick Nav (5 cols) */}
-            <div className="lg:col-span-5 rounded-xl border border-border/80 bg-surface-2/60 p-4 flex flex-col justify-between gap-3">
-              {/* Latest Actual Requests */}
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-mono font-semibold uppercase tracking-wider text-text-main">
-                    <HistoryOutlined className="text-cyan-400" />
-                    Latest Routed Calls
-                  </span>
-                  <Link href="/dashboard/usage?tab=details" className="text-[11px] font-mono text-amber-400 hover:underline">
-                    View all →
-                  </Link>
-                </div>
+        {/* Right: SDK & CLI Quickstart Switcher */}
+        <div className="xl:col-span-5 rounded-xl border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.03)] flex flex-col justify-between min-w-0 overflow-hidden">
+          <div>
+            <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border bg-bg-alt">
+              <span className="text-xs font-semibold text-text-main">
+                SDK & CLI Quickstart
+              </span>
+              <button
+                type="button"
+                onClick={handleCopySdk}
+                className="px-2.5 py-1 rounded-md border border-border bg-surface hover:bg-surface-2 text-[11px] font-medium text-text-main inline-flex items-center gap-1 cursor-pointer"
+              >
+                {copiedSdk ? <CheckOutlined /> : <CopyOutlined />}
+                {copiedSdk ? "Copied" : "Copy"}
+              </button>
+            </div>
+
+            <div className="px-4 py-2 border-b border-border bg-bg-alt overflow-x-auto scroll-thin-x">
+              <Segmented
+                size="small"
+                value={sdkTab}
+                onChange={setSdkTab}
+                options={SDK_OPTIONS}
+              />
+            </div>
+
+            <pre className="p-3.5 bg-bg-alt/50 border-b border-border font-mono text-[11px] leading-relaxed text-text-main overflow-x-auto max-h-[156px] m-0">
+              {sdkSnippets[sdkTab]}
+            </pre>
+          </div>
+
+          <div className="p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-mono text-[11px] text-text-muted">
+                ag/{activeTierMeta.alias}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Segmented
+                  size="small"
+                  value={thinkingTier}
+                  onChange={setThinkingTier}
+                  options={[
+                    { label: "low", value: "low" },
+                    { label: "med", value: "medium" },
+                    { label: "high", value: "high" },
+                    { label: "xhigh", value: "xhigh" },
+                  ]}
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyModel}
+                  className="h-6 px-2.5 rounded-md border border-border bg-bg-alt hover:bg-surface-2 text-[11px] font-medium text-text-main cursor-pointer"
+                >
+                  {copiedModel ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+
+            <div className="border-t border-border-subtle pt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1.5 text-text-muted min-w-0">
+                <span>Last call:</span>
                 {telemetry.recentRequests.length === 0 ? (
-                  <div className="rounded-lg bg-black/30 border border-border/60 px-3 py-2 text-xs text-text-muted font-mono">
-                    No recorded requests yet.
-                  </div>
+                  <span>None</span>
                 ) : (
-                  <div className="rounded-lg bg-black/30 border border-border/60 divide-y divide-border/40">
-                    {telemetry.recentRequests.slice(0, 3).map((req, idx) => {
-                      const ok = !req.status || req.status === "ok" || req.status === "success";
-                      return (
-                        <div key={idx} className="px-2.5 py-1.5 flex items-center justify-between gap-2 text-[11px] font-mono">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className={`size-1.5 rounded-full shrink-0 ${ok ? "bg-emerald-400" : "bg-red-400"}`} />
-                            <span className="truncate text-text-main" title={`${req.model} (${req.provider})`}>
-                              {req.model}
-                            </span>
-                          </div>
-                          <span className="text-text-muted shrink-0">
-                            {formatCompactNumber(req.promptTokens)}↑ {formatCompactNumber(req.completionTokens)}↓
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <span className="font-mono text-[11px] text-text-main truncate max-w-[160px]">
+                    {telemetry.recentRequests[0].model}
+                  </span>
                 )}
               </div>
-
-              {/* Gemini 4 Hydrogen Quick Copy Selector */}
-              <div className="flex flex-col gap-1.5 pt-2 border-t border-border/60">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-amber-300">
-                    Gemini 4 Hydrogen Alias
-                  </span>
-                  <Tag color={activeTierMeta.color} variant="filled" className="!m-0 !font-mono !text-[10px]">
-                    {activeTierMeta.badge}
-                  </Tag>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Segmented
-                    block
-                    size="small"
-                    value={thinkingTier}
-                    onChange={setThinkingTier}
-                    className="flex-1"
-                    options={[
-                      { label: "low", value: "low" },
-                      { label: "med", value: "medium" },
-                      { label: "high", value: "high" },
-                      { label: "xhigh", value: "xhigh" },
-                    ]}
-                  />
-                  <Tooltip title={`Copy ag/${activeTierMeta.alias}`}>
-                    <Button
-                      size="small"
-                      icon={copiedModel ? <CheckOutlined /> : <CopyOutlined />}
-                      onClick={handleCopyModel}
-                    >
-                      {copiedModel ? "Copied" : "Copy"}
-                    </Button>
-                  </Tooltip>
-                </div>
-              </div>
-
-              {/* Shortcut Strip */}
-              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border/60">
-                <Link href="/dashboard/combos">
-                  <Button size="small" icon={<BranchesOutlined />}>
-                    Combos
-                  </Button>
+              <div className="flex items-center gap-3 shrink-0 font-medium">
+                <Link href="/dashboard/usage?tab=details" className="text-text-main hover:underline">
+                  Traces →
                 </Link>
-                <Link href="/dashboard/console-log">
-                  <Button size="small" icon={<FileTextOutlined />}>
-                    Logs
-                  </Button>
+                <Link href="/dashboard/combos" className="text-text-main hover:underline">
+                  Combos →
                 </Link>
-                <Link href="/dashboard/usage">
-                  <Button size="small" icon={<DashboardOutlined />}>
-                    Usage
-                  </Button>
-                </Link>
-                <Link href="/dashboard/basic-chat">
-                  <Button size="small" type="primary" icon={<RocketOutlined />}>
-                    Test Chat
-                  </Button>
+                <Link href="/dashboard/basic-chat" className="text-text-main hover:underline">
+                  Test Chat →
                 </Link>
               </div>
             </div>
           </div>
         </div>
-      </Card>
+      </div>
     </section>
   );
 }

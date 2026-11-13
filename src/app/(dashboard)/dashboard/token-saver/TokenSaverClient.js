@@ -301,7 +301,7 @@ export default function TokenSaverClient() {
       />
 
       {/* Aggregated before/after savings — primary reason this page is in the sidebar */}
-      <Card id="savings-report" className="hyperion-card border border-border/70">
+      <Card id="savings-report" className="border border-border bg-surface">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-semibold flex items-center gap-2">

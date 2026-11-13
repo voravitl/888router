@@ -1,4 +1,4 @@
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "material-symbols/outlined.css";
 import "./globals.css";
 import { ThemeProvider } from "@/shared/components/ThemeProvider";
@@ -16,21 +16,26 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+});
+
 export const metadata = {
   title: "888router - AI Routing Control Plane",
-  description: "Unified AI routing gateway with Hyperion Telemetry, multi-provider failover, and token optimization.",
+  description: "Local AI Gateway control plane for live traces, provider quota matrix, failover combos, and token compression.",
   icons: {
     icon: "/favicon.svg",
   },
 };
 
 export const viewport = {
-  themeColor: "#09090b",
+  themeColor: "#fafafa",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -38,7 +43,7 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <ThemeProvider>
           <AntdProvider>
             <RuntimeI18nProvider>

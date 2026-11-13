@@ -269,95 +269,105 @@ export default function RequestDetailsTab() {
         </div>
       </Card>
 
-      <Card padding="none">
+      <div className="rounded-xl border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px]">
+          <table className="w-full min-w-[880px] text-xs tabular-nums">
             <thead>
-              <tr className="border-b border-black/5 dark:border-white/5">
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Timestamp</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Model</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Cached</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Cache Creation</th>
-                <th className="text-right p-4 text-sm font-semibold text-text-main">Output Tokens</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Token save</th>
-                <th className="text-left p-4 text-sm font-semibold text-text-main">Latency</th>
-                <th className="text-center p-4 text-sm font-semibold text-text-main">Action</th>
+              <tr className="border-b border-border bg-bg-alt text-[11px] font-medium text-text-muted">
+                <th className="text-left px-4 py-2.5">Timestamp</th>
+                <th className="text-left px-4 py-2.5">Model</th>
+                <th className="text-left px-4 py-2.5">Provider</th>
+                <th className="text-right px-4 py-2.5">Input</th>
+                <th className="text-right px-4 py-2.5">Cached</th>
+                <th className="text-right px-4 py-2.5">Write</th>
+                <th className="text-right px-4 py-2.5">Output</th>
+                <th className="text-left px-4 py-2.5">Token Save</th>
+                <th className="text-left px-4 py-2.5">Span (TTFT / Total)</th>
+                <th className="text-center px-4 py-2.5">Trace</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-border-subtle">
               {loading ? (
                 <tr>
                   <td colSpan="10" className="p-8 text-center text-text-muted">
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
-                      Loading...
-                    </div>
+                    Loading request traces...
                   </td>
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
                   <td colSpan="10" className="p-8 text-center text-text-muted">
-                    No request details found
+                    No request details found.
                   </td>
                 </tr>
               ) : (
-                details.map((detail, index) => (
-                  <tr
-                    key={`${detail.id}-${index}`}
-                    className="border-b border-black/5 dark:border-white/5 last:border-b-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
-                  >
-                    <td className="whitespace-nowrap p-4 text-sm text-text-main">
-                      {new Date(detail.timestamp).toLocaleString()}
-                    </td>
-                    <td className="max-w-[260px] truncate p-4 font-mono text-sm text-text-main">
-                      {detail.model}
-                    </td>
-                    <td className="max-w-[180px] truncate p-4 text-sm text-text-main">
-                       <span className="font-medium">
-                         {getProviderName(detail.provider, providerNameCache)}
-                       </span>
-                     </td>
-                    <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {getInputTokens(detail.tokens).toLocaleString()}
-                    </td>
-                    <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {getCachedTokens(detail.tokens) > 0 ? getCachedTokens(detail.tokens).toLocaleString() : "—"}
-                    </td>
-                    <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {getCacheCreationTokens(detail.tokens) > 0 ? getCacheCreationTokens(detail.tokens).toLocaleString() : "—"}
-                    </td>
-                    <td className="p-4 text-sm text-text-main text-right font-mono">
-                      {detail.tokens?.completion_tokens?.toLocaleString() || 0}
-                    </td>
-                    <td className="max-w-[180px] truncate p-4 text-xs text-text-muted font-mono" title={formatTokenSaveCell(detail)}>
-                      {formatTokenSaveCell(detail)}
-                    </td>
-                    <td className="p-4 text-sm text-text-muted">
-                      <div className="flex flex-col gap-0.5">
-                        <div>TTFT: <span className="font-mono">{detail.latency?.ttft || 0}ms</span></div>
-                        <div>Total: <span className="font-mono">{detail.latency?.total || 0}ms</span></div>
-                      </div>
-                    </td>
-                    <td className="p-4 text-center">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleViewDetail(detail)}
-                      >
-                        Detail
-                      </Button>
-                    </td>
-                  </tr>
-                ))
+                details.map((detail, index) => {
+                  const ttft = Number(detail.latency?.ttft || 0);
+                  const total = Number(detail.latency?.total || 0);
+                  const ttftPct = total > 0 ? Math.min(100, Math.round((ttft / total) * 100)) : 0;
+                  return (
+                    <tr
+                      key={`${detail.id}-${index}`}
+                      onClick={() => handleViewDetail(detail)}
+                      className="cursor-pointer hover:bg-surface-2/60 transition-colors"
+                    >
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[11px] text-text-muted">
+                        {new Date(detail.timestamp).toLocaleString()}
+                      </td>
+                      <td className="max-w-[240px] truncate px-4 py-2.5 font-medium text-text-main">
+                        {detail.model}
+                      </td>
+                      <td className="max-w-[160px] truncate px-4 py-2.5 text-text-muted">
+                        {getProviderName(detail.provider, providerNameCache)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-text-main">
+                        {getInputTokens(detail.tokens).toLocaleString()}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-emerald-600 dark:text-emerald-400">
+                        {getCachedTokens(detail.tokens) > 0 ? getCachedTokens(detail.tokens).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-text-muted">
+                        {getCacheCreationTokens(detail.tokens) > 0 ? getCacheCreationTokens(detail.tokens).toLocaleString() : "—"}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono text-text-main">
+                        {detail.tokens?.completion_tokens?.toLocaleString() || 0}
+                      </td>
+                      <td className="max-w-[160px] truncate px-4 py-2.5 text-text-muted" title={formatTokenSaveCell(detail)}>
+                        {formatTokenSaveCell(detail)}
+                      </td>
+                      <td className="px-4 py-2.5 min-w-[140px]">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center justify-between font-mono text-[10px] text-text-muted">
+                            <span>{ttft}ms</span>
+                            <span className="text-text-main font-semibold">{total}ms</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-surface-2 flex overflow-hidden">
+                            <span className="h-full bg-[#111111] dark:bg-[#fafafa]" style={{ width: `${ttftPct}%` }} />
+                            <span className="h-full bg-[#a6c23f] flex-1" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetail(detail);
+                          }}
+                        >
+                          Inspect
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
 
         {!loading && details.length > 0 && (
-          <div className="border-t border-black/5 dark:border-white/5">
+          <div className="border-t border-border bg-bg-alt">
             <Pagination
               currentPage={pagination.page}
               pageSize={pagination.pageSize}
@@ -367,113 +377,116 @@ export default function RequestDetailsTab() {
             />
           </div>
         )}
-      </Card>
+      </div>
 
       <Drawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
-        title="Request Details"
+        title={`Trace: ${selectedDetail?.model || "Request Detail"}`}
         width="lg"
       >
-        {selectedDetail && (
-          <div className="space-y-6">
-            <div className="grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-              <div>
-                <span className="text-text-muted">ID:</span>{" "}
-                <span className="break-all font-mono text-text-main">{selectedDetail.id}</span>
+        {selectedDetail && (() => {
+          const ttftMs = Math.max(0, Number(selectedDetail.latency?.ttft || 0));
+          const totalMs = Math.max(ttftMs, Number(selectedDetail.latency?.total || 0));
+          const streamMs = Math.max(0, totalMs - ttftMs);
+          const ttftPct = totalMs > 0 ? Math.min(100, Math.round((ttftMs / totalMs) * 100)) : 50;
+          const streamPct = Math.max(0, 100 - ttftPct);
+          return (
+          <div className="space-y-5 text-xs tabular-nums">
+            {/* Scaled ms Waterfall Span Timeline */}
+            <div className="rounded-xl border border-border bg-bg-alt p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between text-[11px] font-medium text-text-muted">
+                <span>Execution Waterfall</span>
+                <span className="font-mono text-text-main font-semibold">Total {totalMs}ms</span>
               </div>
-              <div>
-                <span className="text-text-muted">Timestamp:</span>{" "}
-                <span className="text-text-main">{new Date(selectedDetail.timestamp).toLocaleString()}</span>
+
+              <div className="space-y-2">
+                <div className="grid grid-cols-12 items-center gap-2">
+                  <span className="col-span-4 text-[11px] text-text-muted truncate">1. Prefill / TTFT</span>
+                  <div className="col-span-6 h-3 rounded bg-surface border border-border-subtle flex overflow-hidden">
+                    <span className="h-full bg-[#111111] dark:bg-[#fafafa]" style={{ width: `${Math.max(4, ttftPct)}%` }} />
+                  </div>
+                  <span className="col-span-2 text-right font-mono text-text-main">{ttftMs}ms</span>
+                </div>
+
+                <div className="grid grid-cols-12 items-center gap-2">
+                  <span className="col-span-4 text-[11px] text-text-muted truncate">2. Decode Stream</span>
+                  <div className="col-span-6 h-3 rounded bg-surface border border-border-subtle relative flex overflow-hidden">
+                    <span style={{ width: `${ttftPct}%` }} />
+                    <span className="h-full bg-[#a6c23f]" style={{ width: `${Math.max(4, streamPct)}%` }} />
+                  </div>
+                  <span className="col-span-2 text-right font-mono text-text-main">{streamMs}ms</span>
+                </div>
               </div>
-              <div>
-                 <span className="text-text-muted">Provider:</span>{" "}
-                 <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
-               </div>
-              <div>
-                <span className="text-text-muted">Model (upstream):</span>{" "}
-                <span className="text-text-main font-mono">{selectedDetail.model}</span>
+            </div>
+
+            {/* Metadata Spec Grid */}
+            <div className="rounded-xl border border-border divide-y divide-border-subtle overflow-hidden">
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <span className="text-text-muted">Trace ID</span>
+                <span className="font-mono break-all text-text-main text-right">{selectedDetail.id}</span>
+              </div>
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <span className="text-text-muted">Timestamp</span>
+                <span className="font-mono text-text-main">{new Date(selectedDetail.timestamp).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <span className="text-text-muted">Provider</span>
+                <span className="text-text-main font-medium">
+                  {getProviderName(selectedDetail.provider, providerNameCache)}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <span className="text-text-muted">Upstream Model</span>
+                <span className="font-mono text-text-main font-semibold">{selectedDetail.model}</span>
               </div>
               {selectedDetail.clientModel && selectedDetail.clientModel !== selectedDetail.model ? (
-                <div>
-                  <span className="text-text-muted">Client model (combo/alias):</span>{" "}
-                  <span className="text-text-main font-mono">{selectedDetail.clientModel}</span>
+                <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                  <span className="text-text-muted">Client Alias</span>
+                  <span className="font-mono text-text-main">{selectedDetail.clientModel}</span>
                 </div>
               ) : null}
-              <div>
-                <span className="text-text-muted">Status:</span>{" "}
-                <span className={cn(
-                  "font-medium",
-                  selectedDetail.status === "success" ? "text-green-600" : "text-red-600"
-                )}>
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <span className="text-text-muted">Status</span>
+                <span className={cn("font-semibold uppercase", selectedDetail.status === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-[#dc2626]")}>
                   {selectedDetail.status}
                 </span>
               </div>
-              <div>
-                <span className="text-text-muted">Latency:</span>{" "}
-                <span className="text-text-main font-mono">
-                  TTFT {selectedDetail.latency?.ttft || 0}ms / Total {selectedDetail.latency?.total || 0}ms
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <span className="text-text-muted">Tokens (In / Cache / Write / Out)</span>
+                <span className="font-mono text-text-main">
+                  {getInputTokens(selectedDetail.tokens).toLocaleString()} / {getCachedTokens(selectedDetail.tokens).toLocaleString()} / {getCacheCreationTokens(selectedDetail.tokens).toLocaleString()} / {(selectedDetail.tokens?.completion_tokens || 0).toLocaleString()}
                 </span>
               </div>
-              <div>
-                <span className="text-text-muted">Input Tokens:</span>{" "}
-                <span className="text-text-main font-mono">
-                  {getInputTokens(selectedDetail.tokens).toLocaleString()}
-                </span>
-              </div>
-              {getCachedTokens(selectedDetail.tokens) > 0 && (
-                <div>
-                  <span className="text-text-muted">Cached Tokens:</span>{" "}
-                  <span className="text-text-main font-mono">
-                    {getCachedTokens(selectedDetail.tokens).toLocaleString()}
-                  </span>
-                </div>
-              )}
-              {getCacheCreationTokens(selectedDetail.tokens) > 0 && (
-                <div>
-                  <span className="text-text-muted">Cache Creation:</span>{" "}
-                  <span className="text-text-main font-mono">
-                    {getCacheCreationTokens(selectedDetail.tokens).toLocaleString()}
-                  </span>
-                </div>
-              )}
-              <div>
-                <span className="text-text-muted">Output Tokens:</span>{" "}
-                <span className="text-text-main font-mono">
-                  {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
-                </span>
-              </div>
-              <div className="sm:col-span-2">
-                <span className="text-text-muted">Token save (RTK/Headroom):</span>{" "}
-                <span className="text-text-main font-mono">
-                  {formatTokenSaveCell(selectedDetail)}
-                </span>
+              <div className="flex justify-between gap-3 px-3.5 py-2.5">
+                <span className="text-text-muted">Token Save (RTK / Headroom)</span>
+                <span className="font-mono text-text-main">{formatTokenSaveCell(selectedDetail)}</span>
               </div>
             </div>
 
             {(selectedDetail.rtkStats || selectedDetail.headroomStats || selectedDetail.headroomDiagnostics) ? (
               <CollapsibleSection title="Token save benchmark (RTK / Headroom)" defaultOpen={true} icon="savings">
-                <div className="grid min-w-0 grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                <div className="grid min-w-0 grid-cols-1 gap-3 text-xs sm:grid-cols-2">
                   {selectedDetail.rtkStats ? (
                     <div>
-                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">RTK</p>
-                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs dark:border-white/5 dark:bg-white/5">
+                      <p className="mb-1 text-[11px] font-medium text-text-muted">RTK</p>
+                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs">
                         {JSON.stringify(selectedDetail.rtkStats, null, 2)}
                       </pre>
                     </div>
                   ) : null}
                   {selectedDetail.headroomStats ? (
                     <div>
-                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">Headroom stats</p>
-                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs dark:border-white/5 dark:bg-white/5">
+                      <p className="mb-1 text-[11px] font-medium text-text-muted">Headroom stats</p>
+                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs">
                         {JSON.stringify(selectedDetail.headroomStats, null, 2)}
                       </pre>
                     </div>
                   ) : null}
                   {selectedDetail.headroomDiagnostics ? (
                     <div className="sm:col-span-2">
-                      <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-text-muted">Headroom diagnostics</p>
-                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs dark:border-white/5 dark:bg-white/5">
+                      <p className="mb-1 text-[11px] font-medium text-text-muted">Headroom diagnostics</p>
+                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs">
                         {JSON.stringify(selectedDetail.headroomDiagnostics, null, 2)}
                       </pre>
                     </div>
@@ -481,17 +494,17 @@ export default function RequestDetailsTab() {
                 </div>
               </CollapsibleSection>
             ) : null}
-            
-            <div className="space-y-4">
+
+            <div className="space-y-3">
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs text-text-main">
                   {JSON.stringify(selectedDetail.request, null, 2)}
                 </pre>
               </CollapsibleSection>
 
               {selectedDetail.providerRequest && (
                 <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs text-text-main">
                     {JSON.stringify(selectedDetail.providerRequest, null, 2)}
                   </pre>
                 </CollapsibleSection>
@@ -499,38 +512,38 @@ export default function RequestDetailsTab() {
 
               {selectedDetail.providerResponse && (
                 <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {typeof selectedDetail.providerResponse === 'object'
+                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs text-text-main">
+                    {typeof selectedDetail.providerResponse === "object"
                       ? JSON.stringify(selectedDetail.providerResponse, null, 2)
-                      : selectedDetail.providerResponse
-                    }
+                      : selectedDetail.providerResponse}
                   </pre>
                 </CollapsibleSection>
               )}
-              
+
               <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
                 {selectedDetail.response?.thinking && (
                   <div className="mb-4">
-                    <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
-                      <span className="material-symbols-outlined text-[16px]">psychology</span>
+                    <h4 className="font-semibold text-text-muted mb-2 flex items-center gap-2 text-[11px]">
+                      <span className="material-symbols-outlined text-[15px]">psychology</span>
                       Thinking Process
                     </h4>
-                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
+                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs text-text-main">
                       {selectedDetail.response.thinking}
                     </pre>
                   </div>
                 )}
-                
-                <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
+
+                <h4 className="font-semibold text-text-muted mb-2 text-[11px]">
                   Content
                 </h4>
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs text-text-main">
                   {selectedDetail.response?.content || "[No content]"}
                 </pre>
               </CollapsibleSection>
             </div>
           </div>
-        )}
+          );
+        })()}
       </Drawer>
     </div>
   );

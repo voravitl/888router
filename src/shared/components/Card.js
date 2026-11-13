@@ -17,38 +17,38 @@ export default function Card({
 }) {
   const paddings = {
     none: "",
-    xs: "p-3",
+    xs: "p-3.5",
     sm: "p-4",
-    md: "p-6",
-    lg: "p-8",
+    md: "p-5",
+    lg: "p-6",
   };
 
   return (
     <div
       className={cn(
-        "hyperion-card stagger-in",
-        aurora && "aurora-border",
-        elev ? "shadow-[var(--shadow-elev)]" : "shadow-[var(--shadow-soft)]",
-        hover && "hover:-translate-y-0.5 hover:shadow-[var(--shadow-warm)] hover:border-amber-500/40 cursor-pointer",
+        "bg-surface border border-border rounded-xl text-text-main shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:shadow-none transition-colors",
+        aurora && "border-border",
+        elev && "bg-bg-alt",
+        hover && "hover:border-text-subtle cursor-pointer",
         paddings[padding],
         className
       )}
       {...props}
     >
       {(title || action) && (
-        <div className="flex items-center justify-between mb-4 gap-3">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-border-subtle gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {icon && (
-              <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 shrink-0">
-                <span className="material-symbols-outlined text-[20px]">{icon}</span>
+              <div className="size-8 rounded-lg border border-border-subtle bg-surface-2 text-text-main flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[18px]">{icon}</span>
               </div>
             )}
             <div className="min-w-0">
               {title && (
-                <h3 className="text-text-main font-semibold tracking-tight truncate">{title}</h3>
+                <h3 className="text-sm font-semibold tracking-[-0.015em] text-text-main truncate">{title}</h3>
               )}
               {subtitle && (
-                <p className="text-sm text-text-muted truncate">{subtitle}</p>
+                <p className="text-xs text-text-muted truncate">{subtitle}</p>
               )}
             </div>
           </div>
@@ -64,8 +64,7 @@ Card.Section = function CardSection({ children, className, ...props }) {
   return (
     <div
       className={cn(
-        "p-4 rounded-xl",
-        "bg-bg-alt/70 border border-border-subtle",
+        "p-3.5 rounded-lg bg-bg-alt border border-border-subtle",
         className
       )}
       {...props}
@@ -79,7 +78,7 @@ Card.Row = function CardRow({ children, className, ...props }) {
   return (
     <div
       className={cn(
-        "p-3 -mx-3 px-3 transition-colors",
+        "py-2.5 px-3 -mx-3 transition-colors rounded-lg",
         "border-b border-border-subtle last:border-b-0",
         "hover:bg-surface-2/60",
         className
@@ -100,7 +99,7 @@ Card.ListItem = function CardListItem({
   return (
     <div
       className={cn(
-        "group flex items-center justify-between p-3 -mx-3 px-3",
+        "group flex items-center justify-between py-2.5 px-3 -mx-3 rounded-lg",
         "border-b border-border-subtle last:border-b-0",
         "hover:bg-surface-2/60 transition-colors",
         className

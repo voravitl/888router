@@ -139,9 +139,9 @@ export default function SkillsPage() {
         ]}
       />
 
-      <Card padding="md" className="hyperion-card border border-cyan-500/25">
-        <div className="text-[11px] font-mono uppercase tracking-wider text-cyan-400 mb-2">Quick Boot Prompt (Paste into AI Client)</div>
-        <div className="px-3.5 py-2.5 rounded-xl bg-black/30 border border-border/60 font-mono text-[12px] text-text-main">
+      <Card padding="md" className="border border-border bg-surface">
+        <div className="text-xs font-semibold text-text-main mb-2">Quick Boot Prompt (Paste into AI Client)</div>
+        <div className="px-3.5 py-2.5 rounded-lg bg-bg-alt border border-border font-mono text-xs text-text-main">
           {data ? `Read this skill and use it: ${entryPath}` : "Loading…"}
         </div>
       </Card>

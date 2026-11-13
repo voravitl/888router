@@ -76,10 +76,10 @@ export default function CLIToolsPageClient({ machineId }) {
         ))}
       </div>
 
-      <div className="hyperion-card rounded-2xl border border-amber-500/25 p-4 sm:p-5 flex flex-col gap-4">
-        <div className="flex items-center justify-between gap-3 border-b border-border/60 pb-3">
+      <div className="rounded-xl border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-4 sm:p-5 flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-3 border-b border-border pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="size-8 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-400 flex items-center justify-center">
+            <div className="size-8 rounded-lg border border-border bg-bg-alt text-text-main flex items-center justify-center">
               <span className="material-symbols-outlined text-[18px]">security</span>
             </div>
             <div>
@@ -87,8 +87,8 @@ export default function CLIToolsPageClient({ machineId }) {
               <p className="text-[11px] text-text-muted">Route closed-source desktop clients transparently through your 888router node.</p>
             </div>
           </div>
-          <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 font-mono text-[10px] text-amber-400">
-            {mitmTools.length} BRIDGES
+          <span className="rounded-md border border-border bg-bg-alt px-2 py-0.5 font-mono text-[11px] text-text-muted">
+            {mitmTools.length} bridges
           </span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">

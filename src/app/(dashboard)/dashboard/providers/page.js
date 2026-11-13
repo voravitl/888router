@@ -10,7 +10,7 @@ import {
   Toggle,
   PageHero,
 } from "@/shared/components";
-import { Segmented, Input as AntInput, Tag } from "antd";
+import { Segmented, Input as AntInput, Tag, Table as AntTable, Drawer as AntDrawer, Switch } from "antd";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
@@ -107,7 +107,8 @@ export default function ProvidersPage() {
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState("all");
-  const [viewMode, setViewMode] = useState("grid");
+  const [viewMode, setViewMode] = useState("matrix");
+  const [drawerProvider, setDrawerProvider] = useState(null);
   const [localSearch, setLocalSearch] = useState("");
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
@@ -388,43 +389,213 @@ export default function ProvidersPage() {
       ? "grid grid-cols-1 lg:grid-cols-2 gap-2.5"
       : "grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-3.5 lg:grid-cols-3 xl:grid-cols-4";
 
+  const matchProvConns = (provId, allowedAuthTypes) =>
+    connections.filter((c) => {
+      if (c.provider !== provId) return false;
+      if (!allowedAuthTypes) return true;
+      const t = c.authType || "oauth";
+      return Array.isArray(allowedAuthTypes) ? allowedAuthTypes.includes(t) : t === allowedAuthTypes;
+    });
+
+  const buildMatrixRow = (id, name, tier, badgeColor, authTypes, stats, isCompatible = false) => {
+    const provConns = matchProvConns(id, authTypes);
+    const activeCount = provConns.filter((c) => c.isActive !== false).length;
+    const errorCount = provConns.filter(
+      (c) => c.testStatus === "error" || c.testStatus === "expired" || c.testStatus === "unavailable"
+    ).length;
+    return {
+      key: `${tier}-${id}`,
+      id,
+      name,
+      tier,
+      badgeColor,
+      authTypes,
+      isCompatible,
+      stats,
+      conns: provConns,
+      activeCount,
+      totalCount: provConns.length,
+      errorCount,
+    };
+  };
+
+  const rawMatrixRows = [
+    ...(showCompatibleSection
+      ? displayedCompatible.map((info) =>
+          buildMatrixRow(
+            info.id,
+            info.name,
+            info.apiType ? `COMPAT (${info.apiType.toUpperCase()})` : "COMPATIBLE",
+            "#71717a",
+            "apikey",
+            getProviderStats(info.id, "apikey"),
+            true
+          )
+        )
+      : []),
+    ...(showOAuthSection
+      ? displayedOAuth.map(([key, info]) =>
+          buildMatrixRow(key, info.name, "OAUTH", "#2563eb", "oauth", getProviderStats(key, "oauth"))
+        )
+      : []),
+    ...(showFreeSection
+      ? [
+          ...displayedFree.map(([key, info]) => {
+            const freeTypes = key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+            return buildMatrixRow(key, info.name, "FREE", "#10b981", freeTypes, getProviderStats(key, freeTypes));
+          }),
+          ...displayedFreeTier.map(([key, info]) =>
+            buildMatrixRow(key, info.name, "FREE TIER", "#10b981", "apikey", getProviderStats(key, "apikey"))
+          ),
+        ]
+      : []),
+    ...(showApikeySection
+      ? displayedApikey.map(([key, info]) =>
+          buildMatrixRow(key, info.name, "API KEY", "#eab308", "apikey", getProviderStats(key, "apikey"))
+        )
+      : []),
+  ];
+
+  const matrixRows =
+    categoryFilter === "all"
+      ? [...rawMatrixRows].sort((a, b) => (b.totalCount > 0 ? 1 : 0) - (a.totalCount > 0 ? 1 : 0))
+      : rawMatrixRows;
+
+  const matrixColumns = [
+    {
+      title: "Provider",
+      dataIndex: "name",
+      render: (_, record) => {
+        const dotColor =
+          record.errorCount > 0
+            ? "#dc2626"
+            : record.activeCount > 0
+              ? "#a6c23f"
+              : "var(--color-border-strong)";
+        return (
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="size-2 rounded-full shrink-0 inline-block" style={{ backgroundColor: dotColor }} />
+            <div className="size-7 rounded-lg border border-border bg-bg-alt flex items-center justify-center shrink-0">
+              <ProviderIcon
+                src={`/providers/${record.id}.png`}
+                alt={record.name}
+                size={16}
+                className="object-contain max-w-[16px] max-h-[16px]"
+                fallbackText={record.name.slice(0, 2).toUpperCase()}
+              />
+            </div>
+            <Link
+              href={`/dashboard/providers/${record.id}`}
+              onClick={(e) => e.stopPropagation()}
+              className="font-medium text-text-main hover:underline truncate"
+            >
+              {record.name}
+            </Link>
+          </div>
+        );
+      },
+    },
+    {
+      title: "Tier",
+      dataIndex: "tier",
+      width: 120,
+      render: (tier) => (
+        <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-medium border border-border bg-bg-alt text-text-muted">
+          {tier}
+        </span>
+      ),
+    },
+    {
+      title: "Accounts",
+      dataIndex: "totalCount",
+      width: 140,
+      render: (_, record) => (
+        <span className="text-xs tabular-nums text-text-main">
+          <strong>{record.activeCount}</strong>
+          <span className="text-text-muted"> / {record.totalCount} active</span>
+        </span>
+      ),
+    },
+    {
+      title: "Status",
+      dataIndex: "errorCount",
+      width: 140,
+      render: (_, record) => {
+        if (record.totalCount === 0) {
+          return <span className="text-[11px] text-text-subtle">Unconfigured</span>;
+        }
+        if (record.errorCount > 0) {
+          return (
+            <span className="inline-block px-2 py-0.5 rounded-md border border-red-500/30 bg-red-500/10 text-[11px] font-medium text-red-600 dark:text-red-400">
+              {record.errorCount} error
+            </span>
+          );
+        }
+        if (record.activeCount === 0) {
+          return (
+            <span className="inline-block px-2 py-0.5 rounded-md border border-amber-500/30 bg-amber-500/10 text-[11px] font-medium text-amber-700 dark:text-amber-400">
+              Paused
+            </span>
+          );
+        }
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+            <span className="size-1.5 rounded-full bg-[#a6c23f]" />
+            Online
+          </span>
+        );
+      },
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      width: 260,
+      align: "right",
+      render: (_, record) => (
+        <div className="inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          {record.totalCount > 0 && (
+            <Switch
+              size="small"
+              checked={!record.stats?.allDisabled}
+              onChange={(checked) => handleToggleProvider(record.id, record.authTypes, checked)}
+              aria-label={`Toggle ${record.name}`}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => handleBatchTest("provider", record.id)}
+            disabled={record.totalCount === 0 || testingMode === record.id}
+            className="px-2.5 py-1 rounded-md border border-border bg-bg-alt hover:bg-surface-2 disabled:opacity-40 text-[11px] font-medium text-text-main transition-colors cursor-pointer"
+          >
+            {testingMode === record.id ? "Testing" : "Test"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setDrawerProvider(record)}
+            className="px-2.5 py-1 rounded-md border border-border bg-bg-alt hover:bg-surface-2 text-[11px] font-medium text-text-main transition-colors cursor-pointer"
+          >
+            Inspect
+          </button>
+          <Link
+            href={`/dashboard/providers/${record.id}`}
+            className="px-2.5 py-1 rounded-md bg-[#111111] text-white dark:bg-[#fafafa] dark:text-[#111111] text-[11px] font-medium hover:opacity-85 transition-opacity"
+          >
+            Config →
+          </Link>
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+    <div className="flex min-w-0 flex-col gap-5 px-1 sm:px-0">
       <PageHero
-        eyebrow="Provider Mesh"
-        title="AI Providers Command Deck"
-        description="Manage OAuth accounts, free-tier gateways, API key backends, and OpenAI/Anthropic compatible endpoints."
-        icon="dns"
+        title="AI Providers"
+        description="Unified gateway catalog for OAuth accounts, free providers, API key backends, and compatible endpoints."
         badge={{
-          text: `${totalActiveConns} ACTIVE CONNECTIONS`,
+          text: `${totalActiveConns}/${connections.length} active${errorConnsCount > 0 ? ` · ${errorConnsCount} error` : ""}`,
           color: errorConnsCount > 0 ? "orange" : "green",
         }}
-        stats={[
-          {
-            label: "Active Connections",
-            value: totalActiveConns,
-            suffix: `/ ${connections.length}`,
-            color: "#10b981",
-          },
-          {
-            label: "Configured Providers",
-            value: connectedProviderCount,
-            suffix: "vendors",
-            color: "#f59e0b",
-          },
-          {
-            label: "Error / Cooldown",
-            value: errorConnsCount,
-            suffix: errorConnsCount > 0 ? "attention" : "healthy",
-            color: errorConnsCount > 0 ? "#f43f5e" : "#06b6d4",
-          },
-          {
-            label: "Custom Compatible",
-            value: compatibleProviders.length + anthropicCompatibleProviders.length,
-            suffix: "nodes",
-            color: "#a855f7",
-          },
-        ]}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <ModelAvailabilityBadge />
@@ -434,7 +605,7 @@ export default function ProvidersPage() {
               icon="add"
               onClick={() => setShowAddAnthropicCompatibleModal(true)}
             >
-              + Anthropic Node
+              Anthropic Node
             </Button>
             <Button
               size="sm"
@@ -442,45 +613,47 @@ export default function ProvidersPage() {
               icon="add"
               onClick={() => setShowAddCompatibleModal(true)}
             >
-              + OpenAI Node
+              OpenAI Node
             </Button>
           </div>
         }
         toolbar={
           <>
-            <Segmented
-              size="small"
-              value={categoryFilter}
-              onChange={setCategoryFilter}
-              options={[
-                { label: "All", value: "all" },
-                { label: `Connected (${connectedProviderCount})`, value: "connected" },
-                { label: `OAuth (${oauthEntries.length})`, value: "oauth" },
-                { label: `Free (${freeEntries.length + freeTierEntries.length})`, value: "free" },
-                { label: `API Key (${apikeyEntries.length})`, value: "apikey" },
-                {
-                  label: `Custom (${compatibleProviders.length + anthropicCompatibleProviders.length})`,
-                  value: "compatible",
-                },
-              ]}
-            />
+            <div className="w-full sm:w-auto max-w-full overflow-x-auto custom-scrollbar">
+              <Segmented
+                size="small"
+                value={categoryFilter}
+                onChange={setCategoryFilter}
+                options={[
+                  { label: "All", value: "all" },
+                  { label: `Connected (${connectedProviderCount})`, value: "connected" },
+                  { label: `OAuth (${oauthEntries.length})`, value: "oauth" },
+                  { label: `Free (${freeEntries.length + freeTierEntries.length})`, value: "free" },
+                  { label: `API Key (${apikeyEntries.length})`, value: "apikey" },
+                  {
+                    label: `Custom (${compatibleProviders.length + anthropicCompatibleProviders.length})`,
+                    value: "compatible",
+                  },
+                ]}
+              />
+            </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <AntInput
                 allowClear
-                size="medium"
+                size="small"
                 value={localSearch}
                 onChange={(e) => setLocalSearch(e.target.value)}
                 placeholder="Filter provider by name..."
-                prefix={<span className="material-symbols-outlined text-[16px] text-text-muted">search</span>}
-                className="w-full sm:w-56 !rounded-[10px]"
+                prefix={<span className="material-symbols-outlined text-[15px] text-text-muted">search</span>}
+                className="w-full sm:w-56"
               />
               <Segmented
                 size="small"
                 value={viewMode}
                 onChange={setViewMode}
                 options={[
-                  { label: "Grid", value: "grid" },
-                  { label: "Dense", value: "list" },
+                  { label: "Matrix", value: "matrix" },
+                  { label: "Cards", value: "grid" },
                 ]}
               />
             </div>
@@ -488,14 +661,150 @@ export default function ProvidersPage() {
         }
       />
 
-      {/* Connected Vendor Pulse Strip */}
-      {connectedProviderCount > 0 && (
-        <div className="hyperion-card rounded-2xl border border-border/70 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="beacon-dot bg-emerald-400" />
-            <span className="font-mono text-[11px] uppercase tracking-wider text-text-muted">Connected Backends</span>
+      {viewMode === "matrix" && hasAnyResult && (
+        <div className="rounded-xl border border-border bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-border bg-bg-alt">
+            <span className="text-xs font-semibold text-text-main">
+              Provider Catalog ({matrixRows.length})
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleBatchTest("oauth")}
+                disabled={testingMode === "oauth"}
+                className="px-2.5 py-1 rounded-md border border-border bg-surface hover:bg-surface-2 text-[11px] font-medium text-text-main transition-colors cursor-pointer"
+              >
+                {testingMode === "oauth" ? "Testing OAuth..." : "Test OAuth"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchTest("free")}
+                disabled={testingMode === "free"}
+                className="px-2.5 py-1 rounded-md border border-border bg-surface hover:bg-surface-2 text-[11px] font-medium text-text-main transition-colors cursor-pointer"
+              >
+                {testingMode === "free" ? "Testing Free..." : "Test Free"}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchTest("apikey")}
+                disabled={testingMode === "apikey"}
+                className="px-2.5 py-1 rounded-md border border-border bg-surface hover:bg-surface-2 text-[11px] font-medium text-text-main transition-colors cursor-pointer"
+              >
+                {testingMode === "apikey" ? "Testing Keys..." : "Test Keys"}
+              </button>
+            </div>
           </div>
-          <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
+
+          <AntTable
+            columns={matrixColumns}
+            dataSource={matrixRows}
+            rowKey="key"
+            size="small"
+            bordered
+            pagination={{ pageSize: 25, showSizeChanger: false }}
+            scroll={{ x: 760 }}
+            onRow={(record) => ({
+              onClick: () => setDrawerProvider(record),
+              style: { cursor: "pointer" },
+            })}
+          />
+        </div>
+      )}
+
+      <AntDrawer
+        open={Boolean(drawerProvider)}
+        onClose={() => setDrawerProvider(null)}
+        title={drawerProvider ? drawerProvider.name : "Provider"}
+        size="default"
+        destroyOnHidden
+      >
+        {drawerProvider && (
+          <div className="space-y-4 font-mono text-xs">
+            <div className="border border-border divide-y divide-border-subtle">
+              <div className="flex justify-between px-3 py-2">
+                <span className="text-text-muted">PROVIDER ID</span>
+                <span className="text-text-main font-semibold">{drawerProvider.id}</span>
+              </div>
+              <div className="flex justify-between px-3 py-2">
+                <span className="text-text-muted">AUTH TIER</span>
+                <span>{drawerProvider.tier}</span>
+              </div>
+              <div className="flex justify-between px-3 py-2">
+                <span className="text-text-muted">ACCOUNTS ACTIVE</span>
+                <span className="text-text-main tabular-nums">
+                  {drawerProvider.activeCount} / {drawerProvider.totalCount}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Link href={`/dashboard/providers/${drawerProvider.id}`} className="flex-1">
+                <Button variant="primary" fullWidth icon="settings">
+                  Manage Accounts & OAuth
+                </Button>
+              </Link>
+              <Button
+                variant="outline"
+                disabled={drawerProvider.totalCount === 0 || testingMode === drawerProvider.id}
+                onClick={() => handleBatchTest("provider", drawerProvider.id)}
+              >
+                {testingMode === drawerProvider.id ? "Testing..." : "Test"}
+              </Button>
+            </div>
+
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-text-muted mb-2">
+                REGISTERED CONNECTIONS ({drawerProvider.conns.length})
+              </div>
+              {drawerProvider.conns.length === 0 ? (
+                <div className="p-4 border border-dashed border-border text-center text-text-muted">
+                  No credentials configured yet. Click Manage Accounts above to connect.
+                </div>
+              ) : (
+                <div className="border border-border divide-y divide-border-subtle">
+                  {drawerProvider.conns.map((conn) => {
+                    const isErr = conn.testStatus === "error" || conn.testStatus === "expired";
+                    return (
+                      <div key={conn.id} className="p-2.5 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-text-main truncate">
+                            {conn.name || conn.email || conn.id}
+                          </div>
+                          <div className="text-[10px] text-text-muted uppercase">
+                            {conn.authType || "oauth"} · {conn.testStatus || "untested"}
+                          </div>
+                        </div>
+                        <span
+                          className={`px-1.5 py-0.5 text-[10px] border rounded-md ${
+                            isErr
+                              ? "border-red-500/30 text-red-600 dark:text-red-400 bg-red-500/10"
+                              : conn.isActive === false
+                                ? "border-amber-500/30 text-amber-700 dark:text-amber-400 bg-amber-500/10"
+                                : "border-[#a6c23f]/40 text-[#5c6f18] dark:text-[#a6c23f] bg-[#a6c23f]/10"
+                          }`}
+                        >
+                          {isErr ? "ERR" : conn.isActive === false ? "PAUSED" : "OK"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </AntDrawer>
+
+      {/* Connected Backends Strip (Cards view) */}
+      {viewMode === "grid" && connectedProviderCount > 0 && (
+        <div className="rounded-lg border border-border bg-surface px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="size-1.5 rounded-full bg-[#a6c23f]" />
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+              Connected Backends
+            </span>
+          </div>
+          <div className="flex flex-1 flex-wrap items-center gap-1.5 min-w-0">
             {Array.from(new Set(connections.map((c) => c.provider))).map((provId) => {
               const provConns = connections.filter((c) => c.provider === provId);
               const active = provConns.filter((c) => c.isActive !== false).length;
@@ -505,15 +814,15 @@ export default function ProvidersPage() {
                 <Link
                   key={provId}
                   href={`/dashboard/providers/${provId}`}
-                  className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-black/[0.03] dark:bg-white/[0.03] px-2.5 py-1.5 text-xs hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg-alt px-2 py-1 text-xs hover:border-text-main transition-colors"
                 >
                   <span
-                    className={`size-2 rounded-full ${
-                      hasErr ? "bg-rose-400" : active > 0 ? "bg-emerald-400" : "bg-amber-400"
+                    className={`size-1.5 ${
+                      hasErr ? "bg-[#dc2626]" : active > 0 ? "bg-[#a6c23f]" : "bg-amber-500"
                     }`}
                   />
-                  <span className="font-medium text-text-main">{info?.name || provId}</span>
-                  <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-cyan-400">
+                  <span className="font-mono text-[11px] font-medium text-text-main">{info?.name || provId}</span>
+                  <span className="border-l border-border pl-1.5 font-mono text-[10px] tabular-nums text-text-muted">
                     {active}/{provConns.length}
                   </span>
                 </Link>
@@ -524,24 +833,24 @@ export default function ProvidersPage() {
       )}
 
       {!hasAnyResult && (
-        <div className="text-center py-10 border border-dashed border-border rounded-2xl bg-surface/50">
-          <span className="material-symbols-outlined text-[32px] text-text-muted mb-2 block">
+        <div className="text-center py-10 border border-dashed border-border rounded-lg bg-surface">
+          <span className="material-symbols-outlined text-[28px] text-text-muted mb-2 block">
             search_off
           </span>
-          <p className="text-text-muted text-sm">No providers match your current filter</p>
+          <p className="font-mono text-text-muted text-xs uppercase tracking-wider">No providers match current filter</p>
         </div>
       )}
 
       {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
-      {showCompatibleSection && (
-      <section className="rounded-2xl border border-border/75 bg-surface/55 p-4 sm:p-5 flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="size-2 rounded-full bg-purple-400 shadow-[0_0_8px_#c084fc]" />
-            <h2 className="text-base sm:text-lg font-semibold flex items-center gap-2 leading-tight m-0">
+      {viewMode === "grid" && showCompatibleSection && (
+      <section className="rounded-xl border border-border bg-surface p-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="size-2 bg-[#71717a]" />
+            <h2 className="font-mono text-xs uppercase tracking-wider font-semibold flex items-center gap-2 leading-tight m-0 text-text-main">
               Custom Compatible Nodes
             </h2>
-            <Tag variant="filled" color="purple" className="!m-0 !font-mono !text-[10px]">
+            <Tag variant="outlined" className="!m-0 !rounded-md !text-[11px]">
               {displayedCompatible.length}
             </Tag>
           </div>
@@ -592,15 +901,15 @@ export default function ProvidersPage() {
       )}
 
       {/* OAuth Providers */}
-      {showOAuthSection && (
-      <section className="rounded-2xl border border-border/75 bg-surface/55 p-4 sm:p-5 flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="size-2 rounded-full bg-amber-400 shadow-[0_0_8px_#f59e0b]" />
-            <h2 className="text-base sm:text-lg font-semibold flex items-center gap-2 leading-tight m-0">
+      {viewMode === "grid" && showOAuthSection && (
+      <section className="rounded-xl border border-border bg-surface p-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="size-2 rounded-full bg-[#111111] dark:bg-[#fafafa]" />
+            <h2 className="font-mono text-xs uppercase tracking-wider font-semibold flex items-center gap-2 leading-tight m-0 text-text-main">
               OAuth & Subscription Gateways
             </h2>
-            <Tag variant="filled" color="gold" className="!m-0 !font-mono !text-[10px]">
+            <Tag variant="outlined" className="!m-0 !rounded-md !text-[11px]">
               {displayedOAuth.length}
             </Tag>
           </div>
@@ -608,10 +917,10 @@ export default function ProvidersPage() {
             <button
               onClick={() => handleBatchTest("oauth")}
               disabled={!!testingMode}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
+              className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-1 font-mono text-[10px] uppercase transition-colors sm:w-auto ${
                 testingMode === "oauth"
-                  ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                  : "bg-surface-2 border-border text-text-muted hover:text-text-main hover:border-amber-500/40"
+                  ? "bg-surface-2 border-text-main text-text-main"
+                  : "bg-bg-alt border-border text-text-muted hover:text-text-main hover:border-text-main"
               }`}
               title="Test all OAuth connections"
               aria-label="Test all OAuth connections"
@@ -642,25 +951,25 @@ export default function ProvidersPage() {
       )}
 
       {/* Free Tier Providers */}
-      {showFreeSection && (
-      <section className="rounded-2xl border border-border/75 bg-surface/55 p-4 sm:p-5 flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#10b981]" />
-            <h2 className="text-base sm:text-lg font-semibold flex items-center gap-2 leading-tight m-0">
+      {viewMode === "grid" && showFreeSection && (
+      <section className="rounded-xl border border-border bg-surface p-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="size-2 bg-emerald-500" />
+            <h2 className="font-mono text-xs uppercase tracking-wider font-semibold flex items-center gap-2 leading-tight m-0 text-text-main">
               Free & Community Tiers
             </h2>
-            <Tag variant="filled" color="green" className="!m-0 !font-mono !text-[10px]">
+            <Tag variant="outlined" className="!m-0 !rounded-md !text-[11px]">
               {displayedFree.length + displayedFreeTier.length}
             </Tag>
           </div>
           <button
             onClick={() => handleBatchTest("free")}
             disabled={!!testingMode}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
+            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-1 font-mono text-[10px] uppercase transition-colors sm:w-auto ${
               testingMode === "free"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-surface-2 border-border text-text-muted hover:text-text-main hover:border-emerald-500/40"
+                ? "bg-surface-2 border-text-main text-text-main"
+                : "bg-bg-alt border-border text-text-muted hover:text-text-main hover:border-text-main"
             }`}
             title="Test all Free connections"
             aria-label="Test all Free provider connections"
@@ -707,25 +1016,25 @@ export default function ProvidersPage() {
       )}
 
       {/* API Key Providers — fixed list */}
-      {showApikeySection && (
-      <section className="rounded-2xl border border-border/75 bg-surface/55 p-4 sm:p-5 flex flex-col gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="size-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#06b6d4]" />
-            <h2 className="text-base sm:text-lg font-semibold flex items-center gap-2 leading-tight m-0">
+      {viewMode === "grid" && showApikeySection && (
+      <section className="rounded-xl border border-border bg-surface p-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-2.5">
+          <div className="flex items-center gap-2">
+            <span className="size-2 rounded-full bg-text-muted" />
+            <h2 className="font-mono text-xs uppercase tracking-wider font-semibold flex items-center gap-2 leading-tight m-0 text-text-main">
               API Key Upstream Catalog
             </h2>
-            <Tag variant="filled" color="cyan" className="!m-0 !font-mono !text-[10px]">
+            <Tag variant="outlined" className="!m-0 !rounded-md !text-[11px]">
               {apikeyEntries.length}
             </Tag>
           </div>
           <button
             onClick={() => handleBatchTest("apikey")}
             disabled={!!testingMode}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
+            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-1 font-mono text-[10px] uppercase transition-colors sm:w-auto ${
               testingMode === "apikey"
-                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
-                : "bg-surface-2 border-border text-text-muted hover:text-text-main hover:border-cyan-500/40"
+                ? "bg-surface-2 border-text-main text-text-main"
+                : "bg-bg-alt border-border text-text-muted hover:text-text-main hover:border-text-main"
             }`}
             title="Test all API Key connections"
             aria-label="Test all API Key connections"
@@ -754,9 +1063,9 @@ export default function ProvidersPage() {
         {!onlyConnected && !isApikeySearching && !showAllApikey && categoryFilter !== "apikey" && hiddenApikeyCount > 0 && (
           <button
             onClick={() => setShowAllApikey(true)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-amber-500/35 px-3 py-2.5 text-sm font-medium text-amber-300 transition-colors hover:border-amber-400 hover:bg-amber-500/5"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 font-mono text-xs uppercase text-text-muted transition-colors hover:border-text-main hover:text-text-main"
           >
-            <span className="material-symbols-outlined text-[16px]">expand_more</span>
+            <span className="material-symbols-outlined text-[15px]">expand_more</span>
             Show all {apikeyEntries.length} API Key providers
           </button>
         )}
@@ -809,22 +1118,22 @@ export default function ProvidersPage() {
           className="fixed inset-0 z-50 flex items-start justify-center px-3 pt-[6vh] sm:pt-[10vh]"
           onClick={() => setTestResults(null)}
         >
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-black/70" />
           <div
-            className="relative bg-surface border border-border rounded-xl w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto shadow-2xl"
+            className="relative bg-surface border border-border rounded-lg w-full max-w-[600px] max-h-[86vh] sm:max-h-[80vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-3 border-b border-border bg-surface/95 backdrop-blur-sm rounded-t-xl">
-              <h3 className="font-semibold">Test Results</h3>
+            <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 border-b border-border bg-bg-alt">
+              <h3 className="font-mono text-xs font-semibold uppercase tracking-wider text-text-main">Test Results</h3>
               <button
                 onClick={() => setTestResults(null)}
-                className="p-1 rounded-lg hover:bg-bg text-text-muted hover:text-text-main transition-colors"
+                className="p-1 rounded-lg border border-border hover:border-text-main text-text-muted hover:text-text-main transition-colors"
                 aria-label="Close test results"
               >
-                <span className="material-symbols-outlined text-lg">close</span>
+                <span className="material-symbols-outlined text-base">close</span>
               </button>
             </div>
-            <div className="p-5">
+            <div className="p-4">
               <ProviderTestResultsView results={testResults} />
             </div>
           </div>
@@ -844,29 +1153,20 @@ function ProviderCard({ providerId, provider, stats, authType, compact = false, 
       <Card
         padding="xs"
         hover
-        className={`h-full relative overflow-hidden !bg-surface/90 ${
-          connected > 0 && !allDisabled ? "border-amber-500/25" : ""
+        className={`h-full relative ${
+          connected > 0 && !allDisabled ? "border-text-main/30" : ""
         } ${allDisabled ? "opacity-55" : ""}`}
       >
-        <div
-          className="absolute inset-x-0 top-0 h-[2px] opacity-80 group-hover:opacity-100 transition-opacity"
-          style={{
-            background: `linear-gradient(90deg, transparent, ${accentColor}, transparent)`,
-          }}
-        />
         <div className={`flex min-w-0 items-center justify-between gap-3 ${compact ? "py-0.5" : "py-1"}`}>
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             <div
-              className="size-10 shrink-0 rounded-xl border border-border/70 flex items-center justify-center shadow-inner"
-              style={{
-                backgroundColor: `${accentColor.length > 7 ? accentColor : accentColor + "18"}`,
-              }}
+              className="size-9 shrink-0 rounded-lg border border-border bg-bg-alt flex items-center justify-center"
             >
               <ProviderIcon
                 src={`/providers/${provider.id}.png`}
                 alt={provider.name}
-                size={28}
-                className="object-contain rounded-lg max-w-[28px] max-h-[28px]"
+                size={24}
+                className="object-contain max-w-[24px] max-h-[24px]"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }
@@ -875,11 +1175,11 @@ function ProviderCard({ providerId, provider, stats, authType, compact = false, 
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
-                <h3 className="truncate font-semibold text-sm text-text-main group-hover:text-amber-300 transition-colors">
+                <h3 className="truncate font-mono font-semibold text-xs text-text-main group-hover:underline transition-colors">
                   {provider.name}
                 </h3>
                 {total > 0 && (
-                  <span className="shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-surface-2 border border-border/70 text-text-muted">
+                  <span className="shrink-0 font-mono text-[10px] px-1 border border-border bg-bg-alt text-text-muted tabular-nums">
                     {total}
                   </span>
                 )}
@@ -979,29 +1279,20 @@ function ApiKeyProviderCard({
       <Card
         padding="xs"
         hover
-        className={`h-full relative overflow-hidden !bg-surface/90 ${
-          connected > 0 && !allDisabled ? "border-cyan-500/25" : ""
+        className={`h-full relative ${
+          connected > 0 && !allDisabled ? "border-text-main/30" : ""
         } ${allDisabled ? "opacity-55" : ""}`}
       >
-        <div
-          className="absolute inset-x-0 top-0 h-[2px] opacity-80 group-hover:opacity-100 transition-opacity"
-          style={{
-            background: `linear-gradient(90deg, transparent, ${accentColor}, transparent)`,
-          }}
-        />
         <div className={`flex min-w-0 items-center justify-between gap-3 ${compact ? "py-0.5" : "py-1"}`}>
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             <div
-              className="size-10 shrink-0 rounded-xl border border-border/70 flex items-center justify-center shadow-inner"
-              style={{
-                backgroundColor: `${accentColor.length > 7 ? accentColor : accentColor + "18"}`,
-              }}
+              className="size-9 shrink-0 rounded-lg border border-border bg-bg-alt flex items-center justify-center"
             >
               <ProviderIcon
                 src={getIconPath()}
                 alt={provider.name}
-                size={28}
-                className="object-contain rounded-lg max-w-[28px] max-h-[28px]"
+                size={24}
+                className="object-contain max-w-[24px] max-h-[24px]"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }
@@ -1010,11 +1301,11 @@ function ApiKeyProviderCard({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 min-w-0">
-                <h3 className="truncate font-semibold text-sm text-text-main group-hover:text-cyan-300 transition-colors">
+                <h3 className="truncate font-mono font-semibold text-xs text-text-main group-hover:underline transition-colors">
                   {provider.name}
                 </h3>
                 {total > 0 && (
-                  <span className="shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded-md bg-surface-2 border border-border/70 text-text-muted">
+                  <span className="shrink-0 font-mono text-[10px] px-1 border border-border bg-bg-alt text-text-muted tabular-nums">
                     {total}
                   </span>
                 )}
@@ -1139,7 +1430,7 @@ function ProviderTestResultsView({ results }) {
       {items.map((r, i) => (
         <div
           key={r.connectionId || i}
-          className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg bg-black/[0.03] px-3 py-2 text-xs dark:bg-white/[0.03] sm:flex-nowrap"
+          className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-border bg-bg-alt px-3 py-2 text-xs sm:flex-nowrap"
         >
           <span
             className={`material-symbols-outlined text-[16px] ${r.valid ? "text-emerald-500" : "text-red-500"}`}

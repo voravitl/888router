@@ -1,82 +1,177 @@
 "use client";
 
+import { useMemo } from "react";
 import PropTypes from "prop-types";
-import Card from "@/shared/components/Card";
+import { AreaChart, Area, ResponsiveContainer } from "recharts";
+import { cn } from "@/shared/utils/cn";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
-const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+const fmtCompact = (n) => {
+  if (!n) return "0";
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+};
+const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 
-export default function OverviewCards({ stats }) {
-  const cachedTokens = stats.totalCachedTokens || 0;
-  const totalIn = stats.totalPromptTokens || 0;
-  const cacheHitPct = totalIn > 0 ? Math.min(100, Math.round((cachedTokens / totalIn) * 100)) : 0;
+function MiniSparkline({ data, dataKey, id }) {
+  const safeData = useMemo(() => {
+    if (Array.isArray(data) && data.length > 0) {
+      return data.map((d, i) => ({ idx: i, val: Number(d?.[dataKey]) || 0 }));
+    }
+    return Array.from({ length: 8 }, (_, idx) => ({ idx, val: 0 }));
+  }, [data, dataKey]);
 
-  const cards = [
-    {
-      label: "Total Requests",
-      value: fmt(stats.totalRequests),
-      sub: stats.activeRequests?.length ? `${stats.activeRequests.length} in-flight` : "Completed calls",
-      accent: "from-cyan-400/80 to-sky-400/40",
-      valueColor: "text-text-main",
-      icon: "bolt",
-      iconCls: "text-cyan-400 bg-cyan-500/10 border-cyan-500/25",
-    },
-    {
-      label: "Input Tokens",
-      value: fmt(stats.totalPromptTokens),
-      sub: cachedTokens > 0 ? `${fmt(cachedTokens)} cached (${cacheHitPct}%)` : "Prompt volume",
-      accent: "from-amber-400/80 to-orange-400/40",
-      valueColor: "text-amber-400",
-      icon: "input",
-      iconCls: "text-amber-400 bg-amber-500/10 border-amber-500/25",
-    },
-    {
-      label: "Output Tokens",
-      value: fmt(stats.totalCompletionTokens),
-      sub: "Generated completions",
-      accent: "from-emerald-400/80 to-teal-400/40",
-      valueColor: "text-emerald-400",
-      icon: "output",
-      iconCls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
-    },
-    {
-      label: "Est. Cost",
-      value: `~${fmtCost(stats.totalCost)}`,
-      sub: "Estimated, not actual billing",
-      accent: "from-violet-400/80 to-fuchsia-400/40",
-      valueColor: "text-violet-400",
-      icon: "payments",
-      iconCls: "text-violet-400 bg-violet-500/10 border-violet-500/25",
-    },
-  ];
+  const gradId = `mono-spark-${id}`;
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4">
-      {cards.map((c) => (
-        <Card
-          key={c.label}
-          padding="none"
-          className="hyperion-card relative overflow-hidden border border-border/70"
-        >
-          <div className={`h-0.5 w-full bg-gradient-to-r ${c.accent}`} />
-          <div className="p-4 flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-mono uppercase tracking-wider text-text-muted">{c.label}</div>
-              <div className={`mt-1.5 truncate font-mono text-2xl font-bold tabular-nums ${c.valueColor}`}>
-                {c.value}
-              </div>
-              <div className="mt-1 truncate text-[11px] text-text-muted">{c.sub}</div>
-            </div>
-            <div className={`size-9 rounded-xl border flex items-center justify-center shrink-0 ${c.iconCls}`}>
-              <span className="material-symbols-outlined text-[18px]">{c.icon}</span>
-            </div>
+    <div className="h-[44px] w-full pt-1">
+      <ResponsiveContainer width="100%" height={44}>
+        <AreaChart data={safeData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--color-text-main)" stopOpacity={0.14} />
+              <stop offset="100%" stopColor="var(--color-text-main)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone"
+            dataKey="val"
+            stroke="var(--color-text-main)"
+            strokeWidth={1.6}
+            fill={`url(#${gradId})`}
+            dot={false}
+            isAnimationActive={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+MiniSparkline.propTypes = {
+  data: PropTypes.array,
+  dataKey: PropTypes.string.isRequired,
+  id: PropTypes.string.isRequired,
+};
+
+export default function OverviewCards({ stats, period = "7d", chartData = [] }) {
+  const totalRequests = stats?.totalRequests || 0;
+  const promptTokens = stats?.totalPromptTokens || 0;
+  const cachedTokens = stats?.totalCachedTokens || 0;
+  const completionTokens = stats?.totalCompletionTokens || 0;
+  const totalTokens = promptTokens + completionTokens;
+  const activeCount = Array.isArray(stats?.activeRequests)
+    ? stats.activeRequests.reduce((acc, item) => acc + (item.count || 0), 0)
+    : 0;
+  const cacheHitPct =
+    promptTokens > 0 ? Math.min(100, Math.round((cachedTokens / promptTokens) * 100)) : 0;
+
+  const filledSegments =
+    cacheHitPct > 0 ? Math.max(1, Math.min(12, Math.round((cacheHitPct / 100) * 12))) : 0;
+  const minuteSeries = Array.isArray(stats?.last10Minutes) ? stats.last10Minutes : [];
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+      {/* 1. Requests + 10m live activity sparkline */}
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] flex flex-col justify-between min-w-0">
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-xs font-medium text-text-muted">Total Requests</span>
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-main">
+              <span
+                className={cn(
+                  "size-1.5 rounded-full inline-block",
+                  activeCount > 0 ? "bg-[#a6c23f]" : "bg-text-subtle"
+                )}
+              />
+              {activeCount} active
+            </span>
           </div>
-        </Card>
-      ))}
+          <div className="text-2xl font-semibold tracking-tight tabular-nums text-text-main">
+            {fmt(totalRequests)}
+          </div>
+          <div className="text-[11px] text-text-muted mt-0.5 tabular-nums">
+            Last 10m request cadence
+          </div>
+        </div>
+        <MiniSparkline data={minuteSeries} dataKey="requests" id="requests" />
+      </div>
+
+      {/* 2. Token Volume + Period Token Sparkline */}
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] flex flex-col justify-between min-w-0">
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-xs font-medium text-text-muted">Token Volume</span>
+            <span className="rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-muted">
+              {period.toUpperCase()}
+            </span>
+          </div>
+          <div className="text-2xl font-semibold tracking-tight tabular-nums text-text-main">
+            {fmtCompact(totalTokens)}
+          </div>
+          <div className="text-[11px] text-text-muted mt-0.5 tabular-nums">
+            In {fmtCompact(promptTokens)} · Out {fmtCompact(completionTokens)}
+          </div>
+        </div>
+        <MiniSparkline data={chartData} dataKey="tokens" id="tokens" />
+      </div>
+
+      {/* 3. Prompt Cache Efficiency */}
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] flex flex-col justify-between min-w-0">
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-xs font-medium text-text-muted">Cache Hit Rate</span>
+            <span className="rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-main">
+              {fmtCompact(cachedTokens)} cached
+            </span>
+          </div>
+          <div className="text-2xl font-semibold tracking-tight tabular-nums text-text-main">
+            {cacheHitPct}%
+          </div>
+          <div className="text-[11px] text-text-muted mt-0.5 tabular-nums">
+            {cachedTokens > 0 ? `${fmt(cachedTokens)} prompt tokens reused` : "No cached prefix hits yet"}
+          </div>
+        </div>
+        <div className="h-[44px] flex flex-col justify-end pt-2">
+          <div className="grid grid-cols-12 gap-1" aria-label={`Cache hit rate ${cacheHitPct}%`}>
+            {Array.from({ length: 12 }, (_, idx) => (
+              <span
+                key={idx}
+                className={cn(
+                  "h-2.5 rounded-sm transition-colors",
+                  idx < filledSegments ? "bg-[#a6c23f]" : "bg-surface-2 border border-border-subtle"
+                )}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 4. Estimated Cost + Cost Trend Sparkline */}
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] flex flex-col justify-between min-w-0">
+        <div>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span className="text-xs font-medium text-text-muted">Estimated Cost</span>
+            <span className="rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[11px] font-medium tabular-nums text-text-muted">
+              {fmt(totalRequests)} calls
+            </span>
+          </div>
+          <div className="text-2xl font-semibold tracking-tight tabular-nums text-text-main">
+            {fmtCost(stats?.totalCost)}
+          </div>
+          <div className="text-[11px] text-text-muted mt-0.5 tabular-nums">
+            Weighted by {period.toUpperCase()} token usage
+          </div>
+        </div>
+        <MiniSparkline data={chartData} dataKey="cost" id="cost" />
+      </div>
     </div>
   );
 }
 
 OverviewCards.propTypes = {
-  stats: PropTypes.object.isRequired,
+  stats: PropTypes.object,
+  period: PropTypes.string,
+  chartData: PropTypes.array,
 };

@@ -8,7 +8,7 @@ const VARIANT_MAP = {
   secondary: { color: "default", variant: "filled" },
   outline: { color: "default", variant: "outlined" },
   ghost: { color: "default", variant: "text" },
-  danger: { color: "danger", variant: "solid" },
+  danger: { color: "danger", variant: "outlined" },
   success: { color: "green", variant: "solid" },
 };
 
@@ -21,7 +21,7 @@ const SIZE_MAP = {
 function renderIcon(icon) {
   if (!icon) return undefined;
   if (typeof icon === "string") {
-    return <span className="material-symbols-outlined text-[18px] leading-none">{icon}</span>;
+    return <span className="material-symbols-outlined text-[17px] leading-none">{icon}</span>;
   }
   return icon;
 }
@@ -53,9 +53,11 @@ export default function Button({
       htmlType={resolvedHtmlType}
       icon={renderIcon(icon)}
       className={cn(
-        "!inline-flex !items-center !justify-center !gap-2 !font-semibold active:scale-[0.98] transition-all",
-        variant === "primary" && "!shadow-[0_6px_18px_-6px_rgba(245,158,11,0.55)]",
-        variant === "success" && "!bg-emerald-600 hover:!bg-emerald-500 !border-emerald-500 !text-white",
+        "!inline-flex !items-center !justify-center !gap-2 !rounded-lg !text-[13px] !font-medium !shadow-none transition-colors",
+        variant === "primary" && "!bg-[#111111] !text-white hover:!bg-[#262626] dark:!bg-[#fafafa] dark:!text-[#111111] dark:hover:!bg-[#e4e4e7] !border-transparent",
+        variant === "outline" && "!border-border !bg-surface !text-text-main hover:!bg-surface-2",
+        variant === "secondary" && "!bg-surface-2 !text-text-main hover:!bg-surface-3",
+        variant === "success" && "!bg-[#16a34a] hover:!bg-[#15803d] !border-transparent !text-white",
         className
       )}
       {...props}

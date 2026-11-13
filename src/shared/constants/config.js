@@ -3,7 +3,7 @@ import pkg from "../../../package.json" with { type: "json" };
 // App configuration
 export const APP_CONFIG = {
   name: "888router",
-  description: "Hyperion AI Routing & Orchestration Control Plane",
+  description: "Local Unified AI Gateway & Routing Control Plane",
   version: pkg.version,
 };
 
@@ -34,7 +34,7 @@ export const UPDATER_CONFIG = {
 // Theme configuration
 export const THEME_CONFIG = {
   storageKey: "theme",
-  defaultTheme: "dark", // "light" | "dark" | "system"
+  defaultTheme: "light", // "light" | "dark" | "system"
 };
 
 // Subscription

@@ -702,9 +702,16 @@ export default function APIPageClient({ machineId }) {
 
   const currentEndpoint = baseUrl;
 
+  const activeSampleKey = keys.find((k) => k.isActive !== false)?.key || keys[0]?.key || "sk-888-your-key";
+
   return (
-    <div className="flex flex-col gap-6">
-      <HyperionBentoHero apiKeyCount={keys.length} loadingKeys={loading} />
+    <div className="flex flex-col gap-5">
+      <HyperionBentoHero
+        apiKeyCount={keys.length}
+        loadingKeys={loading}
+        baseUrl={currentEndpoint}
+        sampleKey={activeSampleKey}
+      />
       {/* Endpoint Card */}
       <Card>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -892,7 +899,7 @@ export default function APIPageClient({ machineId }) {
                   }
                   handleOpenTsModal();
                 }}
-                className="bg-linear-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white!"
+                className="bg-[#111111]! text-white! hover:opacity-90 dark:bg-[#fafafa]! dark:text-[#111111]!"
               >
                 Enable
               </Button>
@@ -1147,7 +1154,7 @@ export default function APIPageClient({ machineId }) {
                   Cloudflare Tunnel
                 </p>
                 <p className="text-sm text-text-muted">
-                  Expose your local 9Router to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
+                  Expose your local 888router gateway securely. No port forwarding, no static IP needed. Share endpoint URL with your tools or use it across Cursor, Claude Code, Codex, and OpenCode from anywhere.
                 </p>
               </div>
             </div>

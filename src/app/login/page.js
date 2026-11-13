@@ -142,7 +142,7 @@ export default function LoginPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-bg p-4">
         <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <span className="material-symbols-outlined inline-block animate-spin text-[28px] text-text-muted">progress_activity</span>
           <p className="text-text-muted mt-4">Loading...</p>
         </div>
       </div>
@@ -151,19 +151,20 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg p-4 relative overflow-hidden">
-      {/* Faint grid background */}
-      <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
       <div className="relative z-10 w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-amber-300 via-amber-400 to-cyan-400 bg-clip-text text-transparent mb-2">
+        <div className="text-center mb-7">
+          <div className="inline-flex items-center justify-center size-10 rounded-xl bg-[#111111] text-white dark:bg-[#fafafa] dark:text-[#111111] font-mono text-sm font-bold tracking-tight mb-3 shadow-sm">
+            888
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-text-main mb-1.5">
             888router
           </h1>
-          <p className="text-text-muted">
+          <p className="text-sm text-text-muted">
             {samlAvailable
               ? "Sign in with SAML 2.0 Single Sign-On"
               : oidcAvailable
               ? "Sign in with your OIDC provider to access the dashboard"
-              : "Enter your password to access the dashboard"}
+              : "Enter your password to access the gateway control plane"}
           </p>
         </div>
 
@@ -237,7 +238,7 @@ export default function LoginPage() {
                   )}
                   {resetHint && (
                     <p className="text-xs text-text-muted">
-                      Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                      Forgot password? Open <code className="bg-bg-alt border border-border px-1.5 py-0.5 rounded">888router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
                     </p>
                   )}
                 </div>
