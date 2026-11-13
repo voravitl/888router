@@ -182,6 +182,12 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
         'gemini-2.5-pro',
+        'gemini-4-hydrogen',
+        'gemini-4-hydrogen-xhigh',
+        'gemini-4-hydrogen-high',
+        'gemini-4-hydrogen-medium',
+        'gemini-4-hydrogen-low',
+        'gemini-4-hydrogen-tiered',
         'gemini-4-argon-high',
         'gemini-4-argon-medium',
         'gemini-4-argon-low',

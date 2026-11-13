@@ -67,10 +67,10 @@ export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
 // Backport of decolua/9router f172c3c4 (PR #5017). Retain exported names for compatibility.
-// Official Antigravity Hub Desktop 2.24.0 fingerprint captured from macOS arm64.
+// Official Antigravity Hub Desktop 2.31.2 fingerprint captured from macOS arm64.
 // Keep this static even when 888router runs on Linux: the provider profile is
 // intentionally matching the Hub client, not the server host.
-export const ANTIGRAVITY_IDE_VERSION = "2.24.0";
+export const ANTIGRAVITY_IDE_VERSION = "2.31.2";
 export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/hub/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
 
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)

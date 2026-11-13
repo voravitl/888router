@@ -2,15 +2,14 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
 export const APP_CONFIG = {
-  name: "9Router Proxy",
-  description: "AI Infrastructure Management",
+  name: "888router",
+  description: "Hyperion AI Routing & Orchestration Control Plane",
   version: pkg.version,
 };
 
-// GitHub configuration
+// Repository configuration
 export const GITHUB_CONFIG = {
-  changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
-  donateUrl: "https://9router.com/api/donate",
+  changelogUrl: "",
 };
 
 // Updater configuration
@@ -35,7 +34,7 @@ export const UPDATER_CONFIG = {
 // Theme configuration
 export const THEME_CONFIG = {
   storageKey: "theme",
-  defaultTheme: "system", // "light" | "dark" | "system"
+  defaultTheme: "dark", // "light" | "dark" | "system"
 };
 
 // Subscription

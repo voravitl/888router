@@ -1,21 +1,30 @@
 "use client";
 
+import { Button as AntButton } from "antd";
 import { cn } from "@/shared/utils/cn";
 
-const variants = {
-  primary: "bg-brand-500 hover:bg-brand-600 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted",
-  secondary: "bg-surface-2 hover:bg-surface-3 text-text-main border border-border disabled:opacity-50",
-  outline: "border border-border text-text-main hover:bg-surface-2 hover:border-brand-500/40",
-  ghost: "text-text-muted hover:bg-surface-2 hover:text-text-main",
-  danger: "bg-red-500 hover:bg-red-600 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted",
-  success: "bg-green-600 hover:bg-green-700 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted",
+const VARIANT_MAP = {
+  primary: { type: "primary" },
+  secondary: { color: "default", variant: "filled" },
+  outline: { color: "default", variant: "outlined" },
+  ghost: { color: "default", variant: "text" },
+  danger: { color: "danger", variant: "solid" },
+  success: { color: "green", variant: "solid" },
 };
 
-const sizes = {
-  sm: "h-7 px-3 text-xs rounded-[8px]",
-  md: "h-9 px-4 text-sm rounded-[10px]",
-  lg: "h-11 px-6 text-sm rounded-[10px]",
+const SIZE_MAP = {
+  sm: "small",
+  md: "medium",
+  lg: "large",
 };
+
+function renderIcon(icon) {
+  if (!icon) return undefined;
+  if (typeof icon === "string") {
+    return <span className="material-symbols-outlined text-[18px] leading-none">{icon}</span>;
+  }
+  return icon;
+}
 
 export default function Button({
   children,
@@ -27,30 +36,32 @@ export default function Button({
   loading = false,
   fullWidth = false,
   className,
+  type,
+  htmlType,
   ...props
 }) {
+  const antStyle = VARIANT_MAP[variant] || VARIANT_MAP.primary;
+  const resolvedHtmlType = htmlType || (type === "submit" || type === "reset" ? type : "button");
+
   return (
-    <button
+    <AntButton
+      {...antStyle}
+      size={SIZE_MAP[size] || "medium"}
+      disabled={disabled}
+      loading={loading}
+      block={fullWidth}
+      htmlType={resolvedHtmlType}
+      icon={renderIcon(icon)}
       className={cn(
-        "inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer",
-        "active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100",
-        variants[variant],
-        sizes[size],
-        fullWidth && "w-full",
+        "!inline-flex !items-center !justify-center !gap-2 !font-semibold active:scale-[0.98] transition-all",
+        variant === "primary" && "!shadow-[0_6px_18px_-6px_rgba(245,158,11,0.55)]",
+        variant === "success" && "!bg-emerald-600 hover:!bg-emerald-500 !border-emerald-500 !text-white",
         className
       )}
-      disabled={disabled || loading}
       {...props}
     >
-      {loading ? (
-        <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
-      ) : icon ? (
-        <span className="material-symbols-outlined text-[18px]">{icon}</span>
-      ) : null}
       {children}
-      {iconRight && !loading && (
-        <span className="material-symbols-outlined text-[18px]">{iconRight}</span>
-      )}
-    </button>
+      {iconRight && !loading ? renderIcon(iconRight) : null}
+    </AntButton>
   );
 }

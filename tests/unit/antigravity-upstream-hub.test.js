@@ -8,7 +8,7 @@ import { stripThinkingSuffix } from "../../open-sse/translator/concerns/thinking
 describe("Antigravity upstream Hub transport backport", () => {
   it("uses the upstream Hub identity on generation headers", () => {
     const headers = new AntigravityExecutor().buildHeaders({ accessToken: "fixture-token" });
-    expect(headers["User-Agent"]).toBe("antigravity/hub/2.24.0 darwin/arm64");
+    expect(headers["User-Agent"]).toBe("antigravity/hub/2.31.2 darwin/arm64");
   });
   it.each(["high", "medium", "low"])("preserves the %s tier and thinking level over native HTTP", level => {
     const id = `gemini-4-argon-${level}`;

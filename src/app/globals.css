@@ -7,112 +7,115 @@
 .fonts-loaded .material-symbols-outlined { visibility: visible; }
 
 /* ============================================================
-   9Router palette — adopted from 9remote_private/web
-   Brand orange (dark) / soft coral (light), neutral warm bases
+   888router — Hyperion Bento Design System (AntD v6 Aligned)
+   Obsidian Midnight + Neon Amber / Cyan / Purple Telemetry
    ============================================================ */
 :root {
-  /* Brand scale (light) - centered on #E56A4A */
-  --color-brand-50: #fdf1ed;
-  --color-brand-100: #fadccf;
-  --color-brand-200: #f4b59c;
-  --color-brand-300: #ee8d6a;
-  --color-brand-400: #ea7855;
-  --color-brand-500: #E56A4A;
-  --color-brand-600: #cc5236;
-  --color-brand-700: #a64027;
-  --color-brand-800: #7a2f1d;
-  --color-brand-900: #4d1e12;
+  /* Brand scale - Neon Amber (#F59E0B) */
+  --color-brand-50: #fffbeb;
+  --color-brand-100: #fef3c7;
+  --color-brand-200: #fde68a;
+  --color-brand-300: #fcd34d;
+  --color-brand-400: #fbbf24;
+  --color-brand-500: #f59e0b;
+  --color-brand-600: #d97706;
+  --color-brand-700: #b45309;
+  --color-brand-800: #92400e;
+  --color-brand-900: #78350f;
 
-  /* Primary (legacy alias for backward compat with existing components) */
+  --color-cyan: #06b6d4;
+  --color-purple: #a855f7;
+
+  /* Primary */
   --color-primary: var(--color-brand-500);
   --color-primary-hover: var(--color-brand-600);
 
   /* Surfaces & backgrounds (light) */
-  --color-bg: #FDFAF6;
-  --color-bg-alt: #F7F3EE;
+  --color-bg: #f8fafc;
+  --color-bg-alt: #f1f5f9;
   --color-surface: #ffffff;
-  --color-surface-2: #f4f4f5;
-  --color-surface-3: #e7e7e9;
-  --color-sidebar: rgba(244, 241, 236, 0.85);
+  --color-surface-2: #f1f5f9;
+  --color-surface-3: #e2e8f0;
+  --color-sidebar: rgba(255, 255, 255, 0.9);
 
   /* Borders */
-  --color-border: #e5e7eb;
-  --color-border-subtle: #f1f1f3;
+  --color-border: #e2e8f0;
+  --color-border-subtle: #edf2f7;
 
   /* Text */
-  --color-text: #0a0a0a;
-  --color-text-main: #0a0a0a;
-  --color-text-muted: #6B7280;
-  --color-text-subtle: #9CA3AF;
+  --color-text: #0f172a;
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
+  --color-text-subtle: #94a3b8;
 
   /* Status */
-  --color-danger: #cf222e;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-info: #3B82F6;
+  --color-danger: #f43f5e;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-info: #06b6d4;
 
   /* Radius */
-  --radius-brand: 10px;
-  --radius-brand-lg: 14px;
+  --radius-brand: 12px;
+  --radius-brand-lg: 16px;
 
   /* Shadows */
-  --shadow-soft: 0 1px 2px 0 rgba(0,0,0,0.04);
-  --shadow-warm: 0 2px 12px -2px rgba(229, 106, 74, 0.18);
-  --shadow-elevated: 0 12px 28px -4px rgba(60, 50, 45, 0.06);
+  --shadow-soft: 0 2px 8px -2px rgba(15, 23, 42, 0.06);
+  --shadow-warm: 0 6px 20px -4px rgba(245, 158, 11, 0.24);
+  --shadow-elevated: 0 12px 28px -4px rgba(15, 23, 42, 0.08);
   --shadow-elev:
-    inset 0 1px 0 0 rgba(255,255,255,0.8),
-    0 1px 2px rgba(15,23,42,0.04),
-    0 12px 36px -8px rgba(15,23,42,0.10);
-  --shadow-focus: 0 0 0 3px rgba(229,106,74,0.18);
+    inset 0 1px 0 0 rgba(255,255,255,0.85),
+    0 2px 6px rgba(15,23,42,0.05),
+    0 14px 36px -8px rgba(15,23,42,0.12);
+  --shadow-focus: 0 0 0 3px rgba(245, 158, 11, 0.22);
 
   color-scheme: light;
 }
 
 .dark {
-  /* Brand scale (dark) - centered on #E56A4A, same as light for consistency */
-  --color-brand-50: #fdf1ed;
-  --color-brand-100: #fadccf;
-  --color-brand-200: #f4b59c;
-  --color-brand-300: #ee8d6a;
-  --color-brand-400: #ea7855;
-  --color-brand-500: #E56A4A;
-  --color-brand-600: #cc5236;
-  --color-brand-700: #a64027;
-  --color-brand-800: #7a2f1d;
-  --color-brand-900: #4d1e12;
+  /* Brand scale (dark - Hyperion Amber) */
+  --color-brand-50: #fffbeb;
+  --color-brand-100: #fef3c7;
+  --color-brand-200: #fde68a;
+  --color-brand-300: #fcd34d;
+  --color-brand-400: #fbbf24;
+  --color-brand-500: #f59e0b;
+  --color-brand-600: #d97706;
+  --color-brand-700: #b45309;
+  --color-brand-800: #92400e;
+  --color-brand-900: #78350f;
 
-  --color-primary: #E56A4A;
-  --color-primary-hover: #cc5236;
+  --color-primary: #f59e0b;
+  --color-primary-hover: #fbbf24;
 
-  /* Surfaces (dark - Claude-like neutral warm) */
-  --color-bg: #1a1a1a;
-  --color-bg-alt: #1F1F1E;
-  --color-surface: #262626;
-  --color-surface-2: #303030;
-  --color-surface-3: #3a3a3a;
-  --color-sidebar: rgba(30, 30, 30, 0.85);
+  /* Surfaces (dark - Hyperion Midnight Obsidian) */
+  --color-bg: #09090b;
+  --color-bg-alt: #111116;
+  --color-surface: rgba(20, 20, 26, 0.88);
+  --color-surface-2: rgba(28, 28, 36, 0.94);
+  --color-surface-3: rgba(39, 39, 48, 0.95);
+  --color-sidebar: rgba(14, 14, 18, 0.94);
 
-  --color-border: #333333;
-  --color-border-subtle: #2a2a2a;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.07);
 
-  --color-text: #ededed;
-  --color-text-main: #ededed;
-  --color-text-muted: #9ca3af;
-  --color-text-subtle: #6b7280;
+  --color-text: #fafafa;
+  --color-text-main: #fafafa;
+  --color-text-muted: #a1a1aa;
+  --color-text-subtle: #71717a;
 
-  --color-danger: #ef4444;
-  --color-success: #22c55e;
+  --color-danger: #f43f5e;
+  --color-success: #10b981;
   --color-warning: #fbbf24;
-  --color-info: #60a5fa;
+  --color-info: #06b6d4;
 
-  --shadow-soft: 0 1px 2px 0 rgba(0,0,0,0.3);
-  --shadow-warm: 0 2px 12px -2px rgba(229, 106, 74, 0.25);
-  --shadow-elevated: 0 12px 28px -4px rgba(0, 0, 0, 0.45);
+  --shadow-soft: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+  --shadow-warm: 0 8px 26px -6px rgba(245, 158, 11, 0.28);
+  --shadow-elevated: 0 14px 40px -12px rgba(0, 0, 0, 0.75);
   --shadow-elev:
-    inset 0 1px 0 0 rgba(255,255,255,0.06),
-    0 1px 2px rgba(0,0,0,0.4),
-    0 16px 48px -8px rgba(0,0,0,0.55);
-  --shadow-focus: 0 0 0 3px rgba(229, 106, 74, 0.18);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.07),
+    0 4px 12px rgba(0, 0, 0, 0.45),
+    0 18px 48px -10px rgba(0, 0, 0, 0.75);
+  --shadow-focus: 0 0 0 3px rgba(245, 158, 11, 0.24);
 
   color-scheme: dark;
 }
@@ -507,4 +510,131 @@ button:disabled,
   border: none;
   border-top: 1px solid var(--color-border);
   margin: 1.5rem 0;
+}
+
+/* ============================================================
+   Hyperion Bento Kinetic Animations & Glass Surfaces
+   ============================================================ */
+.hyperion-shell-bg {
+  background:
+    radial-gradient(circle at 18% 8%, rgba(245, 158, 11, 0.08), transparent 36%),
+    radial-gradient(circle at 86% 18%, rgba(6, 182, 212, 0.07), transparent 34%),
+    radial-gradient(circle at 50% 96%, rgba(168, 85, 247, 0.06), transparent 40%),
+    var(--color-bg);
+}
+.dark .hyperion-shell-bg {
+  background:
+    radial-gradient(circle at 18% 8%, rgba(245, 158, 11, 0.14), transparent 36%),
+    radial-gradient(circle at 86% 18%, rgba(6, 182, 212, 0.12), transparent 35%),
+    radial-gradient(circle at 50% 96%, rgba(168, 85, 247, 0.11), transparent 40%),
+    linear-gradient(180deg, #09090b 0%, #111116 100%);
+}
+
+.hyperion-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-elev);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 0.28s ease,
+              box-shadow 0.28s ease;
+}
+
+.hyperion-card:hover {
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+@keyframes auroraSlide {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.aurora-border {
+  position: relative;
+  overflow: hidden;
+}
+
+.aurora-border::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, transparent 15%, #f59e0b, #06b6d4, #a855f7, transparent 85%);
+  background-size: 260% 260%;
+  animation: auroraSlide 5.5s ease infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.72;
+}
+
+@keyframes pulseBeacon {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.9); opacity: 0; }
+}
+
+.beacon-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.beacon-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: inherit;
+  animation: pulseBeacon 2s cubic-bezier(0.2, 0.8, 0.4, 1) infinite;
+}
+
+@keyframes dashFlow {
+  to { stroke-dashoffset: -48; }
+}
+
+.flow-line {
+  stroke-dasharray: 8 8;
+  animation: dashFlow 1.5s linear infinite;
+}
+
+.flow-line-fast {
+  stroke-dasharray: 6 10;
+  animation: dashFlow 0.75s linear infinite;
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.stagger-in {
+  animation: fadeSlideUp 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes scanSweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(220%); }
+}
+
+.scan-sweep {
+  position: relative;
+  overflow: hidden;
+}
+
+.scan-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(245, 158, 11, 0.16), rgba(6, 182, 212, 0.14), transparent);
+  animation: scanSweep 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
 }

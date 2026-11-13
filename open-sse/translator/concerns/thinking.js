@@ -26,12 +26,12 @@ export function effortToBudget(effort) {
   return LEVEL_TO_BUDGET[String(effort).toLowerCase()];
 }
 
-// OpenAI reasoning_effort → Gemini thinkingLevel (gemini-3 enum: minimal|low|medium|high).
-// Gemini 3 cannot fully disable thinking; "none"/"off" map to "minimal".
-export function effortToThinkingLevel(effort) {
+// OpenAI reasoning_effort → Gemini thinkingLevel (gemini-3/argon: minimal|low|medium|high; hydrogen: +xhigh).
+// Gemini 3+ cannot fully disable thinking; "none"/"off" map to "minimal" (clamped to "low" downstream for Gemini 4).
+export function effortToThinkingLevel(effort, allowXHigh = false) {
   const e = String(effort).toLowerCase().trim();
   if (e === "none" || e === "off") return "minimal";
-  if (e === "xhigh" || e === "max" || e === "ultra") return "high";
+  if (e === "xhigh" || e === "max" || e === "ultra") return allowXHigh ? "xhigh" : "high";
   return e;
 }
 

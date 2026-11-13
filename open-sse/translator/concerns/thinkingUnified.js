@@ -168,9 +168,10 @@ function toLevel(cfg) {
   return null;
 }
 
-function toGeminiThinkingLevel(cfg) {
+function toGeminiThinkingLevel(cfg, supportedLevels = null) {
   const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
-  return effortToThinkingLevel(raw);
+  const allowXHigh = Array.isArray(supportedLevels) && supportedLevels.includes("xhigh");
+  return effortToThinkingLevel(raw, allowXHigh);
 }
 
 function toKimiReasoningEffort(cfg) {
@@ -285,7 +286,7 @@ function applyFormat(fmt, body, cfg, caps, modelId = "", supportedLevels = null)
       break;
     }
     case "gemini-level": {
-      let level = none ? "minimal" : toGeminiThinkingLevel(eff);
+      let level = none ? "minimal" : toGeminiThinkingLevel(eff, supportedLevels);
       // Models without a "minimal" tier (Gemini 4 Argon) reject it with 400 —
       // clamp to the lowest supported level (from thinkingLevels.js).
       const lowest = supportedLevels?.find((l) => l !== "none");
