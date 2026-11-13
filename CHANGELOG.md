@@ -1,3 +1,17 @@
+# v0.15.245 (2026-11-13)
+
+## Fix `/dashboard/combos` React Error #310 & Floating Obsidian Cockpit Shell
+- **Fix Combos Page Crash (`src/app/(dashboard)/dashboard/combos/page.js`)**:
+  - Moved `totalHops`, `strategyBreakdown`, and `filteredCombos` `useMemo` hooks above the early `if (loading)` skeleton return to eliminate React Error #310 (`Rendered more hooks than during the previous render`) when `/api/combos` finishes loading.
+- **Floating Obsidian Dock & Top Workspace Quick-Switch Shell**:
+  - Upgraded `src/shared/components/Sidebar.js` to a floating obsidian glass navigation dock with a desktop compact icon-only collapse toggle (`dock_to_left` / `dock_to_right`) and glowing active accents.
+  - Upgraded `src/shared/components/Header.js` to a floating frosted header containing a quick-switch horizontal workspace pill strip (`Control`, `Providers`, `Combos`, `Usage`, `Quota`, `Chat`).
+  - Fixed `src/shared/components/PageHero.js` to accept both `badge.text` / `badge.label`, `badge.dot` / `badge.pulse`, and per-page `accent` themes (`amber | cyan | emerald | violet`).
+- **Layout Architecture Upgrades**:
+  - **Combos**: Re-architected into a 2-column Neural Pipeline Studio (`combos/page.js`, `AutoComboCatalog.jsx`) pairing pipeline hop cards with a sticky inspector rail (`Pipeline Routing Mix` filter widget, `ComboLocksPanel`, and expanded `Zero-Config Auto Combos`).
+  - **Providers (`dashboard/providers/page.js`)**: Added a live Connected Backends Pulse Strip below `PageHero` showing real active counts and health status dots for every configured provider.
+  - **Usage Breakdown Matrix (`UsageStats.js`)**: Replaced the native `<select>` dropdown with interactive segmented tab pills (`By Model`, `By Provider`, `By Account`, `By API Key`, `By Endpoint`).
+
 # v0.15.244 (2026-11-13)
 
 ## Real SSE Control Telemetry & Full Hyperion Bento Control-Plane Redesign

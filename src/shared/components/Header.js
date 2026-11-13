@@ -223,8 +223,22 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
     }
   };
 
+  const quickTabs = [
+    { href: "/dashboard/endpoint", label: "Control", icon: "api" },
+    { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+    { href: "/dashboard/combos", label: "Combos", icon: "layers" },
+    { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
+    { href: "/dashboard/quota", label: "Quota", icon: "data_usage" },
+    { href: "/dashboard/basic-chat", label: "Chat", icon: "chat" },
+  ];
+
+  const isTabActive = (href) =>
+    href === "/dashboard/endpoint"
+      ? pathname === "/dashboard" || pathname.startsWith("/dashboard/endpoint")
+      : pathname.startsWith(href);
+
   return (
-    <header className="shrink-0 flex items-center justify-between gap-3 px-4 lg:px-8 pt-3 pb-2 border-b border-border-subtle bg-surface/60 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none z-20">
+    <header className="shrink-0 flex items-center justify-between gap-3 px-4 lg:px-6 py-2.5 border-b border-border-subtle bg-surface/75 backdrop-blur-xl lg:mx-3 lg:mt-3 lg:rounded-2xl lg:border lg:border-white/[0.08] lg:shadow-[0_12px_40px_-15px_rgba(0,0,0,0.6)] z-20">
       {/* Mobile menu button */}
       <div className="flex items-center gap-3 lg:hidden shrink-0">
         {showMenuButton && (
@@ -238,7 +252,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       </div>
 
       {/* Page title with breadcrumbs */}
-      <div className="flex flex-col min-w-0 flex-1">
+      <div className="flex flex-col min-w-0 shrink">
         {breadcrumbs.length > 0 ? (
           <div className="flex items-center gap-2">
             {breadcrumbs.map((crumb, index) => (
@@ -297,6 +311,30 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           </div>
         ) : null}
       </div>
+
+      {/* Quick-Switch Workspace Dock (Desktop) */}
+      <nav
+        aria-label="Quick workspace navigation"
+        className="hidden xl:flex items-center gap-1 rounded-xl border border-border/70 bg-black/[0.04] dark:bg-white/[0.03] p-1"
+      >
+        {quickTabs.map((tab) => {
+          const active = isTabActive(tab.href);
+          return (
+            <Link
+              key={tab.href}
+              href={tab.href}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                active
+                  ? "bg-gradient-to-r from-amber-500/20 to-cyan-500/15 text-amber-300 border border-amber-500/35 shadow-[0_0_16px_-6px_rgba(245,158,11,0.5)]"
+                  : "text-text-muted hover:text-text-main hover:bg-white/[0.04] border border-transparent"
+              }`}
+            >
+              <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
+              <span>{tab.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
 
       {/* Right actions */}
       <div className="flex items-center gap-2 shrink-0">
