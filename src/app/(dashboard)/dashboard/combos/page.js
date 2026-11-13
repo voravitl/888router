@@ -209,19 +209,20 @@ export default function CombosPage() {
     });
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col gap-6">
-        <CardSkeleton />
-        <CardSkeleton />
-      </div>
-    );
-  }
-
   const totalHops = useMemo(
     () => combos.reduce((acc, c) => acc + (Array.isArray(c.models) ? c.models.length : 0), 0),
     [combos]
   );
+
+  const strategyBreakdown = useMemo(() => {
+    const counts = { fallback: 0, "round-robin": 0, "cache-optimized": 0, p2c: 0, fusion: 0, other: 0 };
+    combos.forEach((c) => {
+      const s = comboStrategies[c.name]?.fallbackStrategy || globalComboStrategy || "fallback";
+      if (s in counts) counts[s] += 1;
+      else counts.other += 1;
+    });
+    return counts;
+  }, [combos, comboStrategies, globalComboStrategy]);
 
   const filteredCombos = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -239,6 +240,15 @@ export default function CombosPage() {
       );
     });
   }, [combos, comboStrategies, globalComboStrategy, strategyFilter, searchQuery]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <CardSkeleton />
+        <CardSkeleton />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
@@ -319,64 +329,114 @@ export default function CombosPage() {
         }
       />
 
-      {/* Zero-config auto/* templates (OmniRoute parity) — call directly without saving */}
-      <ComboLocksPanel />
-
-      <AutoComboCatalog onDuplicate={handleSnapshotTemplate} onCopy={copy} copiedId={copied} />
-
-      {/* Combos List */}
-      {combos.length === 0 ? (
-        <Card className="hyperion-card">
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mb-4">
-              <span className="material-symbols-outlined text-[32px]">layers</span>
+      {/* 2-Column Neural Pipeline Studio */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6 items-start">
+        {/* Left: Configured Combo Pipelines */}
+        <div className="min-w-0 flex flex-col gap-4">
+          {combos.length === 0 ? (
+            <Card className="hyperion-card">
+              <div className="text-center py-12">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mb-4">
+                  <span className="material-symbols-outlined text-[32px]">layers</span>
+                </div>
+                <p className="text-text-main font-medium mb-1">No combos yet</p>
+                <p className="text-sm text-text-muted mb-4">Create model combos with failover and smart routing pipelines</p>
+                <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
+                  Create Combo
+                </Button>
+              </div>
+            </Card>
+          ) : filteredCombos.length === 0 ? (
+            <Card className="hyperion-card">
+              <div className="text-center py-10">
+                <p className="text-sm font-medium text-text-main">No combos match &ldquo;{searchQuery || strategyFilter}&rdquo;</p>
+                <p className="text-xs text-text-muted mt-1 mb-3">Reset filters to view all {combos.length} configured pipelines.</p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setStrategyFilter("all");
+                    setSearchQuery("");
+                  }}
+                >
+                  Reset Filters
+                </Button>
+              </div>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-3.5">
+              {filteredCombos.map((combo) => (
+                <ComboCard
+                  key={combo.id}
+                  combo={combo}
+                  modelCaps={modelCaps}
+                  contextByFullModel={contextByFullModel}
+                  activeProviders={activeProviders}
+                  modelAliases={modelAliases}
+                  copied={copied}
+                  onCopy={copy}
+                  onEdit={() => setEditingCombo(combo)}
+                  onDelete={() => handleDelete(combo.id)}
+                  strategy={comboStrategies[combo.name] || {}}
+                  defaultStrategy={globalComboStrategy}
+                  onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
+                  onOpenStrategyHelp={handleOpenStrategyHelp}
+                />
+              ))}
             </div>
-            <p className="text-text-main font-medium mb-1">No combos yet</p>
-            <p className="text-sm text-text-muted mb-4">Create model combos with failover and smart routing pipelines</p>
-            <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
-              Create Combo
-            </Button>
-          </div>
-        </Card>
-      ) : filteredCombos.length === 0 ? (
-        <Card className="hyperion-card">
-          <div className="text-center py-10">
-            <p className="text-sm font-medium text-text-main">No combos match &ldquo;{searchQuery || strategyFilter}&rdquo;</p>
-            <p className="text-xs text-text-muted mt-1 mb-3">Reset filters to view all {combos.length} configured pipelines.</p>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setStrategyFilter("all");
-                setSearchQuery("");
-              }}
-            >
-              Reset Filters
-            </Button>
-          </div>
-        </Card>
-      ) : (
-        <div className="flex flex-col gap-3.5">
-          {filteredCombos.map((combo) => (
-            <ComboCard
-              key={combo.id}
-              combo={combo}
-              modelCaps={modelCaps}
-              contextByFullModel={contextByFullModel}
-              activeProviders={activeProviders}
-              modelAliases={modelAliases}
-              copied={copied}
-              onCopy={copy}
-              onEdit={() => setEditingCombo(combo)}
-              onDelete={() => handleDelete(combo.id)}
-              strategy={comboStrategies[combo.name] || {}}
-              defaultStrategy={globalComboStrategy}
-              onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
-              onOpenStrategyHelp={handleOpenStrategyHelp}
-            />
-          ))}
+          )}
         </div>
-      )}
+
+        {/* Right: Sticky Inspector Rail (Strategy Mix, Circuit-Breaker Locks, Zero-Config Catalog) */}
+        <aside className="flex flex-col gap-4 xl:sticky xl:top-4">
+          <Card padding="sm" className="hyperion-card border border-border/70">
+            <div className="flex items-center justify-between border-b border-border/60 pb-2.5 mb-3">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-wider text-cyan-400">Strategy Matrix</div>
+                <div className="text-sm font-semibold text-text-main">Pipeline Routing Mix</div>
+              </div>
+              <span className="rounded-md bg-cyan-500/10 border border-cyan-500/25 px-2 py-0.5 font-mono text-[10px] text-cyan-400">
+                {combos.length} total
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: "fallback", label: "Fallback", dot: "bg-amber-400" },
+                { id: "round-robin", label: "Round Robin", dot: "bg-cyan-400" },
+                { id: "cache-optimized", label: "Cache-Opt", dot: "bg-emerald-400" },
+                { id: "p2c", label: "P2C", dot: "bg-violet-400" },
+                { id: "fusion", label: "Fusion", dot: "bg-fuchsia-400" },
+                { id: "other", label: "Other", dot: "bg-slate-400" },
+              ].map((s) => {
+                const count = strategyBreakdown[s.id] || 0;
+                const active = strategyFilter === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setStrategyFilter(active ? "all" : s.id)}
+                    className={`flex items-center justify-between rounded-xl border px-2.5 py-2 text-left text-xs transition-all ${
+                      active
+                        ? "border-cyan-400/50 bg-cyan-500/12 text-text-main"
+                        : "border-border/60 bg-black/[0.02] dark:bg-white/[0.02] text-text-muted hover:border-border"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 truncate">
+                      <span className={`size-2 rounded-full ${s.dot}`} />
+                      <span className="truncate">{s.label}</span>
+                    </span>
+                    <span className="font-mono font-bold text-text-main">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
+
+          <ComboLocksPanel />
+
+          <AutoComboCatalog onDuplicate={handleSnapshotTemplate} onCopy={copy} copiedId={copied} defaultOpen compact />
+        </aside>
+      </div>
 
       {/* Create Modal - Lazy mounted */}
       {showCreateModal && (

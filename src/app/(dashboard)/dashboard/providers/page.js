@@ -488,6 +488,41 @@ export default function ProvidersPage() {
         }
       />
 
+      {/* Connected Vendor Pulse Strip */}
+      {connectedProviderCount > 0 && (
+        <div className="hyperion-card rounded-2xl border border-border/70 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="beacon-dot bg-emerald-400" />
+            <span className="font-mono text-[11px] uppercase tracking-wider text-text-muted">Connected Backends</span>
+          </div>
+          <div className="flex flex-1 flex-wrap items-center gap-2 min-w-0">
+            {Array.from(new Set(connections.map((c) => c.provider))).map((provId) => {
+              const provConns = connections.filter((c) => c.provider === provId);
+              const active = provConns.filter((c) => c.isActive !== false).length;
+              const hasErr = provConns.some((c) => c.testStatus === "error" || c.testStatus === "expired");
+              const info = OAUTH_PROVIDERS[provId] || APIKEY_PROVIDERS[provId] || FREE_PROVIDERS[provId];
+              return (
+                <Link
+                  key={provId}
+                  href={`/dashboard/providers/${provId}`}
+                  className="inline-flex items-center gap-2 rounded-xl border border-border/70 bg-black/[0.03] dark:bg-white/[0.03] px-2.5 py-1.5 text-xs hover:border-cyan-500/40 hover:bg-cyan-500/5 transition-all"
+                >
+                  <span
+                    className={`size-2 rounded-full ${
+                      hasErr ? "bg-rose-400" : active > 0 ? "bg-emerald-400" : "bg-amber-400"
+                    }`}
+                  />
+                  <span className="font-medium text-text-main">{info?.name || provId}</span>
+                  <span className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-cyan-400">
+                    {active}/{provConns.length}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {!hasAnyResult && (
         <div className="text-center py-10 border border-dashed border-border rounded-2xl bg-surface/50">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2 block">

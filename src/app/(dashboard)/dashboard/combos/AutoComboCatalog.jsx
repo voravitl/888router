@@ -5,8 +5,8 @@ import { Card } from "@/shared/components";
 import { AUTO_COMBO_TEMPLATES } from "open-sse/services/autoCombo/builtinCatalog.js";
 import { withClaudeCodeSuffix } from "@/shared/utils/claudeCodeModelId";
 
-export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null }) {
-  const [open, setOpen] = useState(false);
+export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null, defaultOpen = false, compact = false }) {
+  const [open, setOpen] = useState(defaultOpen);
 
   return (
     <Card padding="sm" className="hyperion-card border border-border/70">
@@ -37,7 +37,7 @@ export default function AutoComboCatalog({ onDuplicate, onCopy, copiedId = null 
       </button>
 
       {open && (
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className={`mt-4 grid grid-cols-1 gap-3 ${compact ? "" : "sm:grid-cols-2 lg:grid-cols-3"}`}>
           {AUTO_COMBO_TEMPLATES.map((tpl) => (
             <div
               key={tpl.name}

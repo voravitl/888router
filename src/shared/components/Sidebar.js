@@ -42,6 +42,7 @@ const systemItems = [
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -106,36 +107,64 @@ export default function Sidebar({ onClose }) {
   // user runs the command manually in another terminal.
 
 
+  const isCompact = collapsed && !onClose;
+
   return (
     <>
-      <aside className="flex w-72 flex-col border-r border-border-subtle bg-sidebar backdrop-blur-2xl transition-colors duration-300 min-h-full relative overflow-hidden">
+      <aside
+        className={cn(
+          "flex flex-col border-r border-border-subtle bg-sidebar/95 backdrop-blur-2xl transition-all duration-300 min-h-full relative overflow-hidden",
+          "lg:my-3 lg:ml-3 lg:rounded-2xl lg:border lg:border-white/[0.08] lg:shadow-[0_24px_60px_-15px_rgba(0,0,0,0.65)] lg:min-h-0",
+          isCompact ? "w-[74px]" : "w-64"
+        )}
+      >
         {/* Subtle top ambient glow */}
         <div
-          className="pointer-events-none absolute -top-20 -left-20 w-56 h-56 rounded-full opacity-25 blur-3xl"
-          style={{ background: "radial-gradient(circle, rgba(245,158,11,0.45), rgba(6,182,212,0.18), transparent 70%)" }}
+          className="pointer-events-none absolute -top-20 -left-20 w-56 h-56 rounded-full opacity-30 blur-3xl"
+          style={{ background: "radial-gradient(circle, rgba(245,158,11,0.45), rgba(6,182,212,0.22), transparent 70%)" }}
           aria-hidden="true"
         />
 
         {/* Brand Header */}
-        <div className="px-5 pt-5 pb-4 flex flex-col gap-2 relative z-10 border-b border-border-subtle/70">
-          <Link href="/dashboard" className="flex items-center gap-3 group">
-            <div
-              className="flex items-center justify-center size-10 rounded-xl font-bold text-sm text-white shadow-lg transition-transform duration-300 group-hover:scale-105"
-              style={{ background: "linear-gradient(135deg, #f59e0b 0%, #06b6d4 100%)", boxShadow: "0 8px 20px -6px rgba(245, 158, 11, 0.45)" }}
-            >
-              888
-            </div>
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold tracking-tight text-text-main truncate">
-                  {APP_CONFIG.name}
-                </h1>
-                <span className="beacon-dot bg-emerald-400" title="Gateway Online" />
+        <div className={cn("pt-4 pb-3.5 flex flex-col gap-2 relative z-10 border-b border-border-subtle/70", isCompact ? "px-3 items-center" : "px-4")}>
+          <div className="flex items-center justify-between gap-2 w-full">
+            <Link href="/dashboard" className={cn("flex items-center gap-2.5 group min-w-0", isCompact && "mx-auto")}>
+              <div
+                className="flex items-center justify-center size-9 rounded-xl font-bold text-xs text-white shadow-lg transition-transform duration-300 group-hover:scale-105 shrink-0"
+                style={{ background: "linear-gradient(135deg, #f59e0b 0%, #06b6d4 100%)", boxShadow: "0 8px 20px -6px rgba(245, 158, 11, 0.45)" }}
+              >
+                888
               </div>
-              <span className="text-[11px] font-mono text-text-muted">v{APP_CONFIG.version} · Hyperion</span>
-            </div>
-          </Link>
-          {updateInfo && (
+              {!isCompact && (
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-sm font-bold tracking-tight text-text-main truncate">
+                      {APP_CONFIG.name}
+                    </h1>
+                    <span className="beacon-dot bg-emerald-400" title="Gateway Online" />
+                  </div>
+                  <span className="text-[10px] font-mono text-cyan-400/90">v{APP_CONFIG.version} · HYPERION</span>
+                </div>
+              )}
+            </Link>
+            {!onClose && (
+              <button
+                type="button"
+                onClick={() => setCollapsed((v) => !v)}
+                className={cn(
+                  "hidden lg:flex size-7 items-center justify-center rounded-lg border border-border/60 text-text-muted hover:text-cyan-400 hover:border-cyan-500/40 transition-colors cursor-pointer shrink-0",
+                  isCompact && "mt-1"
+                )}
+                title={collapsed ? "Expand Navigation" : "Compact Dock Mode"}
+                aria-label="Toggle sidebar width"
+              >
+                <span className="material-symbols-outlined text-[15px]">
+                  {collapsed ? "dock_to_right" : "dock_to_left"}
+                </span>
+              </button>
+            )}
+          </div>
+          {!isCompact && updateInfo && (
             <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}
@@ -162,17 +191,19 @@ export default function Sidebar({ onClose }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-3 space-y-1 overflow-y-auto custom-scrollbar relative z-10">
+        <nav className={cn("flex-1 py-3 space-y-1 overflow-y-auto custom-scrollbar relative z-10", isCompact ? "px-2" : "px-3")}>
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               onClick={onClose}
+              title={item.label}
               className={cn(
-                "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all duration-200 group border",
+                "flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 group border",
+                isCompact && "justify-center px-0",
                 isActive(item.href)
-                  ? "bg-amber-500/12 text-amber-400 border-amber-500/30 shadow-[0_0_20px_-8px_rgba(245,158,11,0.45)]"
-                  : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
+                  ? "bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-cyan-500/10 text-amber-400 border-amber-500/35 shadow-[0_0_20px_-8px_rgba(245,158,11,0.5)]"
+                  : "text-text-muted border-transparent hover:bg-surface-2/80 hover:text-text-main"
               )}
             >
               <span
@@ -183,33 +214,44 @@ export default function Sidebar({ onClose }) {
               >
                 {item.icon}
               </span>
-              <span className="text-[13px] font-medium">{item.label}</span>
+              {!isCompact && <span className="text-[13px] font-medium truncate">{item.label}</span>}
             </Link>
           ))}
 
           {/* System section */}
-          <div className="pt-3 mt-2 space-y-0.5">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              System
-            </p>
+          <div className="pt-3 mt-2 space-y-0.5 border-t border-border-subtle/60">
+            {!isCompact && (
+              <p className="px-3 text-[10px] font-mono font-semibold text-cyan-400/75 uppercase tracking-[0.2em] mb-2">
+                System Modules
+              </p>
+            )}
 
             {/* Media Providers accordion */}
             <button
-              onClick={() => setMediaOpen((v) => !v)}
+              onClick={() => {
+                if (isCompact) setCollapsed(false);
+                setMediaOpen((v) => !v);
+              }}
+              title="Media Providers"
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                "w-full flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all group",
+                isCompact && "justify-center px-0",
                 pathname.startsWith("/dashboard/media-providers")
                   ? "bg-primary/10 text-primary"
                   : "text-text-muted hover:bg-surface-2 hover:text-text-main"
               )}
             >
               <span className="material-symbols-outlined text-[18px]">perm_media</span>
-              <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
-              <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
-                expand_more
-              </span>
+              {!isCompact && (
+                <>
+                  <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
+                  <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
+                    expand_more
+                  </span>
+                </>
+              )}
             </button>
-            {mediaOpen && (
+            {mediaOpen && !isCompact && (
               <div className="pl-4">
                 {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
                   <Link
@@ -249,22 +291,24 @@ export default function Sidebar({ onClose }) {
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
+                title={item.label}
                 className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all group border",
+                  isCompact && "justify-center px-0",
                   isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                    ? "bg-cyan-500/12 text-cyan-400 border-cyan-500/30"
+                    : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
                 )}
               >
                 <span
                   className={cn(
                     "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                    isActive(item.href) ? "fill-1 text-cyan-400" : "group-hover:text-cyan-400 transition-colors"
                   )}
                 >
                   {item.icon}
                 </span>
-                <span className="text-[13px] font-medium">{item.label}</span>
+                {!isCompact && <span className="text-[13px] font-medium truncate">{item.label}</span>}
               </Link>
             ))}
 
@@ -276,22 +320,24 @@ export default function Sidebar({ onClose }) {
                   key={item.href}
                   href={item.href}
                   onClick={onClose}
+                  title={item.label}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                    "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all group border",
+                    isCompact && "justify-center px-0",
                     isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                      ? "bg-cyan-500/12 text-cyan-400 border-cyan-500/30"
+                      : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
                   )}
                 >
                   <span
                     className={cn(
                       "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                      isActive(item.href) ? "fill-1 text-cyan-400" : "group-hover:text-cyan-400 transition-colors"
                     )}
                   >
                     {item.icon}
                   </span>
-                  <span className="text-[13px] font-medium">{item.label}</span>
+                  {!isCompact && <span className="text-[13px] font-medium truncate">{item.label}</span>}
                 </Link>
               ) : null;
             })}
@@ -300,8 +346,10 @@ export default function Sidebar({ onClose }) {
             <Link
               href="/dashboard/profile"
               onClick={onClose}
+              title="Settings"
               className={cn(
                 "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all duration-200 group border",
+                isCompact && "justify-center px-0",
                 isActive("/dashboard/profile")
                   ? "bg-amber-500/12 text-amber-400 border-amber-500/30 shadow-[0_0_20px_-8px_rgba(245,158,11,0.45)]"
                   : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
@@ -315,22 +363,24 @@ export default function Sidebar({ onClose }) {
               >
                 settings
               </span>
-              <span className="text-[13px] font-medium">Settings</span>
+              {!isCompact && <span className="text-[13px] font-medium">Settings</span>}
             </Link>
           </div>
         </nav>
 
         {/* Hyperion Status Footer */}
-        <div className="m-3 p-3 rounded-xl border border-border bg-surface-2/60 text-xs space-y-1.5 relative z-10">
-          <div className="flex items-center justify-between">
-            <span className="text-text-muted">AG Hub Profile</span>
-            <span className="font-mono font-semibold text-cyan-400">2.31.2</span>
+        {!isCompact && (
+          <div className="m-3 p-3 rounded-xl border border-cyan-500/20 bg-surface-2/60 text-xs space-y-1.5 relative z-10">
+            <div className="flex items-center justify-between">
+              <span className="text-text-muted">AG Hub Profile</span>
+              <span className="font-mono font-semibold text-cyan-400">2.31.2</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-text-muted">Gemini 4 Hydrogen</span>
+              <span className="font-mono font-semibold text-amber-400">xhigh ready</span>
+            </div>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-text-muted">Gemini 4 Hydrogen</span>
-            <span className="font-mono font-semibold text-amber-400">xhigh ready</span>
-          </div>
-        </div>
+        )}
 
       </aside>
 

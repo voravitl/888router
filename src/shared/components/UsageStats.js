@@ -487,21 +487,24 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {/* Token / Cost chart - sync period */}
       {loading ? spinner : <UsageChart period={period} />}
 
-      {/* Table with dropdown selector */}
-      <div className="hyperion-card rounded-2xl border border-border/70 p-4 flex flex-col gap-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border/60 pb-3">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs uppercase tracking-wider text-text-muted">Breakdown Matrix</span>
-            <select
-              value={tableView}
-              onChange={(e) => setTableView(e.target.value)}
-              className="rounded-xl border border-border/80 bg-surface px-3 py-1.5 text-xs font-mono font-medium text-text-main focus:outline-none focus:ring-2 focus:ring-cyan-500/40 sm:w-auto"
-              style={{ colorScheme: 'auto' }}
-            >
-              {TABLE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+      {/* Table with segmented view selector */}
+      <div className="hyperion-card rounded-2xl border border-border/70 p-4 sm:p-5 flex flex-col gap-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-border/60 pb-3">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {TABLE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setTableView(opt.value)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-mono font-medium transition-all border ${
+                  tableView === opt.value
+                    ? "bg-cyan-500/18 text-cyan-300 border-cyan-500/40 shadow-[0_0_16px_-6px_rgba(6,182,212,0.5)]"
+                    : "bg-black/[0.02] dark:bg-white/[0.02] text-text-muted border-border/60 hover:text-text-main"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
           <div className="grid grid-cols-2 items-center gap-1 rounded-xl border border-border/70 bg-black/[0.03] dark:bg-white/[0.03] p-1 sm:flex">
             <button
