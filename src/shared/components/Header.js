@@ -82,6 +82,10 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   const { title, breadcrumbs } = pageInfo;
 
   useEffect(() => {
+    setPaletteOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
     const onKeyDown = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -147,12 +151,12 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
             <span className="text-text-muted shrink-0 hidden sm:inline font-medium">888router</span>
             <span className="text-text-subtle shrink-0 hidden sm:inline">/</span>
             {breadcrumbs.length > 0 ? (
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div key={pathname} className="flex items-center gap-1.5 min-w-0">
                 {breadcrumbs.map((crumb, index) => (
                   <div key={`${crumb.label}-${crumb.href || "current"}`} className="flex items-center gap-1.5 min-w-0">
                     {index > 0 && <span className="text-text-subtle">/</span>}
                     {crumb.href ? (
-                      <Link href={crumb.href} className="text-text-muted hover:text-text-main truncate">
+                      <Link href={crumb.href} prefetch={false} className="text-text-muted hover:text-text-main truncate">
                         {crumb.label}
                       </Link>
                     ) : (
@@ -173,7 +177,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
                 ))}
               </div>
             ) : (
-              <span className="font-sans text-sm font-semibold text-text-main truncate">
+              <span key={pathname} className="font-sans text-sm font-semibold text-text-main truncate">
                 {translate(title)}
               </span>
             )}
@@ -227,7 +231,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         </div>
       </header>
 
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {paletteOpen && <CommandPalette open onClose={() => setPaletteOpen(false)} />}
     </>
   );
 }

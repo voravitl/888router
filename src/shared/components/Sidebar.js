@@ -118,6 +118,7 @@ export default function Sidebar({ onClose }) {
       <Link
         key={item.href}
         href={item.href}
+        prefetch={false}
         onClick={onClose}
         title={item.label}
         className={cn(
@@ -153,7 +154,7 @@ export default function Sidebar({ onClose }) {
             isCompact ? "px-1.5 justify-center" : "px-3.5"
           )}
         >
-          <Link href="/dashboard/usage" className="flex items-center gap-2.5 min-w-0">
+          <Link href="/dashboard/usage" prefetch={false} className="flex items-center gap-2.5 min-w-0">
             <span className="inline-flex items-center justify-center size-7 bg-[#111111] text-white dark:bg-[#fafafa] dark:text-[#111111] rounded-lg font-mono text-[11px] font-bold tracking-tight shrink-0">
               888
             </span>
@@ -284,6 +285,7 @@ export default function Sidebar({ onClose }) {
                     <Link
                       key={kind.id}
                       href={`/dashboard/media-providers/${kind.id}`}
+                      prefetch={false}
                       onClick={onClose}
                       className={cn(
                         "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors",
@@ -299,6 +301,7 @@ export default function Sidebar({ onClose }) {
                   <Link
                     key={COMBINED_WEB_ITEM.id}
                     href={COMBINED_WEB_ITEM.href}
+                    prefetch={false}
                     onClick={onClose}
                     className={cn(
                       "flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors",

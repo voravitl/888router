@@ -855,6 +855,7 @@ const PROVIDERS = {
         // Store client credentials for token exchange
         _clientId: clientInfo.clientId,
         _clientSecret: clientInfo.clientSecret,
+        _clientSecretExpiresAt: clientInfo.clientSecretExpiresAt ?? null,
         _region: region,
         _authMethod: authMethod,
         _startUrl: startUrl,
@@ -898,6 +899,7 @@ const PROVIDERS = {
             // Store client credentials for refresh
             _clientId: extraData?._clientId,
             _clientSecret: extraData?._clientSecret,
+            _clientSecretExpiresAt: extraData?._clientSecretExpiresAt ?? null,
             _region: extraData?._region,
             _authMethod: extraData?._authMethod,
             _startUrl: extraData?._startUrl,
@@ -915,6 +917,26 @@ const PROVIDERS = {
     },
     mapTokens: (tokens) => {
       const email = extractEmailFromAccessToken(tokens.access_token);
+      const rawSecretExpires = tokens._clientSecretExpiresAt;
+      let clientSecretExpiresAt = null;
+      if (typeof rawSecretExpires === "number" && Number.isFinite(rawSecretExpires) && rawSecretExpires > 0) {
+        clientSecretExpiresAt = new Date(
+          rawSecretExpires < 1e12 ? rawSecretExpires * 1000 : rawSecretExpires
+        ).toISOString();
+      } else if (typeof rawSecretExpires === "string" && rawSecretExpires.trim()) {
+        const trimmed = rawSecretExpires.trim();
+        if (/^\d+(\.\d+)?$/.test(trimmed)) {
+          const num = Number(trimmed);
+          if (Number.isFinite(num) && num > 0) {
+            clientSecretExpiresAt = new Date(num < 1e12 ? num * 1000 : num).toISOString();
+          }
+        } else {
+          const parsedMs = Date.parse(trimmed);
+          if (Number.isFinite(parsedMs)) {
+            clientSecretExpiresAt = new Date(parsedMs).toISOString();
+          }
+        }
+      }
       const mapped = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
@@ -924,6 +946,7 @@ const PROVIDERS = {
           profileArn: tokens?.profile_arn || null,
           clientId: tokens._clientId,
           clientSecret: tokens._clientSecret,
+          clientSecretExpiresAt,
           region: tokens._region || "us-east-1",
           authMethod: tokens._authMethod || "builder-id",
           startUrl: tokens._startUrl || KIRO_CONFIG.startUrl,

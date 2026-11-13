@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Modal as AntModal } from "antd";
 import { cn } from "@/shared/utils/cn";
 import Button from "./Button";
@@ -22,6 +23,10 @@ export default function Modal({
   closeOnOverlay = true,
   className,
 }) {
+  const [hasOpened, setHasOpened] = useState(Boolean(isOpen));
+  if (isOpen && !hasOpened) setHasOpened(true);
+  if (!hasOpened) return null;
+
   return (
     <AntModal
       open={Boolean(isOpen)}
