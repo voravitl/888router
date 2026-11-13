@@ -1,12 +1,12 @@
 export default function manifest() {
   return {
-    name: '9Router - AI Infrastructure Management',
-    short_name: '9Router',
-    description: 'One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.',
+    name: '888router - AI Routing Control Plane',
+    short_name: '888router',
+    description: 'Unified AI routing gateway with Hyperion Telemetry, multi-provider failover, and token optimization.',
     start_url: '/',
     display: 'standalone',
-    background_color: '#0a0a0a',
-    theme_color: '#0a0a0a',
+    background_color: '#09090b',
+    theme_color: '#09090b',
     orientation: 'portrait-primary',
     icons: [
       {

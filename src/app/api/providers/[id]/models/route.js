@@ -807,7 +807,7 @@ export async function GET(request, { params }) {
           if (connection.provider === "antigravity" && PROVIDERS.antigravity?.models) {
             const seen = new Set(models.map((m) => m.id));
             for (const staticModel of PROVIDERS.antigravity.models) {
-              if (/gemini-3/i.test(staticModel.id) && !seen.has(staticModel.id)) {
+              if (/gemini-[34]/i.test(staticModel.id) && !seen.has(staticModel.id)) {
                 seen.add(staticModel.id);
                 models.push({
                   ...staticModel,

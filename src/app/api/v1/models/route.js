@@ -279,7 +279,7 @@ const LIVE_MODEL_RESOLVERS = {
     if (PROVIDERS.antigravity?.models) {
       const seen = new Set(parsed.map((m) => m.id));
       for (const staticModel of PROVIDERS.antigravity.models) {
-        if (/gemini-3/i.test(staticModel.id) && !seen.has(staticModel.id)) {
+        if (/gemini-[34]/i.test(staticModel.id) && !seen.has(staticModel.id)) {
           seen.add(staticModel.id);
           parsed.push({
             ...staticModel,

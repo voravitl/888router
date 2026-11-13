@@ -1,5 +1,6 @@
 "use client";
 
+import { Input as AntInput } from "antd";
 import { cn } from "@/shared/utils/cn";
 
 export default function Input({
@@ -25,32 +26,28 @@ export default function Input({
           {required && <span className="text-red-500 ml-1">*</span>}
         </label>
       )}
-      <div className="relative">
-        {icon && (
-          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-text-muted">
-            <span className="material-symbols-outlined text-[20px]">{icon}</span>
-          </div>
+      <AntInput
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        status={error ? "error" : undefined}
+        size="large"
+        prefix={
+          icon ? (
+            <span className="material-symbols-outlined text-[18px] text-text-muted mr-1">
+              {icon}
+            </span>
+          ) : undefined
+        }
+        className={cn(
+          "!rounded-[10px] !text-[16px] sm:!text-sm !bg-surface-2/85 !border-border/80 hover:!border-amber-500/45 focus-within:!border-amber-500 focus-within:!shadow-[0_0_0_2px_rgba(245,158,11,0.16)] transition-all duration-150",
+          error && "!border-red-500/70 focus-within:!shadow-[0_0_0_2px_rgba(239,68,68,0.2)]",
+          inputClassName
         )}
-        <input
-          type={type}
-          placeholder={placeholder}
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
-          className={cn(
-            "w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px]",
-            "border border-transparent placeholder-text-muted/70",
-            "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40",
-            "transition-all duration-150 ease-out disabled:opacity-50 disabled:cursor-not-allowed",
-            // iOS zoom fix
-            "text-[16px] sm:text-sm",
-            icon && "pl-10",
-            error && "ring-1 ring-red-500 focus:ring-2 focus:ring-red-500/40 border-red-500/40",
-            inputClassName
-          )}
-          {...props}
-        />
-      </div>
+        {...props}
+      />
       {error && (
         <p className="text-xs text-red-500 flex items-center gap-1">
           <span className="material-symbols-outlined text-[14px]">error</span>

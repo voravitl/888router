@@ -36,6 +36,8 @@ const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  // Gemini 4 Hydrogen supports low, medium, high, and xhigh (no minimal/none).
+  { pattern: "*gemini-4-hydrogen*", levels: ["low", "medium", "high", "xhigh"] },
   // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
   // Gemini 3.8 flash rejects "minimal" with 400 ("Thinking level MINIMAL is

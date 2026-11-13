@@ -1,3 +1,16 @@
+# v0.15.243 (2026-11-13)
+
+## Support Gemini 4 Hydrogen (`xhigh` thinking) & Hyperion Bento Ant Design v6 UI
+- **Gemini 4 Hydrogen & Antigravity 2.31.2 Support**:
+  - Added `*gemini-4-hydrogen*` (`["low", "medium", "high", "xhigh"]`) to `open-sse/providers/thinkingLevels.js` and updated `effortToThinkingLevel` / `toGeminiThinkingLevel` in `open-sse/translator/concerns/thinking.js` and `open-sse/translator/concerns/thinkingUnified.js` to permit `xhigh` only when the resolved model supports it while keeping Argon and Gemini 3 clamped at `high`.
+  - Registered `gemini-4-hydrogen` (`gemini-4-hydrogen(high)`) and `gemini-4-hydrogen-xhigh` (`gemini-4-hydrogen(xhigh)`) in `open-sse/providers/registry/antigravity.js`, added Gemini 4 Hydrogen quota keys in `open-sse/services/usage/google.js`, and updated static model merge regexes (`/gemini-[34]/i`) in `src/app/api/v1/models/route.js` and `src/app/api/providers/[id]/models/route.js`.
+  - Updated `ANTIGRAVITY_IDE_VERSION` to `"2.31.2"` in `open-sse/providers/shared.js` and `src/mitm/antigravityIdeVersion.js` along with `tests/unit/antigravity-hydrogen.test.js`.
+- **Hyperion Bento UI (Ant Design v6) & 888router Rebrand**:
+  - Installed `antd`, `@ant-design/nextjs-registry`, and `@ant-design/icons`; added `src/shared/components/AntdProvider.js` wrapping `AntdRegistry`, `ConfigProvider` (Obsidian/Amber/Cyan tokens), and `App`, integrated in `src/app/layout.js` and `src/app/manifest.js`.
+  - Upgraded shared UI primitives (`Button`, `Modal`, `Toggle`, `Badge`, `Input`, `Select`, `Card`, `Header`, `Sidebar`, `DashboardLayout`) to Ant Design v6 + Hyperion Bento styling (`src/app/globals.css`) while preserving existing prop contracts across all dashboard workflows (Combos, Console Log, Usage, Quota, CLI Tools, Proxy Pools, Translator, Token Saver).
+  - Added `src/app/(dashboard)/dashboard/endpoint/components/HyperionBentoHero.js` featuring live database telemetry, animated SVG Neural Routing Pipeline (`Simulate Burst`), interactive `gemini-4-hydrogen` thinking tier preview, and quick launchpad links.
+  - Removed 9Remote and Donate components/buttons (`NineRemoteButton.js`, `NineRemotePromoModal.js`, `DonateModal.js`, `donateUrl`) and rebranded user-facing UI surfaces (`Sidebar`, `Header`, `login`, `landing`, `ProviderTopology`) to `888router`.
+
 # v0.15.242 (2026-11-10)
 
 ## Strip `stream` payload property for Google (Antigravity/Gemini/Vertex) and AWS (Kiro) providers

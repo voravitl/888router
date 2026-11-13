@@ -10,7 +10,6 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
-import NineRemotePromoModal from "./NineRemotePromoModal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
@@ -43,7 +42,6 @@ const systemItems = [
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [showRemoteModal, setShowRemoteModal] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -110,25 +108,31 @@ export default function Sidebar({ onClose }) {
 
   return (
     <>
-      <aside className="flex w-72 flex-col border-r border-border-subtle bg-vibrancy backdrop-blur-xl transition-colors duration-300 min-h-full">
-        {/* Traffic lights */}
-        <div className="flex items-center gap-2 px-6 pt-5 pb-2">
-          <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
-          <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
-          <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
-        </div>
+      <aside className="flex w-72 flex-col border-r border-border-subtle bg-sidebar backdrop-blur-2xl transition-colors duration-300 min-h-full relative overflow-hidden">
+        {/* Subtle top ambient glow */}
+        <div
+          className="pointer-events-none absolute -top-20 -left-20 w-56 h-56 rounded-full opacity-25 blur-3xl"
+          style={{ background: "radial-gradient(circle, rgba(245,158,11,0.45), rgba(6,182,212,0.18), transparent 70%)" }}
+          aria-hidden="true"
+        />
 
-        {/* Logo */}
-        <div className="px-6 py-4 flex flex-col gap-2">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-9 rounded-[10px] bg-gradient-to-br from-brand-500 to-brand-700 shadow-[var(--shadow-warm)]">
-              <span className="material-symbols-outlined text-white text-[20px]">hub</span>
+        {/* Brand Header */}
+        <div className="px-5 pt-5 pb-4 flex flex-col gap-2 relative z-10 border-b border-border-subtle/70">
+          <Link href="/dashboard" className="flex items-center gap-3 group">
+            <div
+              className="flex items-center justify-center size-10 rounded-xl font-bold text-sm text-white shadow-lg transition-transform duration-300 group-hover:scale-105"
+              style={{ background: "linear-gradient(135deg, #f59e0b 0%, #06b6d4 100%)", boxShadow: "0 8px 20px -6px rgba(245, 158, 11, 0.45)" }}
+            >
+              888
             </div>
-            <div className="flex flex-col">
-              <h1 className="text-lg font-semibold tracking-tight text-text-main">
-                {APP_CONFIG.name}
-              </h1>
-              <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-bold tracking-tight text-text-main truncate">
+                  {APP_CONFIG.name}
+                </h1>
+                <span className="beacon-dot bg-emerald-400" title="Gateway Online" />
+              </div>
+              <span className="text-[11px] font-mono text-text-muted">v{APP_CONFIG.version} · Hyperion</span>
             </div>
           </Link>
           {updateInfo && (
@@ -158,23 +162,23 @@ export default function Sidebar({ onClose }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
+        <nav className="flex-1 px-4 py-3 space-y-1 overflow-y-auto custom-scrollbar relative z-10">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
               onClick={onClose}
               className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all duration-200 group border",
                 isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                  ? "bg-amber-500/12 text-amber-400 border-amber-500/30 shadow-[0_0_20px_-8px_rgba(245,158,11,0.45)]"
+                  : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
               )}
             >
               <span
                 className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                  "material-symbols-outlined text-[18px] transition-transform duration-200 group-hover:scale-110",
+                  isActive(item.href) ? "fill-1 text-amber-400" : "group-hover:text-cyan-400"
                 )}
               >
                 {item.icon}
@@ -292,35 +296,21 @@ export default function Sidebar({ onClose }) {
               ) : null;
             })}
 
-            {/* Remote */}
-            <button
-              onClick={() => setShowRemoteModal(true)}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
-                computer
-              </span>
-              <span className="text-[13px] font-medium">Remote</span>
-            </button>
-
             {/* Settings */}
             <Link
               href="/dashboard/profile"
               onClick={onClose}
               className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                "flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all duration-200 group border",
                 isActive("/dashboard/profile")
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                  ? "bg-amber-500/12 text-amber-400 border-amber-500/30 shadow-[0_0_20px_-8px_rgba(245,158,11,0.45)]"
+                  : "text-text-muted border-transparent hover:bg-surface-2 hover:text-text-main"
               )}
             >
               <span
                 className={cn(
                   "material-symbols-outlined text-[18px]",
-                  isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
+                  isActive("/dashboard/profile") ? "fill-1 text-amber-400" : "group-hover:text-cyan-400 transition-colors"
                 )}
               >
                 settings
@@ -330,17 +320,26 @@ export default function Sidebar({ onClose }) {
           </div>
         </nav>
 
-      </aside>
+        {/* Hyperion Status Footer */}
+        <div className="m-3 p-3 rounded-xl border border-border bg-surface-2/60 text-xs space-y-1.5 relative z-10">
+          <div className="flex items-center justify-between">
+            <span className="text-text-muted">AG Hub Profile</span>
+            <span className="font-mono font-semibold text-cyan-400">2.31.2</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-text-muted">Gemini 4 Hydrogen</span>
+            <span className="font-mono font-semibold text-amber-400">xhigh ready</span>
+          </div>
+        </div>
 
-      {/* Remote Promo Modal */}
-      <NineRemotePromoModal isOpen={showRemoteModal} onClose={() => setShowRemoteModal(false)} />
+      </aside>
 
       {/* Update Confirmation Modal */}
       <ConfirmModal
         isOpen={showUpdateModal}
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
-        title="Update 9Router"
+        title="Update 888router"
         message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
         confirmText="Show Command"
         cancelText="Cancel"
@@ -391,7 +390,7 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
           <span className="material-symbols-outlined text-[24px]">content_copy</span>
         </div>
         <div>
-          <h2 className="text-lg font-semibold">Update 9Router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
+          <h2 className="text-lg font-semibold">Update 888router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
           <p className="text-xs text-white/60">
             {isDisconnected
               ? "Server stopped. Paste the command into a terminal to install."
@@ -410,7 +409,7 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
       <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
         <li>Click <strong>Copy & Shutdown</strong> below.</li>
         <li>Paste the command into your terminal and press Enter.</li>
-        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">9router</code> again after install.</li>
+        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">888router</code> again after install.</li>
       </ol>
 
       {isDisconnected ? (
