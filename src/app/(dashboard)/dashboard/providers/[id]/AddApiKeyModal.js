@@ -4,11 +4,13 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { parseOllamaResetDay } from "@/lib/providerNormalization";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
 export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, onSave, onBulkDone, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
+  const isOllamaCloud = provider === "ollama";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
@@ -37,6 +39,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
+    resetDay: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -54,7 +57,16 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
+  const trimmedResetDay = formData.resetDay.trim();
+  const isInvalidResetDay = isOllamaCloud && trimmedResetDay !== "" && parseOllamaResetDay(trimmedResetDay) === null;
+
   const buildProviderSpecificData = () => {
+    if (isOllamaCloud) {
+      const parsedResetDay = parseOllamaResetDay(trimmedResetDay);
+      if (parsedResetDay !== null) {
+        return { resetDay: parsedResetDay };
+      }
+    }
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
       return { baseUrl: formData.ollamaHostUrl.trim() };
     }
@@ -355,6 +367,21 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           </div>
         )}
 
+        {isOllamaCloud && (
+          <Input
+            label="Billing Reset Day (1–31, optional)"
+            type="number"
+            min="1"
+            max="31"
+            step="1"
+            value={formData.resetDay}
+            onChange={(e) => setFormData({ ...formData, resetDay: e.target.value })}
+            placeholder="e.g. 21 (leave blank for rolling 30-day window)"
+            error={isInvalidResetDay ? "Enter a whole day between 1 and 31." : undefined}
+            hint="Day of the month your Ollama Cloud subscription renews (see ollama.com/dashboard)."
+          />
+        )}
+
         <Input
           label="Priority"
           type="number"
@@ -384,7 +411,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || !formData.name || (!allowsNoAuth && !formData.apiKey) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || !formData.name || (!allowsNoAuth && !formData.apiKey) || isInvalidResetDay || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>

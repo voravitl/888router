@@ -6,6 +6,7 @@ import {
   deleteProviderConnection,
 } from "@/models";
 import { stripSensitiveProviderSpecificData } from "@/lib/connectionSanitize";
+import { parseOllamaResetDay } from "@/lib/providerNormalization";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -153,6 +154,27 @@ export async function PUT(request, { params }) {
         } else {
           updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
         }
+      }
+
+      if (Object.prototype.hasOwnProperty.call(providerSpecificData || {}, "resetDay")) {
+        const incomingResetDay = providerSpecificData.resetDay;
+        if (incomingResetDay === null || incomingResetDay === "") {
+          delete updateData.providerSpecificData.resetDay;
+        } else {
+          const parsedResetDay = parseOllamaResetDay(incomingResetDay);
+          if (parsedResetDay === null) {
+            return NextResponse.json(
+              { error: "Billing reset day must be a whole number between 1 and 31" },
+              { status: 400 }
+            );
+          }
+          updateData.providerSpecificData.resetDay = parsedResetDay;
+        }
+      } else if (
+        updateData.providerSpecificData.resetDay === null ||
+        updateData.providerSpecificData.resetDay === ""
+      ) {
+        delete updateData.providerSpecificData.resetDay;
       }
     }
 
