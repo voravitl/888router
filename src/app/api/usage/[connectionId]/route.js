@@ -194,7 +194,7 @@ export async function GET(request, { params }) {
       let quotaKey = QUOTA_AUTOPING_CONFIG.providers[connection.provider]?.quotaKey;
       if (!quotaKey || !usage?.quotas?.[quotaKey]) {
         // Multi-family provider fallback: prefer family rollup with best remaining capacity
-        const candidates = ["Gemini (all models)", "Claude (all models)"];
+        const candidates = ["Gemini (all models)", "Gemini 4 Argon (all models)", "Claude (all models)"];
         let bestKey = null;
         let bestPct = -1;
         for (const k of candidates) {

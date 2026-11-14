@@ -1,6 +1,6 @@
 {
   "name": "888router",
-  "version": "0.15.250",
+  "version": "0.15.251",
   "description": "888router web dashboard",
   "private": true,
   "scripts": {

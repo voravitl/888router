@@ -39,9 +39,9 @@ const antigravityConfig = {
       },
     },
     usage: {
-      quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+      quotaApiUrl: "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
       quotaSummaryApiUrl: "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
-      loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+      loadProjectApiUrl: "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
       tokenUrl: "https://oauth2.googleapis.com/token",
     },
     clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",

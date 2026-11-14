@@ -157,4 +157,112 @@ describe("Antigravity quota: Gemini 4 Argon (High)", () => {
     expect(usage.quotas["Gemini (all models)"]).toMatchObject({ remainingPercentage: 80 });
     expect(usage.quotas["Claude (all models)"]).toMatchObject({ remainingPercentage: 90 });
   });
+
+  it("queries daily-cloudcode-pa Host for Antigravity quota, preserves live Argon remaining quota, and populates gemini-4-hydrogen alias", async () => {
+    const { PROVIDERS } = await import("../../open-sse/config/providers.js");
+    const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
+    const { _clearWeeklyCache } = await import("../../open-sse/services/usage/antigravity-weekly.js");
+
+    expect(PROVIDERS.antigravity.usage.quotaApiUrl).toBe(
+      "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"
+    );
+    expect(PROVIDERS.antigravity.usage.loadProjectApiUrl).toBe(
+      "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+    );
+    expect(PROVIDERS.antigravity.usage.quotaSummaryApiUrl).toBe(
+      "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+    );
+
+    const prevImpl = proxyAwareFetch.getMockImplementation();
+    const requestedUrls = [];
+    _clearWeeklyCache();
+
+    try {
+      proxyAwareFetch.mockImplementation(async (url) => {
+        requestedUrls.push(url);
+        if (url === "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              cloudaicompanionProject: "aicode-consumers",
+              currentTier: { name: "Antigravity" },
+              paidTier: { id: "g1-pro-tier" },
+            }),
+            text: async () => "{}",
+          };
+        }
+        if (url === "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              models: {
+                "gemini-4-argon-high": {
+                  displayName: "Gemini 4 Argon (High)",
+                  quotaInfo: { remainingFraction: 0.788, resetTime: "2026-11-21T01:04:23Z" },
+                },
+                "gemini-4-argon-medium": {
+                  displayName: "Gemini 4 Argon (Medium)",
+                  quotaInfo: { remainingFraction: 0.788, resetTime: "2026-11-21T01:04:23Z" },
+                },
+                "gemini-4-argon-low": {
+                  displayName: "Gemini 4 Argon (Low)",
+                  quotaInfo: { remainingFraction: 0.788, resetTime: "2026-11-21T01:04:23Z" },
+                },
+                "gemini-4-hydrogen-high": {
+                  displayName: "Gemini 4 Hydrogen (High)",
+                  quotaInfo: { remainingFraction: 0.677, resetTime: "2026-11-14T06:07:50Z" },
+                },
+              },
+            }),
+            text: async () => "{}",
+          };
+        }
+        if (url === "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              groups: [
+                {
+                  displayName: "Gemini 4 Argon",
+                  buckets: [
+                    {
+                      bucketId: "gemini-argon-wtu-weekly",
+                      displayName: "Gemini 4 Argon Weekly Limit",
+                      window: "weekly",
+                      remainingFraction: 0.788,
+                      resetTime: "2026-11-21T01:04:23Z",
+                    },
+                  ],
+                },
+              ],
+            }),
+            text: async () => "{}",
+          };
+        }
+        return { ok: false, status: 404, json: async () => ({}), text: async () => "{}" };
+      });
+
+      const usage = await getAntigravityUsage("access-token-daily-hub", {});
+
+      expect(requestedUrls).toEqual([
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+        "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
+      ]);
+
+      expect(usage.quotas["Gemini 4 Argon (all models)"].remainingPercentage).toBeCloseTo(78.8, 1);
+      expect(usage.quotas.gemini_argon_weekly.remainingPercentage).toBeCloseTo(78.8, 1);
+      expect(usage.quotas["gemini-4-hydrogen"]).toMatchObject({
+        displayName: "Gemini 4 Hydrogen",
+        resetAt: "2026-11-14T06:07:50.000Z",
+      });
+      expect(usage.quotas["gemini-4-hydrogen"].remainingPercentage).toBeCloseTo(67.7, 1);
+    } finally {
+      _clearWeeklyCache();
+      proxyAwareFetch.mockImplementation(prevImpl);
+    }
+  });
 });
