@@ -1,3 +1,15 @@
+# v0.15.249 (2026-11-14)
+
+## Restore Full Multi-Window Quota Tracking, Antigravity Argon Rollups & Kiro AWS SSO Cache Recovery
+- **Quota Tracker All-Window Visibility & Antigravity Argon Support (`ProviderLimits`, `google.js`)**:
+  - Restored 2-column `Cards` Grid as the default `/dashboard/quota` view (`ProviderLimits/index.js`) so every connected account renders all active quota windows immediately without extra expansion clicks, and upgraded the `Matrix` `Quota Windows` column to render `<QuotaTable>` directly instead of truncating to a single primary bar.
+  - Added `gemini_argon` family rollup emission (`Gemini 4 Argon (all models)`) and weekly reconciliation in `open-sse/services/usage/google.js`, updated `isFamilyRollup` + `parseQuotaData("antigravity")` in `ProviderLimits/utils.js` to accept `gemini_argon` and preserve `isWeekly`, and sorted/enhanced `QuotaTable.js` with `gemini -> gemini_argon -> claude` family ordering (5h before weekly) plus an inline `Show N models` / `Hide models` drill-down toggle.
+- **Kiro AWS SSO Cache Fallback & Stale Connection Recovery (`providers.js`, `kiro/auto-import`, `kiro/import`, `/api/usage/[connectionId]`, `docker-compose.yml`)**:
+  - Mounted `~/.aws/sso/cache:/home/node/.aws/sso/cache:ro` in `docker-compose.yml` for the `node` runtime user (`os.homedir() === "/home/node"`).
+  - Added local AWS SSO cache fallback (`tryRefreshKiroIdcFromAwsCache` with expiry, region, and `clientIdHash` traversal guards) in `open-sse/services/tokenRefresh/providers.js` to heal expired IDC OIDC client registrations and persist updated `clientId`, `clientSecret`, and `clientSecretExpiresAt`.
+  - Updated `src/app/api/oauth/kiro/auto-import/route.js` (`aorAAA` token prefix, `clientSecretExpiresAt` extraction, macOS `profile.json` path) and `src/app/api/oauth/kiro/import/route.js` (`clientSecretExpiresAt` persistence).
+  - Updated `src/app/api/usage/[connectionId]/route.js` to run `isAuthExpiredMessage` force-refresh before snapshot persistence and recover `testStatus` from `"unavailable"`/`"expired"` back to `"active"` when valid non-zero quotas return after cooldown expiry.
+
 # v0.15.248 (2026-11-13)
 
 ## Kiro Quota Reconnect Visibility & Dashboard UI Performance Fix

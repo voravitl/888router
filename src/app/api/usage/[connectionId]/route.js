@@ -177,6 +177,18 @@ export async function GET(request, { params }) {
     // Fetch usage from provider API
     let usage = await getUsageForProvider(connection, proxyOptions, { force });
 
+    // If provider returned an auth-expired message instead of throwing,
+    // force-refresh token and retry once (OAuth only)
+    if (isOAuth && isAuthExpiredMessage(usage) && connection.refreshToken) {
+      try {
+        const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
+        connection = retryResult.connection;
+        usage = await getUsageForProvider(connection, proxyOptions, { force });
+      } catch (retryError) {
+        console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
+      }
+    }
+
     // Best-effort quota snapshot persistence — must never affect the response returned to the client.
     try {
       let quotaKey = QUOTA_AUTOPING_CONFIG.providers[connection.provider]?.quotaKey;
@@ -198,25 +210,26 @@ export async function GET(request, { params }) {
       }
       const quotaRemainingPct = quotaKey ? computeQuotaRemainingPct(usage, quotaKey) : null;
       if (quotaRemainingPct !== null) {
-        await updateProviderConnection(connection.id, {
+        const snapshotUpdate = {
           quotaRemainingPct,
           quotaCheckedAt: new Date().toISOString(),
-        });
+        };
+        const hasQuotas = Object.keys(usage?.quotas || {}).length > 0;
+        const cooldownExpired =
+          !connection.unavailableUntil || Date.parse(connection.unavailableUntil) <= Date.now();
+        if (
+          hasQuotas &&
+          quotaRemainingPct > 0 &&
+          cooldownExpired &&
+          (connection.testStatus === "unavailable" || connection.testStatus === "expired")
+        ) {
+          snapshotUpdate.testStatus = "active";
+          connection.testStatus = "active";
+        }
+        await updateProviderConnection(connection.id, snapshotUpdate);
       }
     } catch (snapshotError) {
       console.warn(`[Usage API] ${connection.provider}: quota snapshot persist failed: ${snapshotError.message}`);
-    }
-
-    // If provider returned an auth-expired message instead of throwing,
-    // force-refresh token and retry once (OAuth only)
-    if (isOAuth && isAuthExpiredMessage(usage) && connection.refreshToken) {
-      try {
-        const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
-        connection = retryResult.connection;
-        usage = await getUsageForProvider(connection, proxyOptions, { force });
-      } catch (retryError) {
-        console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
-      }
     }
 
     return Response.json(usage);

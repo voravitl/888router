@@ -2,6 +2,27 @@ import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
 
+function normalizeClientSecretExpiresAt(rawExpiresAt) {
+  if (typeof rawExpiresAt === "number" && Number.isFinite(rawExpiresAt) && rawExpiresAt > 0) {
+    return new Date(rawExpiresAt < 1e12 ? rawExpiresAt * 1000 : rawExpiresAt).toISOString();
+  }
+  if (typeof rawExpiresAt === "string" && rawExpiresAt.trim()) {
+    const trimmed = rawExpiresAt.trim();
+    if (/^\d+(\.\d+)?$/.test(trimmed)) {
+      const num = Number(trimmed);
+      if (Number.isFinite(num) && num > 0) {
+        return new Date(num < 1e12 ? num * 1000 : num).toISOString();
+      }
+      return null;
+    }
+    const parsedMs = Date.parse(trimmed);
+    if (Number.isFinite(parsedMs)) {
+      return new Date(parsedMs).toISOString();
+    }
+  }
+  return null;
+}
+
 /**
  * POST /api/oauth/kiro/import
  * Import and validate refresh token from Kiro IDE.
@@ -10,7 +31,15 @@ import { createProviderConnection } from "@/models";
  */
 export async function POST(request) {
   try {
-    const { refreshToken, clientId, clientSecret, region, authMethod, profileArn } = await request.json();
+    const {
+      refreshToken,
+      clientId,
+      clientSecret,
+      clientSecretExpiresAt,
+      region,
+      authMethod,
+      profileArn,
+    } = await request.json();
 
     if (!refreshToken || typeof refreshToken !== "string") {
       return NextResponse.json(
@@ -21,6 +50,7 @@ export async function POST(request) {
 
     const kiroService = new KiroService();
     const isIdc = !!(clientId && clientSecret);
+    const normalizedClientSecretExpiresAt = normalizeClientSecretExpiresAt(clientSecretExpiresAt);
 
     // For IDC tokens, refresh via the regional OIDC endpoint with client credentials.
     // For social/builder-id tokens, use the standard social refresh endpoint.
@@ -46,7 +76,16 @@ export async function POST(request) {
         profileArn: resolvedProfileArn,
         authMethod: resolvedAuthMethod,
         provider: providerLabel,
-        ...(isIdc ? { clientId, clientSecret, region: region || "us-east-1" } : {}),
+        ...(isIdc
+          ? {
+              clientId,
+              clientSecret,
+              region: region || "us-east-1",
+              ...(normalizedClientSecretExpiresAt
+                ? { clientSecretExpiresAt: normalizedClientSecretExpiresAt }
+                : {}),
+            }
+          : {}),
       },
       testStatus: "active",
     });

@@ -37,6 +37,7 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     volumes:
       - 888route-data:/app/data
+      - ~/.aws/sso/cache:/home/node/.aws/sso/cache:ro
     # Copy .env.example to .env.route and fill in the secrets. This instance's
     # copy was generated from the retired k8s secret + configmap by
     # scripts/k8s-sync-secret.sh --pull. gitignored, never committed.
