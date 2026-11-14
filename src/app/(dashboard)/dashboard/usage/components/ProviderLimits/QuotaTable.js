@@ -7,13 +7,18 @@ import { formatResetTime, getRemainingPercentage, isFamilyRollup } from "./utils
 import { formatResetTimeDisplay, getQuotaTone } from "./quotaVisuals";
 
 const PAGE_SIZE = 10;
+const FAMILY_ORDER = {
+  gemini: 0,
+  gemini_argon: 1,
+  claude: 2,
+};
 
 function sortQuotas(quotas, sortMode) {
   if (sortMode === "remaining-asc") {
-    return [...quotas].sort((a, b) => a.remaining - b.remaining || a.name.localeCompare(b.name));
+    return [...quotas].sort((a, b) => a.remaining - b.remaining || (a.name || "").localeCompare(b.name || ""));
   }
   if (sortMode === "remaining-desc") {
-    return [...quotas].sort((a, b) => b.remaining - a.remaining || a.name.localeCompare(b.name));
+    return [...quotas].sort((a, b) => b.remaining - a.remaining || (a.name || "").localeCompare(b.name || ""));
   }
   return quotas;
 }
@@ -28,6 +33,8 @@ export default function QuotaTable({
   sortMode = "default",
   showSortLabel = false,
 }) {
+  const [showModels, setShowModels] = useState(false);
+
   const familyRows = useMemo(
     () =>
       (Array.isArray(quotas) ? quotas : [])
@@ -41,30 +48,39 @@ export default function QuotaTable({
     [quotas]
   );
 
+  const perModelRows = useMemo(
+    () =>
+      (Array.isArray(quotas) ? quotas : [])
+        .filter((quota) => !isFamilyRollup(quota))
+        .map((quota, index) => ({
+          ...quota,
+          index,
+          remaining: getRemainingPercentage(quota),
+          isFamily: false,
+        })),
+    [quotas]
+  );
+
   const modelRows = useMemo(() => {
-    if ((familyRows?.length || 0) > 0) {
+    if (familyRows.length > 0 && !showModels) {
       return [];
     }
-    return (Array.isArray(quotas) ? quotas : [])
-      .filter((quota) => !isFamilyRollup(quota))
-      .map((quota, index) => ({
-        ...quota,
-        index,
-        remaining: getRemainingPercentage(quota),
-        isFamily: false,
-      }));
-  }, [quotas, familyRows]);
+    return perModelRows;
+  }, [familyRows.length, showModels, perModelRows]);
 
   const sortedModelRows = useMemo(() => sortQuotas(modelRows, sortMode), [modelRows, sortMode]);
 
   const sortedFamilyRows = useMemo(() => {
     return [...familyRows].sort((a, b) => {
-      const famA = a.family || "";
-      const famB = b.family || "";
-      if (famA !== famB) return famB.localeCompare(famA);
-      const isWeeklyA = a.isWeekly || a.name?.toLowerCase().includes("weekly") ? 1 : 0;
-      const isWeeklyB = b.isWeekly || b.name?.toLowerCase().includes("weekly") ? 1 : 0;
-      return isWeeklyA - isWeeklyB;
+      const rankA = FAMILY_ORDER[a.family] ?? 99;
+      const rankB = FAMILY_ORDER[b.family] ?? 99;
+      if (rankA !== rankB) return rankA - rankB;
+      const famCompare = (a.family || "").localeCompare(b.family || "");
+      if (famCompare !== 0) return famCompare;
+      const isWeeklyA = a.isWeekly === true || a.name?.toLowerCase().includes("weekly") ? 1 : 0;
+      const isWeeklyB = b.isWeekly === true || b.name?.toLowerCase().includes("weekly") ? 1 : 0;
+      if (isWeeklyA !== isWeeklyB) return isWeeklyA - isWeeklyB;
+      return (a.name || "").localeCompare(b.name || "");
     });
   }, [familyRows]);
 
@@ -96,15 +112,29 @@ export default function QuotaTable({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-mono text-text-muted tabular-nums">
           {totalRows} window{totalRows > 1 ? "s" : ""}
         </span>
-        {showSortLabel && (
-          <span className="rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[10px] font-medium text-text-muted">
-            Sorted by remaining
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {showSortLabel && (
+            <span className="rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[10px] font-medium text-text-muted">
+              Sorted by remaining
+            </span>
+          )}
+          {sortedFamilyRows.length > 0 && perModelRows.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowModels((prev) => !prev)}
+              aria-expanded={showModels}
+              className="rounded-md border border-border bg-bg-alt px-2 py-0.5 text-[10px] font-medium text-text-muted hover:text-text-main hover:border-text-muted transition-colors cursor-pointer"
+            >
+              {showModels
+                ? "Hide models"
+                : `Show ${perModelRows.length} model${perModelRows.length === 1 ? "" : "s"}`}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-border-subtle bg-surface">

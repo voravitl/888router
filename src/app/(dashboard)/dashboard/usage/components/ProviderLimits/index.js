@@ -33,7 +33,6 @@ import {
   parseQuotaData,
   calculatePercentage,
   getConnectionLabel,
-  getRemainingPercentage,
   sortVisibleConnections,
   hydrateQuotaCacheForConnections,
   getKiroReconnectInfo,
@@ -64,7 +63,6 @@ import {
 import {
   findEarliestResetMs,
   formatResetTimeDisplay,
-  getQuotaTone,
   pickPrimaryQuota,
 } from "./quotaVisuals";
 import Card from "@/shared/components/Card";
@@ -419,7 +417,7 @@ export default function ProviderLimits() {
   const [quotaSortMode, setQuotaSortMode] = useState("default");
   const [expiringFirst, setExpiringFirst] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState("matrix");
+  const [viewMode, setViewMode] = useState("cards");
   const [bulkToggling, setBulkToggling] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(CONNECTIONS_PAGE_SIZE);
@@ -1016,9 +1014,9 @@ export default function ProviderLimits() {
         ),
       },
       {
-        title: "Primary Quota Window",
+        title: "Quota Windows",
         key: "quota",
-        width: 270,
+        width: 360,
         render: (_, conn) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
@@ -1057,39 +1055,16 @@ export default function ProviderLimits() {
           if (quota?.message) {
             return <QuotaUnavailableMessage conn={conn} quota={quota} />;
           }
-          const primary = pickPrimaryQuota(quota?.quotas);
-          if (!primary) {
+          if (!quota?.quotas || quota.quotas.length === 0) {
             return <span className="text-xs text-text-subtle">No active windows</span>;
           }
-          const remaining = getRemainingPercentage(primary);
-          const tone = getQuotaTone(remaining);
-          const extraCount = (quota?.quotas?.length || 0) - 1;
-
           return (
-            <div className="space-y-1 min-w-0">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="inline-flex items-center gap-1.5 font-medium text-text-main truncate">
-                  <span className={`size-1.5 rounded-full shrink-0 ${tone.dotClass}`} />
-                  <span className="truncate">{primary.name}</span>
-                </span>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {extraCount > 0 && (
-                    <span className="rounded border border-border bg-bg-alt px-1.5 py-0.2 font-mono text-[10px] text-text-muted">
-                      +{extraCount}
-                    </span>
-                  )}
-                  <span className={`font-mono font-semibold tabular-nums ${tone.textClass}`}>
-                    {remaining}%
-                  </span>
-                </div>
-              </div>
-              <div className="h-1.5 w-full rounded-full overflow-hidden bg-bg-alt border border-border-subtle">
-                <div
-                  className="h-full rounded-full transition-all duration-300"
-                  style={{ width: `${Math.min(remaining, 100)}%`, backgroundColor: tone.barColor }}
-                />
-              </div>
-            </div>
+            <QuotaTable
+              quotas={quota.quotas}
+              compact
+              sortMode={conn.provider === "codex" ? quotaSortMode : "default"}
+              showSortLabel={conn.provider === "codex" && quotaSortMode !== "default"}
+            />
           );
         },
       },
@@ -1178,6 +1153,7 @@ export default function ProviderLimits() {
       quotaData,
       loading,
       errors,
+      quotaSortMode,
       deletingId,
       togglingId,
       resettingLimitId,
@@ -1383,8 +1359,8 @@ export default function ProviderLimits() {
                 value={viewMode}
                 onChange={setViewMode}
                 options={[
-                  { label: "Matrix", value: "matrix" },
                   { label: "Cards", value: "cards" },
+                  { label: "Matrix", value: "matrix" },
                 ]}
               />
             </div>
@@ -1432,7 +1408,7 @@ export default function ProviderLimits() {
             dataSource={visibleConnections}
             loading={connectionsLoading}
             pagination={false}
-            scroll={{ x: 960 }}
+            scroll={{ x: 1140 }}
             expandable={expandableConfig}
           />
         </div>

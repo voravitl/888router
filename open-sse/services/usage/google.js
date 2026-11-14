@@ -225,12 +225,12 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
 
       // Family rollup: Gemini versions share one pooled quota server-side, so
       // per-version bars all move together and confuse. Aggregate per family
-      // (Gemini total / Claude total) using the MINIMUM remaining fraction —
+      // (Gemini / Gemini 4 Argon / Claude) using the MINIMUM remaining fraction —
       // the tightest pool is what the user can actually still spend.
       // Per-model rows are kept under `models` for drill-down; the UI renders
-      // the two `families` rows as the primary bars.
-      const familyFractions = { gemini: [], claude: [] };
-      const familyResets = { gemini: [], claude: [] };
+      // the family rows as the primary bars.
+      const familyFractions = { gemini: [], gemini_argon: [], claude: [] };
+      const familyResets = { gemini: [], gemini_argon: [], claude: [] };
 
       for (const [modelKey, info] of Object.entries(data.models)) {
         // Skip models without quota info
@@ -279,7 +279,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
             : lowerKey.startsWith("claude")
               ? "claude"
               : lowerKey.includes("argon")
-                ? null
+                ? "gemini_argon"
                 : lowerKey.startsWith("gemini") || lowerKey.startsWith("gemini-pro-agent")
                   ? "gemini"
                   : null;
@@ -290,13 +290,19 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         }
       }
 
+      const FAMILY_LABELS = {
+        gemini: "Gemini",
+        gemini_argon: "Gemini 4 Argon",
+        claude: "Claude",
+      };
+
       // Emit one rollup row per family that has at least one member.
       for (const [family, fractions] of Object.entries(familyFractions)) {
         if (fractions.length === 0) continue;
         const minFraction = Math.min(...fractions);
         const total = 1000;
         const remaining = Math.round(total * minFraction);
-        const label = family === "gemini" ? "Gemini" : "Claude";
+        const label = FAMILY_LABELS[family] || family;
         quotas[`${label} (all models)`] = {
           used: total - remaining,
           total,
@@ -330,81 +336,39 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       const argonModels = entries.filter(([key]) => key.includes("argon"));
       const claudeModels = entries.filter(([key]) => key.startsWith("claude-"));
 
-      if (weeklyQuotas.gemini_weekly && geminiModels.length > 0) {
-        const allGeminiExhausted = geminiModels.every(([, quota]) => (quota.remainingPercentage ?? 0) === 0);
-        if (allGeminiExhausted && weeklyQuotas.gemini_weekly.remainingPercentage > 0) {
-          const maxResetAt = geminiModels.reduce((max, [, quota]) =>
+      const reconcileFamilyWeekly = (weeklyQuota, familyRollupKey, modelEntries) => {
+        if (!weeklyQuota || modelEntries.length === 0) return;
+        const allExhausted = modelEntries.every(([, quota]) => (quota.remainingPercentage ?? 0) === 0);
+        if (allExhausted && weeklyQuota.remainingPercentage > 0) {
+          const maxResetAt = modelEntries.reduce((max, [, quota]) =>
             !max || (quota.resetAt && new Date(quota.resetAt) > new Date(max)) ? quota.resetAt : max, null
           );
-          weeklyQuotas.gemini_weekly.used = weeklyQuotas.gemini_weekly.total;
-          weeklyQuotas.gemini_weekly.remainingPercentage = 0;
-          if (maxResetAt) weeklyQuotas.gemini_weekly.resetAt = maxResetAt;
-        } else if (weeklyQuotas.gemini_weekly?.remainingPercentage === 0) {
+          weeklyQuota.used = weeklyQuota.total;
+          weeklyQuota.remainingPercentage = 0;
+          if (maxResetAt) weeklyQuota.resetAt = maxResetAt;
+        } else if (weeklyQuota?.remainingPercentage === 0) {
           // When weekly quota is exhausted, the 5h pool does not apply — user is blocked
-          if (quotas["Gemini (all models)"]) {
-            quotas["Gemini (all models)"].used = quotas["Gemini (all models)"].total;
-            quotas["Gemini (all models)"].remainingPercentage = 0;
-            if (weeklyQuotas.gemini_weekly.resetAt) {
-              quotas["Gemini (all models)"].resetAt = weeklyQuotas.gemini_weekly.resetAt;
+          const rollup = quotas[familyRollupKey];
+          if (rollup) {
+            rollup.used = rollup.total;
+            rollup.remainingPercentage = 0;
+            if (weeklyQuota.resetAt) {
+              rollup.resetAt = weeklyQuota.resetAt;
             }
           }
-          for (const [, quota] of geminiModels) {
+          for (const [, quota] of modelEntries) {
             quota.used = quota.total;
             quota.remainingPercentage = 0;
-            if (weeklyQuotas.gemini_weekly.resetAt) {
-              quota.resetAt = weeklyQuotas.gemini_weekly.resetAt;
+            if (weeklyQuota.resetAt) {
+              quota.resetAt = weeklyQuota.resetAt;
             }
           }
         }
-      }
+      };
 
-      if (weeklyQuotas.gemini_argon_weekly && argonModels.length > 0) {
-        const allArgonExhausted = argonModels.every(([, quota]) => (quota.remainingPercentage ?? 0) === 0);
-        if (allArgonExhausted && weeklyQuotas.gemini_argon_weekly.remainingPercentage > 0) {
-          const maxResetAt = argonModels.reduce((max, [, quota]) =>
-            !max || (quota.resetAt && new Date(quota.resetAt) > new Date(max)) ? quota.resetAt : max, null
-          );
-          weeklyQuotas.gemini_argon_weekly.used = weeklyQuotas.gemini_argon_weekly.total;
-          weeklyQuotas.gemini_argon_weekly.remainingPercentage = 0;
-          if (maxResetAt) weeklyQuotas.gemini_argon_weekly.resetAt = maxResetAt;
-        } else if (weeklyQuotas.gemini_argon_weekly?.remainingPercentage === 0) {
-          for (const [, quota] of argonModels) {
-            quota.used = quota.total;
-            quota.remainingPercentage = 0;
-            if (weeklyQuotas.gemini_argon_weekly.resetAt) {
-              quota.resetAt = weeklyQuotas.gemini_argon_weekly.resetAt;
-            }
-          }
-        }
-      }
-
-      if (weeklyQuotas.claude_gpt_weekly && claudeModels.length > 0) {
-        const allClaudeExhausted = claudeModels.every(([, quota]) => (quota.remainingPercentage ?? 0) === 0);
-        if (allClaudeExhausted && weeklyQuotas.claude_gpt_weekly.remainingPercentage > 0) {
-          const maxResetAt = claudeModels.reduce((max, [, quota]) =>
-            !max || (quota.resetAt && new Date(quota.resetAt) > new Date(max)) ? quota.resetAt : max, null
-          );
-          weeklyQuotas.claude_gpt_weekly.used = weeklyQuotas.claude_gpt_weekly.total;
-          weeklyQuotas.claude_gpt_weekly.remainingPercentage = 0;
-          if (maxResetAt) weeklyQuotas.claude_gpt_weekly.resetAt = maxResetAt;
-        } else if (weeklyQuotas.claude_gpt_weekly?.remainingPercentage === 0) {
-          // When weekly quota is exhausted, the 5h pool does not apply — user is blocked
-          if (quotas["Claude (all models)"]) {
-            quotas["Claude (all models)"].used = quotas["Claude (all models)"].total;
-            quotas["Claude (all models)"].remainingPercentage = 0;
-            if (weeklyQuotas.claude_gpt_weekly.resetAt) {
-              quotas["Claude (all models)"].resetAt = weeklyQuotas.claude_gpt_weekly.resetAt;
-            }
-          }
-          for (const [, quota] of claudeModels) {
-            quota.used = quota.total;
-            quota.remainingPercentage = 0;
-            if (weeklyQuotas.claude_gpt_weekly.resetAt) {
-              quota.resetAt = weeklyQuotas.claude_gpt_weekly.resetAt;
-            }
-          }
-        }
-      }
+      reconcileFamilyWeekly(weeklyQuotas.gemini_weekly, "Gemini (all models)", geminiModels);
+      reconcileFamilyWeekly(weeklyQuotas.gemini_argon_weekly, "Gemini 4 Argon (all models)", argonModels);
+      reconcileFamilyWeekly(weeklyQuotas.claude_gpt_weekly, "Claude (all models)", claudeModels);
 
       Object.assign(quotas, weeklyQuotas);
     } catch {

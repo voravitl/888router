@@ -1,3 +1,6 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
@@ -292,6 +295,38 @@ export async function refreshCodexToken(refreshToken, log) {
   }, log);
 }
 
+const AWS_REGION_PATTERN = /^[a-z]{2}(?:-[a-z]+)+-\d{1,2}$/;
+
+function parseAwsClientExpiryMs(value) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return value < 1e12 ? value * 1000 : value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const trimmed = value.trim();
+    if (/^\d+(\.\d+)?$/.test(trimmed)) {
+      const num = Number(trimmed);
+      return Number.isFinite(num) && num > 0 ? (num < 1e12 ? num * 1000 : num) : NaN;
+    }
+    return Date.parse(trimmed);
+  }
+  return NaN;
+}
+
+function resolveCachedClientExpiry(rawExpiresAt) {
+  if (rawExpiresAt === undefined || rawExpiresAt === null || rawExpiresAt === "") {
+    return { expired: false, value: null };
+  }
+  const expiresAtMs = parseAwsClientExpiryMs(rawExpiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) {
+    return { expired: true, value: null };
+  }
+  const value =
+    typeof rawExpiresAt === "string" && !/^\d+(\.\d+)?$/.test(rawExpiresAt.trim())
+      ? rawExpiresAt.trim()
+      : new Date(expiresAtMs).toISOString();
+  return { expired: false, value };
+}
+
 async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn) {
   if (providerSpecificData?.profileArn) return {};
   let profileArn = refreshedArn?.trim?.() || null;
@@ -300,6 +335,143 @@ async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, ref
     profileArn = await fetchKiroProfileArn(accessToken);
   }
   return profileArn ? { providerSpecificData: { profileArn } } : {};
+}
+
+async function tryRefreshKiroIdcFromAwsCache({
+  failedClientId,
+  failedClientSecret,
+  failedRefreshToken,
+  failedRegion,
+  failedAuthMethod,
+  providerSpecificData,
+  log,
+  proxyOptions,
+}) {
+  if (failedAuthMethod && String(failedAuthMethod).toLowerCase() !== "idc") {
+    return null;
+  }
+
+  const cacheDir = process.env.AWS_SSO_CACHE_DIR || path.join(os.homedir(), ".aws", "sso", "cache");
+  try {
+    const resolvedCacheDir = path.resolve(cacheDir);
+    const tokenRaw = await fs.readFile(path.join(resolvedCacheDir, "kiro-auth-token.json"), "utf-8");
+    const tokenData = JSON.parse(tokenRaw);
+
+    if (String(tokenData?.authMethod || "").toLowerCase() !== "idc") {
+      return null;
+    }
+
+    const clientIdHash = typeof tokenData?.clientIdHash === "string" ? tokenData.clientIdHash.trim() : "";
+    if (!clientIdHash || /[\/\\]/.test(clientIdHash) || clientIdHash.includes("..")) {
+      return null;
+    }
+
+    const clientFilePath = path.resolve(resolvedCacheDir, `${clientIdHash}.json`);
+    if (!clientFilePath.startsWith(resolvedCacheDir + path.sep)) {
+      return null;
+    }
+
+    const clientRaw = await fs.readFile(clientFilePath, "utf-8");
+    const clientData = JSON.parse(clientRaw);
+
+    const cacheClientId = typeof clientData?.clientId === "string" ? clientData.clientId.trim() : "";
+    const cacheClientSecret = typeof clientData?.clientSecret === "string" ? clientData.clientSecret.trim() : "";
+    const cacheRefreshToken = typeof tokenData?.refreshToken === "string" ? tokenData.refreshToken.trim() : "";
+    if (!cacheClientId || !cacheClientSecret || !cacheRefreshToken) {
+      return null;
+    }
+
+    const expiry = resolveCachedClientExpiry(clientData?.expiresAt);
+    if (expiry.expired) {
+      log?.warn?.("TOKEN_REFRESH", "Skipping AWS SSO cache fallback: cached client registration is expired");
+      return null;
+    }
+
+    if (
+      cacheClientId === failedClientId &&
+      cacheClientSecret === failedClientSecret &&
+      cacheRefreshToken === failedRefreshToken
+    ) {
+      return null;
+    }
+
+    const cacheRegion =
+      (typeof tokenData?.region === "string" && tokenData.region.trim()) ||
+      (typeof failedRegion === "string" && failedRegion.trim()) ||
+      "us-east-1";
+    if (!AWS_REGION_PATTERN.test(cacheRegion)) {
+      log?.warn?.("TOKEN_REFRESH", "Skipping AWS SSO cache fallback: invalid region");
+      return null;
+    }
+
+    const retryEndpoint = `https://oidc.${cacheRegion}.amazonaws.com/token`;
+    const retryResponse = await proxyAwareFetch(
+      retryEndpoint,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          clientId: cacheClientId,
+          clientSecret: cacheClientSecret,
+          refreshToken: cacheRefreshToken,
+          grantType: "refresh_token",
+        }),
+      },
+      proxyOptions
+    );
+
+    if (!retryResponse.ok) {
+      const retryErrorText = await retryResponse.text().catch(() => "");
+      log?.error?.("TOKEN_REFRESH", "AWS SSO cache fallback refresh for Kiro failed", {
+        status: retryResponse.status,
+        error: retryErrorText,
+      });
+      return null;
+    }
+
+    const retryTokens = await retryResponse.json();
+    if (!retryTokens?.accessToken) {
+      return null;
+    }
+
+    log?.info?.("TOKEN_REFRESH", "Healed Kiro AWS IDC token from local AWS SSO cache", {
+      hasNewAccessToken: !!retryTokens.accessToken,
+      expiresIn: retryTokens.expiresIn,
+      region: cacheRegion,
+    });
+
+    const nextProviderSpecificData = {
+      ...(providerSpecificData || {}),
+      clientId: cacheClientId,
+      clientSecret: cacheClientSecret,
+      clientSecretExpiresAt: expiry.value,
+      region: cacheRegion,
+      authMethod: "idc",
+    };
+    const profileArnPatch = await resolveKiroProfileArnPatch(
+      nextProviderSpecificData,
+      retryTokens.accessToken,
+      retryTokens.profileArn
+    );
+    if (profileArnPatch.providerSpecificData) {
+      Object.assign(nextProviderSpecificData, profileArnPatch.providerSpecificData);
+    }
+
+    return {
+      accessToken: retryTokens.accessToken,
+      refreshToken: retryTokens.refreshToken || cacheRefreshToken,
+      expiresIn: retryTokens.expiresIn,
+      providerSpecificData: nextProviderSpecificData,
+    };
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      log?.warn?.("TOKEN_REFRESH", `AWS SSO cache fallback unavailable: ${error?.message || error}`);
+    }
+    return null;
+  }
 }
 
 export async function refreshKiroToken(refreshToken, providerSpecificData, log, proxyOptions = null) {
@@ -354,10 +526,13 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
   }
 
   if (clientId && clientSecret) {
-    const isIDC = authMethod === "idc";
-    const endpoint = isIDC && region
-      ? `https://oidc.${region}.amazonaws.com/token`
-      : "https://oidc.us-east-1.amazonaws.com/token";
+    const isIDC = String(authMethod || "").toLowerCase() === "idc";
+    const resolvedRegion = isIDC && region ? region : "us-east-1";
+    if (!AWS_REGION_PATTERN.test(resolvedRegion)) {
+      log?.error?.("TOKEN_REFRESH", "Invalid AWS region for Kiro token refresh");
+      return null;
+    }
+    const endpoint = `https://oidc.${resolvedRegion}.amazonaws.com/token`;
 
     const response = await proxyAwareFetch(endpoint, {
       method: "POST",
@@ -374,12 +549,21 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     }, proxyOptions);
 
     if (!response.ok) {
-      const errorText = await response.text();
+      const errorText = await response.text().catch(() => "");
       log?.error?.("TOKEN_REFRESH", "Failed to refresh Kiro AWS token", {
         status: response.status,
         error: errorText,
       });
-      return null;
+      return await tryRefreshKiroIdcFromAwsCache({
+        failedClientId: clientId,
+        failedClientSecret: clientSecret,
+        failedRefreshToken: refreshToken,
+        failedRegion: region,
+        failedAuthMethod: authMethod,
+        providerSpecificData,
+        log,
+        proxyOptions,
+      });
     }
 
     const tokens = await response.json();

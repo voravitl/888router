@@ -11,7 +11,7 @@ import { join } from "path";
  */
 export async function GET() {
   try {
-    const cachePath = join(homedir(), ".aws/sso/cache");
+    const cachePath = process.env.AWS_SSO_CACHE_DIR || join(homedir(), ".aws/sso/cache");
 
     let files;
     try {
@@ -33,7 +33,7 @@ export async function GET() {
       try {
         const content = await readFile(join(cachePath, kiroTokenFile), "utf-8");
         const data = JSON.parse(content);
-        if (data.refreshToken && data.refreshToken.startsWith("aorAAAAAG")) {
+        if (typeof data.refreshToken === "string" && data.refreshToken.startsWith("aorAAA")) {
           refreshToken = data.refreshToken;
           foundFile = kiroTokenFile;
           tokenData = data;
@@ -50,7 +50,7 @@ export async function GET() {
         try {
           const content = await readFile(join(cachePath, file), "utf-8");
           const data = JSON.parse(content);
-          if (data.refreshToken && data.refreshToken.startsWith("aorAAAAAG")) {
+          if (typeof data.refreshToken === "string" && data.refreshToken.startsWith("aorAAA")) {
             refreshToken = data.refreshToken;
             foundFile = file;
             tokenData = data;
@@ -73,10 +73,17 @@ export async function GET() {
     // the linked client registration file (referenced by clientIdHash).
     let clientId = null;
     let clientSecret = null;
+    let clientSecretExpiresAt = null;
     const region = tokenData?.region || null;
     const authMethod = tokenData?.authMethod || null;
 
-    if (tokenData?.clientIdHash) {
+    if (
+      typeof tokenData?.clientIdHash === "string" &&
+      tokenData.clientIdHash.length > 0 &&
+      !tokenData.clientIdHash.includes("/") &&
+      !tokenData.clientIdHash.includes("\\") &&
+      !tokenData.clientIdHash.includes("..")
+    ) {
       const clientFile = `${tokenData.clientIdHash}.json`;
       try {
         const clientContent = await readFile(join(cachePath, clientFile), "utf-8");
@@ -84,6 +91,7 @@ export async function GET() {
         if (clientData.clientId && clientData.clientSecret) {
           clientId = clientData.clientId;
           clientSecret = clientData.clientSecret;
+          clientSecretExpiresAt = clientData.expiresAt || null;
         }
       } catch (error) {
         // Client registration file not found - continue without it
@@ -96,6 +104,7 @@ export async function GET() {
     let profileArn = null;
     const kiroProfilePaths = [
       join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "Kiro", "User", "globalStorage", "kiro.kiroagent", "profile.json"),
+      join(homedir(), "Library", "Application Support", "Kiro", "User", "globalStorage", "kiro.kiroagent", "profile.json"),
       join(homedir(), ".config", "Kiro", "User", "globalStorage", "kiro.kiroagent", "profile.json"),
     ];
     for (const profilePath of kiroProfilePaths) {
@@ -118,6 +127,7 @@ export async function GET() {
       source: foundFile,
       clientId,
       clientSecret,
+      clientSecretExpiresAt,
       region,
       authMethod,
       profileArn,
