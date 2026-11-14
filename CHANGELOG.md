@@ -1,3 +1,12 @@
+# v0.15.250 (2026-11-14)
+
+## Ollama Billing Reset Day Configuration in Connection Modals
+- **Self-Service Billing Reset Day (`AddApiKeyModal`, `EditConnectionModal`, `providerNormalization`, `/api/providers/[id]`, `/api/providers/client`)**:
+  - Exposed `Billing Reset Day (1–31, optional)` input when creating (`AddApiKeyModal.js`) or editing (`EditConnectionModal.js`) an Ollama Cloud connection so every user can configure their subscription renewal day (`providerSpecificData.resetDay`) from the UI without touching the database directly.
+  - Added shared `parseOllamaResetDay` validation and `normalizeProviderSpecificData("ollama", ...)` support in `src/lib/providerNormalization.js`.
+  - Updated `PUT /api/providers/[id]` to validate and coerce integer reset days (`1–31`), reject out-of-range values with `HTTP 400`, and clear `resetDay` when emptied or set to `null`, while keeping existing metadata intact on partial updates.
+  - Added `"resetDay"` to `SAFE_PSD_FIELDS` in `GET /api/providers/client` so `/dashboard/quota` edit dialogs display and persist the saved reset day alongside the Providers page.
+
 # v0.15.249 (2026-11-14)
 
 ## Restore Full Multi-Window Quota Tracking, Antigravity Argon Rollups & Kiro AWS SSO Cache Recovery

@@ -8,6 +8,7 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { parseOllamaResetDay } from "@/lib/providerNormalization";
 
 const NONE_PROXY_POOL_VALUE = "__none__";
 
@@ -31,6 +32,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   });
   const [consoleCookie, setConsoleCookie] = useState("");
   const [clearConsoleCookie, setClearConsoleCookie] = useState(false);
+  const [ollamaResetDay, setOllamaResetDay] = useState(() =>
+    connection?.providerSpecificData?.resetDay != null ? String(connection.providerSpecificData.resetDay) : ""
+  );
   const [region, setRegion] = useState(() => {
     const providerCfg = AI_PROVIDERS?.[connection?.provider];
     return connection?.providerSpecificData?.region || providerCfg?.defaultRegion || providerCfg?.regions?.[0]?.id || "";
@@ -63,6 +67,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     }
     setConsoleCookie("");
     setClearConsoleCookie(false);
+    setOllamaResetDay(
+      connection?.providerSpecificData?.resetDay != null ? String(connection.providerSpecificData.resetDay) : ""
+    );
     const providerCfg = AI_PROVIDERS?.[connection?.provider];
     if (providerCfg?.regions) {
       const savedRegion = connection?.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg?.regions[0]?.id || "";
@@ -75,6 +82,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   }
 
   const isOAuth = connection?.authType === "oauth";
+  const isOllamaCloud = connection?.provider === "ollama";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
   const isAlibabaTokenPlan = connection?.provider === "alitp-intl";
@@ -82,6 +90,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
+
+  const trimmedOllamaResetDay = ollamaResetDay.trim();
+  const isInvalidOllamaResetDay = isOllamaCloud && trimmedOllamaResetDay !== "" && parseOllamaResetDay(trimmedOllamaResetDay) === null;
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
@@ -204,6 +215,22 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
       }
+      if (isOllamaCloud) {
+        if (trimmedOllamaResetDay === "") {
+          updates.providerSpecificData = {
+            ...(updates.providerSpecificData || connection?.providerSpecificData || {}),
+            resetDay: null,
+          };
+        } else {
+          const parsedResetDay = parseOllamaResetDay(trimmedOllamaResetDay);
+          if (parsedResetDay !== null) {
+            updates.providerSpecificData = {
+              ...(updates.providerSpecificData || connection?.providerSpecificData || {}),
+              resetDay: parsedResetDay,
+            };
+          }
+        }
+      }
       
       await onSave(updates);
     } finally {
@@ -321,6 +348,21 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </div>
         )}
 
+        {isOllamaCloud && (
+          <Input
+            label="Billing Reset Day (1–31, optional)"
+            type="number"
+            min="1"
+            max="31"
+            step="1"
+            value={ollamaResetDay}
+            onChange={(e) => setOllamaResetDay(e.target.value)}
+            placeholder="e.g. 21 (leave blank for rolling 30-day window)"
+            error={isInvalidOllamaResetDay ? "Enter a whole day between 1 and 31." : undefined}
+            hint="Day of the month your Ollama Cloud credits refill (see ollama.com/dashboard)."
+          />
+        )}
+
         {providerRegions && (
           <Select
             label="Region"
@@ -355,7 +397,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         )}
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || isInvalidOllamaResetDay}>{saving ? "Saving..." : "Save"}</Button>
           <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
         </div>
       </div>
