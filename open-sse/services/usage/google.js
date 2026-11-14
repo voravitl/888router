@@ -318,6 +318,15 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
           memberCount: fractions.length,
         };
       }
+
+      // Registry aliases `gemini-4-hydrogen` to `gemini-4-hydrogen(high)`, while
+      // live daily-cloudcode-pa `:fetchAvailableModels` returns `gemini-4-hydrogen-high`.
+      if (!quotas["gemini-4-hydrogen"] && quotas["gemini-4-hydrogen-high"]) {
+        quotas["gemini-4-hydrogen"] = {
+          ...quotas["gemini-4-hydrogen-high"],
+          displayName: "Gemini 4 Hydrogen",
+        };
+      }
     }
 
     // Best-effort weekly quota overlay — never blocks or breaks per-model results.

@@ -1,3 +1,13 @@
+# v0.15.251 (2026-11-14)
+
+## Antigravity Quota Endpoint Alignment (`daily-cloudcode-pa`) & Hydrogen Alias
+- **Antigravity Hub Quota Host (`open-sse/providers/registry/antigravity.js`, `tests/__baseline__/providers-baseline.json`)**:
+  - Updated `usage.quotaApiUrl` and `usage.loadProjectApiUrl` from legacy `cloudcode-pa.googleapis.com` to `daily-cloudcode-pa.googleapis.com`, matching `transport.baseUrls[0]`, `usage.quotaSummaryApiUrl`, and live model discovery resolvers.
+  - Prevents legacy `cloudcode-pa` responses (which omitted `remainingFraction` on `gemini-4-argon-*` and omitted `gemini-4-hydrogen-*`, causing `reconcileFamilyWeekly` to zero out `gemini_argon_weekly` even when live Argon quota remained ~79%) from falsely marking Argon exhausted.
+- **Usage Parser & Snapshot Fallback (`open-sse/services/usage/google.js`, `src/app/api/usage/[connectionId]/route.js`)**:
+  - Added `gemini-4-hydrogen` quota entry alias mirrored from `gemini-4-hydrogen-high` when `fetchAvailableModels` returns only the `-high` suffix.
+  - Included `"Gemini 4 Argon (all models)"` in multi-family snapshot capacity fallback selection.
+
 # v0.15.250 (2026-11-14)
 
 ## Ollama Billing Reset Day Configuration in Connection Modals
