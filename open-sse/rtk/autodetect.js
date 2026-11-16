@@ -14,6 +14,8 @@ import { tree } from "./filters/tree.js";
 import { smartTruncate } from "./filters/smartTruncate.js";
 import { readNumbered, READ_NUMBERED_LINE_RE } from "./filters/readNumbered.js";
 import { searchList, SEARCH_LIST_HEADER_RE } from "./filters/searchList.js";
+import { jsonCompact, isValidJsonContainer } from "./filters/jsonCompact.js";
+import { ansiClean, hasAnsiOrCr } from "./filters/ansiClean.js";
 
 const RE_GIT_DIFF = /^diff --git /m;
 const RE_GIT_DIFF_HUNK = /^@@ /m;
@@ -31,48 +33,65 @@ const RE_TREE_GLYPH = /[├└]──|│  /;
 const RE_LS_ROW = /^[-dlbcps][rwx-]{9}/m;
 const RE_LS_TOTAL = /^total \d+$/m;
 
-export function autoDetectFilter(text) {
-  // Rust: floor_char_boundary to avoid UTF-8 split — JS .slice() by char is safe
-  const head = text.length > DETECT_WINDOW ? text.slice(0, DETECT_WINDOW) : text;
+function withAnsiPrePass(fn) {
+  const wrapped = (input) => fn(ansiClean(input));
+  wrapped.filterName = fn.filterName || fn.name;
+  return wrapped;
+}
 
-  if (RE_GIT_LOG.test(head)) return gitLog;
-  if (RE_GIT_DIFF.test(head) || RE_GIT_DIFF_HUNK.test(head)) return gitDiff;
-  if (RE_GIT_STATUS.test(head)) return gitStatus;
+export function autoDetectFilter(text) {
+  if (typeof text !== "string" || text.length === 0) return null;
+
+  const hasAnsi = hasAnsiOrCr(text);
+  const cleanText = hasAnsi ? ansiClean(text) : text;
+  // Rust: floor_char_boundary to avoid UTF-8 split — JS .slice() by char is safe
+  const head = cleanText.length > DETECT_WINDOW ? cleanText.slice(0, DETECT_WINDOW) : cleanText;
+  const wrap = (fn) => (hasAnsi ? withAnsiPrePass(fn) : fn);
+
+  // Detect valid JSON containers before line-based heuristics so JSON fields
+  // containing colons, paths, or log-like text are compacted losslessly.
+  if (isValidJsonContainer(cleanText)) return wrap(jsonCompact);
+
+  if (RE_GIT_LOG.test(head)) return wrap(gitLog);
+  if (RE_GIT_DIFF.test(head) || RE_GIT_DIFF_HUNK.test(head)) return wrap(gitDiff);
+  if (RE_GIT_STATUS.test(head)) return wrap(gitStatus);
 
   // Build output BEFORE porcelain check: prevents cargo "Compiling" misdetection as git-status
-  if (RE_BUILD_OUTPUT.test(head)) return buildOutput;
+  if (RE_BUILD_OUTPUT.test(head)) return wrap(buildOutput);
 
-  if (isMostlyPorcelain(head)) return gitStatus;
+  if (isMostlyPorcelain(head)) return wrap(gitStatus);
 
   const lines = head.split("\n");
   const nonEmpty = lines.filter(l => l.trim().length > 0);
 
   // Rust grep rule: first 5 non-empty lines, ANY matches "file:number:content"
   const first5 = nonEmpty.slice(0, 5);
-  if (first5.some(isGrepLine)) return grep;
+  if (first5.some(isGrepLine)) return wrap(grep);
 
   // Rust find rule: ALL non-empty lines path-like (no ':'), >=3 lines
-  if (nonEmpty.length >= 3 && nonEmpty.every(isPathLike)) return find;
+  if (nonEmpty.length >= 3 && nonEmpty.every(isPathLike)) return wrap(find);
 
   // Tree: contains box-drawing glyphs typical of `tree` command
-  if (RE_TREE_GLYPH.test(head)) return tree;
+  if (RE_TREE_GLYPH.test(head)) return wrap(tree);
 
   // ls -la: has "total N" header or >=3 rows starting with perms string
-  if (RE_LS_TOTAL.test(head) || countMatches(head, RE_LS_ROW) >= 3) return ls;
+  if (RE_LS_TOTAL.test(head) || countMatches(head, RE_LS_ROW) >= 3) return wrap(ls);
 
   // Cursor Glob search list header
-  if (SEARCH_LIST_HEADER_RE.test(head)) return searchList;
+  if (SEARCH_LIST_HEADER_RE.test(head)) return wrap(searchList);
 
   // Line-numbered file dump ("  N|content") — fire only if many lines match
   if (lines.length >= SMART_TRUNCATE_MIN_LINES && isLineNumbered(lines)) {
-    return readNumbered;
+    return wrap(readNumbered);
   }
 
   // Fallback: dedupLog for generic multi-line noise with duplicates
-  if (nonEmpty.length >= 5) return dedupLog;
+  if (nonEmpty.length >= 5) return wrap(dedupLog);
 
   // Last resort: big blob with no structure — smart truncate
-  if (text.split("\n").length >= SMART_TRUNCATE_MIN_LINES) return smartTruncate;
+  if (cleanText.split("\n").length >= SMART_TRUNCATE_MIN_LINES) return wrap(smartTruncate);
+
+  if (hasAnsi) return ansiClean;
 
   return null;
 }

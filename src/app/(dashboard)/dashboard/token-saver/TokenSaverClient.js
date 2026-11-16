@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   BarChart,
@@ -20,8 +20,13 @@ import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import {
   WENYAN_LOCALES,
   CAVEMAN_LEVELS,
-  PONYTAIL_LEVELS,
 } from "../endpoint/endpointConstants";
+
+const REASONING_EFFORT_CAPS = [
+  { id: "off", label: "Off", desc: "Pass caller reasoning effort untouched" },
+  { id: "low", label: "Low", desc: "Cap excessive reasoning to low" },
+  { id: "medium", label: "Medium", desc: "Cap high/xhigh/max reasoning to medium" },
+];
 
 function fmtBytes(n) {
   if (n == null || Number.isNaN(n)) return "—";
@@ -48,87 +53,135 @@ export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
-  const [ponytailEnabled, setPonytailEnabled] = useState(false);
-  const [ponytailLevel, setPonytailLevel] = useState("full");
-  const [prunerEnabled, setPrunerEnabled] = useState(true);
-  const [locale, setLocale] = useState("en");
+  const [reasoningEffortCap, setReasoningEffortCap] = useState("off");
+  const locale = useSyncExternalStore(onLocaleChange, getCurrentLocale, () => "en");
   const [summaryPeriod, setSummaryPeriod] = useState("7d");
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState("");
 
-  useEffect(() => {
-    setLocale(getCurrentLocale());
-    return onLocaleChange(() => setLocale(getCurrentLocale()));
+  const patchSetting = useCallback(async (patch) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      return res.ok;
+    } catch (error) {
+      console.log("Error updating setting:", error);
+      return false;
+    }
   }, []);
 
   const isWenyanLocale = WENYAN_LOCALES.includes(locale);
   const visibleCavemanLevels = isWenyanLocale
     ? CAVEMAN_LEVELS
     : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
+  const currentCavemanSpec = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
+  const needsWenyanFallback = Boolean(currentCavemanSpec?.wenyan && !isWenyanLocale);
+  const effectiveCavemanLevel = needsWenyanFallback ? "ultra" : cavemanLevel;
 
   useEffect(() => {
-    const current = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
-    if (current?.wenyan && !isWenyanLocale) {
-      setCavemanLevel("ultra");
-      patchSetting({ cavemanLevel: "ultra" });
+    if (needsWenyanFallback) {
+      void patchSetting({ cavemanLevel: "ultra" });
     }
-  }, [isWenyanLocale, cavemanLevel]);
-
-  const patchSetting = async (patch) => {
-    try {
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-    } catch (error) {
-      console.log("Error updating setting:", error);
-    }
-  };
+  }, [needsWenyanFallback, patchSetting]);
 
   const handleRtkEnabled = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rtkEnabled: value }),
-      });
-      if (res.ok) setRtkEnabledState(value);
-    } catch (error) {
-      console.log("Error updating rtkEnabled:", error);
-    }
+    const ok = await patchSetting({ rtkEnabled: value });
+    if (ok) setRtkEnabledState(value);
   };
 
-  const handleCavemanEnabled = (value) => {
+  const handleReasoningEffortCap = async (cap) => {
+    const prev = reasoningEffortCap;
+    if (prev === cap) return;
+    setReasoningEffortCap(cap);
+    const ok = await patchSetting({ reasoningEffortCap: cap });
+    if (!ok) setReasoningEffortCap((cur) => (cur === cap ? prev : cur));
+  };
+
+  const handleCavemanEnabled = async (value) => {
+    const prev = cavemanEnabled;
     setCavemanEnabled(value);
-    patchSetting({ cavemanEnabled: value });
+    const ok = await patchSetting({ cavemanEnabled: value });
+    if (!ok) setCavemanEnabled((cur) => (cur === value ? prev : cur));
   };
 
-  const handleCavemanLevel = (level) => {
+  const handleCavemanLevel = async (level) => {
+    const prev = cavemanLevel;
+    if (prev === level) return;
     setCavemanLevel(level);
-    patchSetting({ cavemanLevel: level });
+    const ok = await patchSetting({ cavemanLevel: level });
+    if (!ok) setCavemanLevel((cur) => (cur === level ? prev : cur));
   };
 
-  const handlePonytailEnabled = (value) => {
-    setPonytailEnabled(value);
-    patchSetting({ ponytailEnabled: value });
+  const fetchSummary = useCallback(async (period, signal) => {
+    const res = await fetch(`/api/usage/token-save-summary?period=${period}`, {
+      cache: "no-store",
+      signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Failed to load summary");
+    return data;
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadSettings = async () => {
+      try {
+        const res = await fetch("/api/settings");
+        if (res.ok && active) {
+          const data = await res.json();
+          setRtkEnabledState(data.rtkEnabled !== false);
+          setCavemanEnabled(!!data.cavemanEnabled);
+          setCavemanLevel(data.cavemanLevel || "full");
+          const cap = data.reasoningEffortCap;
+          setReasoningEffortCap(cap === "low" || cap === "medium" ? cap : "off");
+        }
+      } catch {}
+    };
+    loadSettings();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSummary(summaryPeriod, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setSummary(data);
+          setSummaryError("");
+        }
+      })
+      .catch((e) => {
+        if (e?.name !== "AbortError" && !controller.signal.aborted) {
+          setSummaryError(e.message || "Failed to load summary");
+          setSummary(null);
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setSummaryLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [summaryPeriod, fetchSummary]);
+
+  const handlePeriodChange = (period) => {
+    if (period === summaryPeriod) return;
+    setSummaryLoading(true);
+    setSummaryError("");
+    setSummaryPeriod(period);
   };
 
-  const handlePonytailLevel = (level) => {
-    setPonytailLevel(level);
-    patchSetting({ ponytailLevel: level });
-  };
-
-  const loadSummary = useCallback(async (period = summaryPeriod) => {
+  const handleRefresh = async () => {
     setSummaryLoading(true);
     setSummaryError("");
     try {
-      const res = await fetch(`/api/usage/token-save-summary?period=${period}`, {
-        cache: "no-store",
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to load summary");
+      const data = await fetchSummary(summaryPeriod);
       setSummary(data);
     } catch (e) {
       setSummaryError(e.message || "Failed to load summary");
@@ -136,31 +189,10 @@ export default function TokenSaverClient() {
     } finally {
       setSummaryLoading(false);
     }
-  }, [summaryPeriod]);
-
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const res = await fetch("/api/settings");
-        if (res.ok) {
-          const data = await res.json();
-          setRtkEnabledState(data.rtkEnabled !== false);
-          setCavemanEnabled(!!data.cavemanEnabled);
-          setCavemanLevel(data.cavemanLevel || "full");
-          setPonytailEnabled(!!data.ponytailEnabled);
-          setPonytailLevel(data.ponytailLevel || "full");
-          setPrunerEnabled(data.prunerEnabled !== false);
-        }
-      } catch {}
-    };
-    loadSettings();
-  }, []);
-
-  useEffect(() => {
-    loadSummary(summaryPeriod);
-  }, [summaryPeriod, loadSummary]);
+  };
 
   const rtk = summary?.rtk;
+  const promptCache = summary?.promptCache;
 
   const beforeAfterChart = useMemo(() => {
     if (!rtk) return [];
@@ -224,7 +256,7 @@ export default function TokenSaverClient() {
               <button
                 key={p}
                 type="button"
-                onClick={() => setSummaryPeriod(p)}
+                onClick={() => handlePeriodChange(p)}
                 className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
                   summaryPeriod === p
                     ? "bg-primary text-white border-primary"
@@ -234,7 +266,7 @@ export default function TokenSaverClient() {
                 {p}
               </button>
             ))}
-            <Button size="sm" variant="ghost" icon="refresh" onClick={() => loadSummary(summaryPeriod)} disabled={summaryLoading}>
+            <Button size="sm" variant="ghost" icon="refresh" onClick={handleRefresh} disabled={summaryLoading}>
               Refresh
             </Button>
           </div>
@@ -390,9 +422,16 @@ export default function TokenSaverClient() {
                     <p className="text-xl font-semibold">{fmtNum(summary?.period?.scanned)}</p>
                   </div>
                   <div className="rounded-lg bg-surface-2/40 p-3">
-                    <p className="text-[10px] uppercase text-text-muted">Context Pruner</p>
-                    <p className="text-xl font-semibold">
-                      −{fmtNum(summary?.pruner?.tokensSaved || 0)} <span className="text-sm font-normal text-text-muted">tok</span>
+                    <p className="text-[10px] uppercase text-text-muted">Prompt Cache</p>
+                    <p className="text-xl font-semibold text-success">
+                      {fmtNum(promptCache?.cachedTokens ?? 0)}{" "}
+                      <span className="text-sm font-normal text-text-muted">tok</span>
+                    </p>
+                    <p className="text-[11px] text-text-muted mt-0.5">
+                      {promptCache?.pctSaved ?? 0}% reused
+                      {promptCache?.requests > 0
+                        ? ` · ${fmtNum(promptCache?.requestsWithCache ?? 0)}/${fmtNum(promptCache?.requests)} reqs`
+                        : ""}
                     </p>
                   </div>
                   <div className="rounded-lg bg-surface-2/40 p-3">
@@ -404,7 +443,7 @@ export default function TokenSaverClient() {
                   </div>
                 </div>
                 <div className="mt-3 rounded-lg border border-border/40 bg-surface-2/20 p-2.5 text-[11px] text-text-muted leading-4">
-                  💡 <strong>Dual-Average Note:</strong> Overall % reflects total window (short + long chats). Heavy requests with large tool outputs or long context yield <strong>60–90% reduction</strong> on active pruning/RTK.
+                  💡 <strong>Dual-Average Note:</strong> Overall RTK % reflects all tool payloads in the window (small + large). Heavy CLI/JSON outputs yield up to <strong>60–90% reduction</strong> via RTK, while <strong>Prompt Cache</strong> tracks upstream prefix reuse across billed prompt tokens.
                 </div>
                 {summary?.recent?.length ? (
                   <ul className="mt-3 space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar">
@@ -458,7 +497,7 @@ export default function TokenSaverClient() {
               </a>
             </p>
             <p className="text-sm text-text-muted">
-              git/grep/ls/tree/logs → 60-90% fewer input tokens
+              Lossless JSON compaction, ANSI/CR stripping, and CLI output formatting (git/grep/ls/tree/logs)
             </p>
           </div>
           <Toggle
@@ -466,27 +505,36 @@ export default function TokenSaverClient() {
             onChange={() => handleRtkEnabled(!rtkEnabled)}
           />
         </div>
-        {/* Pruner toggle */}
-        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
-            <p className="font-medium">
-              Prune history{" "}
-              <span className="text-xs font-normal text-text-muted">
-                (Context Pruner)
-              </span>
-            </p>
+            <p className="font-medium">Cap reasoning effort</p>
             <p className="text-sm text-text-muted">
-              Drop middle conversation turns when context exceeds model budget
+              Limits runaway reasoning tokens on OpenAI, DeepSeek, and translated requests while keeping adaptive thinking safe (never forces disabled).
             </p>
           </div>
-          <Toggle
-            checked={prunerEnabled}
-            onChange={() => {
-              const next = !prunerEnabled;
-              setPrunerEnabled(next);
-              patchSetting({ prunerEnabled: next });
-            }}
-          />
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <div className="flex items-center gap-1.5" role="group" aria-label="Cap reasoning effort">
+              {REASONING_EFFORT_CAPS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => handleReasoningEffortCap(opt.id)}
+                  aria-pressed={reasoningEffortCap === opt.id}
+                  title={opt.desc}
+                  className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                    reasoningEffortCap === opt.id
+                      ? "bg-primary text-white border-primary"
+                      : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-primary">
+              {REASONING_EFFORT_CAPS.find((opt) => opt.id === reasoningEffortCap)?.desc}
+            </p>
+          </div>
         </div>
         <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
@@ -504,6 +552,9 @@ export default function TokenSaverClient() {
             <p className="text-sm text-text-muted">
               Terse-style system prompt → ~65% fewer output tokens (up to 87%)
             </p>
+            <p className="text-xs text-text-muted mt-1">
+              Applies to translated/OpenAI/DeepSeek/Gemini traffic (skipped on Claude Code passthrough to protect prompt cache)
+            </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {cavemanEnabled && (
@@ -512,9 +563,10 @@ export default function TokenSaverClient() {
                   {visibleCavemanLevels.map((lvl) => (
                     <button
                       key={lvl.id}
+                      type="button"
                       onClick={() => handleCavemanLevel(lvl.id)}
                       className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                        cavemanLevel === lvl.id
+                        effectiveCavemanLevel === lvl.id
                           ? "bg-primary text-white border-primary"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                       }`}
@@ -526,7 +578,7 @@ export default function TokenSaverClient() {
                 </div>
                 <p className="text-xs text-primary">
                   {
-                    CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel)
+                    CAVEMAN_LEVELS.find((lvl) => lvl.id === effectiveCavemanLevel)
                       ?.desc
                   }
                 </p>
@@ -535,57 +587,6 @@ export default function TokenSaverClient() {
             <Toggle
               checked={cavemanEnabled}
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
-            />
-          </div>
-        </div>
-        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">
-              Lazy senior dev{" "}
-              <a
-                href="https://github.com/DietrichGebert/ponytail"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
-              >
-                (Ponytail)
-              </a>
-            </p>
-            <p className="text-sm text-text-muted">
-              Bias the model toward minimal code: does it need to exist at all,
-              then reuse the codebase, then stdlib — deletion over addition
-            </p>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            {ponytailEnabled && (
-              <div className="flex flex-col items-end gap-1">
-                <div className="flex items-center gap-1.5">
-                  {PONYTAIL_LEVELS.map((lvl) => (
-                    <button
-                      key={lvl.id}
-                      onClick={() => handlePonytailLevel(lvl.id)}
-                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                        ponytailLevel === lvl.id
-                          ? "bg-primary text-white border-primary"
-                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
-                      }`}
-                      title={lvl.desc}
-                    >
-                      {lvl.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-primary">
-                  {
-                    PONYTAIL_LEVELS.find((lvl) => lvl.id === ponytailLevel)
-                      ?.desc
-                  }
-                </p>
-              </div>
-            )}
-            <Toggle
-              checked={ponytailEnabled}
-              onChange={() => handlePonytailEnabled(!ponytailEnabled)}
             />
           </div>
         </div>

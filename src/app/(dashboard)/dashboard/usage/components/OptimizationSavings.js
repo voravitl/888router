@@ -12,7 +12,15 @@ const fmtBytes = (n) => {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-function SavingsCard({ title, icon, stats, children }) {
+function SavingsCard({
+  title,
+  icon,
+  stats,
+  beforeLabel = "Before",
+  afterLabel = "After",
+  savedLabel = "Saved",
+  children,
+}) {
   return (
     <Card className="flex min-w-0 flex-col gap-3 p-4">
       <div className="flex items-center gap-2">
@@ -22,15 +30,15 @@ function SavingsCard({ title, icon, stats, children }) {
       {stats && (
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>
-            <span className="text-text-muted">Before</span>
+            <span className="text-text-muted">{beforeLabel}</span>
             <span className="block font-mono font-semibold text-text-main">{stats.before}</span>
           </div>
           <div>
-            <span className="text-text-muted">After</span>
+            <span className="text-text-muted">{afterLabel}</span>
             <span className="block font-mono font-semibold text-text-main">{stats.after}</span>
           </div>
           <div className="col-span-2">
-            <span className="text-text-muted">Saved</span>
+            <span className="text-text-muted">{savedLabel}</span>
             <span className={`block font-mono font-semibold ${stats.savedPctNum > 0 ? "text-emerald-600 dark:text-emerald-400" : "text-text-muted"}`}>
               {stats.saved} ({stats.savedPct})
             </span>
@@ -43,18 +51,25 @@ function SavingsCard({ title, icon, stats, children }) {
 }
 
 export default function OptimizationSavings({ period = "7d" }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState({ data: null, loadedPeriod: null });
+  const loading = state.loadedPeriod !== period;
+  const data = state.data;
 
   useEffect(() => {
-    setLoading(true);
-    fetch(`/api/usage/token-save-summary?period=${period}`)
-      .then((r) => r.ok ? r.json() : null)
+    const controller = new AbortController();
+    fetch(`/api/usage/token-save-summary?period=${period}`, { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (d) setData(d);
+        if (!controller.signal.aborted) {
+          setState({ data: d, loadedPeriod: period });
+        }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (err?.name !== "AbortError" && !controller.signal.aborted) {
+          setState({ data: null, loadedPeriod: period });
+        }
+      });
+    return () => controller.abort();
   }, [period]);
 
   if (loading) {
@@ -69,7 +84,7 @@ export default function OptimizationSavings({ period = "7d" }) {
     return <div className="text-text-muted text-sm py-4">No optimization data available.</div>;
   }
 
-  const { rtk, pruner, cache, promptCache } = data || {};
+  const { rtk, promptCache } = data || {};
 
   return (
     <div className="flex flex-col gap-4">
@@ -78,12 +93,31 @@ export default function OptimizationSavings({ period = "7d" }) {
         <span className="text-sm font-semibold text-text-main">Token & Bandwidth Savings</span>
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* Upstream prompt cache — #1 real-traffic saver reflected in provider billing */}
+        <SavingsCard
+          title="Prompt Cache"
+          icon="database"
+          beforeLabel="Prompt Tokens"
+          afterLabel="Cached"
+          savedLabel="Reused"
+          stats={{
+            before: fmt(promptCache?.promptTokens),
+            after: fmt(promptCache?.cachedTokens),
+            saved: `${fmt(promptCache?.cachedTokens)} tok`,
+            savedPct: fmtPct(promptCache?.pctSaved),
+            savedPctNum: promptCache?.pctSaved,
+          }}
+        >
+          <div className="text-[10px] text-text-muted">
+            {fmt(promptCache?.requestsWithCache)}/{fmt(promptCache?.requests)} requests reused a cached prefix
+          </div>
+        </SavingsCard>
+
         {/* RTK: Tool Output Compression */}
         <SavingsCard
           title="RTK Compression"
           icon="compress"
-          color="text-info"
           stats={{
             before: fmtBytes(rtk?.bytesBefore),
             after: fmtBytes(rtk?.bytesAfter),
@@ -109,75 +143,20 @@ export default function OptimizationSavings({ period = "7d" }) {
             </div>
           )}
         </SavingsCard>
-
-        {/* Pruner: AST Soft-Pruner */}
-        <SavingsCard
-          title="AST Pruner"
-          icon="account_tree"
-          color="text-warning"
-          stats={{
-            before: fmt(pruner?.tokensBefore),
-            after: fmt(pruner?.tokensAfter),
-            saved: fmt(pruner?.tokensSaved),
-            savedPct: fmtPct(pruner?.pctSaved),
-            savedPctNum: pruner?.pctSaved,
-          }}
-        >
-          <div className="text-[10px] text-text-muted">
-            {fmt(pruner?.requestsWithSavings)}/{fmt(pruner?.requestsWithStats)} requests saved
-            {pruner?.omittedMessages > 0 && ` · ${fmt(pruner?.omittedMessages)} msgs omitted`}
-          </div>
-        </SavingsCard>
-
-        {/* Upstream prompt cache — the number that reflects provider billing.
-            Distinct from the Response Cache card below, which only counts the
-            gateway's own opt-in reply replay. */}
-        <SavingsCard
-          title="Prompt Cache"
-          icon="database"
-          color="text-success"
-          stats={{
-            before: fmt(promptCache?.promptTokens),
-            after: fmt(promptCache?.cachedTokens),
-            saved: `${fmtPct(promptCache?.pctSaved)} of prompt tokens`,
-            savedPct: fmtPct(promptCache?.pctSaved),
-            savedPctNum: promptCache?.pctSaved,
-          }}
-        >
-          <div className="text-[10px] text-text-muted">
-            {fmt(promptCache?.requestsWithCache)}/{fmt(promptCache?.requests)} requests reused a cached prefix
-          </div>
-        </SavingsCard>
-
-        {/* Response Cache */}
-        <SavingsCard
-          title="Response Cache"
-          icon="cached"
-          color="text-success"
-          stats={{
-            before: fmt(cache?.requests),
-            after: fmt(cache?.hits),
-            saved: `${fmtPct(cache?.hitRate)} hit rate`,
-            savedPct: fmtPct(cache?.hitRate),
-            savedPctNum: cache?.hitRate,
-          }}
-        >
-          <div className="text-[10px] text-text-muted">
-            {fmt(cache?.hits)} hits from {fmt(cache?.requests)} requests
-          </div>
-        </SavingsCard>
       </div>
 
       {/* Summary bar */}
       <Card className="px-4 py-3">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
-          <span className="text-text-muted">
-            <span className="font-mono font-semibold text-text-main">{fmtBytes(rtk?.bytesSaved)}</span> saved by RTK
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
+          <span>
+            <span className="font-mono font-semibold text-text-main">{fmtBytes(rtk?.bytesSaved)}</span> RTK bytes saved
           </span>
-          <span className="text-text-muted">
-            <span className="font-mono font-semibold text-text-main">{fmt(pruner?.tokensSaved)}</span> tokens pruned
+          <span aria-hidden="true">·</span>
+          <span>
+            <span className="font-mono font-semibold text-text-main">{fmt(promptCache?.cachedTokens)}</span> prompt tokens cached ({fmtPct(promptCache?.pctSaved)})
           </span>
-          <span className="text-text-muted">
+          <span aria-hidden="true">·</span>
+          <span>
             Scanned <span className="font-mono font-semibold text-text-main">{fmt(data?.period?.scanned)}</span> requests
             {data?.period?.truncated && " (truncated)"}
           </span>

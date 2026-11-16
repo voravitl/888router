@@ -30,6 +30,7 @@ import { adaptHistoryForUniversalTools } from "../translator/concerns/historyAda
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { pruneMessageHistory } from "../translator/concerns/pruner.js";
@@ -49,6 +50,144 @@ function localValidationResult(message, code, details = {}) {
   return result;
 }
 
+const EFFORT_RANK = {
+  minimal: 1,
+  low: 2,
+  medium: 3,
+  high: 4,
+  xhigh: 5,
+  max: 6,
+  ultra: 7,
+};
+
+const OPENAI_EFFORT_FORMATS = new Set([
+  null,
+  undefined,
+  "openai",
+  "openai-low-high-max",
+  "kimi",
+  "step",
+]);
+
+// Only providers/formats whose upstream defaults to medium/high reasoning when
+// omitted get an unset-request cap injected; opt-in providers (codebuddy-cn,
+// codebuddy-intl, deepseek, etc.) stay untouched on plain non-reasoning traffic.
+const UNSET_EFFORT_DEFAULT_PROVIDERS = new Set([
+  "openai",
+  "azure",
+  "codex",
+  "grok-cli",
+]);
+
+function resolveNormalizedEffortCap(cap) {
+  if (typeof cap !== "string") return null;
+  const norm = cap.trim().toLowerCase();
+  return norm === "low" || norm === "medium" ? norm : null;
+}
+
+function isExplicitOffThinking(body, clientThinking = null) {
+  if (clientThinking?.mode === "none") return true;
+  if (!body || typeof body !== "object") return false;
+  for (const raw of [body.reasoning_effort, body.reasoning?.effort, body.output_config?.effort]) {
+    if (typeof raw === "string") {
+      const v = raw.trim().toLowerCase();
+      if (v === "none" || v === "off") return true;
+    }
+  }
+  if (body.thinking?.type === "disabled" || body.enable_thinking === false) return true;
+  return false;
+}
+
+function clampEffortValue(effort, cap) {
+  if (typeof effort !== "string" || !effort.trim()) return cap;
+  const norm = effort.trim().toLowerCase();
+  if (norm === "none" || norm === "off") return effort;
+  if (norm === "auto") return cap;
+  const rank = EFFORT_RANK[norm];
+  const capRank = EFFORT_RANK[cap];
+  if (!rank || !capRank) return effort;
+  return rank > capRank ? cap : effort;
+}
+
+function resolveModelCapLevel(cap, caps, supportedLevels) {
+  // Some models (e.g. pulse-alpha-free, glm-5.3) only accept ["low", "high", "max"]
+  // and return HTTP 400 on "medium". Clamp medium cap down to "low" for those SKUs.
+  if (caps?.thinkingFormat === "openai-low-high-max" && cap === "medium") {
+    return "low";
+  }
+  if (Array.isArray(supportedLevels) && supportedLevels.length > 0 && !supportedLevels.includes(cap)) {
+    const capRank = EFFORT_RANK[cap];
+    const rankedActive = supportedLevels
+      .filter((lvl) => EFFORT_RANK[lvl])
+      .sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
+    const lower = rankedActive.filter((lvl) => EFFORT_RANK[lvl] <= capRank);
+    if (lower.length > 0) return lower[lower.length - 1];
+    // Floor-only models (e.g. deepseek ["none", "high", "max"], codebuddy-cn hy4 ["high"])
+    // reject "low"/"medium"; clamp to their lowest active supported level instead.
+    if (rankedActive.length > 0) return rankedActive[0];
+  }
+  return cap;
+}
+
+function clampPreTranslationEffort(body, cap) {
+  if (!body || typeof body !== "object") return;
+  if (typeof body.reasoning_effort === "string") {
+    body.reasoning_effort = clampEffortValue(body.reasoning_effort, cap);
+  }
+  if (body.reasoning && typeof body.reasoning === "object" && typeof body.reasoning.effort === "string") {
+    body.reasoning = { ...body.reasoning, effort: clampEffortValue(body.reasoning.effort, cap) };
+  }
+  if (body.output_config && typeof body.output_config === "object" && typeof body.output_config.effort === "string") {
+    body.output_config = { ...body.output_config, effort: clampEffortValue(body.output_config.effort, cap) };
+  }
+}
+
+function applyReasoningEffortCap(translatedBody, cap, { finalFormat, provider, caps }) {
+  if (!translatedBody || typeof translatedBody !== "object") return;
+  if (finalFormat === FORMATS.CLAUDE) {
+    const isAdaptiveClaude = translatedBody.thinking?.type === "adaptive"
+      || translatedBody.output_config?.effort !== undefined
+      || (caps?.thinkingFormat === "claude-adaptive" && caps?.thinkingCanDisable === false);
+    if (isAdaptiveClaude && !PROVIDERS[provider]?.quirks?.dropOutputConfig) {
+      const nextEffort = clampEffortValue(translatedBody.output_config?.effort, cap);
+      translatedBody.output_config = { ...(translatedBody.output_config || {}), effort: nextEffort };
+    }
+    return;
+  }
+  if (finalFormat === FORMATS.OPENAI || finalFormat === FORMATS.OPENAI_RESPONSES || finalFormat === FORMATS.OPENAI_RESPONSE) {
+    const isResponses = finalFormat !== FORMATS.OPENAI;
+    const hasNestedObj = translatedBody.reasoning && typeof translatedBody.reasoning === "object";
+    const hasNestedEffort = hasNestedObj && typeof translatedBody.reasoning.effort === "string";
+    const hasEffort = typeof translatedBody.reasoning_effort === "string";
+    if (hasEffort) {
+      translatedBody.reasoning_effort = clampEffortValue(translatedBody.reasoning_effort, cap);
+    }
+    if (hasNestedEffort) {
+      translatedBody.reasoning = { ...translatedBody.reasoning, effort: clampEffortValue(translatedBody.reasoning.effort, cap) };
+    }
+    const allowUnsetDefault = UNSET_EFFORT_DEFAULT_PROVIDERS.has(provider)
+      && (isResponses
+        ? Boolean(caps?.reasoning)
+        : Boolean(caps?.reasoning && OPENAI_EFFORT_FORMATS.has(caps?.thinkingFormat)));
+    if (!hasEffort && !hasNestedEffort && allowUnsetDefault) {
+      if (isResponses && hasNestedObj) {
+        translatedBody.reasoning = { ...translatedBody.reasoning, effort: cap };
+      } else {
+        translatedBody.reasoning_effort = cap;
+      }
+    }
+    return;
+  }
+  if (finalFormat === FORMATS.GEMINI || finalFormat === FORMATS.GEMINI_CLI || finalFormat === FORMATS.ANTIGRAVITY || finalFormat === FORMATS.VERTEX) {
+    const tc = translatedBody.thinkingConfig
+      || translatedBody.generationConfig?.thinkingConfig
+      || translatedBody.request?.generationConfig?.thinkingConfig;
+    if (tc && typeof tc.thinkingLevel === "string") {
+      tc.thinkingLevel = clampEffortValue(tc.thinkingLevel, cap);
+    }
+  }
+}
+
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -57,7 +196,7 @@ function localValidationResult(message, code, details = {}) {
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode, isCombo = false, signal = null }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, reasoningEffortCap = "off", outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode, isCombo = false, signal = null }) {
   body = structuredClone(body);
   const clientOutputBudget = { max_tokens: reservedOutputTokens(body) };
   const clientThinking = captureThinking(body) || parseSuffix(body.model).override;
@@ -197,6 +336,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     } else if (!body.reasoning_effort) {
       body = { ...body, reasoning_effort: mode };
     }
+  }
+
+  const effortCap = resolveNormalizedEffortCap(reasoningEffortCap);
+  const explicitOffThinking = isExplicitOffThinking(body, clientThinking);
+  const cleanUpstreamModel = stripThinkingSuffix(upstreamModel || model);
+  const capModelCaps = getCapabilitiesForModel(provider, cleanUpstreamModel);
+  const effectiveEffortCap = effortCap
+    ? resolveModelCapLevel(effortCap, capModelCaps, getThinkingLevels(provider, cleanUpstreamModel))
+    : null;
+  if (!preserveRequestInput && effectiveEffortCap && !explicitOffThinking) {
+    clampPreTranslationEffort(body, effectiveEffortCap);
   }
 
   const clientRequestedStreaming = body.stream === true || (body.stream !== false
@@ -425,6 +575,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       && (translatedBody.output_config?.effort === "max" || translatedBody.output_config?.effort === "high")) {
       translatedBody.output_config = { ...(translatedBody.output_config || {}), effort: "medium" };
     }
+  }
+  if (!preserveRequestInput && effectiveEffortCap && !explicitOffThinking && !isExplicitOffThinking(translatedBody, null)) {
+    applyReasoningEffortCap(translatedBody, effectiveEffortCap, { finalFormat, provider, caps: capModelCaps });
   }
   // Gemini selects model and streaming through its URL, not JSON fields.
   if (finalFormat === FORMATS.GEMINI) {

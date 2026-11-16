@@ -41,3 +41,79 @@ describe("Retired Headroom compression proxy UI guard", () => {
     expect(strategies).toMatch(/id:\s*"headroom"/);
   });
 });
+
+const TOKEN_SAVER_UI_FILES = [
+  "src/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js",
+  "src/app/(dashboard)/dashboard/usage/components/OptimizationSavings.js",
+];
+
+const RETIRED_NON_SAVER_PATTERNS = [
+  /Context Pruner/i,
+  /AST Pruner/i,
+  /Prune history/i,
+  /prunerEnabled/,
+  /\bpruner\b/i,
+  /tokens pruned/i,
+  /Response Cache/i,
+  /\bcache\?\.(?:hits|hitRate|requests)\b/,
+  /Lazy senior dev/i,
+  /PONYTAIL_LEVELS/,
+  /ponytailEnabled/,
+  /ponytailLevel/,
+  /ponytail/i,
+];
+
+describe("Token Saver & OptimizationSavings UI cleanup, Prompt Cache & Reasoning Cap", () => {
+  for (const relPath of TOKEN_SAVER_UI_FILES) {
+    it(`${relPath} removes Pruner, Response Cache, and Ponytail UI controls/cards`, () => {
+      const content = readRepoFile(relPath);
+      for (const pattern of RETIRED_NON_SAVER_PATTERNS) {
+        expect(content, `${relPath} matched retired pattern ${pattern}`).not.toMatch(pattern);
+      }
+    });
+  }
+
+  it("TokenSaverClient displays Prompt Cache stats in Snapshot and updates Dual-Average Note", () => {
+    const content = readRepoFile("src/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js");
+    expect(content).toContain("Scanned");
+    expect(content).toContain("Prompt Cache");
+    expect(content).toContain("RTK Saved Requests");
+    expect(content).toMatch(/summary\??\.promptCache/);
+    expect(content).toMatch(/cachedTokens/);
+    expect(content).toMatch(/pctSaved/);
+    expect(content).toMatch(/%\s*reused/);
+    expect(content).toContain("Dual-Average Note:");
+    expect(content).not.toMatch(/pruning/i);
+  });
+
+  it("TokenSaverClient exposes RTK, Cap reasoning effort (Off/Low/Medium), and Caveman controls", () => {
+    const content = readRepoFile("src/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js");
+    expect(content).toContain("Compress tool output");
+    expect(content).toMatch(/lossless JSON/i);
+    expect(content).toMatch(/ANSI\/CR/i);
+
+    expect(content).toContain("Cap reasoning effort");
+    expect(content).toContain("reasoningEffortCap");
+    expect(content).toMatch(/["']off["'][\s\S]*["']Off["']/);
+    expect(content).toMatch(/["']low["'][\s\S]*["']Low["']/);
+    expect(content).toMatch(/["']medium["'][\s\S]*["']Medium["']/);
+    expect(content).toMatch(/fetch\(["']\/api\/settings["']/);
+    expect(content).toMatch(/method:\s*["']PATCH["']/);
+
+    expect(content).toContain("Compress LLM output");
+    expect(content).toContain("Applies to translated/OpenAI/DeepSeek/Gemini traffic");
+    expect(content).toContain("skipped on Claude Code passthrough to protect prompt cache");
+  });
+
+  it("OptimizationSavings uses a 2-column grid with Prompt Cache and RTK Compression only", () => {
+    const content = readRepoFile("src/app/(dashboard)/dashboard/usage/components/OptimizationSavings.js");
+    expect(content).toMatch(/grid-cols-1[^"]*sm:grid-cols-2/);
+    expect(content).not.toContain("lg:grid-cols-4");
+    expect(content).toContain('title="RTK Compression"');
+    expect(content).toContain('title="Prompt Cache"');
+    expect(content).toMatch(/rtk\??\.bytesSaved/);
+    expect(content).toMatch(/promptCache\??\.cachedTokens/);
+    expect(content).toMatch(/promptCache\??\.pctSaved/);
+    expect(content).toMatch(/Scanned/);
+  });
+});

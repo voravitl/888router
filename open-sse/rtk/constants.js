@@ -101,6 +101,8 @@ export const FILTERS = {
   READ_NUMBERED: "read-numbered",
   SEARCH_LIST: "search-list",
   BUILD_OUTPUT: "build-output",
+  JSON_COMPACT: "json-compact",
+  ANSI_CLEAN: "ansi-clean",
   HARD_CAP: "hard-cap"
 };
 

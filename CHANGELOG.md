@@ -1,3 +1,18 @@
+# v0.15.257 (2026-11-17)
+
+## Lossless RTK JSON/ANSI Compression, Accurate Claude Prompt-Cache Telemetry, Reasoning Effort Cap & UI Cleanup
+- **Lossless RTK Filters (`open-sse/rtk/filters/jsonCompact.js`, `ansiClean.js`, `autodetect.js`, `index.js`, `constants.js`)**:
+  - Added deterministic `json-compact` whitespace stripper (validated via `JSON.parse` + iterative deep equality so `"error": null`, URLs, escapes, and 64-bit integers stay intact even under `RTK_LOSSY=off` and `RTK_ON_PRESERVED_INPUT=on`).
+  - Added deterministic `ansi-clean` pre-pass stripping ANSI SGR/CSI/OSC/charset sequences and collapsing `\r` progress-bar overwrites (preserving `\r\n` CRLF and raw code lines while allowing ANSI-colored `git-status` / `git-diff` detection).
+  - Pinned behavior with 31 new tests in `tests/unit/rtk-lossless-json-ansi.test.js` (raw `1|code` reads remain untouched when `RTK_LOSSY=off`).
+- **Accurate Claude Prompt-Cache Accounting (`src/lib/db/repos/requestDetailsRepo.js`, `tests/unit/prompt-cache-summary.test.js`)**:
+  - Updated `getTokenSaveSummary()` SQL to resolve cached tokens across OpenAI/Responses (`cached_tokens`, `prompt_tokens_details.cached_tokens`, `input_tokens_details.cached_tokens`) AND Anthropic Claude (`cache_read_input_tokens`) plus `input_tokens` fallback and legacy un-folded rows without double-counting pre-folded `prompt_tokens`.
+- **Gateway Reasoning Effort Cap (`settingsRepo.js`, `src/app/api/settings/route.js`, `src/sse/handlers/chat.js`, `open-sse/handlers/chatCore.js`)**:
+  - Added `reasoningEffortCap` (`"off" | "low" | "medium"`, default `"off"`) validated at `PATCH /api/settings` and enforced safely on non-preserved traffic (`!preserveRequestInput`), avoiding unset injection on opt-in providers (`codebuddy-cn`, `codebuddy-intl`, `deepseek`), clamping floor-`"high"` models to their lowest active level, and keeping Anthropic adaptive thinking (`output_config.effort`) intact without `type: "disabled"` (`tests/unit/reasoning-effort-cap.test.js`).
+- **Token Saver & Usage UI Cleanup (`TokenSaverClient.js`, `OptimizationSavings.js`, `tests/unit/token-saver-ui-no-headroom.test.js`)**:
+  - Removed non-working/misleading UI items (`Prune history (Context Pruner)` toggle & Snapshot box, `Lazy senior dev (Ponytail)` toggle, `AST Pruner` & `Response Cache` cards, and `"tokens pruned"` summary text).
+  - Updated `TokenSaverClient.js` Snapshot to show `Scanned`, `Prompt Cache` (real cached tokens + `% reused`), and `RTK Saved Requests`; added the `Cap reasoning effort` selector (`Off`, `Low`, `Medium`); added an explicit Claude Code passthrough skip note to `Compress LLM output (Caveman)`; and streamlined `OptimizationSavings.js` into a clean 2-column grid (`Prompt Cache` + `RTK Compression`).
+
 # v0.15.256 (2026-11-16)
 
 ## Remove Retired Headroom Context-Compression UI from Dashboard

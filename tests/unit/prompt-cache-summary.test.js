@@ -94,4 +94,88 @@ describe("token-save summary separates prompt cache from response cache", () => 
     expect(s.promptCache.cachedTokens).toBeLessThanOrEqual(s.promptCache.promptTokens);
     expect(s.promptCache.pctSaved).toBeLessThanOrEqual(100);
   });
+
+  it("counts Anthropic Claude rows with pre-folded prompt_tokens and un-folded input_tokens", async () => {
+    // Live Claude row shape 1: prompt_tokens already holds inclusive input,
+    // cached_tokens is absent, cache_read_input_tokens holds cached reads.
+    await repo.saveRequestDetail({
+      id: "claude-prefolded",
+      provider: "claude",
+      model: "claude-sonnet-5-5",
+      status: "success",
+      tokens: {
+        prompt_tokens: 45130,
+        completion_tokens: 120,
+        cache_read_input_tokens: 44627,
+        cache_creation_input_tokens: 500,
+      },
+    });
+    // Live Claude row shape 2: raw Anthropic usage without prompt_tokens;
+    // input_tokens is cache-exclusive so total prompt = input + cache_read + cache_creation.
+    await repo.saveRequestDetail({
+      id: "claude-unfolded-input",
+      provider: "claude",
+      model: "claude-sonnet-5-5",
+      status: "success",
+      tokens: {
+        input_tokens: 3,
+        output_tokens: 80,
+        cache_read_input_tokens: 44627,
+        cache_creation_input_tokens: 500,
+      },
+    });
+    // Legacy un-folded row where prompt_tokens was copied from raw input_tokens (< cache_read + cache_creation).
+    await repo.saveRequestDetail({
+      id: "claude-unfolded-prompt",
+      provider: "claude",
+      model: "claude-sonnet-5-5",
+      status: "success",
+      tokens: {
+        prompt_tokens: 3,
+        completion_tokens: 50,
+        cache_read_input_tokens: 44627,
+        cache_creation_input_tokens: 500,
+      },
+    });
+
+    const s = await summary();
+    expect(s.promptCache.requests).toBe(3);
+    expect(s.promptCache.requestsWithCache).toBe(3);
+    expect(s.promptCache.promptTokens).toBe(45130 * 3);
+    expect(s.promptCache.cachedTokens).toBe(44627 * 3);
+    expect(s.promptCache.pctSaved).toBe(99);
+    expect(s.promptCache.hitRate).toBe(100);
+  });
+
+  it("counts nested prompt_tokens_details and input_tokens_details cached_tokens", async () => {
+    await repo.saveRequestDetail({
+      id: "openai-details",
+      provider: "openai",
+      model: "gpt-5",
+      status: "success",
+      tokens: {
+        prompt_tokens: 1000,
+        completion_tokens: 20,
+        prompt_tokens_details: { cached_tokens: 800 },
+      },
+    });
+    await repo.saveRequestDetail({
+      id: "responses-details",
+      provider: "codex",
+      model: "gpt-5.3-codex",
+      status: "success",
+      tokens: {
+        input_tokens: 1000,
+        output_tokens: 20,
+        input_tokens_details: { cached_tokens: 750 },
+      },
+    });
+
+    const s = await summary();
+    expect(s.promptCache.requests).toBe(2);
+    expect(s.promptCache.requestsWithCache).toBe(2);
+    expect(s.promptCache.promptTokens).toBe(2000);
+    expect(s.promptCache.cachedTokens).toBe(1550);
+    expect(s.promptCache.pctSaved).toBe(78);
+  });
 });

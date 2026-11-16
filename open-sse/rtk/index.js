@@ -4,6 +4,7 @@ import { RAW_CAP, MIN_COMPRESS_SIZE, HARD_CAP_BYTES, FILTERS, isLossyEnabled, is
 import { autoDetectFilter } from "./autodetect.js";
 import { preservesProtectedContent } from "./fidelity.js";
 import { safeApply } from "./applyFilter.js";
+import { ansiClean } from "./filters/ansiClean.js";
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
 export function compressMessages(body, enabled) {
@@ -211,6 +212,41 @@ export function applyHardCap(text, capBytes = HARD_CAP_BYTES) {
   return result.length < text.length ? result : text.slice(0, safeCap);
 }
 
+function isJsonDeepEqual(a, b) {
+  const stack = [[a, b]];
+  while (stack.length > 0) {
+    const [x, y] = stack.pop();
+    if (Object.is(x, y)) continue;
+    if (x === null || y === null || typeof x !== "object" || typeof y !== "object") {
+      return false;
+    }
+    const xIsArr = Array.isArray(x);
+    if (xIsArr !== Array.isArray(y)) return false;
+    if (xIsArr) {
+      if (x.length !== y.length) return false;
+      for (let i = 0; i < x.length; i++) stack.push([x[i], y[i]]);
+      continue;
+    }
+    const keysX = Object.keys(x);
+    const keysY = Object.keys(y);
+    if (keysX.length !== keysY.length) return false;
+    for (let i = 0; i < keysX.length; i++) {
+      const k = keysX[i];
+      if (!Object.prototype.hasOwnProperty.call(y, k)) return false;
+      stack.push([x[k], y[k]]);
+    }
+  }
+  return true;
+}
+
+function isLosslessJsonRewrite(original, compacted) {
+  try {
+    return isJsonDeepEqual(JSON.parse(original), JSON.parse(compacted));
+  } catch {
+    return false;
+  }
+}
+
 function compressText(text, stats, shape) {
   if (typeof text !== "string") return text;
   const bytesIn = text.length;
@@ -242,16 +278,33 @@ function compressText(text, stats, shape) {
 
   let workingText = text;
   let filterName = null;
-  // Set when the fidelity gate refuses a rewrite; the original is kept instead.
+  let ansiCleaned = false;
+  // Set when the fidelity gate refuses a rewrite; the lossless baseline is kept instead.
+
+  // Lossless pre-pass: strip ANSI escapes and collapse \r progress overwrites
+  // before autodetect so column-0 patterns and JSON compaction match cleanly.
+  const cleaned = safeApply(ansiClean, text);
+  if (typeof cleaned === "string" && cleaned.length > 0 && cleaned.length < workingText.length) {
+    workingText = cleaned;
+    filterName = FILTERS.ANSI_CLEAN;
+    ansiCleaned = true;
+  }
+
+  const fidelityBase = workingText;
+  let downstreamFilter = null;
 
   const fn = autoDetectFilter(workingText);
   if (fn && !(!lossyEnabled && isLossyFilter(fn.filterName || fn.name))) {
     const out = safeApply(fn, workingText);
     if (out && out.length > 0 && out.length < workingText.length) {
-      filterName = fn.filterName || fn.name;
+      downstreamFilter = fn.filterName || fn.name;
+      filterName = filterName ? `${filterName}+${downstreamFilter}` : downstreamFilter;
       workingText = out;
     }
   }
+
+  const preHardCapText = workingText;
+  let hardCapped = false;
 
   // RTK v2 Hard Cap Guard: if text is still larger than HARD_CAP_BYTES, truncate safely.
   // Skipped under RTK_LOSSY=off for the same reason as the RAW_CAP branch above.
@@ -260,16 +313,37 @@ function compressText(text, stats, shape) {
     if (capped && capped.length < workingText.length) {
       filterName = filterName ? `${filterName}+${FILTERS.HARD_CAP}` : FILTERS.HARD_CAP;
       workingText = capped;
+      hardCapped = true;
     }
   }
 
-  // Fidelity gate: a rewrite that lost a URL, code block, version, path or error
-  // line is refused outright — the model gets the untouched original instead.
-  // Dropping the compression costs tokens; dropping the content costs the answer.
-  if (workingText !== text && !preservesProtectedContent(text, workingText)) {
-    stats.bytesAfter += bytesIn;
+  // Fidelity gate:
+  // - For lossless JSON compaction, verify parsed deep-equality so `"error": null`
+  //   losing the space after `:` (`"error":null`) is never falsely refused.
+  // - For other rewrites (and post-compaction hard-cap), check protected tokens
+  //   against the pre-cap / ANSI-cleaned baseline so ANSI escapes don't false-fail.
+  if (downstreamFilter === FILTERS.JSON_COMPACT) {
+    if (!isLosslessJsonRewrite(fidelityBase, preHardCapText)) {
+      stats.refused = (stats.refused || 0) + 1;
+      if (!ansiCleaned) {
+        stats.bytesAfter += bytesIn;
+        return text;
+      }
+      workingText = fidelityBase;
+      filterName = FILTERS.ANSI_CLEAN;
+    } else if (hardCapped && !preservesProtectedContent(preHardCapText, workingText)) {
+      stats.refused = (stats.refused || 0) + 1;
+      workingText = preHardCapText;
+      filterName = ansiCleaned ? `${FILTERS.ANSI_CLEAN}+${FILTERS.JSON_COMPACT}` : FILTERS.JSON_COMPACT;
+    }
+  } else if (workingText !== fidelityBase && !preservesProtectedContent(fidelityBase, workingText)) {
     stats.refused = (stats.refused || 0) + 1;
-    return text;
+    if (!ansiCleaned) {
+      stats.bytesAfter += bytesIn;
+      return text;
+    }
+    workingText = fidelityBase;
+    filterName = FILTERS.ANSI_CLEAN;
   }
 
   // Safety: never return empty, never grow the input
