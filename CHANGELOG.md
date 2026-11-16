@@ -1,3 +1,11 @@
+# v0.15.255 (2026-11-16)
+
+## Retire `headroom` Sidecar Service from Docker Compose Stack
+- **Compose & Stack Cleanup (`docker-compose.yml`, `.env.example`)**:
+  - Removed the `headroom` sidecar service (`ghcr.io/headroomlabs-ai/headroom:latest`) from `docker-compose.yml` and `.env.example` after production telemetry showed negligible savings (`36` tokens total across `94` requests), repeated `2000ms` `/v1/compress` timeouts on long contexts (`11432 > 4096`), and heavy CPU/RAM spikes (`156.75%` CPU / `160–340MiB` RAM).
+- **Regression Guard (`tests/unit/compose-single-gateway.test.js`)**:
+  - Added assertion ensuring `docker-compose.yml` does not re-introduce the retired `headroom` service.
+
 # v0.15.254 (2026-11-16)
 
 ## Immediate Live SSE & Boot-Time Console Log Capture (`/dashboard/console-log`)

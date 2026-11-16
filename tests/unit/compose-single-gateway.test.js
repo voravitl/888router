@@ -55,6 +55,11 @@ describe("docker-compose runs exactly one gateway, 888route on host port 20129",
     expect(services).not.toContain("888router");
   });
 
+  it("does not define the retired headroom service", () => {
+    expect(services).not.toContain("headroom");
+    expect(COMPOSE).not.toMatch(/ghcr\.io\/headroomlabs-ai\/headroom/);
+  });
+
   it("publishes host port 20129 to the app's container port 20128", () => {
     expect(live).toMatch(/-\s*"20129:20128"/);
     expect(live).toMatch(/PORT:\s*"20128"/);
