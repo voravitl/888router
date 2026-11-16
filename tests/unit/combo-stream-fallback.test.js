@@ -138,6 +138,44 @@ describe("handleComboChat empty-stream fallback", () => {
       "Model oc/mimo-v2.5-free exhausted max_tokens on reasoning (streamed), retrying once with raised budget"
     );
   });
+
+  it("retries once and raises max_completion_tokens (without adding max_tokens) when <think></think> hits length", async () => {
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const seenBodies = [];
+    const handleSingleModel = vi.fn(async (body) => {
+      seenBodies.push(structuredClone(body));
+      if (body.max_completion_tokens >= 12288) {
+        return okResponse(makeStream([
+          'data: {"choices":[{"delta":{"role":"assistant","content":"<think>brief</think>Real answer"}}]}\n\n',
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+          "data: [DONE]\n\n",
+        ]));
+      }
+      return okResponse(makeStream([
+        'data: {"choices":[{"delta":{"role":"assistant","content":"<think>"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"</think>"}}]}\n\n',
+        'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n',
+        "data: [DONE]\n\n",
+      ]));
+    });
+
+    const result = await handleComboChat({
+      body: { model: "9-sonnet", stream: true, max_completion_tokens: 4096, messages: [{ role: "user", content: "hi" }] },
+      models: ["claude/claude-sonnet-5-5"],
+      handleSingleModel,
+      log,
+      comboName: "9-sonnet",
+      comboStrategy: "fallback",
+    });
+
+    expect(handleSingleModel).toHaveBeenCalledTimes(2);
+    expect(seenBodies[0].max_completion_tokens).toBe(4096);
+    expect(seenBodies[1].max_completion_tokens).toBe(12288);
+    expect(seenBodies[1]).not.toHaveProperty("max_tokens");
+    expect(result.ok).toBe(true);
+    const body = await new Response(result.body).text();
+    expect(body).toContain("Real answer");
+  });
 });
 
 describe("isReasoningEmptyContent", () => {

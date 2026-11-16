@@ -1,3 +1,15 @@
+# v0.15.252 (2026-11-16)
+
+## Adaptive Claude Budget Guard, Inline Think Stream Guard & `max_completion_tokens` Retry Propagation
+- **Bounded Server-Injected Adaptive Thinking (`open-sse/handlers/chatCore.js`)**:
+  - Captured explicit client thinking intent (`clientThinking`) via `captureThinking(body) || parseSuffix(body.model).override` before `providerThinking` injection.
+  - Bounded server-injected `claude-adaptive` thinking when `translatedBody.max_tokens` is small (`<= 2048` disables thinking when `modelCaps.thinkingCanDisable !== false` or clamps effort to `"low"`, `<= 8192` clamps `output_config.effort` to `"low"`, `<= 24576` clamps `"max"`/`"high"` to `"medium"`), preventing default `"max"` effort from exhausting `max_completion_tokens: 4096` (Rakazo default) or `max_tokens: 20` on hidden reasoning with zero visible text.
+- **Inline `<think>` & Hidden Anthropic Reasoning Stream Detection (`open-sse/services/comboStreamGuard.js`)**:
+  - Routed streamed `delta.content`/`delta.text`, Ollama `response`, and whole-completion `message.content` frames through `splitInlineThinking` (`processStreamThinkingTags`) so `<think>...</think>` emitted by `claudeToOpenAIResponse` or inline-tag providers marks `sawReasoning` instead of `sawText`, while preserving literal `<` angle brackets on terminal markers / `feedEnd()`.
+  - Marked Anthropic hidden/redacted thinking events (`content_block.type` `"thinking"`/`"redacted_thinking"` and `delta.type === "signature_delta"`) as `sawReasoning = true` even when upstream omits plaintext `thinking` deltas.
+- **Combo Retry Budget Field Preservation (`open-sse/services/combo.js`)**:
+  - Updated `withRaisedMaxTokens(body)` to read the caller's largest finite positive limit across `max_tokens`, `max_completion_tokens`, and `max_output_tokens`, and write the raised retry budget back to `max_completion_tokens` (dropping stale `max_tokens`), `max_output_tokens`, or `max_tokens` consistently.
+
 # v0.15.251 (2026-11-14)
 
 ## Antigravity Quota Endpoint Alignment (`daily-cloudcode-pa`) & Hydrogen Alias

@@ -451,4 +451,114 @@ describe("handleChatCore claude passthrough thinking", () => {
     expect(firstHeaders["x-claude-code-session-id"]).not.toBe("stale-session");
     expect(secondHeaders["anthropic-beta"]).not.toContain("stale-beta");
   });
+
+  it("caps server-injected adaptive thinking effort for small OpenAI client budgets (Rakazo max_completion_tokens: 4096 / max_tokens: 20)", async () => {
+    executeMock.mockImplementation(async () => ({
+      response: new Response(JSON.stringify({
+        id: "msg-test",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+      url: "https://api.anthropic.com/v1/messages",
+      headers: {},
+      transformedBody: null,
+    }));
+
+    await handleChatCore({
+      body: {
+        model: "claude-sonnet-5-5",
+        stream: false,
+        max_completion_tokens: 4096,
+        messages: [{ role: "user", content: "hi" }],
+      },
+      modelInfo: { provider: "claude", model: "claude-sonnet-5-5" },
+      credentials: { apiKey: "test-key" },
+      sourceFormatOverride: "openai",
+      providerThinking: { mode: "max" },
+      isCombo: true,
+    });
+    const sent4096 = executeMock.mock.calls[0][0].body;
+    expect(sent4096.max_tokens).toBe(4096);
+    expect(sent4096.thinking).toEqual({ type: "adaptive" });
+    expect(sent4096.output_config).toEqual({ effort: "low" });
+
+    executeMock.mockClear();
+    await handleChatCore({
+      body: {
+        model: "claude-sonnet-5-5",
+        stream: false,
+        max_tokens: 20,
+        messages: [{ role: "user", content: "hi" }],
+      },
+      modelInfo: { provider: "claude", model: "claude-sonnet-5-5" },
+      credentials: { apiKey: "test-key" },
+      sourceFormatOverride: "openai",
+      providerThinking: { mode: "max" },
+      isCombo: true,
+    });
+    const sent20 = executeMock.mock.calls[0][0].body;
+    expect(sent20.max_tokens).toBe(20);
+    expect(sent20.thinking).toEqual({ type: "disabled" });
+    expect(sent20.output_config).toBeUndefined();
+
+    executeMock.mockClear();
+    await handleChatCore({
+      body: {
+        model: "claude-fable-5-1",
+        stream: false,
+        max_tokens: 20,
+        messages: [{ role: "user", content: "hi" }],
+      },
+      modelInfo: { provider: "claude", model: "claude-fable-5-1" },
+      credentials: { apiKey: "test-key" },
+      sourceFormatOverride: "openai",
+      providerThinking: { mode: "max" },
+      isCombo: true,
+    });
+    const sentFable = executeMock.mock.calls[0][0].body;
+    expect(sentFable.max_tokens).toBe(20);
+    expect(sentFable.thinking).toBeUndefined();
+    expect(sentFable.output_config).toEqual({ effort: "low" });
+
+    executeMock.mockClear();
+    await handleChatCore({
+      body: {
+        model: "claude-sonnet-5-5",
+        stream: false,
+        max_tokens: 16384,
+        messages: [{ role: "user", content: "hi" }],
+      },
+      modelInfo: { provider: "claude", model: "claude-sonnet-5-5" },
+      credentials: { apiKey: "test-key" },
+      sourceFormatOverride: "openai",
+      providerThinking: { mode: "max" },
+      isCombo: true,
+    });
+    const sent16k = executeMock.mock.calls[0][0].body;
+    expect(sent16k.max_tokens).toBe(16384);
+    expect(sent16k.thinking).toEqual({ type: "adaptive" });
+    expect(sent16k.output_config).toEqual({ effort: "medium" });
+
+    executeMock.mockClear();
+    await handleChatCore({
+      body: {
+        model: "claude-sonnet-5-5",
+        stream: false,
+        max_tokens: 4096,
+        reasoning_effort: "max",
+        messages: [{ role: "user", content: "hi" }],
+      },
+      modelInfo: { provider: "claude", model: "claude-sonnet-5-5" },
+      credentials: { apiKey: "test-key" },
+      sourceFormatOverride: "openai",
+      providerThinking: { mode: "max" },
+      isCombo: true,
+    });
+    const sentExplicitMax = executeMock.mock.calls[0][0].body;
+    expect(sentExplicitMax.max_tokens).toBe(4096);
+    expect(sentExplicitMax.output_config).toEqual({ effort: "max" });
+  });
 });

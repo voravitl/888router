@@ -409,3 +409,71 @@ describe("comboStreamGuard concatenated payloads on one line", () => {
     });
   });
 });
+
+describe("comboStreamGuard inline <think> tags and hidden Anthropic thinking", () => {
+  it("treats claude-to-openai <think></think> + finish_reason:length as empty reasoning exhaustion", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc('data: {"choices":[{"delta":{"role":"assistant","content":"<think>"}}]}\n\n'));
+    g.feed(enc('data: {"choices":[{"delta":{"content":"</think>"}}]}\n\n'));
+    g.feed(enc('data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n'));
+    expect(g.sawReasoning()).toBe(true);
+    expect(g.finishReason()).toBe("length");
+    expect(g.isEmpty()).toBe(true);
+  });
+
+  it("treats split inline <think>thought</think> without answer text as empty reasoning", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc('data: {"choices":[{"delta":{"content":"<th"}}]}\n\n'));
+    g.feed(enc('data: {"choices":[{"delta":{"content":"ink>deep plan</thi"}}]}\n\n'));
+    g.feed(enc('data: {"choices":[{"delta":{"content":"nk>"}}]}\n\n'));
+    g.feed(enc('data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n'));
+    expect(g.sawReasoning()).toBe(true);
+    expect(g.isEmpty()).toBe(true);
+  });
+
+  it("sees real text following inline <think>...</think> even across split tags", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc('data: {"choices":[{"delta":{"content":"<think>plan"}}]}\n\n'));
+    g.feed(enc('data: {"choices":[{"delta":{"content":"</thi"}}]}\n\n'));
+    g.feed(enc('data: {"choices":[{"delta":{"content":"nk>OK"}}]}\n\n'));
+    g.feed(enc('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'));
+    expect(g.sawReasoning()).toBe(true);
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("does not swallow genuine angle-bracket text such as '<' before EOF", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc('data: {"choices":[{"delta":{"content":"<"}}]}\n\n'));
+    g.feedEnd();
+    expect(g.sawReasoning()).toBe(false);
+    expect(g.isEmpty()).toBe(false);
+  });
+
+  it("strips inline <think> blocks in whole-completion message.content frames", () => {
+    const emptyOnly = createComboStreamGuard();
+    emptyOnly.feed(enc(JSON.stringify({
+      choices: [{ finish_reason: "length", message: { role: "assistant", content: "<think>only thinking</think>" } }],
+    }) + "\n"));
+    emptyOnly.feedEnd();
+    expect(emptyOnly.sawReasoning()).toBe(true);
+    expect(emptyOnly.isEmpty()).toBe(true);
+
+    const withAnswer = createComboStreamGuard();
+    withAnswer.feed(enc(JSON.stringify({
+      choices: [{ finish_reason: "stop", message: { role: "assistant", content: "<think>only thinking</think>42" } }],
+    }) + "\n"));
+    withAnswer.feedEnd();
+    expect(withAnswer.sawReasoning()).toBe(true);
+    expect(withAnswer.isEmpty()).toBe(false);
+  });
+
+  it("recognizes hidden Anthropic thinking (content_block thinking + signature_delta) with stop_reason:max_tokens", () => {
+    const g = createComboStreamGuard();
+    g.feed(enc('event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}\n\n'));
+    g.feed(enc('event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"Eq0B"}}\n\n'));
+    g.feed(enc('event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"}}\n\n'));
+    expect(g.sawReasoning()).toBe(true);
+    expect(g.finishReason()).toBe("max_tokens");
+    expect(g.isEmpty()).toBe(true);
+  });
+});
