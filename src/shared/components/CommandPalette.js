@@ -10,7 +10,7 @@ const CATALOG_ROUTES = [
   { code: "888-01", label: "Usage & Live Traces", group: "TELEMETRY", href: "/dashboard/usage", keywords: "logs telemetry analytics stats waterfall trace cost latency" },
   { code: "888-02", label: "Gateway & API Keys", group: "GATEWAY", href: "/dashboard/endpoint", keywords: "endpoint key curl sdk tailscale cloudflare tunnel" },
   { code: "888-03", label: "Quota Tracker", group: "TELEMETRY", href: "/dashboard/quota", keywords: "limits quota usage budget cap" },
-  { code: "888-04", label: "Token Savings", group: "TELEMETRY", href: "/dashboard/token-saver", keywords: "rtk headroom caveman ponytail compression save" },
+  { code: "888-04", label: "Token Savings", group: "TELEMETRY", href: "/dashboard/token-saver", keywords: "rtk caveman ponytail compression save" },
   { code: "888-05", label: "Providers & Connections", group: "ROUTING", href: "/dashboard/providers", keywords: "openai anthropic gemini claude codex oauth apikey matrix" },
   { code: "888-06", label: "Combos & Fallbacks", group: "ROUTING", href: "/dashboard/combos", keywords: "combo fallback round robin pipeline locks" },
   { code: "888-07", label: "Test Chat Playground", group: "TOOLS", href: "/dashboard/basic-chat", keywords: "chat test prompt model" },

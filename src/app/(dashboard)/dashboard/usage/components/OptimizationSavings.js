@@ -69,7 +69,7 @@ export default function OptimizationSavings({ period = "7d" }) {
     return <div className="text-text-muted text-sm py-4">No optimization data available.</div>;
   }
 
-  const { rtk, pruner, headroom, cache, promptCache } = data || {};
+  const { rtk, pruner, cache, promptCache } = data || {};
 
   return (
     <div className="flex flex-col gap-4">
@@ -78,7 +78,7 @@ export default function OptimizationSavings({ period = "7d" }) {
         <span className="text-sm font-semibold text-text-main">Token & Bandwidth Savings</span>
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {/* RTK: Tool Output Compression */}
         <SavingsCard
           title="RTK Compression"
@@ -129,37 +129,6 @@ export default function OptimizationSavings({ period = "7d" }) {
           </div>
         </SavingsCard>
 
-        {/* Headroom: Upstream Proxy */}
-        <SavingsCard
-          title="Headroom Proxy"
-          icon="router"
-          color="text-primary"
-          stats={{
-            before: fmtBytes(headroom?.bytesBefore),
-            after: fmtBytes(headroom?.bytesAfter),
-            saved: fmtBytes(headroom?.bytesSaved),
-            savedPct: fmtPct(headroom?.pctBytesSaved),
-            savedPctNum: headroom?.pctBytesSaved,
-          }}
-        >
-          <div className="text-[10px] text-text-muted">
-            {fmt(headroom?.requestsWithSavings)}/{fmt(headroom?.requestsWithStats)} requests saved
-          </div>
-          {headroom?.topSkipReasonsRecent24h?.length > 0 && (
-            <div className="mt-1">
-              <div className="text-[10px] text-text-muted mb-1">Skip reasons (24h):</div>
-              <div className="flex flex-wrap gap-1">
-                {headroom.topSkipReasonsRecent24h.slice(0, 3).map((r) => (
-                  <span key={r.reason} className="inline-flex items-center gap-1 rounded-full bg-bg-subtle px-2 py-0.5 text-[10px] text-text-muted">
-                    {r.reason.length > 20 ? r.reason.slice(0, 20) + "…" : r.reason}
-                    <span className="text-warning font-bold">{fmt(r.count)}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </SavingsCard>
-
         {/* Upstream prompt cache — the number that reflects provider billing.
             Distinct from the Response Cache card below, which only counts the
             gateway's own opt-in reply replay. */}
@@ -207,9 +176,6 @@ export default function OptimizationSavings({ period = "7d" }) {
           </span>
           <span className="text-text-muted">
             <span className="font-mono font-semibold text-text-main">{fmt(pruner?.tokensSaved)}</span> tokens pruned
-          </span>
-          <span className="text-text-muted">
-            <span className="font-mono font-semibold text-text-main">{fmtBytes(headroom?.bytesSaved)}</span> via Headroom
           </span>
           <span className="text-text-muted">
             Scanned <span className="font-mono font-semibold text-text-main">{fmt(data?.period?.scanned)}</span> requests

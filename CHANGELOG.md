@@ -1,3 +1,13 @@
+# v0.15.256 (2026-11-16)
+
+## Remove Retired Headroom Context-Compression UI from Dashboard
+- **Token Saver Studio (`src/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js`)**:
+  - Removed the retired `"Compress context (Headroom)"` toggle, `Setup Headroom` modal, `"Headroom status"` banner, `"Headroom"` Snapshot card, and `/api/headroom/*` client polling/actions, rebalancing the Snapshot grid to 3 columns (`Scanned`, `Context Pruner`, `RTK Saved Requests`).
+- **Usage & Chat Savings Displays (`OptimizationSavings.js`, `RequestDetailsTab.js`, `BasicChatPageClient.js`, `CommandPalette.js`)**:
+  - Removed the `Headroom Proxy` card and `via Headroom` summary item in `OptimizationSavings.js` (rebalancing the card grid to 4 columns), removed `HR` / `Headroom stats` / `Headroom diagnostics` displays from `RequestDetailsTab.js` and `BasicChatPageClient.js`, and removed `headroom` from the Token Savings keyword list in `CommandPalette.js` (preserving the unrelated quota-buffer `headroom` combo routing strategy).
+- **Regression Guard (`tests/unit/token-saver-ui-no-headroom.test.js`)**:
+  - Added UI source guard ensuring retired Headroom proxy controls, copy, and `/api/headroom/` references stay removed while keeping `comboStrategies.js` quota-buffer `headroom` intact.
+
 # v0.15.255 (2026-11-16)
 
 ## Retire `headroom` Sidecar Service from Docker Compose Stack
