@@ -67,7 +67,16 @@ const OPENAI_EFFORT_FORMATS = new Set([
   "openai-low-high-max",
   "kimi",
   "step",
-  "deepseek",
+]);
+
+// Only providers/formats whose upstream defaults to medium/high reasoning when
+// omitted get an unset-request cap injected; opt-in providers (codebuddy-cn,
+// codebuddy-intl, deepseek, etc.) stay untouched on plain non-reasoning traffic.
+const UNSET_EFFORT_DEFAULT_PROVIDERS = new Set([
+  "openai",
+  "azure",
+  "codex",
+  "grok-cli",
 ]);
 
 function resolveNormalizedEffortCap(cap) {
@@ -108,10 +117,14 @@ function resolveModelCapLevel(cap, caps, supportedLevels) {
   }
   if (Array.isArray(supportedLevels) && supportedLevels.length > 0 && !supportedLevels.includes(cap)) {
     const capRank = EFFORT_RANK[cap];
-    const lower = supportedLevels
-      .filter((lvl) => EFFORT_RANK[lvl] && EFFORT_RANK[lvl] <= capRank)
-      .sort((a, b) => EFFORT_RANK[b] - EFFORT_RANK[a]);
-    if (lower.length > 0) return lower[0];
+    const rankedActive = supportedLevels
+      .filter((lvl) => EFFORT_RANK[lvl])
+      .sort((a, b) => EFFORT_RANK[a] - EFFORT_RANK[b]);
+    const lower = rankedActive.filter((lvl) => EFFORT_RANK[lvl] <= capRank);
+    if (lower.length > 0) return lower[lower.length - 1];
+    // Floor-only models (e.g. deepseek ["none", "high", "max"], codebuddy-cn hy4 ["high"])
+    // reject "low"/"medium"; clamp to their lowest active supported level instead.
+    if (rankedActive.length > 0) return rankedActive[0];
   }
   return cap;
 }
@@ -152,9 +165,10 @@ function applyReasoningEffortCap(translatedBody, cap, { finalFormat, provider, c
     if (hasNestedEffort) {
       translatedBody.reasoning = { ...translatedBody.reasoning, effort: clampEffortValue(translatedBody.reasoning.effort, cap) };
     }
-    const allowUnsetDefault = isResponses
-      ? Boolean(caps?.reasoning)
-      : Boolean(caps?.reasoning && OPENAI_EFFORT_FORMATS.has(caps?.thinkingFormat));
+    const allowUnsetDefault = UNSET_EFFORT_DEFAULT_PROVIDERS.has(provider)
+      && (isResponses
+        ? Boolean(caps?.reasoning)
+        : Boolean(caps?.reasoning && OPENAI_EFFORT_FORMATS.has(caps?.thinkingFormat)));
     if (!hasEffort && !hasNestedEffort && allowUnsetDefault) {
       if (isResponses && hasNestedObj) {
         translatedBody.reasoning = { ...translatedBody.reasoning, effort: cap };

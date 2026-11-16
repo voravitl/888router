@@ -453,15 +453,52 @@ describe("reasoningEffortCap — handleChatCore enforcement", () => {
     expect(sentFable.output_config).toEqual({ effort: "low" });
   });
 
-  it("clamps DeepSeek reasoning models (never sends max/xhigh under cap)", async () => {
+  it("clamps DeepSeek reasoning models to lowest supported active level 'high' (never unsupported 'low'/'medium' or 'max'/'xhigh')", async () => {
     const sent = await dispatch({
       body: { model: "deepseek-v4-pro", stream: false, reasoning_effort: "max", messages: [{ role: "user", content: "hi" }] },
       modelInfo: { provider: "deepseek", model: "deepseek-v4-pro" },
       sourceFormatOverride: "openai",
       reasoningEffortCap: "low",
     });
-    expect(sent.reasoning_effort).not.toBe("max");
-    expect(sent.reasoning_effort).not.toBe("xhigh");
+    expect(sent.reasoning_effort).toBe("high");
+
+    mocks.executeMock.mockClear();
+    const sentHy4 = await dispatch({
+      body: { model: "hy4-preview", stream: false, reasoning_effort: "xhigh", messages: [{ role: "user", content: "hi" }] },
+      modelInfo: { provider: "codebuddy-cn", model: "hy4-preview" },
+      sourceFormatOverride: "openai",
+      reasoningEffortCap: "medium",
+    });
+    expect(sentHy4.reasoning_effort).toBe("high");
+
+    mocks.executeMock.mockClear();
+    const sentExplicitOff = await dispatch({
+      body: { model: "deepseek-v4-pro", stream: false, reasoning_effort: "none", messages: [{ role: "user", content: "hi" }] },
+      modelInfo: { provider: "deepseek", model: "deepseek-v4-pro" },
+      sourceFormatOverride: "openai",
+      reasoningEffortCap: "low",
+    });
+    expect(sentExplicitOff.thinking).toEqual({ type: "disabled" });
+    expect(sentExplicitOff.reasoning_effort).toBeUndefined();
+  });
+
+  it("leaves plain non-reasoning requests untouched on opt-in providers (codebuddy-cn, codebuddy-intl, deepseek)", async () => {
+    for (const [provider, model] of [
+      ["codebuddy-cn", "glm-5.2"],
+      ["codebuddy-cn", "hy4-preview"],
+      ["codebuddy-intl", "glm-5.2"],
+      ["deepseek", "deepseek-v4-pro"],
+    ]) {
+      mocks.executeMock.mockClear();
+      const sent = await dispatch({
+        body: { model, stream: false, messages: [{ role: "user", content: "hi" }] },
+        modelInfo: { provider, model },
+        sourceFormatOverride: "openai",
+        reasoningEffortCap: "low",
+      });
+      expect(sent.reasoning_effort).toBeUndefined();
+      expect(sent.reasoning_summary).toBeUndefined();
+    }
   });
 
   it("does NOT modify requests when preserveRequestInput is true (Claude passthrough or >=100k tokens)", async () => {
