@@ -414,20 +414,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Bound server-injected adaptive Claude effort to preserved client max_tokens so
   // adaptive thinking cannot consume the entire output budget and yield <think></think>.
+  // Clamp small budgets to effort:"low" rather than injecting thinking.type:"disabled",
+  // because newer adaptive models (e.g. claude-sonnet-5-5) reject "disabled" with HTTP 400.
   if (!preserveRequestInput && finalFormat === FORMATS.CLAUDE && !clientThinking
     && Number.isFinite(translatedBody.max_tokens) && translatedBody.max_tokens > 0
     && (translatedBody.thinking?.type === "adaptive" || translatedBody.output_config?.effort)) {
-    if (translatedBody.max_tokens <= 2048) {
-      if (modelCaps.thinkingCanDisable !== false) {
-        translatedBody.thinking = { type: "disabled" };
-        if (translatedBody.output_config) {
-          delete translatedBody.output_config.effort;
-          if (Object.keys(translatedBody.output_config).length === 0) delete translatedBody.output_config;
-        }
-      } else {
-        translatedBody.output_config = { ...(translatedBody.output_config || {}), effort: "low" };
-      }
-    } else if (translatedBody.max_tokens <= 8192) {
+    if (translatedBody.max_tokens <= 8192) {
       translatedBody.output_config = { ...(translatedBody.output_config || {}), effort: "low" };
     } else if (translatedBody.max_tokens <= 24576
       && (translatedBody.output_config?.effort === "max" || translatedBody.output_config?.effort === "high")) {

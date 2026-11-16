@@ -1,3 +1,10 @@
+# v0.15.253 (2026-11-16)
+
+## Fix `claude-sonnet-5-5` HTTP 400 on Small Budgets by Clamping Adaptive Effort to `low`
+- **Adaptive Effort Clamp (`open-sse/handlers/chatCore.js`)**:
+  - Live verification against `claude/claude-sonnet-5-5` with `max_tokens: 20` proved Anthropic rejects `thinking: { type: "disabled" }` with HTTP 400 (`requires "thinking": {"type": "between_tools"}`), while `thinking: { type: "adaptive" }` with `output_config: { effort: "low" }` returns HTTP 200 cleanly.
+  - Replaced the `<= 2048` `thinking: { type: "disabled" }` rewrite in the server-injected adaptive budget guard with uniform `output_config.effort = "low"` clamping for all `translatedBody.max_tokens <= 8192`, keeping `<= 24576` clamped to `"medium"`.
+
 # v0.15.252 (2026-11-16)
 
 ## Adaptive Claude Budget Guard, Inline Think Stream Guard & `max_completion_tokens` Retry Propagation
