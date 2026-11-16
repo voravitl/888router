@@ -501,8 +501,10 @@ describe("handleChatCore claude passthrough thinking", () => {
     });
     const sent20 = executeMock.mock.calls[0][0].body;
     expect(sent20.max_tokens).toBe(20);
-    expect(sent20.thinking).toEqual({ type: "disabled" });
-    expect(sent20.output_config).toBeUndefined();
+    // claude-sonnet-5-5 rejects thinking.type="disabled" with HTTP 400 (requires between_tools);
+    // adaptive + effort:"low" succeeds even at max_tokens: 20 across all claude-adaptive models.
+    expect(sent20.thinking).toEqual({ type: "adaptive" });
+    expect(sent20.output_config).toEqual({ effort: "low" });
 
     executeMock.mockClear();
     await handleChatCore({
