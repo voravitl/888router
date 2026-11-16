@@ -14,9 +14,8 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { Card, Button, Input, Modal, Toggle, PageHero } from "@/shared/components";
+import { Card, Button, Toggle, PageHero } from "@/shared/components";
 import { ThunderboltOutlined } from "@ant-design/icons";
-import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import {
   WENYAN_LOCALES,
@@ -47,18 +46,6 @@ function fmtChartBytes(n) {
 
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
-  const [headroomEnabled, setHeadroomEnabled] = useState(false);
-  const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
-  const [headroomStatus, setHeadroomStatus] = useState({
-    installed: false,
-    running: false,
-    python: null,
-    loading: true,
-  });
-  const [showHeadroomInstallModal, setShowHeadroomInstallModal] =
-    useState(false);
-  const [headroomActionLoading, setHeadroomActionLoading] = useState(false);
-  const [headroomActionError, setHeadroomActionError] = useState("");
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
@@ -69,8 +56,6 @@ export default function TokenSaverClient() {
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [summaryError, setSummaryError] = useState("");
-
-  const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
     setLocale(getCurrentLocale());
@@ -120,63 +105,6 @@ export default function TokenSaverClient() {
     patchSetting({ cavemanEnabled: value });
   };
 
-  const handleHeadroomEnabled = (value) => {
-    const nextUrl = headroomUrl.trim() || "http://localhost:8787";
-    setHeadroomUrl(nextUrl);
-    setHeadroomEnabled(value);
-    patchSetting({ headroomEnabled: value, headroomUrl: nextUrl });
-  };
-
-  const handleHeadroomUrlBlur = async () => {
-    const next = headroomUrl.trim() || "http://localhost:8787";
-    setHeadroomUrl(next);
-    await patchSetting({ headroomUrl: next });
-    refreshHeadroomStatus();
-  };
-
-  const refreshHeadroomStatus = useCallback(async () => {
-    setHeadroomStatus((s) => ({ ...s, loading: true }));
-    try {
-      const res = await fetch("/api/headroom/status", {
-        headers: { "Cache-Control": "no-store" },
-      });
-      const data = await res.json();
-      setHeadroomStatus({ ...data, loading: false });
-    } catch {
-      setHeadroomStatus({
-        installed: false,
-        running: false,
-        python: null,
-        loading: false,
-      });
-    }
-  }, []);
-
-  const handleHeadroomStart = useCallback(async () => {
-    setHeadroomActionError("");
-    setHeadroomActionLoading(true);
-    try {
-      const res = await fetch("/api/headroom/start", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Failed to start proxy");
-      await refreshHeadroomStatus();
-    } catch (e) {
-      setHeadroomActionError(e.message);
-    } finally {
-      setHeadroomActionLoading(false);
-    }
-  }, [refreshHeadroomStatus]);
-
-  const handleHeadroomStop = useCallback(async () => {
-    setHeadroomActionLoading(true);
-    try {
-      await fetch("/api/headroom/stop", { method: "POST" });
-      await refreshHeadroomStatus();
-    } finally {
-      setHeadroomActionLoading(false);
-    }
-  }, [refreshHeadroomStatus]);
-
   const handleCavemanLevel = (level) => {
     setCavemanLevel(level);
     patchSetting({ cavemanLevel: level });
@@ -217,43 +145,22 @@ export default function TokenSaverClient() {
         if (res.ok) {
           const data = await res.json();
           setRtkEnabledState(data.rtkEnabled !== false);
-          setHeadroomEnabled(!!data.headroomEnabled);
-          setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
           setCavemanEnabled(!!data.cavemanEnabled);
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
           setPrunerEnabled(data.prunerEnabled !== false);
-          refreshHeadroomStatus();
         }
       } catch {}
     };
     loadSettings();
-  }, [refreshHeadroomStatus]);
+  }, []);
 
   useEffect(() => {
     loadSummary(summaryPeriod);
   }, [summaryPeriod, loadSummary]);
 
-  const headroomRunning = !!headroomStatus.running;
-  const headroomLocalUrl = headroomStatus.localUrl !== false;
-  // External Docker sidecar (e.g. http://headroom:8787) — not managed by this process.
-  const headroomExternal = headroomStatus.localUrl === false;
-  const headroomStatusLabel = headroomStatus.loading
-    ? "Checking…"
-    : headroomRunning
-      ? "Running"
-      : headroomExternal
-        ? "Unreachable"
-        : !headroomStatus.installed
-          ? "Not installed"
-          : "Stopped";
-  const headroomCanStart = !!headroomStatus.canStart;
-  const headroomManaged =
-    headroomLocalUrl && !!headroomStatus.managedPid;
-
   const rtk = summary?.rtk;
-  const hr = summary?.headroom;
 
   const beforeAfterChart = useMemo(() => {
     if (!rtk) return [];
@@ -477,7 +384,7 @@ export default function TokenSaverClient() {
                 <p className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">
                   Snapshot
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="rounded-lg bg-surface-2/40 p-3">
                     <p className="text-[10px] uppercase text-text-muted">Scanned</p>
                     <p className="text-xl font-semibold">{fmtNum(summary?.period?.scanned)}</p>
@@ -494,10 +401,6 @@ export default function TokenSaverClient() {
                       {fmtNum(rtk?.requestsWithSavings)}
                       <span className="text-sm font-normal text-text-muted"> / {fmtNum(rtk?.requestsWithStats)}</span>
                     </p>
-                  </div>
-                  <div className="rounded-lg bg-surface-2/40 p-3">
-                    <p className="text-[10px] uppercase text-text-muted">Headroom</p>
-                    <p className="text-xl font-semibold">−{fmtNum(hr?.tokensSaved)} <span className="text-sm font-normal text-text-muted">tok</span></p>
                   </div>
                 </div>
                 <div className="mt-3 rounded-lg border border-border/40 bg-surface-2/20 p-2.5 text-[11px] text-text-muted leading-4">
@@ -519,79 +422,6 @@ export default function TokenSaverClient() {
                 )}
               </div>
             </div>
-
-            {(hr?.topSkipReasonsRecent24h?.length || hr?.topSkipReasons?.length || headroomRunning) ? (
-              <div className="mb-3 rounded-xl border border-border p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">
-                  Headroom status
-                </p>
-                {/* Live health vs historical log — keep these separate */}
-                <div
-                  className={`mb-3 rounded-lg px-3 py-2 text-sm ${
-                    headroomRunning
-                      ? "bg-success/10 text-success border border-success/20"
-                      : "bg-warning/10 text-warning border border-warning/20"
-                  }`}
-                >
-                  {headroomRunning ? (
-                    <>
-                      <strong>LIVE: reachable</strong>
-                      {headroomStatus.url ? (
-                        <span className="text-text-muted"> · {headroomStatus.url}</span>
-                      ) : null}
-                      {hr?.skipNewestAt ? (
-                        <p className="text-[11px] mt-1 text-text-muted leading-4">
-                          Last logged failure: {new Date(hr.skipNewestAt).toLocaleString()}
-                          {" · "}
-                          no new failures after that (counters below are old log rows still inside the time window).
-                        </p>
-                      ) : (
-                        <p className="text-[11px] mt-1 text-text-muted">No Headroom failures in this period.</p>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <strong>LIVE: not reachable</strong>
-                      <p className="text-[11px] mt-1">Check proxy URL / container. Chat still works (fail-open).</p>
-                    </>
-                  )}
-                </div>
-
-                {(hr?.topSkipReasons?.length > 0) ? (
-                  <>
-                    <p className="text-[11px] text-text-muted mb-2 leading-4">
-                      <strong>Why you still see numbers when period = 24h:</strong> those requests
-                      really did fail earlier today (before the Docker URL fix). Selecting 24h does
-                      <em> not</em> mean “only right now” — it means “all requests in the last 24 hours”.
-                      {hr?.skipNewestAt ? (
-                        <>
-                          {" "}
-                          This list should clear around{" "}
-                          <strong>
-                            {new Date(new Date(hr.skipNewestAt).getTime() + 24 * 60 * 60 * 1000).toLocaleString()}
-                          </strong>
-                          {" "}(24h after the newest failure), if nothing new fails.
-                        </>
-                      ) : null}
-                    </p>
-                    <details className="text-xs" open={false}>
-                      <summary className="cursor-pointer text-text-muted hover:text-text-main">
-                        Historical log in selected period ({summary?.periodLabel || summaryPeriod})
-                        {" — "}
-                        {(hr.topSkipReasons || []).reduce((s, r) => s + (r.count || 0), 0)} entries (click to expand)
-                      </summary>
-                      <ul className="mt-2 space-y-1 text-warning/90">
-                        {(hr.topSkipReasons || []).map((r) => (
-                          <li key={`full-${r.reason}`} className="font-mono break-all">
-                            {r.count}× {r.reason}
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  </>
-                ) : null}
-              </div>
-            ) : null}
 
             <div className="flex flex-wrap gap-3 text-sm">
               <Link href="/dashboard/usage" className="text-primary underline hover:opacity-80">
@@ -656,52 +486,6 @@ export default function TokenSaverClient() {
               setPrunerEnabled(next);
               patchSetting({ prunerEnabled: next });
             }}
-          />
-        </div>
-        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-3 flex-wrap">
-              <p className="font-medium">
-                Compress context{" "}
-                <a
-                  href="https://github.com/headroomlabs-ai/headroom"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs font-normal text-primary underline hover:opacity-80"
-                >
-                  (Headroom)
-                </a>
-              </p>
-              <span
-                className={`text-xs px-2 py-0.5 rounded ${headroomRunning ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}
-              >
-                {headroomStatusLabel}
-              </span>
-              {headroomEnabled && !headroomRunning && !headroomStatus.loading ? (
-                <span className="text-xs text-warning">
-                  enabled · proxy not reachable (fail-open)
-                </span>
-              ) : null}
-              {headroomStatus.urlRewritten ? (
-                <span className="text-xs text-text-muted" title={headroomStatus.configuredUrl || ""}>
-                  using {headroomStatus.url} (Docker)
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setShowHeadroomInstallModal(true)}
-                className="text-xs text-primary underline hover:opacity-80"
-              >
-                {headroomRunning || headroomExternal ? "Manage" : "Setup"}
-              </button>
-            </div>
-            <p className="text-sm text-text-muted mt-1">
-              Compress prompts via /v1/compress before routing to the model
-            </p>
-          </div>
-          <Toggle
-            checked={headroomEnabled}
-            onChange={() => handleHeadroomEnabled(!headroomEnabled)}
           />
         </div>
         <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
@@ -806,122 +590,6 @@ export default function TokenSaverClient() {
           </div>
         </div>
       </Card>
-
-      <Modal
-        isOpen={showHeadroomInstallModal}
-        title={headroomRunning ? "Headroom" : "Setup Headroom"}
-        onClose={() => setShowHeadroomInstallModal(false)}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between text-sm">
-            <span>Status</span>
-            <span
-              className={headroomRunning ? "text-success" : "text-warning"}
-            >
-              {headroomStatusLabel}
-            </span>
-          </div>
-          {headroomRunning && (
-            <a
-              href="/api/headroom/proxy/dashboard"
-              target="_blank"
-              rel="noreferrer"
-              className="w-full rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"
-            >
-              Open Headroom Dashboard
-            </a>
-          )}
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">Proxy URL</p>
-            <Input
-              value={headroomUrl}
-              onChange={(e) => setHeadroomUrl(e.target.value)}
-              onBlur={handleHeadroomUrlBlur}
-              placeholder="http://localhost:8787"
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-text-muted">
-              Use a local proxy for Start/Stop, or an external Docker sidecar
-              like http://headroom:8787.
-            </p>
-          </div>
-          {headroomManaged ? (
-            <Button
-              onClick={handleHeadroomStop}
-              variant="ghost"
-              fullWidth
-              disabled={headroomActionLoading}
-            >
-              {headroomActionLoading ? "Stopping…" : "Stop Headroom"}
-            </Button>
-          ) : headroomRunning ? (
-            <p className="text-sm text-success">
-              Headroom proxy is reachable. You can enable the token saver.
-            </p>
-          ) : headroomCanStart ? (
-            <Button
-              onClick={handleHeadroomStart}
-              fullWidth
-              disabled={headroomActionLoading}
-            >
-              {headroomActionLoading ? "Starting…" : "Start Headroom"}
-            </Button>
-          ) : !headroomLocalUrl ? (
-            <div className="flex flex-col gap-2 text-sm">
-              <p className="text-warning">
-                {headroomRunning
-                  ? "Docker / external sidecar is reachable."
-                  : "Start the Headroom container (or external proxy) at the URL above, then Recheck."}
-              </p>
-              <p className="text-xs text-text-muted">
-                Compose example: service <code className="font-mono">headroom</code> on port 8787,
-                set Proxy URL to <code className="font-mono">http://headroom:8787</code>.
-              </p>
-            </div>
-          ) : !headroomStatus.python ? (
-            <p className="text-sm text-warning">
-              Python ≥ 3.10 required for local managed mode. Install Python
-              first, or use an external proxy URL.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium">Install then click Start:</p>
-              <div className="flex items-center gap-2">
-                <pre className="flex-1 rounded bg-black/5 dark:bg-white/5 p-2 text-xs font-mono overflow-x-auto">
-                  {`pip install "headroom-ai[proxy]"`}
-                </pre>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() =>
-                    copy(`pip install "headroom-ai[proxy]"`)
-                  }
-                >
-                  {copied ? "Copied" : "Copy"}
-                </Button>
-              </div>
-            </div>
-          )}
-          {headroomActionError && (
-            <p className="text-sm text-warning">{headroomActionError}</p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              onClick={() => refreshHeadroomStatus()}
-              variant="ghost"
-              fullWidth
-            >
-              Recheck
-            </Button>
-            <Button
-              onClick={() => setShowHeadroomInstallModal(false)}
-              fullWidth
-            >
-              Done
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

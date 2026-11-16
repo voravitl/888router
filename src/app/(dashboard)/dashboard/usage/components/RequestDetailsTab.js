@@ -100,25 +100,13 @@ function getInputTokens(tokens) {
 }
 
 function formatTokenSaveCell(detail) {
-  const parts = [];
   const rtk = detail?.rtkStats;
   if (rtk && typeof rtk.bytesBefore === "number" && typeof rtk.bytesAfter === "number" && rtk.bytesBefore > 0) {
     const saved = rtk.bytesBefore - rtk.bytesAfter;
     const pct = Math.round((saved / rtk.bytesBefore) * 100);
-    parts.push(`RTK −${saved}B (${pct}%)`);
+    return `RTK −${saved}B (${pct}%)`;
   }
-  const hs = detail?.headroomStats;
-  if (hs && typeof hs.savedTokens === "number" && hs.savedTokens > 0) {
-    parts.push(`HR −${hs.savedTokens}tok`);
-  } else {
-    const d = detail?.headroomDiagnostics || {};
-    const before = d.beforeBytes ?? d.bytesBefore;
-    const after = d.afterBytes ?? d.bytesAfter;
-    if (typeof before === "number" && typeof after === "number" && before > after) {
-      parts.push(`HR −${before - after}B`);
-    }
-  }
-  return parts.length ? parts.join(" · ") : "—";
+  return "—";
 }
 
 export default function RequestDetailsTab() {
@@ -459,38 +447,20 @@ export default function RequestDetailsTab() {
                 </span>
               </div>
               <div className="flex justify-between gap-3 px-3.5 py-2.5">
-                <span className="text-text-muted">Token Save (RTK / Headroom)</span>
+                <span className="text-text-muted">Token Save (RTK)</span>
                 <span className="font-mono text-text-main">{formatTokenSaveCell(selectedDetail)}</span>
               </div>
             </div>
 
-            {(selectedDetail.rtkStats || selectedDetail.headroomStats || selectedDetail.headroomDiagnostics) ? (
-              <CollapsibleSection title="Token save benchmark (RTK / Headroom)" defaultOpen={true} icon="savings">
-                <div className="grid min-w-0 grid-cols-1 gap-3 text-xs sm:grid-cols-2">
-                  {selectedDetail.rtkStats ? (
-                    <div>
-                      <p className="mb-1 text-[11px] font-medium text-text-muted">RTK</p>
-                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs">
-                        {JSON.stringify(selectedDetail.rtkStats, null, 2)}
-                      </pre>
-                    </div>
-                  ) : null}
-                  {selectedDetail.headroomStats ? (
-                    <div>
-                      <p className="mb-1 text-[11px] font-medium text-text-muted">Headroom stats</p>
-                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs">
-                        {JSON.stringify(selectedDetail.headroomStats, null, 2)}
-                      </pre>
-                    </div>
-                  ) : null}
-                  {selectedDetail.headroomDiagnostics ? (
-                    <div className="sm:col-span-2">
-                      <p className="mb-1 text-[11px] font-medium text-text-muted">Headroom diagnostics</p>
-                      <pre className="max-h-[200px] overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs">
-                        {JSON.stringify(selectedDetail.headroomDiagnostics, null, 2)}
-                      </pre>
-                    </div>
-                  ) : null}
+            {selectedDetail.rtkStats ? (
+              <CollapsibleSection title="Token save benchmark (RTK)" defaultOpen={true} icon="savings">
+                <div className="grid min-w-0 grid-cols-1 gap-3 text-xs">
+                  <div>
+                    <p className="mb-1 text-[11px] font-medium text-text-muted">RTK</p>
+                    <pre className="max-h-[200px] overflow-auto rounded-lg border border-border bg-bg-alt p-3 font-mono text-xs">
+                      {JSON.stringify(selectedDetail.rtkStats, null, 2)}
+                    </pre>
+                  </div>
                 </div>
               </CollapsibleSection>
             ) : null}

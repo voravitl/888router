@@ -207,18 +207,6 @@ function formatRtkSavings(rtkStats) {
   return `RTK −${saved} B (${pct}%)`;
 }
 
-function formatHeadroomSavings(headroomStats, headroomDiagnostics) {
-  if (headroomStats && typeof headroomStats.savedTokens === "number" && headroomStats.savedTokens > 0) {
-    return `Headroom −${headroomStats.savedTokens} tok`;
-  }
-  const before = headroomDiagnostics?.beforeBytes ?? headroomDiagnostics?.bytesBefore;
-  const after = headroomDiagnostics?.afterBytes ?? headroomDiagnostics?.bytesAfter;
-  if (typeof before === "number" && typeof after === "number" && before > after) {
-    return `Headroom −${before - after} B`;
-  }
-  return null;
-}
-
 function detailMatchesRequestModel(detail, requestModel) {
   if (!detail || !requestModel) return false;
   return detail.clientModel === requestModel
@@ -242,14 +230,12 @@ async function fetchLatestTokenSaveMeta(requestModel, { attempts = 8, delayMs = 
         const data = await res.json().catch(() => ({}));
         const details = Array.isArray(data.details) ? data.details : [];
         const match = details.find((d) => detailMatchesRequestModel(d, requestModel))
-          || details.find((d) => d?.rtkStats || d?.headroomStats)
+          || details.find((d) => d?.rtkStats)
           || null;
         if (match) {
           return {
             tokens: match.tokens || null,
             rtkStats: match.rtkStats || null,
-            headroomStats: match.headroomStats || null,
-            headroomDiagnostics: match.headroomDiagnostics || null,
             detailId: match.id || null,
             upstreamModel: match.model || null,
             clientModel: match.clientModel || match.request?.model || requestModel,
@@ -1054,11 +1040,10 @@ export default function BasicChatPageClient() {
                       {isAssistant && message.status === "done" && message.meta ? (() => {
                         const tokenLine = formatTokenPair(message.meta.tokens);
                         const rtkLine = formatRtkSavings(message.meta.rtkStats);
-                        const headroomLine = formatHeadroomSavings(message.meta.headroomStats, message.meta.headroomDiagnostics);
                         const viaLine = message.meta.upstreamModel && message.meta.upstreamModel !== (message.meta.clientModel || activeModel?.requestModel)
                           ? `via ${message.meta.provider || "?"} / ${message.meta.upstreamModel}`
                           : null;
-                        const bits = [tokenLine, rtkLine, headroomLine, viaLine].filter(Boolean);
+                        const bits = [tokenLine, rtkLine, viaLine].filter(Boolean);
                         if (bits.length === 0) return null;
                         return (
                           <p className="mt-2 font-mono text-[11px] leading-5 text-text-muted" title={message.meta.detailId || undefined}>
