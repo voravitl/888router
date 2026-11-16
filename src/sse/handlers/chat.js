@@ -32,6 +32,9 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { initConsoleLogCapture } from "@/lib/consoleLogBuffer";
+
+initConsoleLogCapture();
 
 /**
  * Handle chat completion request

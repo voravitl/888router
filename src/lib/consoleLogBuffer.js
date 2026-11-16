@@ -98,8 +98,21 @@ export function getConsoleLogs() {
   return state.logs;
 }
 
+export function flushConsoleLogs() {
+  if (state.flushTimer) {
+    clearTimeout(state.flushTimer);
+    state.flushTimer = null;
+  }
+  flushPendingLines();
+}
+
 export function clearConsoleLogs() {
   state.logs = [];
+  state.pendingLines = [];
+  if (state.flushTimer) {
+    clearTimeout(state.flushTimer);
+    state.flushTimer = null;
+  }
   state.emitter.emit("clear");
 }
 
