@@ -1,4 +1,4 @@
-import { getConsoleLogs, getConsoleEmitter, initConsoleLogCapture } from "@/lib/consoleLogBuffer";
+import { flushConsoleLogs, getConsoleLogs, getConsoleEmitter, initConsoleLogCapture } from "@/lib/consoleLogBuffer";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +21,18 @@ export async function GET(request) {
 
   // request.signal fires reliably on client disconnect; ReadableStream.cancel()
   // is not always invoked in Next.js, which caused listeners to accumulate.
-  request.signal.addEventListener("abort", cleanup, { once: true });
+  request?.signal?.addEventListener?.("abort", cleanup, { once: true });
 
   const stream = new ReadableStream({
     start(controller) {
-      // Send all buffered logs immediately on connect
+      // Flush any pre-connect pending batch before reading init + subscribing so
+      // a connecting client never receives the same lines twice (once in init, once in lines).
+      flushConsoleLogs();
+      // Always enqueue an initial SSE frame immediately (even when logs is empty);
+      // omitting it stalls Next.js standalone header flush until the first keepalive ping (25s),
+      // leaving EventSource stuck on "RECONNECTING..." in the UI.
       const buffered = getConsoleLogs();
-      if (buffered.length > 0) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "init", logs: buffered })}\n\n`));
-      }
+      controller.enqueue(encoder.encode(`retry: 3000\ndata: ${JSON.stringify({ type: "init", logs: buffered })}\n\n`));
 
       // Push new lines as they arrive
       state.send = (line) => {
@@ -64,7 +67,7 @@ export async function GET(request) {
       emitter.on("lines", state.sendLines);
       emitter.on("clear", state.sendClear);
 
-      // Keepalive ping every 25s
+      // Keepalive ping every 15s
       state.keepalive = setInterval(() => {
         if (state.closed) { clearInterval(state.keepalive); return; }
         try {
@@ -72,7 +75,7 @@ export async function GET(request) {
         } catch {
           cleanup();
         }
-      }, 25000);
+      }, 15000);
     },
 
     cancel() {
@@ -82,9 +85,10 @@ export async function GET(request) {
 
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
       "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }

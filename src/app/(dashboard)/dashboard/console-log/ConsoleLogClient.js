@@ -14,9 +14,16 @@ const LOG_LEVEL_COLORS = {
 };
 
 function colorLine(line) {
-  const match = line.match(/\[(\w+)\]/g);
-  const levelTag = match ? match[1]?.replace(/\[|\]/g, "") : null;
-  const color = LOG_LEVEL_COLORS[levelTag] || "text-green-400";
+  const tags = Array.from(line.matchAll(/\[([A-Za-z0-9_:-]+)\]/g), (m) => m[1]);
+  const levelTag = tags.find((t) => LOG_LEVEL_COLORS[t]);
+  let color = levelTag ? LOG_LEVEL_COLORS[levelTag] : null;
+  if (!color) {
+    if (line.includes("❌") || /\bERROR\b|\bFAIL(?:ED)?\b|\b✗\b/.test(line)) color = "text-red-400";
+    else if (line.includes("⚠️") || /\bWARN\b/.test(line)) color = "text-yellow-400";
+    else if (line.includes("🐛") || line.includes("[DBG:")) color = "text-purple-400";
+    else if (line.includes("ℹ️") || tags.includes("ROUTING") || tags.includes("AUTH")) color = "text-blue-400";
+    else color = "text-green-400";
+  }
   return <span className={color}>{line}</span>;
 }
 
@@ -40,15 +47,21 @@ export default function ConsoleLogClient() {
     es.onopen = () => setConnected(true);
 
     es.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === "init") {
+      setConnected(true);
+      let msg;
+      try {
+        msg = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (msg.type === "init" && Array.isArray(msg.logs)) {
         setLogs(msg.logs.slice(-CONSOLE_LOG_CONFIG.maxLines));
-      } else if (msg.type === "line") {
+      } else if (msg.type === "line" && typeof msg.line === "string") {
         setLogs((prev) => {
           const next = [...prev, msg.line];
           return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;
         });
-      } else if (msg.type === "lines") {
+      } else if (msg.type === "lines" && Array.isArray(msg.lines)) {
         setLogs((prev) => {
           const next = [...prev, ...msg.lines];
           return next.length > CONSOLE_LOG_CONFIG.maxLines ? next.slice(-CONSOLE_LOG_CONFIG.maxLines) : next;

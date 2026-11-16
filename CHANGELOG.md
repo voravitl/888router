@@ -1,3 +1,15 @@
+# v0.15.254 (2026-11-16)
+
+## Immediate Live SSE & Boot-Time Console Log Capture (`/dashboard/console-log`)
+- **Server Boot Capture (`src/instrumentation.js`, `src/sse/handlers/chat.js`)**:
+  - Added Next.js `register()` hook in `src/instrumentation.js` (`NEXT_RUNTIME === "nodejs"`) to run `initConsoleLogCapture()` at server boot before any `/v1/*` API or static `/dashboard/*` request arrives, and hooked `src/sse/handlers/chat.js` defensively so proxy traffic logs are always captured prior to visiting `/dashboard/console-log`.
+- **Immediate SSE Header/Init Flush (`src/app/api/translator/console-logs/stream/route.js`)**:
+  - Removed the empty-buffer guard so `start()` always enqueues an immediate `retry: 3000` + `data: {"type":"init","logs":[...]}` SSE frame on connect instead of withholding HTTP headers for up to 25s until the first `: ping` keepalive (which kept `/dashboard/console-log` stuck in `RECONNECTING...`).
+  - Added `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no`, and shortened keepalive pings from `25s` to `15s`.
+- **Ring Buffer Clear Race & UI Polish (`src/lib/consoleLogBuffer.js`, `src/app/(dashboard)/dashboard/console-log/ConsoleLogClient.js`)**:
+  - Updated `clearConsoleLogs()` to flush/drop `state.pendingLines` and clear `state.flushTimer` so pre-clear queued lines do not reappear after Clear.
+  - Updated `ConsoleLogClient.js` to guard `JSON.parse`, mark live state on incoming messages, and colorize `[ROUTING]`/`[AUTH]`/`ERROR`/`WARN`/`DBG` lines cleanly.
+
 # v0.15.253 (2026-11-16)
 
 ## Fix `claude-sonnet-5-5` HTTP 400 on Small Budgets by Clamping Adaptive Effort to `low`
