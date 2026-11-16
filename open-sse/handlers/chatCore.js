@@ -1,6 +1,6 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
-import { applyThinking, captureThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
+import { applyThinking, captureThinking, parseSuffix, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, normalizeClaudeThinkingShape, stripSyntheticClaudeSignatures, sanitizeClaudeTools, anchorClaudeCache } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
@@ -60,6 +60,7 @@ function localValidationResult(message, code, details = {}) {
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode, isCombo = false, signal = null }) {
   body = structuredClone(body);
   const clientOutputBudget = { max_tokens: reservedOutputTokens(body) };
+  const clientThinking = captureThinking(body) || parseSuffix(body.model).override;
   const clientThinkingBudget = body.thinking?.budget_tokens;
   modelInfo = { ...modelInfo };
   const requestStartTime = Date.now();
@@ -409,6 +410,29 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     && translatedBody.thinking?.budget_tokens >= translatedBody.max_tokens) {
     if (translatedBody.max_tokens > 1024) translatedBody.thinking.budget_tokens = translatedBody.max_tokens - 1;
     else delete translatedBody.thinking;
+  }
+
+  // Bound server-injected adaptive Claude effort to preserved client max_tokens so
+  // adaptive thinking cannot consume the entire output budget and yield <think></think>.
+  if (!preserveRequestInput && finalFormat === FORMATS.CLAUDE && !clientThinking
+    && Number.isFinite(translatedBody.max_tokens) && translatedBody.max_tokens > 0
+    && (translatedBody.thinking?.type === "adaptive" || translatedBody.output_config?.effort)) {
+    if (translatedBody.max_tokens <= 2048) {
+      if (modelCaps.thinkingCanDisable !== false) {
+        translatedBody.thinking = { type: "disabled" };
+        if (translatedBody.output_config) {
+          delete translatedBody.output_config.effort;
+          if (Object.keys(translatedBody.output_config).length === 0) delete translatedBody.output_config;
+        }
+      } else {
+        translatedBody.output_config = { ...(translatedBody.output_config || {}), effort: "low" };
+      }
+    } else if (translatedBody.max_tokens <= 8192) {
+      translatedBody.output_config = { ...(translatedBody.output_config || {}), effort: "low" };
+    } else if (translatedBody.max_tokens <= 24576
+      && (translatedBody.output_config?.effort === "max" || translatedBody.output_config?.effort === "high")) {
+      translatedBody.output_config = { ...(translatedBody.output_config || {}), effort: "medium" };
+    }
   }
   // Gemini selects model and streaming through its URL, not JSON fields.
   if (finalFormat === FORMATS.GEMINI) {

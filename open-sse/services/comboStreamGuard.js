@@ -22,6 +22,19 @@
  * actually supported.
  */
 import { messageContentText, messageReasoningText, messageRefusalText } from "../translator/concerns/messageContent.js";
+import { processStreamThinkingTags } from "../translator/concerns/reasoning.js";
+
+function splitInlineThinking(rawText, state) {
+  if (typeof rawText !== "string" || rawText.length === 0) {
+    return { visibleText: "", sawInlineThinking: false };
+  }
+  const prevBufferedLen = state.thinkingTagBuffer.length;
+  const wasInThinking = state.inInlineThinking;
+  const { thinking, text } = processStreamThinkingTags(rawText, state);
+  const consumedChars = prevBufferedLen + rawText.length - text.length - state.thinkingTagBuffer.length;
+  const sawInlineThinking = wasInThinking || state.inInlineThinking || thinking.length > 0 || consumedChars > 0;
+  return { visibleText: text, sawInlineThinking };
+}
 
 // Re-exported for callers/tests that already import them from the guard.
 // The implementations live in translator/concerns/messageContent.js so the
@@ -111,6 +124,12 @@ export function createComboStreamGuard() {
    * a generic empty verdict.
    */
   let sawReasoning = false;
+  const inlineThinkState = { inInlineThinking: false, thinkingTagBuffer: "" };
+  const flushNonThinkingTagBuffer = () => {
+    if (!inlineThinkState.inInlineThinking && inlineThinkState.thinkingTagBuffer.length > 0) {
+      sawText = true;
+    }
+  };
   /** Terminal finish_reason captured from the final chunk, if any. */
   let finishReason = null;
   /** Reasoning preambles can be long; past this we assume live and release. */
@@ -130,28 +149,38 @@ export function createComboStreamGuard() {
       // (`{...}data: [DONE]`). Parsing the line as a single payload threw and
       // dropped the frame, so a real answer was judged empty.
       for (const payload of extractLinePayloads(t)) {
-      if (payload === "[DONE]") { sawTerminal = true; continue; }
+      if (payload === "[DONE]") { sawTerminal = true; flushNonThinkingTagBuffer(); continue; }
       try {
         const json = JSON.parse(payload);
         // Ollama NDJSON: {"response":"...","done":true,"done_reason":"..."}
-        if (json.done === true) sawTerminal = true;
+        if (json.done === true) { sawTerminal = true; flushNonThinkingTagBuffer(); }
         // Anthropic SSE: {"type":"message_stop"} or {"type":"message_delta","delta":{"stop_reason":"end_turn"}}
-        if (json.type === "message_stop") sawTerminal = true;
+        if (json.type === "message_stop") { sawTerminal = true; flushNonThinkingTagBuffer(); }
         if (json.delta && json.delta.stop_reason) {
           finishReason = String(json.delta.stop_reason);
           sawTerminal = true;
+          flushNonThinkingTagBuffer();
         }
 
-        const ollamaText = typeof json.response === "string" ? json.response : "";
+        const ollamaRawText = typeof json.response === "string" ? json.response : "";
         const choice = json.choices && json.choices[0];
         const delta = choice && choice.delta;
-        const deltaText = (delta && (delta.content || delta.text)) || "";
+        const deltaRawText = (delta && (delta.content || delta.text)) || "";
+        const ollamaSplit = splitInlineThinking(ollamaRawText, inlineThinkState);
+        const deltaSplit = splitInlineThinking(deltaRawText, inlineThinkState);
+        if (ollamaSplit.sawInlineThinking || deltaSplit.sawInlineThinking) sawReasoning = true;
         // A NON-stream completion delivered over SSE: some upstreams (kilo-gateway,
         // opencode Zen) answer a plain request with content-type
         // text/event-stream and put the WHOLE completion in one frame under
         // `message.content`, never `delta.content`. Reading only the delta judged
         // those real answers empty and made the combo discard them.
-        const messageText = messageContentText(choice && choice.message);
+        const rawMessageText = messageContentText(choice && choice.message);
+        const msgThinkState = { inInlineThinking: false, thinkingTagBuffer: "" };
+        const messageSplit = splitInlineThinking(rawMessageText, msgThinkState);
+        if (messageSplit.sawInlineThinking) sawReasoning = true;
+        const messageText = !msgThinkState.inInlineThinking && msgThinkState.thinkingTagBuffer.length > 0
+          ? messageSplit.visibleText + msgThinkState.thinkingTagBuffer
+          : messageSplit.visibleText;
         const messageReasoning = messageReasoningText(choice && choice.message);
         // Anthropic SSE: delta.text or delta.partial_json inside content_block_delta
         const anthropicText = (json.delta && typeof json.delta.text === "string") ? json.delta.text
@@ -165,15 +194,18 @@ export function createComboStreamGuard() {
           for (const block of json.content) {
             if (block?.type === "text" && typeof block.text === "string") {
               anthropicMessageText += block.text;
-            } else if (block?.type === "thinking" && typeof block.thinking === "string") {
-              anthropicMessageReasoning += block.thinking;
+            } else if (block?.type === "thinking") {
+              if (typeof block.thinking === "string") anthropicMessageReasoning += block.thinking;
+              sawReasoning = true;
+            } else if (block?.type === "redacted_thinking") {
+              sawReasoning = true;
             } else if (block?.type === "tool_use" || block?.type === "server_tool_use") {
               sawText = true;
             }
           }
         }
 
-        const textVal = ollamaText || deltaText || messageText || anthropicText || anthropicMessageText;
+        const textVal = ollamaSplit.visibleText || deltaSplit.visibleText || messageText || anthropicText || anthropicMessageText;
         if (typeof textVal === "string" && textVal.length > 0) sawText = true;
 
         // A refusal is the model's ANSWER ("I can't help with that"), not an
@@ -202,6 +234,7 @@ export function createComboStreamGuard() {
           if (geminiCandidate.finishReason) {
             finishReason = String(geminiCandidate.finishReason);
             sawTerminal = true;
+            flushNonThinkingTagBuffer();
           }
           if (geminiCandidate.content?.parts) {
             for (const part of geminiCandidate.content.parts) {
@@ -221,19 +254,26 @@ export function createComboStreamGuard() {
           sawText = true;
         }
 
-        // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE)
-        // or Anthropic delta.thinking (Claude 3.7/Kiro thinking delta)
+        // Reasoning-only deltas: delta.reasoning_content (OpenAI/opencode SSE),
+        // Anthropic delta.thinking / signature_delta, or thinking block starts
+        // when upstream hides plaintext thinking.
         const anthropicReasoning = (json.delta && typeof json.delta.thinking === "string") ? json.delta.thinking : "";
+        const hasAnthropicThinkingEvent = json.content_block?.type === "thinking"
+          || json.content_block?.type === "redacted_thinking"
+          || json.delta?.type === "signature_delta";
         const reasoningVal = (delta && (delta.reasoning_content || delta.reasoning || delta.reasoningContent))
           || messageReasoning
           || anthropicReasoning
           || anthropicMessageReasoning;
-        if (typeof reasoningVal === "string" && reasoningVal.length > 0) sawReasoning = true;
+        if (hasAnthropicThinkingEvent || (typeof reasoningVal === "string" && reasoningVal.length > 0)) {
+          sawReasoning = true;
+        }
 
         const fr = (json.choices && json.choices[0] && json.choices[0].finish_reason) || json.done_reason || (json.delta && json.delta.stop_reason) || (geminiCandidate && geminiCandidate.finishReason) || null;
         if (fr) {
           finishReason = typeof fr === "string" ? fr : String(fr);
           sawTerminal = true;
+          flushNonThinkingTagBuffer();
           if (finishReason === "tool_use" || finishReason === "tool_calls") {
             sawText = true;
           }
@@ -321,6 +361,7 @@ export function createComboStreamGuard() {
     feedEnd() {
       consume(dec.decode());
       if (pending.trim()) consume("\n"); // force the last partial line through
+      flushNonThinkingTagBuffer();
       sawEos = true;
       return { sawText, sawTerminal, sawEos };
     },

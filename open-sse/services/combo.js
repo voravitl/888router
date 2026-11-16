@@ -69,10 +69,21 @@ export function toHttpFailureStatus(code) {
 }
 
 // Raise max_tokens for the retry: original x3 or +512 (whichever is larger), minimum 2048, capped
-// at 65536. Returns a new body object, never mutates the original.
+// at 65536. Preserves the caller's token budget field (max_completion_tokens / max_output_tokens / max_tokens).
+// Returns a new body object, never mutates the original.
 function withRaisedMaxTokens(body) {
-  const original = Number.isFinite(body?.max_tokens) ? body.max_tokens : 0;
+  const candidates = [body?.max_tokens, body?.max_completion_tokens, body?.max_output_tokens]
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const original = candidates.length > 0 ? Math.max(...candidates) : 0;
   const raised = Math.min(Math.max(original * 3, original + 512, 2048), 65536);
+  if (body?.max_completion_tokens !== undefined) {
+    const next = { ...body, max_completion_tokens: raised };
+    delete next.max_tokens;
+    return next;
+  }
+  if (body?.max_output_tokens !== undefined && body?.max_tokens === undefined) {
+    return { ...body, max_output_tokens: raised };
+  }
   return { ...body, max_tokens: raised };
 }
 
