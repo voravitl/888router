@@ -50,6 +50,7 @@ const DEFAULT_SETTINGS = {
   cavemanLevel: "full",
   ponytailEnabled: false,
   ponytailLevel: "full",
+  reasoningEffortCap: "off",
   // Universal tools mode: "auto" (cap-based inject) | "off" (disable shim path)
   universalToolsMode: "auto",
   capacityAdapter: {

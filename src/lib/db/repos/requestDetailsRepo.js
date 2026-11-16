@@ -408,8 +408,35 @@ export async function getTokenSaveSummary({ startDate, endDate, limit = 2000 } =
 
   const rows = db.all(
     `SELECT id, timestamp, model, provider, status, prunerTokensSaved, rtkBytesSaved, headroomTokensSaved, prunerTokensBefore, prunerTokensAfter, prunerOmitted, rtkBytesBefore, rtkBytesAfter, headroomBytesSaved, cacheHit,
-       json_extract(data, '$.tokens.prompt_tokens') AS promptTokens,
-       json_extract(data, '$.tokens.cached_tokens') AS cachedTokens
+       CASE
+         WHEN json_extract(data, '$.tokens.prompt_tokens') IS NOT NULL THEN
+           CASE
+             WHEN NULLIF(json_extract(data, '$.tokens.cached_tokens'), 0) IS NULL
+              AND (
+                json_extract(data, '$.tokens.cache_read_input_tokens') IS NOT NULL
+                OR json_extract(data, '$.tokens.cache_creation_input_tokens') IS NOT NULL
+              )
+              AND json_extract(data, '$.tokens.prompt_tokens') <
+                  COALESCE(json_extract(data, '$.tokens.cache_read_input_tokens'), 0)
+                + COALESCE(json_extract(data, '$.tokens.cache_creation_input_tokens'), 0)
+             THEN
+               json_extract(data, '$.tokens.prompt_tokens')
+               + COALESCE(json_extract(data, '$.tokens.cache_read_input_tokens'), 0)
+               + COALESCE(json_extract(data, '$.tokens.cache_creation_input_tokens'), 0)
+             ELSE
+               json_extract(data, '$.tokens.prompt_tokens')
+           END
+         ELSE
+           COALESCE(json_extract(data, '$.tokens.input_tokens'), 0)
+           + COALESCE(json_extract(data, '$.tokens.cache_read_input_tokens'), 0)
+           + COALESCE(json_extract(data, '$.tokens.cache_creation_input_tokens'), 0)
+       END AS promptTokens,
+       COALESCE(
+         NULLIF(json_extract(data, '$.tokens.cached_tokens'), 0),
+         NULLIF(json_extract(data, '$.tokens.prompt_tokens_details.cached_tokens'), 0),
+         NULLIF(json_extract(data, '$.tokens.input_tokens_details.cached_tokens'), 0),
+         json_extract(data, '$.tokens.cache_read_input_tokens')
+       ) AS cachedTokens
      FROM requestDetails ${where} ORDER BY timestamp DESC LIMIT ?`,
     [...params, safeLimit],
   );

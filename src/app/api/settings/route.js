@@ -102,6 +102,20 @@ export async function PATCH(request) {
       body.universalToolsMode = mode;
     }
 
+    // Validate reasoningEffortCap at the trust boundary: only "off" | "low" | "medium".
+    if (Object.prototype.hasOwnProperty.call(body, "reasoningEffortCap")) {
+      const cap = typeof body.reasoningEffortCap === "string"
+        ? body.reasoningEffortCap.trim().toLowerCase()
+        : "";
+      if (cap !== "off" && cap !== "low" && cap !== "medium") {
+        return NextResponse.json(
+          { error: "reasoningEffortCap must be 'off', 'low', or 'medium'" },
+          { status: 400 }
+        );
+      }
+      body.reasoningEffortCap = cap;
+    }
+
     // Normalize persisted strategy strings at the trust boundary BEFORE
     // persisting: a raw PATCH can otherwise store a value the gateway cannot
     // run (stale UI copy, hand-edited settings, legacy aliases). Fail-open —

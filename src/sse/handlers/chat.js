@@ -322,6 +322,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
       providerThinking,
+      reasoningEffortCap: chatSettings.reasoningEffortCap || "off",
       outboundProxyEnabled: !!chatSettings.outboundProxyEnabled,
       outboundProxyUrl: chatSettings.outboundProxyUrl || "",
       outboundNoProxy: chatSettings.outboundNoProxy || "",
