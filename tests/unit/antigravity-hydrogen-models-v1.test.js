@@ -206,16 +206,16 @@ describe("Antigravity /v1/models garbage/retired filtering and Hydrogen tiering"
 
 describe("Antigravity cached -tiered-* Hydrogen fallback resolution", () => {
   it.each([
-    ["gemini-4-hydrogen-tiered-xhigh", "gemini-4-hydrogen(xhigh)", "xhigh"],
-    ["gemini-4-hydrogen-tiered-high", "gemini-4-hydrogen(high)", "high"],
-    ["gemini-4-hydrogen-tiered-medium", "gemini-4-hydrogen(medium)", "medium"],
-    ["gemini-4-hydrogen-tiered-low", "gemini-4-hydrogen(low)", "low"],
-    ["gemini-4-hydrogen-tiered", "gemini-4-hydrogen(high)", "high"],
-    ["gemini-4-hydrogen-high", "gemini-4-hydrogen(high)", "high"],
-    ["gemini-4-hydrogen-medium", "gemini-4-hydrogen(medium)", "medium"],
-    ["gemini-4-hydrogen-low", "gemini-4-hydrogen(low)", "low"],
-    ["gemini-4-hydrogen-tiered-xhigh(low)", "gemini-4-hydrogen(low)", "low"],
-  ])("resolves %s → %s and wire gemini-4-hydrogen with thinkingLevel=%s", async (inputId, expectedUpstream, expectedLevel) => {
+    ["gemini-4-hydrogen-tiered-xhigh", "gemini-4-hydrogen-xhigh(xhigh)", "gemini-4-hydrogen-xhigh", "xhigh"],
+    ["gemini-4-hydrogen-tiered-high", "gemini-4-hydrogen-high(high)", "gemini-4-hydrogen-high", "high"],
+    ["gemini-4-hydrogen-tiered-medium", "gemini-4-hydrogen-medium(medium)", "gemini-4-hydrogen-medium", "medium"],
+    ["gemini-4-hydrogen-tiered-low", "gemini-4-hydrogen-low(low)", "gemini-4-hydrogen-low", "low"],
+    ["gemini-4-hydrogen-tiered", "gemini-4-hydrogen-high(high)", "gemini-4-hydrogen-high", "high"],
+    ["gemini-4-hydrogen-high", "gemini-4-hydrogen-high(high)", "gemini-4-hydrogen-high", "high"],
+    ["gemini-4-hydrogen-medium", "gemini-4-hydrogen-medium(medium)", "gemini-4-hydrogen-medium", "medium"],
+    ["gemini-4-hydrogen-low", "gemini-4-hydrogen-low(low)", "gemini-4-hydrogen-low", "low"],
+    ["gemini-4-hydrogen-tiered-xhigh(low)", "gemini-4-hydrogen-xhigh(low)", "gemini-4-hydrogen-xhigh", "low"],
+  ])("resolves %s → %s and wire %s with thinkingLevel=%s", async (inputId, expectedUpstream, expectedWireModel, expectedLevel) => {
     const { getModelUpstreamId } = await import("../../open-sse/config/providerModels.js");
     const { AntigravityExecutor } = await import("../../open-sse/executors/antigravity.js");
     const { applyThinking, stripThinkingSuffix } = await import("../../open-sse/translator/concerns/thinkingUnified.js");
@@ -234,7 +234,7 @@ describe("Antigravity cached -tiered-* Hydrogen fallback resolution", () => {
     applyThinking("antigravity", upstream, body, "antigravity");
 
     const finalBody = new AntigravityExecutor().transformRequest(upstream, body, true, { projectId: "project" });
-    expect(finalBody.model).toBe("gemini-4-hydrogen");
+    expect(finalBody.model).toBe(expectedWireModel);
     expect(finalBody.request.generationConfig.thinkingConfig).toEqual({
       thinkingLevel: expectedLevel,
       includeThoughts: true,

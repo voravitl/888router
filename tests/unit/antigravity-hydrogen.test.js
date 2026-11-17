@@ -65,13 +65,13 @@ describe("Gemini 4 Hydrogen capabilities and thinking levels", () => {
 });
 
 describe("Gemini 4 Hydrogen Antigravity registry & Hub 2.31.2 transport", () => {
-  it("maps hydrogen and hydrogen-xhigh to wire model gemini-4-hydrogen with expected thinkingLevel", async () => {
+  it("maps hydrogen and hydrogen-xhigh to live tier wire IDs with expected thinkingLevel", async () => {
     const { getModelUpstreamId } = await import("../../open-sse/config/providerModels.js");
     const { AntigravityExecutor } = await import("../../open-sse/executors/antigravity.js");
     const { applyThinking, stripThinkingSuffix } = await import("../../open-sse/translator/concerns/thinkingUnified.js");
 
-    expect(getModelUpstreamId("ag", "gemini-4-hydrogen")).toBe("gemini-4-hydrogen(high)");
-    expect(getModelUpstreamId("ag", "gemini-4-hydrogen-xhigh")).toBe("gemini-4-hydrogen(xhigh)");
+    expect(getModelUpstreamId("ag", "gemini-4-hydrogen")).toBe("gemini-4-hydrogen-high(high)");
+    expect(getModelUpstreamId("ag", "gemini-4-hydrogen-xhigh")).toBe("gemini-4-hydrogen-xhigh(xhigh)");
 
     const upstream = getModelUpstreamId("ag", "gemini-4-hydrogen-xhigh");
     const body = {
@@ -85,7 +85,7 @@ describe("Gemini 4 Hydrogen Antigravity registry & Hub 2.31.2 transport", () => 
 
     const executor = new AntigravityExecutor();
     const finalBody = executor.transformRequest(upstream, body, true, { projectId: "project" });
-    expect(finalBody.model).toBe("gemini-4-hydrogen");
+    expect(finalBody.model).toBe("gemini-4-hydrogen-xhigh");
     expect(finalBody.request.generationConfig.thinkingConfig).toEqual({
       thinkingLevel: "xhigh",
       includeThoughts: true,

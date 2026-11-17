@@ -1,3 +1,10 @@
+# v0.15.264 (2026-11-17)
+
+## Fix Gemini 4 Hydrogen Upstream Wire Model IDs (Prevent 404 NOT_FOUND)
+- **Use Live Tiered Wire Model IDs (`open-sse/providers/registry/antigravity.js`, `open-sse/providers/models/helpers.js`, `tests/unit/antigravity-hydrogen.test.js`, `tests/unit/antigravity-hydrogen-models-v1.test.js`)**:
+  - Updated `antigravity.js` `upstreamModelId` entries and `resolveAntigravityHydrogenModel` from bare `"gemini-4-hydrogen(<level>)"` (whose stripped wire ID `"gemini-4-hydrogen"` Google rejects with HTTP `404 Requested entity was not found.`) to live `:fetchAvailableModels` wire IDs `"gemini-4-hydrogen-high(high)"`, `"gemini-4-hydrogen-xhigh(xhigh)"`, `"gemini-4-hydrogen-medium(medium)"`, and `"gemini-4-hydrogen-low(low)"` matching the `gemini-4-argon-<level>(<level>)` convention.
+  - Confirmed live upstream `v1internal:streamGenerateContent` returns HTTP `200` on `"gemini-4-hydrogen-xhigh"` vs HTTP `404` on bare `"gemini-4-hydrogen"`.
+
 # v0.15.263 (2026-11-17)
 
 ## Antigravity 429 Quota Storm Prevention & Model Listing Hygiene
