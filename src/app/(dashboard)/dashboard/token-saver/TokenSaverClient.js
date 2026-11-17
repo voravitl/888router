@@ -54,6 +54,8 @@ export default function TokenSaverClient() {
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [reasoningEffortCap, setReasoningEffortCap] = useState("off");
+  const [sessionAffinityEnabled, setSessionAffinityEnabled] = useState(true);
+  const [loopBreakerEnabled, setLoopBreakerEnabled] = useState(true);
   const locale = useSyncExternalStore(onLocaleChange, getCurrentLocale, () => "en");
   const [summaryPeriod, setSummaryPeriod] = useState("7d");
   const [summary, setSummary] = useState(null);
@@ -116,6 +118,20 @@ export default function TokenSaverClient() {
     if (!ok) setCavemanLevel((cur) => (cur === level ? prev : cur));
   };
 
+  const handleSessionAffinityEnabled = async (value) => {
+    const prev = sessionAffinityEnabled;
+    setSessionAffinityEnabled(value);
+    const ok = await patchSetting({ sessionAffinityEnabled: value });
+    if (!ok) setSessionAffinityEnabled((cur) => (cur === value ? prev : cur));
+  };
+
+  const handleLoopBreakerEnabled = async (value) => {
+    const prev = loopBreakerEnabled;
+    setLoopBreakerEnabled(value);
+    const ok = await patchSetting({ loopBreakerEnabled: value });
+    if (!ok) setLoopBreakerEnabled((cur) => (cur === value ? prev : cur));
+  };
+
   const fetchSummary = useCallback(async (period, signal) => {
     const res = await fetch(`/api/usage/token-save-summary?period=${period}`, {
       cache: "no-store",
@@ -138,6 +154,8 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           const cap = data.reasoningEffortCap;
           setReasoningEffortCap(cap === "low" || cap === "medium" ? cap : "off");
+          setSessionAffinityEnabled(data.sessionAffinityEnabled !== false);
+          setLoopBreakerEnabled(data.loopBreakerEnabled !== false);
         }
       } catch {}
     };
@@ -536,7 +554,7 @@ export default function TokenSaverClient() {
             </p>
           </div>
         </div>
-        <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">
               Compress LLM output{" "}
@@ -589,6 +607,30 @@ export default function TokenSaverClient() {
               onChange={() => handleCavemanEnabled(!cavemanEnabled)}
             />
           </div>
+        </div>
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Pin session to account (Session Affinity)</p>
+            <p className="text-sm text-text-muted">
+              Keeps multi-turn and explicit-session chats (Claude Code, Codex, OpenCode, Hermes) pinned to the same healthy upstream account so Prompt Cache stays warm.
+            </p>
+          </div>
+          <Toggle
+            checked={sessionAffinityEnabled}
+            onChange={() => handleSessionAffinityEnabled(!sessionAffinityEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between pt-4 gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Stop runaway agent loops (Loop Breaker)</p>
+            <p className="text-sm text-text-muted">
+              Short-circuits repeating identical tool calls (5x), identical tool errors (4x), or stuck session bursts (6x in 5m) with HTTP 400 before draining quota.
+            </p>
+          </div>
+          <Toggle
+            checked={loopBreakerEnabled}
+            onChange={() => handleLoopBreakerEnabled(!loopBreakerEnabled)}
+          />
         </div>
       </Card>
     </div>

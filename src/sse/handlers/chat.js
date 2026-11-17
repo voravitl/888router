@@ -24,6 +24,10 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { isClientAbort } from "open-sse/utils/abort.js";
 import { handleComboChat, handleFusionChat, normalizePersistedStrategy, attachRouterDecisionHeader } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
+import { detectFormat } from "open-sse/services/provider.js";
+import { detectRunawayLoop, buildLoopBreakerErrorResponse } from "open-sse/utils/loopBreaker.js";
+import { resolveChatSessionAffinityKey, getPinnedConnection, pinConnection } from "open-sse/utils/sessionAffinity.js";
+import { trackPendingRequest } from "@/lib/usageDb";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { isRetiredProvider, retiredProviderMessage } from "open-sse/config/retiredProviders.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -114,6 +118,22 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
+  // Runaway Loop Circuit Breaker: stop stuck identical tool/error loops before upstream dispatch (HTTP 400)
+  if (settings.loopBreakerEnabled !== false) {
+    const loopVerdict = detectRunawayLoop({
+      body,
+      headers: clientRawRequest?.headers || (request?.headers ? Object.fromEntries(request.headers.entries()) : {}),
+    });
+    if (loopVerdict.tripped) {
+      log.warn("LOOP_BREAKER", `Blocked runaway loop (${loopVerdict.reason}, streak=${loopVerdict.streak}) for ${modelStr}`);
+      try { trackPendingRequest(modelStr, "gateway", null, false, true); } catch {}
+      const sourceFormat = request?.url
+        ? (detectFormatByEndpoint(new URL(request.url).pathname, body) || detectFormat(body))
+        : detectFormat(body);
+      return buildLoopBreakerErrorResponse(loopVerdict, sourceFormat);
+    }
+  }
+
   await ensureModelContextLoaded(log);
 
   // Check if model is a combo (has multiple models with fallback)
@@ -145,7 +165,10 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, 0, opts);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, 0, {
+            ...opts,
+            sessionAffinityEnabled: settings.sessionAffinityEnabled !== false,
+          });
         },
         log,
         comboName,
@@ -161,7 +184,10 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: members,
       resolveModelInfo: getModelInfo,
-      handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, 0, opts),
+      handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, 0, {
+        ...opts,
+        sessionAffinityEnabled: settings.sessionAffinityEnabled !== false,
+      }),
       log,
       comboName,
       comboStrategy,
@@ -172,7 +198,9 @@ export async function handleChat(request, clientRawRequest = null) {
   }
 
   // Single model request
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, false, 0, {
+    sessionAffinityEnabled: settings.sessionAffinityEnabled !== false,
+  });
 }
 
 /**
@@ -209,7 +237,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, depth + 1, opts);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, depth + 1, {
+              ...opts,
+              sessionAffinityEnabled: options?.sessionAffinityEnabled,
+            });
           },
           log,
           comboName: modelStr,
@@ -225,7 +256,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: comboModels,
         resolveModelInfo: getModelInfo,
-        handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, depth + 1, opts),
+        handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, depth + 1, {
+          ...opts,
+          sessionAffinityEnabled: options?.sessionAffinityEnabled,
+        }),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -255,6 +289,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
+  const sessionAffinityEnabled = options?.sessionAffinityEnabled !== false;
+  const affinityKey = sessionAffinityEnabled
+    ? resolveChatSessionAffinityKey({
+        headers: clientRawRequest?.headers || (request?.headers ? Object.fromEntries(request.headers.entries()) : {}),
+        body,
+        provider,
+      })
+    : null;
+
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
@@ -262,7 +305,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   while (true) {
     if (requestSignal?.aborted) return errorResponse(499, "Request aborted");
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const preferredConnectionId = affinityKey ? getPinnedConnection(affinityKey, excludeConnectionIds) : null;
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -351,6 +395,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) {
+      if (affinityKey && credentials.connectionId) {
+        pinConnection(affinityKey, credentials.connectionId);
+      }
       const latencyMs = Date.now() - dispatchStartedAt;
       const emaUpdate = updateHealthEma(credentials._connection, { ok: true, latencyMs, outputTokens: undefined });
       if (Object.keys(emaUpdate).length > 0) {

@@ -116,6 +116,15 @@ export async function PATCH(request) {
       body.reasoningEffortCap = cap;
     }
 
+    for (const boolKey of ["sessionAffinityEnabled", "loopBreakerEnabled"]) {
+      if (Object.prototype.hasOwnProperty.call(body, boolKey) && typeof body[boolKey] !== "boolean") {
+        return NextResponse.json(
+          { error: `${boolKey} must be a boolean` },
+          { status: 400 }
+        );
+      }
+    }
+
     // Normalize persisted strategy strings at the trust boundary BEFORE
     // persisting: a raw PATCH can otherwise store a value the gateway cannot
     // run (stale UI copy, hand-edited settings, legacy aliases). Fail-open —

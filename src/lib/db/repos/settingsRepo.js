@@ -53,6 +53,10 @@ const DEFAULT_SETTINGS = {
   reasoningEffortCap: "off",
   // Universal tools mode: "auto" (cap-based inject) | "off" (disable shim path)
   universalToolsMode: "auto",
+  // Session Affinity: pin explicit-session / multi-turn chats to last healthy connection
+  sessionAffinityEnabled: true,
+  // Runaway Loop Breaker: short-circuit repeating identical tool/error loops (HTTP 400)
+  loopBreakerEnabled: true,
   capacityAdapter: {
     vision: { enabled: true, roundRobin: false, models: [] },
     pdf: { enabled: false, roundRobin: false, models: [] },
