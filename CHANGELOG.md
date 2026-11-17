@@ -1,3 +1,11 @@
+# v0.15.261 (2026-11-17)
+
+## Clarify Thai Simple Mode Scope & Fix Dark Mode Active Button Contrast
+- **Dark Mode Contrast Fix (`src/app/(dashboard)/dashboard/profile/page.js`, `src/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js`)**:
+  - Replaced `bg-primary text-white border-primary` (white-on-white in Dark Mode because `--color-primary` resolves to `#fafafa`) on active mode/period/effort buttons with crisp `bg-[#111111] text-white border-[#111111] dark:bg-[#fafafa] dark:text-[#111111] dark:border-[#fafafa]`.
+- **Crystal-Clear Thai Simple UI (`src/app/(dashboard)/dashboard/profile/page.js`, `tests/unit/token-saver-ui-no-headroom.test.js`)**:
+  - Renamed mode labels to `Off`, `Standard (Auto)`, and `Standard + Hermes` and added an explicit 3-row scope guide inside the Response Style card explaining OpenCode/Cursor/Chat, Hermes (`SOUL.md`), and Claude Code (always skipped by gateway — use `/output-style thai-simple`).
+
 # v0.15.260 (2026-11-17)
 
 ## Retire Caveman UI & Add Optimized Thai Simple Response Style
