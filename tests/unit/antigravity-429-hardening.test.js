@@ -132,6 +132,28 @@ describe("Antigravity 429 & Quota Hardening", () => {
       expect(await ag.computeRetryDelay(r3, 1)).toBe(false);
     });
 
+    it("keeps bounded transient retries for RESOURCE_EXHAUSTED capacity / high-traffic 429s (not a quota wall)", async () => {
+      const capacity = () => mockResponse(429, {
+        error: {
+          code: 429,
+          message: "No capacity available for model gemini-4-hydrogen on the server",
+          status: "RESOURCE_EXHAUSTED",
+        },
+      });
+      const traffic = () => mockResponse(429, {
+        error: { message: "Our servers are experiencing high traffic. Quota check pending.", status: "RESOURCE_EXHAUSTED" },
+      });
+      expect(await ag.computeRetryDelay(capacity(), 1)).toBe(2000);
+      expect(await ag.computeRetryDelay(capacity(), 2)).toBe(4000);
+      expect(await ag.computeRetryDelay(capacity(), 3)).toBe(8000);
+      expect(await ag.computeRetryDelay(capacity(), 4)).toBe(false);
+      expect(await ag.computeRetryDelay(traffic(), 1)).toBe(2000);
+      // genuine quota wall still vetoes immediately
+      expect(await ag.computeRetryDelay(mockResponse(429, {
+        error: { message: "Resource has been exhausted (e.g. check quota).", status: "RESOURCE_EXHAUSTED" },
+      }), 1)).toBe(false);
+    });
+
     it("preserves explicit short retry delay even when body mentions quota or RESOURCE_EXHAUSTED", async () => {
       const rHeader = mockResponse(
         429,

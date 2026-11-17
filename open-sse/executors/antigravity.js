@@ -632,9 +632,14 @@ export class AntigravityExecutor extends BaseExecutor {
     if (retryMs) return retryMs <= MAX_RETRY_AFTER_MS ? retryMs : false;
 
     if (response.status === HTTP_STATUS.RATE_LIMITED) {
+      // Transient capacity / high-traffic 429s (even when Google tags them
+      // RESOURCE_EXHAUSTED) are bounded-retried below; only genuine quota
+      // exhaustion with no usable hint fails over immediately.
+      const isTransientBody = ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS.some(pattern => pattern.test(errorMessage));
       if (
-        errorJson?.error?.status === "RESOURCE_EXHAUSTED"
-        || ANTIGRAVITY_QUOTA_EXHAUSTED_PATTERNS.test(errorMessage)
+        !isTransientBody
+        && (errorJson?.error?.status === "RESOURCE_EXHAUSTED"
+          || ANTIGRAVITY_QUOTA_EXHAUSTED_PATTERNS.test(errorMessage))
       ) {
         return false;
       }
