@@ -1,3 +1,14 @@
+# v0.15.262 (2026-11-17)
+
+## Antigravity Anti-Ban Hardening (Leak Stripping & Restriction Quarantine)
+- **Eliminate Internal Loop-Header Upstream Leak (`open-sse/utils/mitmLoopHeader.js`, `open-sse/executors/antigravity.js`, `src/lib/oauth/providers.js`, `src/mitm/passthroughHeaders.js`, `src/mitm/server.js`)**:
+  - Gate `x-request-source: local` in `AntigravityExecutor.buildHeaders` and OAuth `loadCodeAssist`/`onboardUser` via `shouldSendMitmLoopHeader` so standalone/Docker setups never transmit private proxy headers to Google; stop sending `x-request-source: local` to `www.googleapis.com` `userInfoUrl`; and strip `x-request-source` case-insensitively in MITM `passthrough` (`stripInternalLoopHeaders`) before upstream forwarding.
+- **Stop 429 Sandbox Double-Burst & Restriction Retries (`open-sse/executors/antigravity.js`, `tests/unit/antigravity-anti-ban-hardening.test.js`)**:
+  - Override `AntigravityExecutor.shouldRetry()` to `false` so quota-exhausted `429` responses on `daily-cloudcode-pa.googleapis.com` do not replay another burst against `daily-cloudcode-pa.sandbox.googleapis.com`, veto `403` / `ACCOUNT_RESTRICTION_PATTERNS` retries immediately in `computeRetryDelay`, and trim standalone `You are Claude Code.` / `You are a Claude agent.` prefixes safely in `sanitizeAntigravityPrompt`.
+- **Long Quarantine on `403` / `VALIDATION_REQUIRED` / Account Suspension (`open-sse/config/errorConfig.js`, `src/sse/services/auth.js`, `open-sse/services/combo.js`, `src/app/api/providers/[id]/test/testUtils.js`)**:
+  - Added `ACCOUNT_VALIDATION_PARK_MS` (`6h`), `ANTIGRAVITY_PERMISSION_COOLDOWN_MS` (`1h`), and explicit `ACCOUNT_RESTRICTION_PATTERNS` rules (`validation_required`, `verify your account`, `account disabled/suspended`, `terms of service`) while keeping relay `is suspended` rules pool-scoped.
+  - Updated `markAccountUnavailable` to honor rule `parkMs` on saved connections (fixing 5s short-lock regression) and lock Antigravity `403` (`1h` / `6h` on verification) instead of 2-minute retries; added `isAccountRestrictedFailure` in `combo.js` to skip remaining `ag/*` candidates immediately; and cleared `modelLock_*` + `backoffLevel` when `testSingleConnection` passes re-verification.
+
 # v0.15.261 (2026-11-17)
 
 ## Clarify Thai Simple Mode Scope & Fix Dark Mode Active Button Contrast

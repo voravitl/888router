@@ -3,6 +3,11 @@
  */
 
 import { checkFallbackError, formatRetryAfter, getUnavailableUntil } from "./accountFallback.js";
+import {
+  ACCOUNT_RESTRICTION_PATTERNS,
+  ACCOUNT_VALIDATION_PARK_MS,
+  ANTIGRAVITY_PERMISSION_COOLDOWN_MS,
+} from "../config/errorConfig.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
@@ -1108,6 +1113,18 @@ export function isDeadCredentialFailure(status, text) {
   return false;
 }
 
+/**
+ * Account-restriction / validation failures (Antigravity 403 PERMISSION_DENIED,
+ * VALIDATION_REQUIRED, account disabled/suspended) must lock the entire
+ * provider in the combo so siblings do not keep hammering a flagged account.
+ */
+export function isAccountRestrictedFailure(status, text, provider = "") {
+  if (typeof text === "string" && ACCOUNT_RESTRICTION_PATTERNS.test(text)) return true;
+  const p = String(provider || "").toLowerCase();
+  if (status === 403 && (p === "antigravity" || p === "ag")) return true;
+  return false;
+}
+
 const PERIOD_QUOTA_MAX_LOCK_MS = 24 * 60 * 60 * 1000;
 const PERIOD_QUOTA_NO_DATE_LOCK_MS = 6 * 60 * 60 * 1000;
 
@@ -2055,16 +2072,40 @@ export async function handleComboChat({ body, models, handleSingleModel, resolve
       }
 
       // 401 after the layer below already tried refresh = missing/invalid
-      // credential. It will not fix itself in seconds, so park the model AND its
-      // same-provider siblings (one credential serves them all) instead of
-      // re-paying the 401 round trip on every request.
-      if (isDeadCredentialFailure(result.status, errorText)) {
-        const authLockUntil = Date.now() + resolveAuthErrorCooldownMs();
-        const authProvider = modelStr.includes("/") ? modelStr.slice(0, modelStr.indexOf("/")) : modelStr;
-        for (let j = i; j < rotatedModels.length; j++) {
+      // credential. Account-restriction / Antigravity 403 likewise locks every
+      // sibling on the same provider and jumps over remaining same-provider
+      // hops in this request so we do not re-trigger Google abuse detection.
+      const authProvider = modelStr.includes("/") ? modelStr.slice(0, modelStr.indexOf("/")) : modelStr;
+      const isRestricted = isAccountRestrictedFailure(result.status, errorText, authProvider);
+      if (isDeadCredentialFailure(result.status, errorText) || isRestricted) {
+        const restrictionLockMs = typeof errorText === "string" && ACCOUNT_RESTRICTION_PATTERNS.test(errorText)
+          ? ACCOUNT_VALIDATION_PARK_MS
+          : Math.max(resolveAuthErrorCooldownMs(), ANTIGRAVITY_PERMISSION_COOLDOWN_MS);
+        const lockMs = isRestricted ? restrictionLockMs : resolveAuthErrorCooldownMs();
+        const lockUntil = Date.now() + lockMs;
+        for (let j = 0; j < rotatedModels.length; j++) {
           const m = rotatedModels[j];
           const p = m.includes("/") ? m.slice(0, m.indexOf("/")) : m;
-          if (p === authProvider) markComboKnownUnavailable(m, authLockUntil, "auth");
+          if (p === authProvider && getComboKnownUnavailable(m) < lockUntil) {
+            markComboKnownUnavailable(m, lockUntil, isRestricted ? "restricted" : "auth");
+          }
+        }
+        if (isRestricted) {
+          const nextIdx = rotatedModels.findIndex((m, j) => {
+            if (j <= i) return false;
+            const p = typeof m === "string" && m.includes("/") ? m.slice(0, m.indexOf("/")) : m;
+            return p !== authProvider;
+          });
+          log.warn("COMBO", `Model ${modelStr} hit account restriction (${result.status}); locking ${authProvider} for ${Math.round(lockMs / 60_000)}m`);
+          candidateAbortCtrl.abort();
+          if (result.body) await safeCancelStream(result.body);
+          lastError = errorText || String(result.status);
+          if (!lastStatus) lastStatus = toHttpFailureStatus(result.status) ?? 403;
+          if (nextIdx > i) {
+            i = nextIdx - 1;
+            continue;
+          }
+          break;
         }
       }
 

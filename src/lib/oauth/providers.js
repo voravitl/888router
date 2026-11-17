@@ -6,6 +6,7 @@
 // Ensure outbound fetch respects HTTP(S)_PROXY/ALL_PROXY in Node runtime
 import "open-sse/index.js";
 import crypto from "crypto";
+import { shouldSendMitmLoopHeader } from "open-sse/utils/mitmLoopHeader.js";
 
 import { generatePKCE, generateState } from "./utils/pkce";
 import {
@@ -381,15 +382,16 @@ const PROVIDERS = {
         "Authorization": `Bearer ${tokens.access_token}`,
         "Content-Type": "application/json",
         "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
-        "x-request-source": "local",
+        ...(shouldSendMitmLoopHeader(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint) && {
+          "x-request-source": "local",
+        }),
       };
       const metadata = getOAuthClientMetadata();
 
-      // Fetch user info
+      // Fetch user info (www.googleapis.com is never MITM-intercepted — never attach internal loop headers)
       const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
         headers: {
           Authorization: `Bearer ${tokens.access_token}`,
-          "x-request-source": "local",
         },
       });
       const userInfo = userInfoRes.ok ? await userInfoRes.json() : {};

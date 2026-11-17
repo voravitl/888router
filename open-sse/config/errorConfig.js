@@ -41,6 +41,13 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
+// Long quarantine windows for account restriction / verification challenges so 888router
+// stops hammering flagged OAuth accounts (especially Google Antigravity) every few minutes.
+export const ACCOUNT_VALIDATION_PARK_MS = 6 * 60 * 60 * 1000; // 6 hours
+export const ANTIGRAVITY_PERMISSION_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+
+export const ACCOUNT_RESTRICTION_PATTERNS = /validation_required|verify your account|account_disabled|account(?:\s+(?:is|has\s+been))?\s+(?:disabled|suspended)|terms of service/i;
+
 // Cooldown durations (ms)
 const COOLDOWN = {
   long: 2 * 60 * 1000,
@@ -176,6 +183,16 @@ export const ERROR_RULES = [
   // MUST stay ABOVE "rate limit" below — the error text "FreeUsageLimitError:
   // Rate limit exceeded" also matches the generic rule.
   { text: "freeusagelimiterror",         cooldownMs: COOLDOWN.short },
+  { text: "validation_required",         cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "verify your account",         cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "account has been disabled",   cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "account is disabled",         cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "account disabled",            cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "account_disabled",            cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "account has been suspended",  cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "account is suspended",        cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "account suspended",           cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
+  { text: "terms of service",            cooldownMs: COOLDOWN.short, parkMs: ACCOUNT_VALIDATION_PARK_MS, parkScope: "provider" },
   { text: "rate limit",               backoff: true },
   // Relay host suspended the deployment for exceeding its usage quota (Deno
   // Deploy / Vercel: 503 "(USAGE_EXCEEDED) This application is suspended due to

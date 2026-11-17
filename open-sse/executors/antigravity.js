@@ -5,17 +5,19 @@ import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAU
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { shouldSendMitmLoopHeader } from "../utils/mitmLoopHeader.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
+import { ACCOUNT_RESTRICTION_PATTERNS } from "../config/errorConfig.js";
 
 // Sanitize competitive system prompts (Zed, Claude Code, Anthropic Agent SDK)
 // to prevent Google Antigravity backend from flagging requests and returning 429 Quota Exhausted.
 export function sanitizeAntigravityPrompt(text) {
   if (typeof text !== "string") return text;
   return text
-    .replace(/You are a Claude agent, built on Anthropic's Claude Agent SDK\.\s*/gi, "")
-    .replace(/You are Claude Code, Anthropic's official CLI for Claude\.\s*/gi, "")
+    .replace(/You are a Claude agent(?:,\s*built on Anthropic's Claude Agent SDK)?\.\s*/gi, "")
+    .replace(/You are Claude Code(?:,?\s*Anthropic's official CLI for Claude)?\.\s*/gi, "")
     .replace(/Claude Code is Anthropic's official CLI for Claude\.\s*/gi, "")
     .replace(/Anthropic's official CLI for Claude/gi, "an AI programming CLI")
     .replace(/Anthropic's Claude Agent SDK/gi, "the Agent SDK");
@@ -212,14 +214,23 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
+  shouldRetry() {
+    // Do not repeat a 429 against daily-cloudcode-pa.sandbox.googleapis.com:
+    // the sandbox host shares account quota/abuse limits, so doubling 429 bursts
+    // adds ban risk with no headroom. Network exceptions still fail over in BaseExecutor.
+    return false;
+  }
+
   buildHeaders(credentials, stream = true, urlOrSessionId = "", model = "", sessionId = null) {
-    const explicitSid = (typeof urlOrSessionId === "string" && !urlOrSessionId.startsWith("http")) ? urlOrSessionId : sessionId;
+    const isUrlArg = typeof urlOrSessionId === "string" && urlOrSessionId.startsWith("http");
+    const explicitSid = (typeof urlOrSessionId === "string" && !isUrlArg) ? urlOrSessionId : sessionId;
     const sid = explicitSid || credentials?._currentSessionId || credentials?._clientSessionId || this._lastSessionId;
+    const targetHost = isUrlArg ? urlOrSessionId : (this.getBaseUrls()[0] || "daily-cloudcode-pa.googleapis.com");
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
-      [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value,
+      ...(shouldSendMitmLoopHeader(targetHost) && { [INTERNAL_REQUEST_HEADER.name]: INTERNAL_REQUEST_HEADER.value }),
       ...(sid && { "X-Machine-Session-Id": sid }),
       "Accept": stream ? "text/event-stream" : "application/json"
     };
@@ -573,6 +584,8 @@ export class AntigravityExecutor extends BaseExecutor {
   // cap at MAX_RETRY_AFTER_MS, else retry transient Antigravity failures with backoff.
   // Return false to veto (fallback URL / final error).
   async computeRetryDelay(response, attempt) {
+    if (response.status === HTTP_STATUS.FORBIDDEN) return false;
+
     let bodyText = "";
     let errorJson = null;
     let retryMs = this.parseRetryHeaders(response.headers);
@@ -585,6 +598,7 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const errorMessage = this.extractErrorMessage(errorJson, bodyText);
+    if (ACCOUNT_RESTRICTION_PATTERNS.test(errorMessage)) return false;
 
     // Structured hint first: google.rpc.RetryInfo.retryDelay (e.g. "289539.38s")
     // and ErrorInfo.quotaResetTimeStamp (e.g. "2026-09-28T13:41:54Z") are more
