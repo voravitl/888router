@@ -26,6 +26,7 @@ import { PROVIDERS } from "open-sse/config/providers.js";
 import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow, resolveKnownLimits } from "open-sse/providers/capabilities.js";
 import { MODELS_LIVE_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { toClaudeCodeModelId } from "@/shared/utils/claudeCodeModelId";
+import { normalizeUpstreamModel, collectNormalizedCapabilities } from "open-sse/services/upstreamModelNormalizer.js";
 
 /**
  * Bound one live-catalog fetch so a single slow upstream cannot hold the whole
@@ -155,7 +156,19 @@ const LIVE_MODEL_RESOLVERS = {
     try {
       const { resolveOpenCodeGoModels } = await import("open-sse/services/opencodeGoModels.js");
       const result = await resolveOpenCodeGoModels();
-      return result?.models?.length ? { models: result.models } : null;
+      // Normalize the live catalog before the DB snapshot is hydrated so a
+      // fresh model's vision/pdf/maxOutput/reasoning are accurate even when
+      // no synced row exists yet. Lift the canonical fields into `capabilities`
+      // too — that is the sub-object /v1/models actually reads.
+      return result?.models?.length ? {
+        models: result.models.map((m) => {
+          const normalized = normalizeUpstreamModel("opencode-go", m);
+          return {
+            ...normalized,
+            capabilities: { ...(m.capabilities || {}), ...collectNormalizedCapabilities(normalized) },
+          };
+        }),
+      } : null;
     } catch {
       return null;
     }

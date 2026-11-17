@@ -5,6 +5,72 @@ import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getComboByName } from "@/lib/localDb";
 import { resolveVirtualAutoCombo } from "open-sse/services/autoCombo/virtualFactory.js";
 import { applyComboContextFields } from "../route.js";
+import {
+  getAllModelDynamicCapabilities,
+  getModelDynamicCapabilities,
+  getSyncedModelsMap,
+} from "@/lib/db";
+
+const SYNCED_CAP_FIELDS = [
+  "contextWindow", "maxOutput", "vision", "pdf", "audioInput",
+  "videoInput", "tools", "reasoning", "search", "releasedAt",
+];
+
+/**
+ * Look up capabilities persisted by a prior model sync for a model that is not
+ * in the static PROVIDER_MODELS catalogue. Every read fails open — a missing
+ * DB must degrade to a 404 (the old behaviour), never a 500.
+ */
+async function lookupSyncedCapabilities(providerId, modelId) {
+  let raw = null;
+  try {
+    raw = await getModelDynamicCapabilities(providerId, modelId);
+  } catch {}
+  if (!raw || typeof raw !== "object") {
+    try {
+      const all = await getAllModelDynamicCapabilities();
+      if (all instanceof Map) {
+        const baseId = modelId.split("/").pop();
+        raw = all.get(`${providerId}:${baseId}`) || all.get(`${providerId}:${modelId}`) || null;
+        if (!raw) {
+          for (const [key, value] of all.entries()) {
+            if (typeof key !== "string") continue;
+            const colon = key.indexOf(":");
+            if (colon <= 0 || key.slice(colon + 1) !== baseId) continue;
+            const keyProvider = key.slice(0, colon);
+            if ((ALIAS_TO_ID[keyProvider] || keyProvider) === providerId) {
+              raw = value;
+              break;
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+  if (!raw || typeof raw !== "object") return null;
+
+  const caps = {};
+  for (const field of SYNCED_CAP_FIELDS) {
+    if (raw[field] !== undefined) caps[field] = raw[field];
+  }
+  if (Object.keys(caps).length === 0) return null;
+
+  let status = "active";
+  let lastSyncedAt = null;
+  try {
+    const synced = await getSyncedModelsMap();
+    for (const [key, entry] of Object.entries(synced || {})) {
+      const colon = key.indexOf(":");
+      if (colon >= 0 && key.slice(colon + 1) === modelId) {
+        status = entry?.status || "active";
+        lastSyncedAt = entry?.lastSyncedAt ?? null;
+        break;
+      }
+    }
+  } catch {}
+
+  return { caps, status, lastSyncedAt };
+}
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -19,7 +85,7 @@ const KIND_ENDPOINT = {
 
 const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device"]);
 
-function buildInfo({ alias, providerId, model, kind, providerInfo }) {
+function buildInfo({ alias, providerId, model, kind, providerInfo, syncedCaps }) {
   const out = {
     id: `${alias}/${model.id}`,
     name: model.name || model.id,
@@ -28,17 +94,23 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
     endpoint: KIND_ENDPOINT[kind] || null,
   };
   if (model.params) out.params = model.params;
-  if (model.capabilities) out.capabilities = model.capabilities;
+  if (model.capabilities || syncedCaps) {
+    out.capabilities = { ...(model.capabilities || {}), ...(syncedCaps || {}) };
+  }
   if (model.options) out.options = model.options;
   if (model.dimensions) out.dimensions = model.dimensions;
   const caps = getCapabilitiesForModel(providerId, model.id);
-  const resolvedContextWindow = model.contextWindow || caps?.contextWindow;
+  const resolvedContextWindow = model.contextWindow || syncedCaps?.contextWindow || caps?.contextWindow;
+  const resolvedMaxOutput = syncedCaps?.maxOutput || caps?.maxOutput;
   if (resolvedContextWindow) {
     out.context_length = resolvedContextWindow;
     out.contextWindow = resolvedContextWindow;
     out.context_window = resolvedContextWindow;
-    out.max_tokens = caps?.maxOutput || 128000;
-    out.max_completion_tokens = caps?.maxOutput || 128000;
+    out.max_tokens = resolvedMaxOutput || 128000;
+    out.max_completion_tokens = resolvedMaxOutput || 128000;
+  } else if (resolvedMaxOutput) {
+    out.max_tokens = resolvedMaxOutput;
+    out.max_completion_tokens = resolvedMaxOutput;
   }
   if (kind === "tts" && TTS_VOICES_API.has(providerId)) {
     out.voicesUrl = `/v1/audio/voices?provider=${providerId}`;
@@ -124,6 +196,35 @@ async function lookup(fullId, requestedKind) {
   if (m) {
     const kind = getModelKind(m, "llm");
     return buildInfo({ alias, providerId, model: m, kind, providerInfo });
+  }
+
+  // Dynamically synced model absent from the static catalogue. Ghost/stale
+  // rows still resolve (with their lifecycle status) so combos and aliases
+  // that reference a retired upstream id do not break.
+  const synced = await lookupSyncedCapabilities(providerId, modelId);
+  if (synced) {
+    const out = buildInfo({
+      alias,
+      providerId,
+      model: {
+        id: modelId,
+        name: modelId,
+        contextWindow: synced.caps.contextWindow,
+        capabilities: synced.caps,
+      },
+      kind: "llm",
+      providerInfo,
+      syncedCaps: synced.caps,
+    });
+    // Surface the canonical fields at top level as well as under
+    // `capabilities` — clients read both shapes.
+    for (const field of SYNCED_CAP_FIELDS) {
+      if (synced.caps[field] !== undefined) out[field] = synced.caps[field];
+    }
+    out.status = synced.status;
+    out.lastSyncedAt = synced.lastSyncedAt;
+    out.source = "synced";
+    return out;
   }
 
   // Web search/fetch — virtual model id "search" / "fetch"

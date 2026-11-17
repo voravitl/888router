@@ -13,6 +13,7 @@ import { refreshProviderCredentials } from "open-sse/services/oauthCredentialMan
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { formatModelsFetchError, safeLogDetail } from "@/lib/upstreamErrorDetail";
 import { resolveCodexDiscoveryVersion } from "open-sse/services/codexDiscoveryVersion.js";
+import { normalizeUpstreamModel, collectNormalizedCapabilities } from "open-sse/services/upstreamModelNormalizer.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -91,8 +92,12 @@ const parseCodexModels = (data) => appendCodexReviewModels(parseOpenAIStyleModel
 
 // Enrich models with lastSyncedAt / firstSeenAt from the syncedModels kv.
 // Only stamps when models.length > 0 (empty list is a static-fallback signal).
-export async function buildModelsResponse({ provider, connectionId, models, warning }) {
-  const rawModels = Array.isArray(models) ? models.filter((m) => m && m.id) : [];
+export async function buildModelsResponse({ provider, connectionId, models, warning, reconcile = true }) {
+  // Fold every upstream spelling (modalities.input, limit, input_modalities,
+  // supportsImages, ...) into one canonical shape. Done here for ALL providers
+  // so every sync path stores and returns the same capability fields.
+  const rawModels = (Array.isArray(models) ? models.filter((m) => m && m.id) : [])
+    .map((m) => normalizeUpstreamModel(provider, m));
   // Dedup by model ID (upstream may return duplicates)
   const seen = new Set();
   const safeModels = [];
@@ -112,40 +117,31 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
         stampMap = (await db.getSyncedModelsMap()) || {};
       }
 
-      // Extract & persist dynamic capabilities metadata from upstream response
+      // A NON-EMPTY model list means the live upstream answered. Mark this
+      // connection's previously-synced-but-now-absent ids as `stale` ghosts
+      // instead of deleting them (combos/aliases may still reference them).
+      // Never run on an empty list — that is a failed-fetch/static-fallback
+      // signal and must not reclassify every model.
       try {
-        const { saveModelDynamicCapabilities } = await import("@/lib/db");
-
-        for (const m of safeModels) {
-          const id = m.id;
-          const ctx = m.max_context_window || m.context_length || m.contextWindow || m.context_window || m.maxInputTokens || m.contextLength || m.details?.context_length;
-          const vision = m.vision ?? m.supportsImages ?? m.supportsVision ?? m.details?.families?.includes("vision")
-            ?? (Array.isArray(m.input_modalities) ? m.input_modalities.includes("image") : undefined);
-          
-          let resolvedReasoning = undefined;
-          if (typeof m.reasoning === "boolean") {
-            resolvedReasoning = m.reasoning;
-          } else if (Array.isArray(m.thinking) && m.thinking.length > 0) {
-            resolvedReasoning = true;
-          } else if (typeof m.thinking === "boolean") {
-            resolvedReasoning = m.thinking;
+        if (reconcile) {
+          const repo = await import("@/lib/db/repos/syncedModelsRepo.js");
+          if (typeof repo.reconcileSyncedModelsForConnection === "function") {
+            await repo.reconcileSyncedModelsForConnection(connectionId, safeModels.map((m) => m.id));
           }
+        }
+      } catch (reconcileErr) {
+        console.log("Failed to reconcile synced models:", reconcileErr?.message);
+      }
 
-          const ctxNum = Number(ctx);
-          const hasValidCtx = Number.isFinite(ctxNum) && ctxNum > 0;
-
-          if (hasValidCtx || vision !== undefined || resolvedReasoning !== undefined) {
-            const caps = {};
-            if (hasValidCtx) caps.contextWindow = ctxNum;
-            if (vision !== undefined) caps.vision = Boolean(vision);
-            if (resolvedReasoning !== undefined) caps.reasoning = resolvedReasoning;
-
-            if (typeof saveModelDynamicCapabilities === "function") {
-              await saveModelDynamicCapabilities(provider, id, caps);
-            }
-            // Persist provider-scoped only. The bare-modelId in-memory register
-            // bled caps across providers sharing an id (PR #292 lesson); readers
-            // (/v1/models, resolveCapabilities) load the scoped rows instead.
+      // Extract & persist the full normalized capability set from the upstream
+      // response. Provider-scoped only: the bare-modelId in-memory register
+      // bled caps across providers sharing an id (PR #292 lesson).
+      try {
+        if (typeof db.saveModelDynamicCapabilities === "function") {
+          for (const m of safeModels) {
+            const caps = collectNormalizedCapabilities(m);
+            if (Object.keys(caps).length === 0) continue;
+            await db.saveModelDynamicCapabilities(provider, m.id, caps);
           }
         }
       } catch (capErr) {
@@ -162,6 +158,10 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
       ...m,
       lastSyncedAt: entry?.lastSyncedAt ?? null,
       firstSeenAt: entry?.firstSeenAt ?? null,
+      status: entry?.status || "active",
+      missingSince: entry?.missingSince ?? null,
+      ...collectNormalizedCapabilities(m),
+      source: "synced",
     };
   });
   const payload = {
@@ -622,6 +622,7 @@ export async function GET(request, { params }) {
       return buildModelsResponse({
         provider: connection.provider,
         connectionId: connection.id,
+        reconcile: false, // upstream failed — static seed is not a live model list
         models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
       });
     }
@@ -633,6 +634,7 @@ export async function GET(request, { params }) {
       return buildModelsResponse({
         provider: connection.provider,
         connectionId: connection.id,
+        reconcile: false, // curated fallback, never a live upstream list
         models: staticModels
           .map((m) => {
             if (typeof m === "string") return { id: m, name: m };
@@ -672,7 +674,12 @@ export async function GET(request, { params }) {
             // forwarded upstream (400 "unknown variant image_url"). Fail-open:
             // if models.dev is unreachable, models stay as-is (static table).
             const { enrichModalityFromModelsDev } = await import("open-sse/services/modelsDevModality.js");
+            // Normalize before AND after models.dev: upstream truth wins, then
+            // models.dev fills the gaps, then any newly-filled fields are
+            // normalized again into the canonical shape.
+            models = models.map((m) => normalizeUpstreamModel(connection.provider, m));
             await enrichModalityFromModelsDev(models, "opencode");
+            models = models.map((m) => normalizeUpstreamModel(connection.provider, m));
             return buildModelsResponse({
               provider: connection.provider,
               connectionId: connection.id,
@@ -909,6 +916,7 @@ export async function GET(request, { params }) {
         return buildModelsResponse({
           provider: connection.provider,
           connectionId: connection.id,
+          reconcile: false, // upstream failed — static seed is not a live model list
           models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
         });
       }
@@ -972,6 +980,7 @@ export async function GET(request, { params }) {
         return buildModelsResponse({
           provider: connection.provider,
           connectionId: connection.id,
+          reconcile: false, // upstream failed — static seed is not a live model list
           models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
         });
       }
@@ -1027,6 +1036,7 @@ export async function GET(request, { params }) {
         return buildModelsResponse({
           provider: connection.provider,
           connectionId: connection.id,
+          reconcile: false, // upstream failed — static seed is not a live model list
           models: staticModels.map((m) => typeof m === "string" ? { id: m, name: m } : { id: m.id || m.name, name: m.name || m.id, ...m }),
         });
       }
@@ -1038,7 +1048,8 @@ export async function GET(request, { params }) {
 
     const data = await response.json();
     const parsed = config.parseResponse(data);
-    let models = (Array.isArray(parsed) && parsed.length > 0) ? [...parsed] : (pDef?.models ? pDef.models.map((m) => ({ ...m })) : []);
+    const usedStaticFallback = !(Array.isArray(parsed) && parsed.length > 0);
+    let models = usedStaticFallback ? (pDef?.models ? pDef.models.map((m) => ({ ...m })) : []) : [...parsed];
 
     // zen/go /v1/models returns ids only — no context/modality hints. Enrich
     // from models.dev (authoritative) so the dashboard and /v1/context stop
@@ -1046,6 +1057,9 @@ export async function GET(request, { params }) {
     // into contextWindow so the persisted capability row carries both
     // spellings (same as the free opencode special case above).
     if (connection.provider === "opencode-go") {
+      // Upstream rich shapes (modalities.input / limit) are normalized first so
+      // models.dev only fills what the live catalog omitted.
+      models = models.map((m) => normalizeUpstreamModel(connection.provider, m));
       try {
         const { enrichModalityFromModelsDev } = await import("open-sse/services/modelsDevModality.js");
         await enrichModalityFromModelsDev(models, "opencode-go");
@@ -1063,6 +1077,9 @@ export async function GET(request, { params }) {
           m.contextLength = m.context_length;
         }
       }
+      // Second pass: fold anything models.dev added (maxOutput, pdf, ...) into
+      // the canonical fields before buildModelsResponse persists/returns them.
+      models = models.map((m) => normalizeUpstreamModel(connection.provider, m));
     }
 
     // For openai and codex, merge static registry models the upstream /models
@@ -1085,6 +1102,7 @@ export async function GET(request, { params }) {
     return buildModelsResponse({
       provider: connection.provider,
       connectionId: connection.id,
+      reconcile: !usedStaticFallback, // empty upstream → static seed, not a live list
       models,
       warning: discoveryWarning,
     });
