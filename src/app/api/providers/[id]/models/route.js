@@ -8,6 +8,7 @@ import { OllamaService } from "@/lib/oauth/services/ollama";
 import { GEMINI_CONFIG, ANTIGRAVITY_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, updateProviderCredentials, refreshKiroToken } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { parseAntigravityLiveModels } from "open-sse/providers/models/helpers.js";
 import { refreshProviderCredentials } from "open-sse/services/oauthCredentialManager.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { formatModelsFetchError, safeLogDetail } from "@/lib/upstreamErrorDetail";
@@ -233,7 +234,7 @@ const PROVIDER_MODELS_CONFIG = {
   antigravity: {
     // Google CloudCode has no `:models` endpoint (404). The real endpoint is
     // `:fetchAvailableModels` — same as gemini-cli (GEMINI_CLI_MODELS_URL) — with
-    // the shared parseGeminiCliModels parser. antigravity is deprecated with a
+    // the shared parseAntigravityLiveModels parser. antigravity is deprecated with a
     // static registry fallback, so a failed dynamic fetch degrades quietly.
     url: GEMINI_CLI_MODELS_URL,
     method: "POST",
@@ -241,7 +242,7 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     body: {},
-    parseResponse: parseGeminiCliModels
+    parseResponse: (data) => parseAntigravityLiveModels(data, PROVIDERS.antigravity?.models)
   },
   github: {
     url: "https://api.githubcopilot.com/models",
@@ -800,23 +801,9 @@ export async function GET(request, { params }) {
 
         if (response.ok) {
           const data = await response.json();
-          let models = parseGeminiCliModels(data);
-
-          // For antigravity, ensure newly released static registry models (such as Gemini 3.8/3.7 Flash variants)
-          // are merged into the synced list so users can select and sync newly released models
-          if (connection.provider === "antigravity" && PROVIDERS.antigravity?.models) {
-            const seen = new Set(models.map((m) => m.id));
-            for (const staticModel of PROVIDERS.antigravity.models) {
-              if (/gemini-[34]/i.test(staticModel.id) && !seen.has(staticModel.id)) {
-                seen.add(staticModel.id);
-                models.push({
-                  ...staticModel,
-                  id: staticModel.id,
-                  name: staticModel.name || staticModel.id,
-                });
-              }
-            }
-          }
+          const models = connection.provider === "antigravity"
+            ? parseAntigravityLiveModels(data, PROVIDERS.antigravity?.models)
+            : parseGeminiCliModels(data);
 
           if (models.length > 0) {
             return buildModelsResponse({

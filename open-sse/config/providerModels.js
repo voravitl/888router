@@ -4,7 +4,7 @@ import REGISTRY from "../providers/registry/index.js";
 import { PROVIDER_MODELS } from "../providers/index.js";
 import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
 import { deriveModelName } from "../providers/models/namePatterns.js";
-import { CODEX_REVIEW_SUFFIX, resolveAntigravityFlashModel, isMuseSparkModel } from "../providers/models/helpers.js";
+import { CODEX_REVIEW_SUFFIX, resolveAntigravityFlashModel, resolveAntigravityHydrogenModel, isMuseSparkModel } from "../providers/models/helpers.js";
 import { FORMATS } from "../translator/formats.js";
 
 export { PROVIDER_MODELS };
@@ -35,6 +35,18 @@ function findModel(models, modelId, aliasOrId) {
   const found = models.find(m => m.id === modelId || m.id === baseModelId);
   if (found) return found;
   if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof baseModelId === "string") {
+    const hydrogenResolved = resolveAntigravityHydrogenModel(baseModelId);
+    if (hydrogenResolved !== baseModelId) {
+      const baseEntry = models.find(m => m.id === "gemini-4-hydrogen");
+      if (baseEntry) {
+        return {
+          ...baseEntry,
+          id: modelId,
+          name: deriveModelName(modelId),
+          upstreamModelId: hydrogenResolved,
+        };
+      }
+    }
     const resolved = resolveAntigravityFlashModel(baseModelId);
     if (resolved !== baseModelId) {
       const match = models.find(m => m.id === resolved);
@@ -96,6 +108,13 @@ export function getModelType(aliasOrId, modelId) {
   return found?.kind || found?.type || null;
 }
 
+function applyPresetSuffix(resolvedId, explicitSuffix) {
+  const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
+  const presetSuffix = presetMatch?.[0] || "";
+  const resolvedBase = presetSuffix ? resolvedId.slice(0, presetMatch.index).trim() : resolvedId;
+  return resolvedBase + (explicitSuffix || presetSuffix);
+}
+
 export function getModelUpstreamId(aliasOrId, modelId) {
   // Split off thinking suffix "(level)" so lookup hits the base id; re-append it to
   // the result so downstream applyThinking still sees the suffix (body.model is stripped separately).
@@ -106,12 +125,11 @@ export function getModelUpstreamId(aliasOrId, modelId) {
   const found = findModel(models, baseId, aliasOrId);
   const resolvedId = found?.upstreamModelId || found?.id;
   if (resolvedId) {
-    const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
-    const presetSuffix = presetMatch?.[0] || "";
-    const resolvedBase = presetSuffix ? resolvedId.slice(0, presetMatch.index).trim() : resolvedId;
-    return resolvedBase + (suffix || presetSuffix);
+    return applyPresetSuffix(resolvedId, suffix);
   }
   if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof baseId === "string") {
+    const hydrogenResolved = resolveAntigravityHydrogenModel(baseId);
+    if (hydrogenResolved !== baseId) return applyPresetSuffix(hydrogenResolved, suffix);
     const resolved = resolveAntigravityFlashModel(baseId);
     if (resolved !== baseId) return resolved + suffix;
   }
