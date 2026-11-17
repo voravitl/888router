@@ -13,13 +13,14 @@ const NATIVE_PAIRS = {
 
 /**
  * Detect which CLI tool is making the request.
- * Returns one of: "claude" | "gemini-cli" | "antigravity" | "codex" | null
+ * Returns one of: "claude" | "gemini-cli" | "antigravity" | "codex" | "deepseek-tui" | "github-copilot" | "hermes" | null
  * @param {object} headers - Lowercase header key/value object
  * @param {object} body    - Parsed request body
  */
 export function detectClientTool(headers = {}, body = {}) {
   const ua = (headers["user-agent"] || "").toLowerCase();
   const xApp = (headers["x-app"] || "").toLowerCase();
+  const xTitle = (headers["x-title"] || "").toLowerCase();
   const openaiIntent = (headers["openai-intent"] || "").toLowerCase();
   const initiator = (headers["x-initiator"] || headers["X-Initiator"] || "").toLowerCase();
   const originator = (headers["originator"] || "").toLowerCase();
@@ -45,6 +46,10 @@ export function detectClientTool(headers = {}, body = {}) {
 
   // DeepSeek TUI
   if (ua.includes("deepseek-tui")) return "deepseek-tui";
+
+  // Hermes Agent (User-Agent: HermesAgent/..., X-Title: Hermes Agent, originator: hermes-agent)
+  if (ua.includes("hermesagent") || ua.includes("hermes-agent") ||
+      xTitle === "hermes agent" || originator === "hermes-agent") return "hermes";
 
   return null;
 }

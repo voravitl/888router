@@ -40,8 +40,10 @@ export default function HermesToolCard({
   const getConfigStatus = () => {
     if (!hermesStatus?.installed) return null;
     const cfg = hermesStatus.settings?.model;
-    if (!cfg?.base_url) return "not_configured";
-    if (matchKnownEndpoint(cfg.base_url, { tunnelPublicUrl, tailscaleUrl })) return "configured";
+    const p888 = hermesStatus.settings?.providers?.["888router"];
+    const configuredUrl = cfg?.base_url || p888?.base_url;
+    if (!configuredUrl) return "not_configured";
+    if (matchKnownEndpoint(configuredUrl, { tunnelPublicUrl, tailscaleUrl })) return "configured";
     return "other";
   };
 
@@ -171,7 +173,9 @@ export default function HermesToolCard({
       ? selectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
-    const yamlContent = `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${getEffectiveBaseUrl()}"\n  api_key: \${OPENAI_API_KEY}\n`;
+    const baseUrl = getEffectiveBaseUrl();
+    const modelId = selectedModel || "provider/model-id";
+    const yamlContent = `model:\n  default: "${modelId}"\n  provider: "custom:888router"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n\nproviders:\n  888router:\n    base_url: "${baseUrl}"\n    api_key: \${OPENAI_API_KEY}\n    default_model: "${modelId}"\n    session_affinity_header: "x-session-id"\n    discover_models: true\n`;
     const envContent = `OPENAI_API_KEY=${keyToUse}\n`;
 
     return [

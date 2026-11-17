@@ -16,11 +16,52 @@ const getHermesDir = () => path.join(os.homedir(), ".hermes");
 const getHermesConfigPath = () => path.join(getHermesDir(), "config.yaml");
 const getHermesEnvPath = () => path.join(getHermesDir(), ".env");
 
-// Match top-level "model:" block (until next non-indented, non-empty line)
+// Match top-level "model:" and "providers:" blocks (until next non-indented, non-empty line)
 const MODEL_BLOCK_RE = /^model:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
+const PROVIDERS_BLOCK_RE = /^providers:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
 
 const buildModelBlock = (model, baseUrl) =>
-  `model:\n  default: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
+  `model:\n  default: "${model}"\n  provider: "custom:888router"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
+
+const buildProvider888Block = (model, baseUrl, extraIndentedLines = "") =>
+  `  888router:\n    base_url: "${baseUrl}"\n    api_key: \${OPENAI_API_KEY}\n    default_model: "${model}"\n    session_affinity_header: "x-session-id"\n    discover_models: true\n${extraIndentedLines}`;
+
+const parseProvider888Block = (yaml) => {
+  const providersMatch = yaml.match(PROVIDERS_BLOCK_RE);
+  if (!providersMatch) return null;
+  const sub = providersMatch[1].match(/^[ \t]{2}888router:[ \t]*\r?\n((?:[ \t]{4,}.*\r?\n?|[ \t]*\r?\n)*)/m);
+  if (!sub) return null;
+  const body = sub[1];
+  const get = (key) => {
+    const m = body.match(new RegExp(`^[ \\t]{4}${key}:[ \\t]*(.+)$`, "m"));
+    if (!m) return null;
+    const val = m[1].trim().replace(/^["']|["']$/g, "");
+    return val;
+  };
+  const modelsMatch = body.match(/^[ \t]{4}models:[ \t]*\r?\n((?:[ \t]{6,}.*\r?\n?|[ \t]*\r?\n)*)/m);
+  return {
+    base_url: get("base_url"),
+    default_model: get("default_model"),
+    api_key: get("api_key"),
+    session_affinity_header: get("session_affinity_header"),
+    modelsRaw: modelsMatch ? `    models:\n${modelsMatch[1].replace(/\s*$/, "\n")}` : "",
+  };
+};
+
+const upsertProviders888Block = (yaml, model, baseUrl) => {
+  const existing = parseProvider888Block(yaml);
+  const block = buildProvider888Block(model, baseUrl, existing?.modelsRaw || "");
+  const providersMatch = yaml.match(PROVIDERS_BLOCK_RE);
+  if (!providersMatch) {
+    return yaml.replace(/\s*$/, "") + (yaml.trim() ? "\n\n" : "") + `providers:\n${block}`;
+  }
+  const providersBody = providersMatch[1];
+  const subRe = /^[ \t]{2}888router:[ \t]*\r?\n((?:[ \t]{4,}.*\r?\n?|[ \t]*\r?\n)*)/m;
+  const nextBody = subRe.test(providersBody)
+    ? providersBody.replace(subRe, block)
+    : `${providersBody.replace(/\s*$/, "")}${providersBody.trim() ? "\n" : ""}${block}`;
+  return yaml.replace(PROVIDERS_BLOCK_RE, `providers:\n${nextBody}`);
+};
 
 // Parse current model block back to fields (best-effort, simple key:value)
 const parseModelBlock = (yaml) => {
@@ -93,10 +134,24 @@ const readEnvFile = async () => {
   }
 };
 
-// Detect 9router by base_url containing localhost/127.0.0.1 or matching tunnel URL
-const has9RouterConfig = (modelCfg) => {
-  if (!modelCfg?.base_url) return false;
-  return modelCfg.provider === "custom" && /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(modelCfg.base_url);
+const removeProviders888Block = (yaml) => {
+  const providersMatch = yaml.match(PROVIDERS_BLOCK_RE);
+  if (!providersMatch) return yaml;
+  const subRe = /^[ \t]{2}888router:[ \t]*\r?\n((?:[ \t]{4,}.*\r?\n?|[ \t]*\r?\n)*)/m;
+  const nextBody = providersMatch[1].replace(subRe, "");
+  if (!nextBody.trim()) {
+    return yaml.replace(PROVIDERS_BLOCK_RE, "").replace(/^\n+/, "");
+  }
+  return yaml.replace(PROVIDERS_BLOCK_RE, `providers:\n${nextBody}`);
+};
+
+// Detect 888router by base_url containing localhost/127.0.0.1 or providers.888router
+const has9RouterConfig = (modelCfg, provider888Cfg) => {
+  const isLocal = (u) => Boolean(u && /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(u));
+  if ((modelCfg?.provider === "custom" || modelCfg?.provider === "custom:888router") && isLocal(modelCfg?.base_url)) {
+    return true;
+  }
+  return isLocal(provider888Cfg?.base_url);
 };
 
 export async function GET() {
@@ -107,10 +162,14 @@ export async function GET() {
     }
     const yaml = await readConfigYaml();
     const model = parseModelBlock(yaml);
+    const provider888 = parseProvider888Block(yaml);
     return NextResponse.json({
       installed: true,
-      settings: { model },
-      has9Router: has9RouterConfig(model),
+      settings: {
+        model,
+        providers: provider888 ? { "888router": provider888 } : {},
+      },
+      has9Router: has9RouterConfig(model, provider888),
       configPath: getHermesConfigPath(),
     });
   } catch (error) {
@@ -131,9 +190,10 @@ export async function POST(request) {
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
-    // Update config.yaml — replace/insert model: block, keep everything else
+    // Update config.yaml — configure both model: (custom:888router) and providers.888router (with session_affinity_header)
     const existingYaml = await readConfigYaml();
-    const newYaml = upsertModelBlock(existingYaml, buildModelBlock(model, normalizedBaseUrl));
+    let newYaml = upsertModelBlock(existingYaml, buildModelBlock(model, normalizedBaseUrl));
+    newYaml = upsertProviders888Block(newYaml, model, normalizedBaseUrl);
     await fs.writeFile(getHermesConfigPath(), newYaml);
 
     // Update .env — upsert OPENAI_API_KEY only when caller provides one
@@ -166,9 +226,9 @@ export async function DELETE() {
       }
       throw error;
     }
-    const newYaml = removeModelBlock(yaml);
+    const newYaml = removeProviders888Block(removeModelBlock(yaml));
     await fs.writeFile(configPath, newYaml);
-    return NextResponse.json({ success: true, message: `${PROVIDER_NAME} model block removed` });
+    return NextResponse.json({ success: true, message: `${PROVIDER_NAME} configuration removed` });
   } catch (error) {
     console.log("Error resetting hermes settings:", error);
     return NextResponse.json({ error: "Failed to reset hermes settings" }, { status: 500 });

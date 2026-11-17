@@ -21,6 +21,8 @@ const PERIOD_MS = { "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 
 // In-memory state shared across Next.js modules
 if (!global._pendingRequests) global._pendingRequests = { byModel: {}, byAccount: {} };
 if (!global._lastErrorProvider) global._lastErrorProvider = { provider: "", ts: 0 };
+if (!global._recentErrorActivity) global._recentErrorActivity = [];
+if (!global._lastGatewayAttemptAt) global._lastGatewayAttemptAt = null;
 if (!global._statsEmitter) {
   global._statsEmitter = new EventEmitter();
   global._statsEmitter.setMaxListeners(50);
@@ -32,6 +34,7 @@ if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update:
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
+const recentErrorActivity = global._recentErrorActivity;
 const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
@@ -153,6 +156,105 @@ async function calculateCost(provider, model, tokens) {
   }
 }
 
+const ERROR_RING_MAX = 1000;
+const ERROR_RING_TTL_MS = 10 * 60 * 1000;
+
+export function computeLast10MinutesActivity(db, nowMs = Date.now()) {
+  const currentMinuteStart = Math.floor(nowMs / 60000) * 60000;
+  const tenMinutesAgoMs = currentMinuteStart - 9 * 60 * 1000;
+  const bucketMap = {};
+  const last10Minutes = [];
+
+  for (let i = 0; i < 10; i++) {
+    const ts = currentMinuteStart - (9 - i) * 60 * 1000;
+    bucketMap[ts] = { requests: 0, errors: 0, memErrors: 0, sqlErrors: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
+    last10Minutes.push(bucketMap[ts]);
+  }
+
+  let latestTs = global._lastGatewayAttemptAt ? new Date(global._lastGatewayAttemptAt).getTime() : 0;
+  if (!Number.isFinite(latestTs)) latestTs = 0;
+
+  const cutoffIso = new Date(tenMinutesAgoMs).toISOString();
+  const nowIso = new Date(nowMs).toISOString();
+
+  const recent10 = db.all(
+    `SELECT timestamp, promptTokens, completionTokens, cost, status FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+    [cutoffIso, nowIso]
+  );
+  for (const r of recent10) {
+    const tt = new Date(r.timestamp).getTime();
+    if (tt > latestTs) latestTs = tt;
+    const minuteStart = Math.floor(tt / 60000) * 60000;
+    const bucket = bucketMap[minuteStart];
+    if (!bucket) continue;
+    if (r.status === "error" || r.status === "failed") {
+      bucket.errors++;
+    } else {
+      bucket.requests++;
+    }
+    bucket.promptTokens += r.promptTokens || 0;
+    bucket.completionTokens += r.completionTokens || 0;
+    bucket.cost += r.cost || 0;
+  }
+
+  // Merge non-success attempts from requestDetails (when observability is enabled or pre-restart)
+  try {
+    const detailErrors = db.all(
+      `SELECT timestamp, status FROM requestDetails WHERE timestamp >= ? AND timestamp <= ? AND status IS NOT NULL AND status != 'success' AND status != 'empty'`,
+      [cutoffIso, nowIso]
+    );
+    for (const d of detailErrors) {
+      const tt = new Date(d.timestamp).getTime();
+      if (tt > latestTs) latestTs = tt;
+      const minuteStart = Math.floor(tt / 60000) * 60000;
+      if (bucketMap[minuteStart]) bucketMap[minuteStart].sqlErrors++;
+    }
+  } catch {
+    // requestDetails table may not exist in lightweight unit test DBs
+  }
+
+  // Merge real-time in-memory failed/tripped attempts (visible immediately even with observability off)
+  for (let i = recentErrorActivity.length - 1; i >= 0; i--) {
+    const ts = recentErrorActivity[i];
+    if (ts < nowMs - ERROR_RING_TTL_MS) {
+      recentErrorActivity.splice(i, 1);
+      continue;
+    }
+    if (ts > latestTs) latestTs = ts;
+    const minuteStart = Math.floor(ts / 60000) * 60000;
+    if (bucketMap[minuteStart]) bucketMap[minuteStart].memErrors++;
+  }
+
+  for (const bucket of last10Minutes) {
+    bucket.errors += Math.max(bucket.memErrors, bucket.sqlErrors);
+    delete bucket.memErrors;
+    delete bucket.sqlErrors;
+  }
+
+  // Discover latest timestamp overall so UI can show accurate idle status when last 10m is 0
+  if (latestTs === 0) {
+    try {
+      const hMax = db.get(`SELECT MAX(timestamp) as ts FROM usageHistory`);
+      if (hMax?.ts) {
+        const ms = new Date(hMax.ts).getTime();
+        if (ms > latestTs) latestTs = ms;
+      }
+    } catch {}
+    try {
+      const dMax = db.get(`SELECT MAX(timestamp) as ts FROM requestDetails`);
+      if (dMax?.ts) {
+        const ms = new Date(dMax.ts).getTime();
+        if (ms > latestTs) latestTs = ms;
+      }
+    } catch {}
+  }
+
+  return {
+    last10Minutes,
+    lastActivityAt: latestTs > 0 ? new Date(latestTs).toISOString() : null,
+  };
+}
+
 export function trackPendingRequest(model, provider, connectionId, started, error = false) {
   const modelKey = provider ? `${model} (${provider})` : model;
   const timerKey = `${connectionId}|${modelKey}`;
@@ -173,6 +275,9 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
     }
   }
 
+  const nowMs = Date.now();
+  global._lastGatewayAttemptAt = new Date(nowMs).toISOString();
+
   if (started) {
     clearTimeout(pendingTimers[timerKey]);
     pendingTimers[timerKey] = setTimeout(() => {
@@ -188,12 +293,19 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
     delete pendingTimers[timerKey];
   }
 
-  if (!started && error && provider) {
-    lastErrorProvider.provider = provider.toLowerCase();
-    lastErrorProvider.ts = Date.now();
+  if (!started && error) {
+    if (provider) {
+      lastErrorProvider.provider = provider.toLowerCase();
+      lastErrorProvider.ts = nowMs;
+    }
+    recentErrorActivity.push(nowMs);
+    if (recentErrorActivity.length > ERROR_RING_MAX) {
+      recentErrorActivity.splice(0, recentErrorActivity.length - ERROR_RING_MAX);
+    }
+    scheduleStatsEvent("update", 250);
   }
 
-  const t = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const t = new Date(nowMs).toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   console.log(`[${t}] [PENDING] ${started ? "START" : "END"}${error ? " (ERROR)" : ""} | provider=${provider} | model=${model}`);
   scheduleStatsEvent("pending");
 }

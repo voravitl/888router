@@ -92,7 +92,17 @@ const MAX_ASSISTANT_SESSIONS = 5000;
 const MAX_CONTINUATION_SESSIONS = 5000;
 
 // Client headers/body fields that carry an upstream session id (priority order)
-const SESSION_HEADER_KEYS = ["x-session-id", "session-id", "session_id", "x-amp-thread-id"];
+const SESSION_HEADER_KEYS = [
+    "x-session-id",
+    "session-id",
+    "session_id",
+    "x-hermes-session-id",
+    "x-opencode-session",
+    "x-litellm-session-id",
+    "x-grok-conv-id",
+    "x-conversation-id",
+    "x-amp-thread-id",
+];
 
 function sha16(text) {
     return crypto.createHash("sha256").update(text).digest("hex").slice(0, 16);
@@ -154,6 +164,7 @@ function extractClientSessionId(headers, body, scope = "") {
         normalizeSessionId(body?.prompt_cache_key) ||
         normalizeSessionId(body?.session_id) ||
         normalizeSessionId(body?.conversation_id) ||
+        normalizeSessionId(body?.metadata?.live_session_id) ||
         (scope === "kiro" ? null : normalizeSessionId(body?.metadata?.user_id));
     if (fromBody) return fromBody;
 
@@ -163,6 +174,20 @@ function extractClientSessionId(headers, body, scope = "") {
         if (clientReqId) return clientReqId;
     }
     return null;
+}
+
+export { extractClientSessionId };
+
+/**
+ * Resolve a conversation-only session id (never falls back to workspaceId or
+ * per-connection defaults) so callers can gate per-conversation affinity and
+ * loop tracking without pinning stateless one-shot traffic.
+ */
+export function resolveConversationAffinityId({ headers, body, scope = "" } = {}) {
+    const client = extractClientSessionId(headers, body, scope);
+    if (client) return client;
+    if (scope === "kiro") return null;
+    return assistantTextSessionId(`${scope}:affinity`, body);
 }
 
 function requestMessages(body) {
