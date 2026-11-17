@@ -34,16 +34,18 @@ export function resolveAntigravityFlashModel(modelId) {
 const HYDROGEN_TIERS = new Set(["xhigh", "high", "medium", "low"]);
 
 /**
- * Resolve Gemini 4 Hydrogen aliases (including cached -tiered / -tiered-<level>)
- * to canonical "gemini-4-hydrogen(<level>)" so Antigravity receives wire model
- * "gemini-4-hydrogen" + matching thinkingLevel.
+ * Resolve Gemini 4 Hydrogen aliases (including bare "gemini-4-hydrogen",
+ * "-tiered", and "-tiered-<level>") to canonical "gemini-4-hydrogen-<level>(<level>)"
+ * so Antigravity receives the live wire model "gemini-4-hydrogen-<level>"
+ * (bare "gemini-4-hydrogen" returns 404 NOT_FOUND upstream) plus matching thinkingLevel.
  */
 export function resolveAntigravityHydrogenModel(modelId) {
   if (typeof modelId !== "string" || !modelId) return modelId;
   const match = modelId.trim().match(/^gemini-4-hydrogen(?:-tiered)?(?:-(xhigh|high|medium|low))?$/i);
   if (!match) return modelId;
   const tier = match[1] ? match[1].toLowerCase() : "high";
-  return `gemini-4-hydrogen(${HYDROGEN_TIERS.has(tier) ? tier : "high"})`;
+  const resolvedTier = HYDROGEN_TIERS.has(tier) ? tier : "high";
+  return `gemini-4-hydrogen-${resolvedTier}(${resolvedTier})`;
 }
 
 // Antigravity retired/unroutable live-API patterns to exclude from /v1/models and sync.
