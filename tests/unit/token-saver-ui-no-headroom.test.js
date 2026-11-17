@@ -61,11 +61,17 @@ const RETIRED_NON_SAVER_PATTERNS = [
   /ponytailEnabled/,
   /ponytailLevel/,
   /ponytail/i,
+  /Compress LLM output/i,
+  /CAVEMAN_LEVELS/,
+  /WENYAN_LOCALES/,
+  /cavemanEnabled/,
+  /cavemanLevel/,
+  /caveman/i,
 ];
 
 describe("Token Saver & OptimizationSavings UI cleanup, Prompt Cache & Reasoning Cap", () => {
   for (const relPath of TOKEN_SAVER_UI_FILES) {
-    it(`${relPath} removes Pruner, Response Cache, and Ponytail UI controls/cards`, () => {
+    it(`${relPath} removes Pruner, Response Cache, Ponytail, and Caveman UI controls/cards`, () => {
       const content = readRepoFile(relPath);
       for (const pattern of RETIRED_NON_SAVER_PATTERNS) {
         expect(content, `${relPath} matched retired pattern ${pattern}`).not.toMatch(pattern);
@@ -86,7 +92,7 @@ describe("Token Saver & OptimizationSavings UI cleanup, Prompt Cache & Reasoning
     expect(content).not.toMatch(/pruning/i);
   });
 
-  it("TokenSaverClient exposes RTK, Cap reasoning effort (Off/Low/Medium), and Caveman controls", () => {
+  it("TokenSaverClient exposes RTK, Cap reasoning effort (Off/Low/Medium), Session Affinity, and Loop Breaker without Caveman", () => {
     const content = readRepoFile("src/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js");
     expect(content).toContain("Compress tool output");
     expect(content).toMatch(/lossless JSON/i);
@@ -100,9 +106,21 @@ describe("Token Saver & OptimizationSavings UI cleanup, Prompt Cache & Reasoning
     expect(content).toMatch(/fetch\(["']\/api\/settings["']/);
     expect(content).toMatch(/method:\s*["']PATCH["']/);
 
-    expect(content).toContain("Compress LLM output");
-    expect(content).toContain("Applies to translated/OpenAI/DeepSeek/Gemini traffic");
-    expect(content).toContain("skipped on Claude Code passthrough to protect prompt cache");
+    expect(content).toContain("sessionAffinityEnabled");
+    expect(content).toContain("loopBreakerEnabled");
+
+    const cmdPalette = readRepoFile("src/shared/components/CommandPalette.js");
+    expect(cmdPalette).not.toMatch(/\bcaveman\b/i);
+    expect(cmdPalette).not.toMatch(/\bponytail\b/i);
+  });
+
+  it("Profile/Settings page exposes Thai Simple Response Style selector (off / auto / all)", () => {
+    const profileSrc = readRepoFile("src/app/(dashboard)/dashboard/profile/page.js");
+    expect(profileSrc).toContain("Thai Simple");
+    expect(profileSrc).toContain("thaiSimpleMode");
+    expect(profileSrc).toMatch(/["']off["']/);
+    expect(profileSrc).toMatch(/["']auto["']/);
+    expect(profileSrc).toMatch(/["']all["']/);
   });
 
   it("OptimizationSavings uses a 2-column grid with Prompt Cache and RTK Compression only", () => {

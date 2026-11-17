@@ -25,6 +25,7 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { capTools } from "../utils/toolCap.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { injectThaiSimple, normalizeThaiSimpleMode } from "../rtk/thaiSimple.js";
 import { shouldInjectUniversalToolPrompt, injectUniversalToolPrompt, stripPrivateToolFields } from "../translator/concerns/universalToolPrompt.js";
 import { adaptHistoryForUniversalTools } from "../translator/concerns/historyAdapter.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
@@ -196,7 +197,7 @@ function applyReasoningEffortCap(translatedBody, cap, { finalFormat, provider, c
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, reasoningEffortCap = "off", outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode, isCombo = false, signal = null }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, prunerEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, thaiSimpleMode = "off", sourceFormatOverride, providerThinking, reasoningEffortCap = "off", outboundProxyEnabled, outboundProxyUrl, outboundNoProxy, universalToolsMode, isCombo = false, signal = null }) {
   body = structuredClone(body);
   const clientOutputBudget = { max_tokens: reservedOutputTokens(body) };
   const clientThinking = captureThinking(body) || parseSuffix(body.model).override;
@@ -522,6 +523,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!preserveRequestInput && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     log?.debug?.("PONYTAIL", `${ponytailLevel} | ${finalFormat}`);
+  }
+
+  // Optimized Thai Simple output style (cache-safe: respects Claude passthrough, Hermes SOUL/auto-skip, JSON schema, and existing Thai rules)
+  if (injectThaiSimple(translatedBody, finalFormat, {
+    mode: thaiSimpleMode,
+    originalBody: body,
+    clientTool,
+    preserveClaudeClientInput,
+    headers: clientRawRequest?.headers || {},
+  })) {
+    log?.debug?.("THAI_SIMPLE", `${normalizeThaiSimpleMode(thaiSimpleMode)} | ${finalFormat}`);
   }
 
   // Auto Prompt Caching: inject cache_control or normalize static prefix

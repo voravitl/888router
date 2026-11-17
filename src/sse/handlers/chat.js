@@ -361,8 +361,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Prefer compose sidecar URL when settings still say localhost (Docker).
       headroomUrl: resolveHeadroomUrl(chatSettings.headroomUrl || DEFAULT_HEADROOM_URL),
       headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
+      thaiSimpleMode: chatSettings.thaiSimpleMode || "off",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
       providerThinking,

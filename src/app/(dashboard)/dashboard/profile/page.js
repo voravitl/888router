@@ -16,6 +16,24 @@ const FALLBACK_STRATEGY_OPTIONS = [
   { value: "weighted", label: "Weighted — score-based" },
 ];
 
+const THAI_SIMPLE_MODE_OPTIONS = [
+  {
+    id: "off",
+    label: "Off",
+    desc: "Do not inject Thai Simple instructions from gateway",
+  },
+  {
+    id: "auto",
+    label: "Auto (OpenCode / Cursor / Chat)",
+    desc: "Applies to bare OpenAI/Gemini/translated chats (<100k+ cache-safe); auto-skips Claude Code, Hermes, structured JSON, and existing Thai style rules",
+  },
+  {
+    id: "all",
+    label: "All + Hermes",
+    desc: "Also applies to Hermes Agent on /v1/chat/completions unless SOUL.md/system prompt already sets Thai rules (still protects Claude Code & JSON outputs)",
+  },
+];
+
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
   const cookie = document.cookie
@@ -35,6 +53,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [universalToolsError, setUniversalToolsError] = useState("");
   const [universalToolsSaving, setUniversalToolsSaving] = useState(false);
+  const [thaiSimpleError, setThaiSimpleError] = useState("");
+  const [thaiSimpleSaving, setThaiSimpleSaving] = useState(false);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
@@ -248,6 +268,28 @@ export default function ProfilePage() {
       setUniversalToolsError("Failed to update universal tools mode");
     } finally {
       setUniversalToolsSaving(false);
+    }
+  };
+
+  const updateThaiSimpleMode = async (mode) => {
+    setThaiSimpleSaving(true);
+    setThaiSimpleError("");
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ thaiSimpleMode: mode }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, ...data }));
+      } else {
+        setThaiSimpleError(data.error || "Failed to update Thai Simple mode");
+      }
+    } catch (err) {
+      setThaiSimpleError("Failed to update Thai Simple mode");
+    } finally {
+      setThaiSimpleSaving(false);
     }
   };
 
@@ -1668,6 +1710,62 @@ export default function ProfilePage() {
             </p>
             {universalToolsError && (
               <p className="text-xs sm:text-sm text-red-500 pt-1">{universalToolsError}</p>
+            )}
+          </div>
+        </Card>
+
+        {/* Response Style (Thai Simple) Settings */}
+        <Card id="response-style">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">translate</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Response Style (Thai Simple)</h3>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start sm:items-center justify-between gap-4 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Clear, Human-Readable Thai Output</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Answer-first Thai with compact tables/diagrams while keeping code, paths, and errors exact. Static turn-1 prefix protects prompt caches even past 100k tokens.
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label="Thai Simple response style">
+                {THAI_SIMPLE_MODE_OPTIONS.map((opt) => {
+                  const activeMode = settings.thaiSimpleMode || "off";
+                  const selected = activeMode === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      disabled={loading || thaiSimpleSaving}
+                      onClick={() => updateThaiSimpleMode(opt.id)}
+                      aria-pressed={selected}
+                      title={opt.desc}
+                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                        selected
+                          ? "bg-primary text-white border-primary"
+                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <p className="text-xs sm:text-sm text-text-muted/80 pt-2 border-t border-border/50">
+              Mode: <code className="bg-border/30 px-1 rounded">{settings.thaiSimpleMode || "off"}</code>
+              {" — "}
+              {THAI_SIMPLE_MODE_OPTIONS.find((opt) => opt.id === (settings.thaiSimpleMode || "off"))?.desc}
+            </p>
+            <p className="text-xs text-text-muted/70">
+              Per-request override header: <code className="bg-border/30 px-1 rounded">x-888-output-style: thai-simple | off</code>
+            </p>
+            {thaiSimpleError && (
+              <p className="text-xs sm:text-sm text-red-500 pt-1">{thaiSimpleError}</p>
             )}
           </div>
         </Card>

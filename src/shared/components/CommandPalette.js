@@ -10,16 +10,16 @@ const CATALOG_ROUTES = [
   { code: "888-01", label: "Usage & Live Traces", group: "TELEMETRY", href: "/dashboard/usage", keywords: "logs telemetry analytics stats waterfall trace cost latency" },
   { code: "888-02", label: "Gateway & API Keys", group: "GATEWAY", href: "/dashboard/endpoint", keywords: "endpoint key curl sdk tailscale cloudflare tunnel" },
   { code: "888-03", label: "Quota Tracker", group: "TELEMETRY", href: "/dashboard/quota", keywords: "limits quota usage budget cap" },
-  { code: "888-04", label: "Token Savings", group: "TELEMETRY", href: "/dashboard/token-saver", keywords: "rtk caveman ponytail compression save" },
+  { code: "888-04", label: "Token Savings", group: "TELEMETRY", href: "/dashboard/token-saver", keywords: "rtk compression save prompt cache affinity loop breaker" },
   { code: "888-05", label: "Providers & Connections", group: "ROUTING", href: "/dashboard/providers", keywords: "openai anthropic gemini claude codex oauth apikey matrix" },
   { code: "888-06", label: "Combos & Fallbacks", group: "ROUTING", href: "/dashboard/combos", keywords: "combo fallback round robin pipeline locks" },
   { code: "888-07", label: "Test Chat Playground", group: "TOOLS", href: "/dashboard/basic-chat", keywords: "chat test prompt model" },
-  { code: "888-08", label: "CLI Tools Sync", group: "TOOLS", href: "/dashboard/cli-tools", keywords: "claude codex cursor opencode cline" },
+  { code: "888-08", label: "CLI Tools Sync", group: "TOOLS", href: "/dashboard/cli-tools", keywords: "claude codex cursor opencode cline hermes" },
   { code: "888-09", label: "Web Fetch & Search", group: "MEDIA", href: "/dashboard/media-providers/web", keywords: "web search fetch media" },
   { code: "888-10", label: "Proxy Pools", group: "INFRA", href: "/dashboard/proxy-pools", keywords: "proxy socks http upstream" },
   { code: "888-11", label: "Agent Skills", group: "INFRA", href: "/dashboard/skills", keywords: "skills mcp" },
   { code: "888-12", label: "Console Log", group: "INFRA", href: "/dashboard/console-log", keywords: "console stdout debug" },
-  { code: "888-13", label: "Settings & Profile", group: "SYSTEM", href: "/dashboard/profile", keywords: "settings theme password auth fallback" },
+  { code: "888-13", label: "Settings & Profile", group: "SYSTEM", href: "/dashboard/profile", keywords: "settings theme password auth fallback thai simple response style" },
 ];
 
 export default function CommandPalette({ open, onClose }) {
