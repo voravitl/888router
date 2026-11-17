@@ -144,6 +144,22 @@ describe("Runaway Loop Circuit Breaker (open-sse/utils/loopBreaker.js + chat.js)
     expect(burst.reason).toBe("session_burst_loop");
   });
 
+  it("resets trailing streak at Responses API input_text user turns", async () => {
+    const { detectRunawayLoop, clearLoopBreakerStore } = await import("../../open-sse/utils/loopBreaker.js");
+    clearLoopBreakerStore();
+
+    const input = [];
+    for (let i = 0; i < 4; i++) {
+      input.push({ type: "function_call", name: "bash", arguments: '{"cmd":"pwd"}' });
+      input.push({ type: "function_call_output", output: "/app" });
+    }
+    input.push({ type: "message", role: "user", content: [{ type: "input_text", text: "check one more time" }] });
+    input.push({ type: "function_call", name: "bash", arguments: '{"cmd":"pwd"}' });
+    input.push({ type: "function_call_output", output: "/app" });
+
+    expect(detectRunawayLoop({ body: { input }, headers: {} }).tripped).toBe(false);
+  });
+
   const setupLoopBreakerChatMocks = async () => {
     vi.doMock("@/lib/localDb", () => ({
       getSettings: mocks.getSettings,

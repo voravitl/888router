@@ -164,7 +164,7 @@ function isPlainHumanTurn(item) {
   if (typeof item.content === "string") return item.content.trim().length > 0;
   if (Array.isArray(item.content)) {
     const hasToolResult = item.content.some((b) => b?.type === "tool_result");
-    const hasText = item.content.some((b) => b?.type === "text" && String(b.text || "").trim().length > 0);
+    const hasText = item.content.some((b) => (b?.type === "text" || b?.type === "input_text") && String(b.text || "").trim().length > 0);
     return !hasToolResult && hasText;
   }
   return false;
