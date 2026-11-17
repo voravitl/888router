@@ -237,7 +237,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, depth + 1, opts);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, true, depth + 1, {
+              ...opts,
+              sessionAffinityEnabled: options?.sessionAffinityEnabled,
+            });
           },
           log,
           comboName: modelStr,
@@ -253,7 +256,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: comboModels,
         resolveModelInfo: getModelInfo,
-        handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, depth + 1, opts),
+        handleSingleModel: (b, m, opts) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, true, depth + 1, {
+          ...opts,
+          sessionAffinityEnabled: options?.sessionAffinityEnabled,
+        }),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -283,6 +289,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
+  const sessionAffinityEnabled = options?.sessionAffinityEnabled !== false;
+  const affinityKey = sessionAffinityEnabled
+    ? resolveChatSessionAffinityKey({
+        headers: clientRawRequest?.headers || (request?.headers ? Object.fromEntries(request.headers.entries()) : {}),
+        body,
+        provider,
+      })
+    : null;
+
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
@@ -290,7 +305,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   while (true) {
     if (requestSignal?.aborted) return errorResponse(499, "Request aborted");
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const preferredConnectionId = affinityKey ? getPinnedConnection(affinityKey, excludeConnectionIds) : null;
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -379,6 +395,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) {
+      if (affinityKey && credentials.connectionId) {
+        pinConnection(affinityKey, credentials.connectionId);
+      }
       const latencyMs = Date.now() - dispatchStartedAt;
       const emaUpdate = updateHealthEma(credentials._connection, { ok: true, latencyMs, outputTokens: undefined });
       if (Object.keys(emaUpdate).length > 0) {

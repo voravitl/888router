@@ -110,7 +110,7 @@ function normalizeErrorSignature(text) {
   return String(text || "")
     .toLowerCase()
     .replace(/\b[0-9a-f]{6,}\b/g, "#")
-    .replace(/\b\d+\b/g, "#")
+    .replace(/\d+/g, "#")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 240);

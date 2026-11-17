@@ -103,40 +103,7 @@ describe("Session Affinity (open-sse/utils/sessionAffinity.js + sessionManager +
     expect(multiTurnKey).toMatch(/^claude:/);
   });
 
-  it("chat.js pins successful session connections via preferredConnectionId and falls back cleanly when excluded", async () => {
-    mocks.getSettings.mockResolvedValue({
-      requireApiKey: false,
-      rtkEnabled: true,
-      sessionAffinityEnabled: true,
-      loopBreakerEnabled: true,
-    });
-    mocks.getComboModelsMock.mockResolvedValue(null);
-    mocks.getModelInfoMock.mockResolvedValue({ provider: "claude", model: "claude-sonnet-5-5" });
-    mocks.checkAndRefreshTokenMock.mockImplementation(async (_p, creds) => creds);
-    mocks.markAccountUnavailableMock.mockResolvedValue({ shouldFallback: true });
-
-    let callNum = 0;
-    mocks.getProviderCredentialsMock.mockImplementation(async (_provider, exclude, _model, opts) => {
-      callNum++;
-      if (opts?.preferredConnectionId && !exclude?.has(opts.preferredConnectionId)) {
-        return {
-          connectionId: opts.preferredConnectionId,
-          connectionName: `acct-${opts.preferredConnectionId}`,
-          apiKey: "tok",
-          providerSpecificData: {},
-        };
-      }
-      if (!exclude?.has("conn-2")) {
-        return { connectionId: "conn-2", connectionName: "acct-2", apiKey: "tok-2", providerSpecificData: {} };
-      }
-      return { connectionId: "conn-1", connectionName: "acct-1", apiKey: "tok-1", providerSpecificData: {} };
-    });
-
-    mocks.handleChatCoreMock.mockResolvedValue({
-      success: true,
-      response: new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    });
-
+  const setupChatHandlerMocks = async () => {
     vi.doMock("@/lib/localDb", () => ({
       getSettings: mocks.getSettings,
       updateProviderConnection: vi.fn(async () => {}),
@@ -175,7 +142,44 @@ describe("Session Affinity (open-sse/utils/sessionAffinity.js + sessionManager +
     clearAffinityStore();
     clearLoopBreakerStore();
 
-    const { handleChat } = await import("../../src/sse/handlers/chat.js");
+    return await import("../../src/sse/handlers/chat.js");
+  };
+
+  it("chat.js pins successful session connections via preferredConnectionId and falls back cleanly when excluded", async () => {
+    mocks.getSettings.mockResolvedValue({
+      requireApiKey: false,
+      rtkEnabled: true,
+      sessionAffinityEnabled: true,
+      loopBreakerEnabled: true,
+    });
+    mocks.getComboModelsMock.mockResolvedValue(null);
+    mocks.getModelInfoMock.mockResolvedValue({ provider: "claude", model: "claude-sonnet-5-5" });
+    mocks.checkAndRefreshTokenMock.mockImplementation(async (_p, creds) => creds);
+    mocks.markAccountUnavailableMock.mockResolvedValue({ shouldFallback: true });
+
+    let callNum = 0;
+    mocks.getProviderCredentialsMock.mockImplementation(async (_provider, exclude, _model, opts) => {
+      callNum++;
+      if (opts?.preferredConnectionId && !exclude?.has(opts.preferredConnectionId)) {
+        return {
+          connectionId: opts.preferredConnectionId,
+          connectionName: `acct-${opts.preferredConnectionId}`,
+          apiKey: "tok",
+          providerSpecificData: {},
+        };
+      }
+      if (!exclude?.has("conn-2")) {
+        return { connectionId: "conn-2", connectionName: "acct-2", apiKey: "tok-2", providerSpecificData: {} };
+      }
+      return { connectionId: "conn-1", connectionName: "acct-1", apiKey: "tok-1", providerSpecificData: {} };
+    });
+
+    mocks.handleChatCoreMock.mockResolvedValue({
+      success: true,
+      response: new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    });
+
+    const { handleChat } = await setupChatHandlerMocks();
 
     // Turn 1: Hermes session header picks conn-2, succeeds, and pins conn-2
     const makeReq = (sid, text) => new Request("http://localhost/v1/chat/completions", {
@@ -221,5 +225,72 @@ describe("Session Affinity (open-sse/utils/sessionAffinity.js + sessionManager +
     const r4 = await handleChat(makeReq("hermes-s1", "turn 4"));
     expect(r4.status).toBe(200);
     expect(mocks.getProviderCredentialsMock.mock.calls[4][3]).toEqual({ preferredConnectionId: "conn-1" });
+  });
+
+  it("chat.js passes preferredConnectionId: null and skips pinning when sessionAffinityEnabled is false (including nested combos)", async () => {
+    mocks.getComboModelsMock.mockImplementation(async (name) => {
+      if (name === "combo-outer") return ["combo-inner"];
+      if (name === "combo-inner") return ["claude/claude-sonnet-5-5"];
+      return null;
+    });
+    mocks.getModelInfoMock.mockImplementation(async (modelStr) => {
+      if (modelStr === "claude/claude-sonnet-5-5") {
+        return { provider: "claude", model: "claude-sonnet-5-5" };
+      }
+      return { provider: null, model: modelStr };
+    });
+    mocks.checkAndRefreshTokenMock.mockImplementation(async (_p, creds) => creds);
+    mocks.markAccountUnavailableMock.mockResolvedValue({ shouldFallback: false });
+    mocks.getProviderCredentialsMock.mockResolvedValue({
+      connectionId: "conn-2",
+      connectionName: "acct-2",
+      apiKey: "tok-2",
+      providerSpecificData: {},
+    });
+    mocks.handleChatCoreMock.mockResolvedValue({
+      success: true,
+      response: new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    });
+
+    const { handleChat } = await setupChatHandlerMocks();
+
+    const makeReq = (model, sid) => new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-session-id": sid,
+      },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+
+    // Nested combo with top-level sessionAffinityEnabled: false propagates via options (without re-reading setting)
+    mocks.getSettings
+      .mockResolvedValueOnce({ requireApiKey: false, sessionAffinityEnabled: false, loopBreakerEnabled: true })
+      .mockResolvedValueOnce({ comboStrategy: "fallback", sessionAffinityEnabled: true })
+      .mockResolvedValueOnce({ sessionAffinityEnabled: true });
+
+    const rNested = await handleChat(makeReq("combo-outer", "hermes-off-1"));
+    expect(rNested.status).toBe(200);
+    expect(mocks.getProviderCredentialsMock.mock.calls[0][3]).toEqual({ preferredConnectionId: null });
+
+    // Next turn with affinity enabled must still see null (turn 1 did not pin conn-2), then pin conn-2
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false, sessionAffinityEnabled: true, loopBreakerEnabled: true });
+    const rEnabledFirst = await handleChat(makeReq("claude/claude-sonnet-5-5", "hermes-off-1"));
+    expect(rEnabledFirst.status).toBe(200);
+    expect(mocks.getProviderCredentialsMock.mock.calls[1][3]).toEqual({ preferredConnectionId: null });
+
+    const rEnabledSecond = await handleChat(makeReq("claude/claude-sonnet-5-5", "hermes-off-1"));
+    expect(rEnabledSecond.status).toBe(200);
+    expect(mocks.getProviderCredentialsMock.mock.calls[2][3]).toEqual({ preferredConnectionId: "conn-2" });
+
+    // Disabling affinity ignores any already-pinned entry
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false, sessionAffinityEnabled: false, loopBreakerEnabled: true });
+    const rDisabledAfterPin = await handleChat(makeReq("claude/claude-sonnet-5-5", "hermes-off-1"));
+    expect(rDisabledAfterPin.status).toBe(200);
+    expect(mocks.getProviderCredentialsMock.mock.calls[3][3]).toEqual({ preferredConnectionId: null });
   });
 });

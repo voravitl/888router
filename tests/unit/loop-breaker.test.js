@@ -144,27 +144,7 @@ describe("Runaway Loop Circuit Breaker (open-sse/utils/loopBreaker.js + chat.js)
     expect(burst.reason).toBe("session_burst_loop");
   });
 
-  it("chat.js short-circuits tripped loops with 400 loop_detected before invoking handleChatCore or combo rotation", async () => {
-    mocks.getSettings.mockResolvedValue({
-      requireApiKey: false,
-      rtkEnabled: true,
-      loopBreakerEnabled: true,
-      sessionAffinityEnabled: true,
-    });
-    mocks.getComboModelsMock.mockResolvedValue(["openai/gpt-5"]);
-    mocks.getModelInfoMock.mockResolvedValue({ provider: "openai", model: "gpt-5" });
-    mocks.getProviderCredentialsMock.mockResolvedValue({
-      connectionId: "conn-1",
-      connectionName: "openai-1",
-      apiKey: "sk-test",
-      providerSpecificData: {},
-    });
-    mocks.checkAndRefreshTokenMock.mockImplementation(async (_p, creds) => creds);
-    mocks.handleChatCoreMock.mockResolvedValue({
-      success: true,
-      response: new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    });
-
+  const setupLoopBreakerChatMocks = async () => {
     vi.doMock("@/lib/localDb", () => ({
       getSettings: mocks.getSettings,
       updateProviderConnection: vi.fn(async () => {}),
@@ -200,7 +180,31 @@ describe("Runaway Loop Circuit Breaker (open-sse/utils/loopBreaker.js + chat.js)
 
     const { clearLoopBreakerStore } = await import("../../open-sse/utils/loopBreaker.js");
     clearLoopBreakerStore();
-    const { handleChat } = await import("../../src/sse/handlers/chat.js");
+    return await import("../../src/sse/handlers/chat.js");
+  };
+
+  it("chat.js short-circuits tripped loops with 400 loop_detected before invoking handleChatCore or combo rotation", async () => {
+    mocks.getSettings.mockResolvedValue({
+      requireApiKey: false,
+      rtkEnabled: true,
+      loopBreakerEnabled: true,
+      sessionAffinityEnabled: true,
+    });
+    mocks.getComboModelsMock.mockResolvedValue(["openai/gpt-5"]);
+    mocks.getModelInfoMock.mockResolvedValue({ provider: "openai", model: "gpt-5" });
+    mocks.getProviderCredentialsMock.mockResolvedValue({
+      connectionId: "conn-1",
+      connectionName: "openai-1",
+      apiKey: "sk-test",
+      providerSpecificData: {},
+    });
+    mocks.checkAndRefreshTokenMock.mockImplementation(async (_p, creds) => creds);
+    mocks.handleChatCoreMock.mockResolvedValue({
+      success: true,
+      response: new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    });
+
+    const { handleChat } = await setupLoopBreakerChatMocks();
 
     const messages = [{ role: "user", content: "loop" }];
     for (let i = 0; i < 5; i++) {
@@ -235,5 +239,82 @@ describe("Runaway Loop Circuit Breaker (open-sse/utils/loopBreaker.js + chat.js)
     }));
     expect(allowed.status).toBe(200);
     expect(mocks.handleChatCoreMock).toHaveBeenCalledOnce();
+  });
+
+  it("chat.js skips Loop Breaker for Claude Code bypass warmup and naming requests, and formats Claude /v1/messages errors cleanly", async () => {
+    mocks.getSettings.mockResolvedValue({
+      requireApiKey: false,
+      ccFilterNaming: true,
+      loopBreakerEnabled: true,
+      sessionAffinityEnabled: true,
+    });
+    mocks.getComboModelsMock.mockResolvedValue(null);
+    mocks.getModelInfoMock.mockResolvedValue({ provider: "claude", model: "claude-sonnet-5-5" });
+    mocks.getProviderCredentialsMock.mockResolvedValue({
+      connectionId: "conn-1",
+      connectionName: "claude-1",
+      apiKey: "sk-test",
+      providerSpecificData: {},
+    });
+    mocks.checkAndRefreshTokenMock.mockImplementation(async (_p, creds) => creds);
+
+    const { handleChat } = await setupLoopBreakerChatMocks();
+
+    const repeatedCalls = [];
+    for (let i = 0; i < 5; i++) {
+      repeatedCalls.push({
+        role: "assistant",
+        content: [{ type: "tool_use", id: `tu_${i}`, name: "Bash", input: { cmd: "ls" } }],
+      });
+      repeatedCalls.push({
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: `tu_${i}`, content: "ok" }],
+      });
+    }
+
+    // Warmup bypass must return 200 without tripping Loop Breaker
+    const warmupRes = await handleChat(new Request("http://localhost/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "claude-cli/2.1.92" },
+      body: JSON.stringify({
+        model: "claude-sonnet-5-5",
+        stream: false,
+        messages: [{ role: "user", content: "Warmup" }, ...repeatedCalls],
+      }),
+    }));
+    expect(warmupRes.status).toBe(200);
+    expect(warmupRes.headers.get("X-888-Loop-Breaker")).toBeNull();
+
+    // Naming bypass (ccFilterNaming + isNewTopic) must return 200 without tripping Loop Breaker
+    const namingRes = await handleChat(new Request("http://localhost/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "claude-cli/2.1.92" },
+      body: JSON.stringify({
+        model: "claude-sonnet-5-5",
+        stream: false,
+        system: "Analyze if this message indicates a new conversation topic (isNewTopic).",
+        messages: [{ role: "user", content: "fix auth flow" }, ...repeatedCalls],
+      }),
+    }));
+    expect(namingRes.status).toBe(200);
+    expect(namingRes.headers.get("X-888-Loop-Breaker")).toBeNull();
+    expect(mocks.handleChatCoreMock).not.toHaveBeenCalled();
+
+    // Real Claude /v1/messages loop trips with Anthropic error envelope
+    const claudeLoopRes = await handleChat(new Request("http://localhost/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "claude-cli/2.1.92" },
+      body: JSON.stringify({
+        model: "claude-sonnet-5-5",
+        stream: false,
+        messages: [{ role: "user", content: "fix auth flow" }, ...repeatedCalls],
+      }),
+    }));
+    expect(claudeLoopRes.status).toBe(400);
+    expect(claudeLoopRes.headers.get("X-888-Loop-Breaker")).toBe("tripped");
+    const claudeJson = await claudeLoopRes.json();
+    expect(claudeJson.type).toBe("error");
+    expect(claudeJson.error?.type).toBe("invalid_request_error");
+    expect(mocks.handleChatCoreMock).not.toHaveBeenCalled();
   });
 });
