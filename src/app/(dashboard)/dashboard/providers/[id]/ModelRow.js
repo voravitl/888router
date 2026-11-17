@@ -2,7 +2,8 @@ import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
 import { fullModelWithSuffix } from "@/shared/utils/claudeCodeModelId";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, getContextWindow, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, getContextWindow, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix, status, missingSince, onCleanupStale }) {
+  const isStale = status === "stale";
   const slash = typeof fullModel === "string" ? fullModel.indexOf("/") : -1;
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
   const copyText = slash > 0
@@ -30,7 +31,17 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, getC
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <code className="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">{displayModel}</code>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <code className="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">{displayModel}</code>
+            {isStale && (
+              <span
+                title={missingSince ? `Missing since ${missingSince}` : "No longer in upstream catalog"}
+                className="shrink-0 rounded border border-border/60 bg-border/40 px-1 py-0.5 text-[9px] font-medium text-text-muted"
+              >
+                stale
+              </span>
+            )}
+          </div>
           <span className="flex min-w-0 items-center text-[9px] gap-1 pl-1">
             {model.name && <span className="truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
             <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
@@ -65,7 +76,15 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, getC
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
-        {isCustom ? (
+        {isCustom && isStale && onCleanupStale ? (
+          <button
+            onClick={() => onCleanupStale(model)}
+            className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100"
+            title="Clean up stale synced model"
+          >
+            <span className="material-symbols-outlined text-sm">delete_sweep</span>
+          </button>
+        ) : isCustom ? (
           <button
             onClick={onDeleteAlias}
             className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100"
@@ -104,4 +123,7 @@ ModelRow.propTypes = {
   onDisable: PropTypes.func,
   caps: PropTypes.object,
   thinkingSuffix: PropTypes.string,
+  status: PropTypes.oneOf(["active", "stale"]),
+  missingSince: PropTypes.string,
+  onCleanupStale: PropTypes.func,
 };

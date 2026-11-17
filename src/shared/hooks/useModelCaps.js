@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { getCapabilitiesForModel, resolveKnownContextWindow } from "open-sse/providers/capabilities.js";
+import { buildCapsIndexes, resolveModelCaps } from "@/shared/utils/modelCapsMerge";
 
 // Fetch model capabilities once and expose a lookup by fullModel ("provider/model") or bare model id.
+// `byFull` is scoped: one provider's dynamic caps can never leak into another's row.
 export function useModelCaps() {
   const [byFull, setByFull] = useState({});
   const [byId, setById] = useState({});
@@ -13,21 +15,17 @@ export function useModelCaps() {
       const res = await fetch("/api/models");
       if (!res.ok) return;
       const data = await res.json();
-      const full = {};
-      const id = {};
-      for (const m of data.models || []) {
-        if (!m.caps) continue;
-        if (m.fullModel) full[m.fullModel] = m.caps;
-        if (m.model) id[m.model] = m.caps;
-      }
-      setByFull(full);
-      setById(id);
+      const indexes = buildCapsIndexes(data);
+      setByFull(indexes.byFull);
+      setById(indexes.byId);
     } catch {
       /* ignore */
     }
   }, []);
 
   useEffect(() => {
+    // Initial catalog fetch is a one-shot external read on mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchCaps();
 
     const handleInvalidate = () => {
@@ -40,26 +38,29 @@ export function useModelCaps() {
     };
   }, [fetchCaps]);
 
-  // Resolve caps from a "provider/model" string or a bare model id.
+  // getCaps(key) stays backward compatible. Pass a model row as the second
+  // argument so explicit caps win, and an optional alias key as the third so a
+  // dynamic cap stored under `ocg/model` is found from `opencode-go/model`.
   const getCaps = useCallback(
-    (key) => {
-      if (!key) return null;
-      if (byFull[key]) return byFull[key];
-      const bare = key.includes("/") ? key.slice(key.indexOf("/") + 1) : key;
-      if (byId[bare]) return byId[bare];
-      // Fallback: compute caps for dynamic models (passthrough/custom/suggested) not in static list
-      const provider = key.includes("/") ? key.slice(0, key.indexOf("/")) : null;
-      const c = getCapabilitiesForModel(provider, bare);
-      // Use resolveKnownContextWindow so genuine unknown models return undefined instead of 200000 floor
-      const knownCw = resolveKnownContextWindow(provider, bare);
-      return {
-        vision: c.vision,
-        search: c.search,
-        reasoning: c.reasoning,
-        contextWindow: knownCw,
-        maxOutput: c.maxOutput,
-      };
-    },
+    (key, modelOverride = null, aliasKey = null) => resolveModelCaps({
+      key,
+      aliasKey,
+      modelOverride,
+      byFull,
+      byId,
+      fallbackFor: (provider, bare) => {
+        const c = getCapabilitiesForModel(provider, bare);
+        // Use resolveKnownContextWindow so genuine unknown models return
+        // undefined instead of a 200000 floor.
+        return {
+          vision: c.vision,
+          search: c.search,
+          reasoning: c.reasoning,
+          contextWindow: resolveKnownContextWindow(provider, bare),
+          maxOutput: c.maxOutput,
+        };
+      },
+    }),
     [byFull, byId]
   );
 

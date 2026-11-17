@@ -2,20 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Modal } from "@/shared/components";
+import { Button, CapacityBadges, Modal } from "@/shared/components";
+import { filterSyncModels, normalizeSyncModel } from "@/shared/utils/modelCapsMerge";
 
-function normalizeModel(item) {
-  if (!item) return null;
-  if (typeof item === "string") return { id: item, name: item };
-  const id = item.id || item.modelId || item.model || item.name;
-  if (!id) return null;
-  return {
-    id,
-    name: item.name || item.modelName || item.displayName || id,
-    description: item.description || "",
-    maxInputTokens: item.max_context_window || item.context_window || item.maxInputTokens || item.contextLength || item.contextWindow || item.context_length || item.top_provider?.context_length || 0,
-  };
-}
+const normalizeModel = normalizeSyncModel;
 
 function defaultAlias(modelId, passthroughModels) {
   return passthroughModels ? modelId.split("/").pop() : modelId;
@@ -72,8 +62,9 @@ export default function SyncProviderModelsModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     const initialId = activeConnections[0]?.id || (activeConnections.length === 0 ? providerId : "");
+    // Reset picker state when the modal opens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setConnectionId(initialId);
     setModels([]);
     setSelected({});
@@ -109,9 +100,10 @@ export default function SyncProviderModelsModal({
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     const target = connectionId || (activeConnections.length === 0 ? providerId : "");
     if (isOpen && target) {
+      // Fetching the live catalog is an external read, not a render cascade.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchModels(target);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,20 +119,15 @@ export default function SyncProviderModelsModal({
     () => models.filter((m) => existingSet.has(m.id)).length,
     [models, existingSet]
   );
+  const visionCount = useMemo(
+    () => models.filter((m) => !!m.vision).length,
+    [models]
+  );
 
-  const filteredModels = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    return models.filter((model) => {
-      const isAdded = existingSet.has(model.id);
-      if (filterTab === "available" && isAdded) return false;
-      if (filterTab === "added" && !isAdded) return false;
-
-      if (!term) return true;
-      return [model.id, model.name, model.description].some((value) =>
-        String(value || "").toLowerCase().includes(term)
-      );
-    });
-  }, [models, query, filterTab, existingSet]);
+  const filteredModels = useMemo(
+    () => filterSyncModels(models, { query, filterTab, existingIds: existingSet }),
+    [models, query, filterTab, existingSet]
+  );
 
   const selectedModels = useMemo(
     () => models.filter((model) => selected[model.id] && !existingSet.has(model.id)),
@@ -174,6 +161,17 @@ export default function SyncProviderModelsModal({
         // the real value (e.g. Ollama details.context_length) instead of
         // falling back to a catalogue pattern guess (e.g. *qwen*coder* → 1M).
         ...(model.maxInputTokens ? { contextLength: model.maxInputTokens } : {}),
+        // Keep the live caps so freshly-synced rows never fall back to a
+        // static catalogue guess before the next /api/models refresh.
+        ...(model.vision !== undefined ? { vision: model.vision } : {}),
+        ...(model.pdf !== undefined ? { pdf: model.pdf } : {}),
+        ...(model.audioInput !== undefined ? { audioInput: model.audioInput } : {}),
+        ...(model.videoInput !== undefined ? { videoInput: model.videoInput } : {}),
+        ...(model.tools !== undefined ? { tools: model.tools } : {}),
+        ...(model.reasoning !== undefined ? { reasoning: model.reasoning } : {}),
+        ...(model.search !== undefined ? { search: model.search } : {}),
+        ...(model.maxOutput !== undefined ? { maxOutput: model.maxOutput } : {}),
+        ...(model.status ? { status: model.status } : {}),
       })));
       onClose();
     } catch (err) {
@@ -306,6 +304,17 @@ export default function SyncProviderModelsModal({
               >
                 Already added ({addedCount})
               </button>
+              <button
+                type="button"
+                onClick={() => setFilterTab("vision")}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                  filterTab === "vision"
+                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                    : "text-text-muted hover:bg-sidebar hover:text-text-main"
+                }`}
+              >
+                Vision ({visionCount})
+              </button>
             </div>
             {selectedModels.length > 0 && (
               <span className="animate-pulse text-xs font-medium text-primary">
@@ -384,6 +393,7 @@ export default function SyncProviderModelsModal({
                           {model.id}
                         </span>
                         <ContextBadge tokens={model.maxInputTokens} />
+                        <CapacityBadges caps={model} size={12} />
                       </div>
                       {model.name && model.name !== model.id && (
                         <span className="truncate text-xs text-text-muted">

@@ -495,7 +495,7 @@ export default function ModelSelectModal({
         const members = c.models || [];
         if (members.length === 0) return false;
         return members.some((m) => {
-          const caps = getCaps(m) || {};
+          const caps = getCaps(m, m && typeof m === "object" ? m : null) || {};
           if (contextFilter > 0 && (caps.contextWindow || 0) < contextFilter) return false;
           if (filterVision && !caps.vision) return false;
           if (filterReasoning && !caps.reasoning) return false;
@@ -533,7 +533,7 @@ export default function ModelSelectModal({
       if (effectiveCtx > 0 || filterVision || filterReasoning) {
         models = models.filter((m) => {
           if (m.isPlaceholder) return false;
-          const caps = getCaps(m.value) || {};
+          const caps = getCaps(m.value, m) || {};
           if (effectiveCtx > 0) {
             const cw = caps.contextWindow;
             // Genuine unknown models have undefined cw and must not pass context filters
@@ -894,7 +894,7 @@ export default function ModelSelectModal({
                 const isSelected = selectedModel === model.value;
                 const isPlaceholder = model.isPlaceholder;
                 const isAdded = addedSet.has(model.value);
-                const caps = getCaps(model.value) || {};
+                const caps = getCaps(model.value, model) || {};
                 const cwLabel = formatContextWindow(caps?.contextWindow);
 
                 return (

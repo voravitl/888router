@@ -14,6 +14,7 @@ import { useModelContextWindows, resolveContextWindow } from "@/shared/hooks/use
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { classifyModelStatus } from "@/shared/utils/modelCapsMerge";
 import ModelsTable from "./ModelsTable";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -457,6 +458,8 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // One-shot dashboard bootstrap reads on mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchConnections();
     fetchAliases();
     fetchCustomModels();
@@ -933,6 +936,8 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // Drop selections for connections that no longer exist.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
   }, [connections]);
 
@@ -1206,52 +1211,73 @@ export default function ProviderDetailPage() {
       }
       return null;
     };
+    // Only a non-empty live upstream catalog may declare anything stale. If the
+    // sync failed or returned nothing, every row stays active and visible.
+    const hasLiveCatalog = dynamicModels.length > 0;
+    const liveIdSet = new Set(dynamicModels.map((m) => m.id || m.name).filter(Boolean));
+    const missingSince = new Date().toISOString();
+    const classify = (row) => ({
+      ...row,
+      ...classifyModelStatus(row, { liveIdSet, hasLiveCatalog, missingSince }),
+    });
+    const rawCustomById = new Map(customModels.map((row) => [row.id, row]));
+
     const tableModels = [
       ...customModelRows.map((row) => {
         const synced = findSynced(row.id);
-        return {
+        const raw = rawCustomById.get(row.id) || {};
+        return classify({
           id: row.id,
           name: row.name,
           fullModel: `${providerDisplayAlias}/${row.id}`,
           source: row.source,
           alias: row.alias,
+          autoSynced: row.source === "synced",
           // Stored upstream context wins over catalogue guesses in ModelsTable.
           ...(row.contextLength ? { contextLength: row.contextLength } : {}),
+          ...(raw.status ? { status: raw.status } : {}),
+          ...(raw.missingSince ? { missingSince: raw.missingSince } : {}),
           isCustom: true,
           lastSyncedAt: synced.lastSyncedAt || null,
           firstSeenAt: synced.firstSeenAt || null,
           releasedAt: null,
           thinkingSuffix: resolveThinkingSuffix(row.id),
-        };
+        });
       }),
       ...displayModels.map((m) => {
         const synced = findSynced(m.id);
-        return {
+        const isLive = liveIdSet.has(m.id);
+        // Live upstream rows are synced models, never user-created custom rows.
+        const source = isLive && !m.source ? "synced" : m.source;
+        return classify({
           ...m,
+          source,
           fullModel: `${providerDisplayAlias}/${m.id}`,
           isCustom: false,
           lastSyncedAt: synced.lastSyncedAt || m.lastSyncedAt || null,
           firstSeenAt: synced.firstSeenAt || m.firstSeenAt || null,
           releasedAt: getReleasedAt(m),
           thinkingSuffix: resolveThinkingSuffix(m.id),
-        };
+        });
       }),
     ];
 
-    // Deduplicate by fullModel/id to prevent duplicate rows & React key collisions
-    const seenFullModels = new Set();
-    const uniqueTableModels = tableModels.filter((m) => {
-      const key = m.fullModel || m.id;
-      if (seenFullModels.has(key)) return false;
-      seenFullModels.add(key);
-      return true;
-    });
+    // Deduplicate by fullModel/id. If a live upstream row and an old custom
+    // alias row describe the same model, keep the live one — its caps and
+    // status are authoritative.
+    const uniqueByKey = new Map();
+    for (const row of tableModels) {
+      const key = row.fullModel || row.id;
+      const prev = uniqueByKey.get(key);
+      if (!prev || (prev.isCustom && !row.isCustom)) uniqueByKey.set(key, row);
+    }
+    const uniqueTableModels = [...uniqueByKey.values()];
 
     const isCustomMap = {};
     const capsMap = {};
     for (const m of uniqueTableModels) {
       isCustomMap[m.id] = !!m.isCustom;
-      capsMap[m.id] = getCaps(`${providerId}/${m.id}`);
+      capsMap[m.id] = getCaps(`${providerId}/${m.id}`, m, `${providerDisplayAlias}/${m.id}`);
     }
     const canTest = connections.length > 0 || isFreeNoAuth;
 
@@ -1273,6 +1299,13 @@ export default function ProviderDetailPage() {
             }
           }}
           onDisable={(modelId) => handleDisableModel(modelId)}
+          onCleanupStale={(model) => {
+            if (model?.status !== "stale" || !model.isCustom) return;
+            const row = customModelRows.find((r) => r.id === model.id);
+            if (!row) return;
+            if (row.source === "legacyAlias") handleDeleteAlias(row.alias);
+            else handleDeleteCustomModel(row.id, "llm", providerStorageAlias);
+          }}
           modelTestResults={modelTestResults}
           testingModelIds={testingModelIds}
           isCustomMap={isCustomMap}
