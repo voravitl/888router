@@ -114,13 +114,24 @@ describe("Token Saver & OptimizationSavings UI cleanup, Prompt Cache & Reasoning
     expect(cmdPalette).not.toMatch(/\bponytail\b/i);
   });
 
-  it("Profile/Settings page exposes Thai Simple Response Style selector (off / auto / all)", () => {
+  it("Profile/Settings page exposes clear Thai Simple Response Style selector (off / auto / all) with Dark Mode contrast", () => {
     const profileSrc = readRepoFile("src/app/(dashboard)/dashboard/profile/page.js");
+    const saverSrc = readRepoFile("src/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js");
+
     expect(profileSrc).toContain("Thai Simple");
     expect(profileSrc).toContain("thaiSimpleMode");
     expect(profileSrc).toMatch(/["']off["']/);
     expect(profileSrc).toMatch(/["']auto["']/);
     expect(profileSrc).toMatch(/["']all["']/);
+    expect(profileSrc).toContain("Standard (Auto)");
+    expect(profileSrc).toContain("Standard + Hermes");
+    expect(profileSrc).toContain("/output-style thai-simple");
+    expect(profileSrc).not.toContain("<100k+");
+    expect(profileSrc).not.toContain("All + Hermes");
+
+    // Dark Mode contrast guard: --color-primary is white (#fafafa) in .dark, so active pills must never use bg-primary text-white
+    expect(profileSrc).not.toMatch(/bg-primary\s+text-white/);
+    expect(saverSrc).not.toMatch(/bg-primary\s+text-white/);
   });
 
   it("OptimizationSavings uses a 2-column grid with Prompt Cache and RTK Compression only", () => {

@@ -20,17 +20,17 @@ const THAI_SIMPLE_MODE_OPTIONS = [
   {
     id: "off",
     label: "Off",
-    desc: "Do not inject Thai Simple instructions from gateway",
+    desc: "Off — Gateway never injects Thai Simple instructions (per-request header override still works).",
   },
   {
     id: "auto",
-    label: "Auto (OpenCode / Cursor / Chat)",
-    desc: "Applies to bare OpenAI/Gemini/translated chats (<100k+ cache-safe); auto-skips Claude Code, Hermes, structured JSON, and existing Thai style rules",
+    label: "Standard (Auto)",
+    desc: "Standard (Auto) — Applies to OpenCode, Cursor, Test Chat & raw SDKs. Skips Claude Code & Hermes (they use their own built-in styles).",
   },
   {
     id: "all",
-    label: "All + Hermes",
-    desc: "Also applies to Hermes Agent on /v1/chat/completions unless SOUL.md/system prompt already sets Thai rules (still protects Claude Code & JSON outputs)",
+    label: "Standard + Hermes",
+    desc: "Standard + Hermes — Same as Standard, plus Hermes Agent (unless system prompt already defines Thai rules). Claude Code still skipped to protect Prompt Cache.",
   },
 ];
 
@@ -1743,9 +1743,9 @@ export default function ProfilePage() {
                       onClick={() => updateThaiSimpleMode(opt.id)}
                       aria-pressed={selected}
                       title={opt.desc}
-                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors cursor-pointer ${
                         selected
-                          ? "bg-primary text-white border-primary"
+                          ? "bg-[#111111] text-white border-[#111111] dark:bg-[#fafafa] dark:text-[#111111] dark:border-[#fafafa]"
                           : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                       }`}
                     >
@@ -1756,14 +1756,30 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <p className="text-xs sm:text-sm text-text-muted/80 pt-2 border-t border-border/50">
+            <p className="text-xs sm:text-sm text-text-muted/90 pt-2 border-t border-border/50">
               Mode: <code className="bg-border/30 px-1 rounded">{settings.thaiSimpleMode || "off"}</code>
               {" — "}
               {THAI_SIMPLE_MODE_OPTIONS.find((opt) => opt.id === (settings.thaiSimpleMode || "off"))?.desc}
             </p>
-            <p className="text-xs text-text-muted/70">
-              Per-request override header: <code className="bg-border/30 px-1 rounded">x-888-output-style: thai-simple | off</code>
-            </p>
+
+            <div className="rounded-lg border border-border/60 bg-bg-alt/50 p-3 text-xs space-y-1.5 text-text-muted">
+              <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
+                <span className="font-semibold text-text-main shrink-0 sm:w-44">OpenCode / Cursor / Chat:</span>
+                <span>Active in <b>Standard (Auto)</b> &amp; <b>Standard + Hermes</b> (stays consistent past 100k tokens; skips JSON schema &amp; &le;64-token probes).</span>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
+                <span className="font-semibold text-text-main shrink-0 sm:w-44">Hermes Agent:</span>
+                <span>Skipped in <b>Standard (Auto)</b> (uses <code>SOUL.md</code>). Active in <b>Standard + Hermes</b> unless system prompt already sets Thai rules.</span>
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-2">
+                <span className="font-semibold text-text-main shrink-0 sm:w-44">Claude Code:</span>
+                <span>Always skipped by gateway — run Claude Code&apos;s built-in <code className="bg-border/30 px-1 rounded">/output-style thai-simple</code> so Prompt Cache stays intact.</span>
+              </div>
+              <div className="pt-1 text-[11px] text-text-muted/80">
+                Per-request header override: <code className="bg-border/30 px-1 rounded">x-888-output-style: thai-simple | off</code>
+              </div>
+            </div>
+
             {thaiSimpleError && (
               <p className="text-xs sm:text-sm text-red-500 pt-1">{thaiSimpleError}</p>
             )}

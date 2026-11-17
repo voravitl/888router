@@ -236,9 +236,9 @@ export default function TokenSaverClient() {
                 key={p}
                 type="button"
                 onClick={() => handlePeriodChange(p)}
-                className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors cursor-pointer ${
                   summaryPeriod === p
-                    ? "bg-primary text-white border-primary"
+                    ? "bg-[#111111] text-white border-[#111111] dark:bg-[#fafafa] dark:text-[#111111] dark:border-[#fafafa]"
                     : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                 }`}
               >
@@ -500,9 +500,9 @@ export default function TokenSaverClient() {
                   onClick={() => handleReasoningEffortCap(opt.id)}
                   aria-pressed={reasoningEffortCap === opt.id}
                   title={opt.desc}
-                  className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                  className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors cursor-pointer ${
                     reasoningEffortCap === opt.id
-                      ? "bg-primary text-white border-primary"
+                      ? "bg-[#111111] text-white border-[#111111] dark:bg-[#fafafa] dark:text-[#111111] dark:border-[#fafafa]"
                       : "bg-transparent border-border text-text-muted hover:bg-surface-2"
                   }`}
                 >
