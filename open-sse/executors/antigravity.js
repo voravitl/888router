@@ -32,6 +32,7 @@ function sanitizeFunctionName(name) {
 }
 
 const MAX_RETRY_AFTER_MS = 10000;
+const MAX_ANTIGRAVITY_429_BACKOFF_ATTEMPTS = 3;
 const ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS = 15000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
 const MAX_RETIREMENT_NOTICE_BYTES = 8192;
@@ -142,6 +143,10 @@ const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [
   /stream\s+(ended|closed|terminated|interrupted)/i,
   /empty\s+response/i,
 ];
+
+// Bare 429 quota-exhaustion bodies without a short Retry-After / retryDelay
+// should fail over immediately rather than burning backoff retries against an exhausted pool.
+const ANTIGRAVITY_QUOTA_EXHAUSTED_PATTERNS = /resource_exhausted|resource\s+(?:has\s+been\s+)?exhausted|check\s+quota|\bquota\b/i;
 
 const ANTIGRAVITY_TRANSIENT_STATUSES = new Set([
   HTTP_STATUS.SERVER_ERROR,
@@ -625,6 +630,16 @@ export class AntigravityExecutor extends BaseExecutor {
       retryMs = this.parseRetryFromErrorMessage(errorMessage);
     }
     if (retryMs) return retryMs <= MAX_RETRY_AFTER_MS ? retryMs : false;
+
+    if (response.status === HTTP_STATUS.RATE_LIMITED) {
+      if (
+        errorJson?.error?.status === "RESOURCE_EXHAUSTED"
+        || ANTIGRAVITY_QUOTA_EXHAUSTED_PATTERNS.test(errorMessage)
+      ) {
+        return false;
+      }
+      if (attempt > MAX_ANTIGRAVITY_429_BACKOFF_ATTEMPTS) return false;
+    }
 
     if (!this.isTransientAntigravityError(response.status, errorMessage)) return false;
 

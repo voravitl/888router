@@ -8,6 +8,7 @@ import {
   TRANSIENT_COOLDOWN_MS,
   ACCOUNT_VALIDATION_PARK_MS,
   ANTIGRAVITY_PERMISSION_COOLDOWN_MS,
+  ANTIGRAVITY_429_MIN_COOLDOWN_MS,
   ACCOUNT_RESTRICTION_PATTERNS,
 } from "open-sse/config/errorConfig.js";
 import { isLocalProviderError } from "open-sse/utils/error.js";
@@ -825,7 +826,8 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     // it as a quota/provider failure.
     return { shouldFallback: false, cooldownMs: 0, modelError: !!modelError };
   }
-  const connections = await getProviderConnections({ provider });
+  const resolvedProvider = provider ? resolveProviderId(provider) : null;
+  const connections = await getProviderConnections({ provider: resolvedProvider || provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
@@ -839,9 +841,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
-  const resolvedProvider = provider ? resolveProviderId(provider) : null;
+  const effectiveProvider = resolvedProvider || (conn?.provider ? resolveProviderId(conn.provider) : null);
+  const hasExplicitReset = Boolean(resetsAtMs && resetsAtMs > Date.now());
   let shouldFallback, cooldownMs, parkMs, newBackoffLevel, modelError;
-  if (resetsAtMs && resetsAtMs > Date.now()) {
+  if (hasExplicitReset) {
     shouldFallback = true;
     cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
@@ -851,12 +854,22 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       cooldownMs = parkMs;
     }
   }
-  if ((resolvedProvider === "antigravity" || resolvedProvider === "ag") && status === 403) {
+  if ((effectiveProvider === "antigravity" || effectiveProvider === "ag") && status === HTTP_STATUS.FORBIDDEN) {
     const minAg403Ms = ACCOUNT_RESTRICTION_PATTERNS.test(typeof errorText === "string" ? errorText : "")
       ? ACCOUNT_VALIDATION_PARK_MS
       : ANTIGRAVITY_PERMISSION_COOLDOWN_MS;
     cooldownMs = Math.max(cooldownMs || 0, minAg403Ms);
     shouldFallback = true;
+  }
+  if (
+    (effectiveProvider === "antigravity" || effectiveProvider === "ag") &&
+    status === HTTP_STATUS.RATE_LIMITED &&
+    !hasExplicitReset &&
+    shouldFallback
+  ) {
+    const minAg429Ms = Number.isFinite(ANTIGRAVITY_429_MIN_COOLDOWN_MS) ? ANTIGRAVITY_429_MIN_COOLDOWN_MS : 60_000;
+    const ceilingMs = Math.max(MAX_RATE_LIMIT_COOLDOWN_MS || 30 * 60 * 1000, parkMs || 0);
+    cooldownMs = Math.min(Math.max(cooldownMs || 0, minAg429Ms), ceilingMs);
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0, modelError: !!modelError };
 
