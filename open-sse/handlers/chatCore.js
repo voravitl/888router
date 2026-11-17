@@ -296,10 +296,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let preserveRequestInput = preserveClaudeClientInput
     || (estimateRequestTokens(body) >= 100000 && !nativeTransformationsOptIn);
   // RTK is gated separately: it rewrites tool_result text in place and never
-  // touches message order or history, so it can run on preserved input. With
-  // RTK_LOSSY=off (rtkEnabled + lossy off) it only applies the format-only
-  // filters and leaves raw file content byte-identical.
-  const rtkAllowedOnPreservedInput = String(process.env.RTK_ON_PRESERVED_INPUT || "off").toLowerCase() === "on";
+  // touches message order or history, so it runs on preserved input by default
+  // under built-in lossless mode (`RTK_LOSSY` defaults `off`, leaving raw file
+  // content byte-identical). Set `RTK_ON_PRESERVED_INPUT=off` to skip preserved input.
+  const rtkPreservedEnv = String(process.env.RTK_ON_PRESERVED_INPUT || "on").trim().toLowerCase();
+  const rtkAllowedOnPreservedInput = !(rtkPreservedEnv === "off" || rtkPreservedEnv === "0" || rtkPreservedEnv === "false");
   const preserveNativeClaudeRequest = nativeClaudePassthrough && preserveClaudeClientInput;
   const effectiveUniversalToolsMode = preserveNativeClaudeRequest ? "off" : universalToolsMode;
   if (useTransport && requestCredentials) requestCredentials.runtimeTransport = useTransport;
@@ -487,9 +488,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._prunerStats;
   }
 
-  // RTK: compress tool_result content. Runs on preserved input too when
-  // explicitly opted in (RTK_ON_PRESERVED_INPUT=on) — pair it with RTK_LOSSY=off
-  // so raw file content stays byte-identical and only format-only filters apply.
+  // RTK: compress tool_result content. Runs on preserved input by default in
+  // built-in lossless mode (raw file content stays byte-identical; only safe
+  // format-only filters run unless `RTK_LOSSY=on`). Opt out via `RTK_ON_PRESERVED_INPUT=off`.
   if (!preserveRequestInput || rtkAllowedOnPreservedInput) {
     rtkStats = compressMessages(translatedBody, rtkEnabled);
   }

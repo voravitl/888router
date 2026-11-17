@@ -1,3 +1,14 @@
+# v0.15.258 (2026-11-17)
+
+## Make Lossless RTK Default in Code & Remove `RTK_*` Config Overrides
+- **Built-in Lossless RTK Defaults (`open-sse/rtk/constants.js`, `open-sse/handlers/chatCore.js`)**:
+  - Changed `isLossyEnabled()` (`RTK_LOSSY`) default from `"on"` to `"off"` so destructive filters (`read-numbered`, `smart-truncate`, `dedup-log`) and `applyHardCap` stay off unless explicitly opted in via `RTK_LOSSY=on` (`1`/`true`).
+  - Changed `SAFE_CAPS_ENABLED` (`RTK_SAFE_CAPS`) default to `"on"` so listings/diffs/grep results keep full entries unless explicitly opted into tight upstream caps via `RTK_SAFE_CAPS=off`.
+  - Changed `RTK_ON_PRESERVED_INPUT` default in `open-sse/handlers/chatCore.js` from `"off"` to `"on"` so preserved/Claude Code traffic uses lossless RTK out of the box (leaving raw `1|code` file reads untouched) while still supporting `RTK_ON_PRESERVED_INPUT=off` opt-out.
+- **Docker Compose Cleanup & Regression Tests (`docker-compose.yml`, `tests/unit/rtk-lossless-defaults.test.js`, `tests/unit/compose-single-gateway.test.js`)**:
+  - Removed redundant `RTK_HARD_CAP_BYTES`, `RTK_ON_PRESERVED_INPUT`, `RTK_LOSSY`, and `RTK_SAFE_CAPS` overrides from `docker-compose.yml` (and local `.env.route`).
+  - Added `tests/unit/rtk-lossless-defaults.test.js` and compose guard in `tests/unit/compose-single-gateway.test.js`, and updated explicit lossy/tight-cap test cases (`rtk-preserved-input-gate.test.js`, `rtk-fidelity-gate.test.js`, `rtk-v2-caps.test.js`, `rtk.test.js`) to opt in via `RTK_LOSSY=on` or `RTK_SAFE_CAPS=off`.
+
 # v0.15.257 (2026-11-17)
 
 ## Lossless RTK JSON/ANSI Compression, Accurate Claude Prompt-Cache Telemetry, Reasoning Effort Cap & UI Cleanup

@@ -79,4 +79,8 @@ describe("docker-compose runs exactly one gateway, 888route on host port 20129",
     expect(live).toMatch(/com\.centurylinklabs\.watchtower\.enable=true/);
     expect(serviceBlock("watchtower")).toMatch(/command:\s*\n\s*-\s*888route\s*$/m);
   });
+
+  it("relies on built-in Lossless RTK defaults instead of RTK_* env overrides", () => {
+    expect(live).not.toMatch(/^\s*RTK_[A-Z0-9_]+:/m);
+  });
 });

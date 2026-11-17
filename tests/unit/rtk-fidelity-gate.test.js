@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { preservesProtectedContent, __test__ } from "../../open-sse/rtk/fidelity.js";
 import { compressMessages } from "../../open-sse/rtk/index.js";
 
@@ -37,17 +37,22 @@ describe("RTK fidelity gate", () => {
     expect(__test__.protectedTokens(many).size).toBeLessThanOrEqual(400);
   });
 
-  it("refuses the real git-status cap: 40 files must not become 10 + '+30 more'", () => {
+  it("refuses the real git-status cap when RTK_SAFE_CAPS=off: 40 files must not become 10 + '+30 more'", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_SAFE_CAPS", "off");
+    const { compressMessages: compressLegacy } = await import("../../open-sse/rtk/index.js");
     const files = Array.from({ length: 40 }, (_, i) => ` M src/module${i}/file${i}.js`);
     const original = files.join("\n");
     const body = { messages: [{ role: "tool", content: original }] };
-    const stats = compressMessages(body, true);
+    const stats = compressLegacy(body, true);
     // The cap would have dropped 30 names; the gate keeps the input instead.
     expect(stats?.refused).toBe(1);
     expect(body.messages[0].content).toBe(original);
     for (const line of files) {
       expect(body.messages[0].content).toContain(line.split(" ")[1]);
     }
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   it("still lets a safe listing compress", () => {

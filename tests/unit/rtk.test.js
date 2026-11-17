@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { compressMessages, formatRtkLog } from "../../open-sse/rtk/index.js";
 import { gitDiff } from "../../open-sse/rtk/filters/gitDiff.js";
 import { gitStatus } from "../../open-sse/rtk/filters/gitStatus.js";
@@ -245,12 +245,17 @@ describe("gitLog filter", () => {
 });
 
 describe("RTK filters", () => {
-  it("gitDiff truncates hunks beyond 100 lines and preserves file header", () => {
+  it("gitDiff truncates hunks beyond 100 lines when RTK_SAFE_CAPS=off and preserves file header", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_SAFE_CAPS", "off");
+    const { gitDiff: gitDiffLegacy } = await import("../../open-sse/rtk/filters/gitDiff.js");
     const input = makeLongDiff();
-    const out = gitDiff(input, 500);
+    const out = gitDiffLegacy(input, 500);
     expect(out).toContain("foo.js");
     expect(out).toContain("lines truncated");
     expect(out.length).toBeLessThan(input.length);
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   it("gitStatus groups by kind and produces compact output (Rust format)", () => {
@@ -262,14 +267,19 @@ describe("RTK filters", () => {
     expect(out.length).toBeLessThan(input.length);
   });
 
-  it("grep groups matches by file and caps per-file lines (Rust format)", () => {
+  it("grep groups matches by file and caps per-file lines when RTK_SAFE_CAPS=off (Rust format)", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_SAFE_CAPS", "off");
+    const { grep: grepLegacy } = await import("../../open-sse/rtk/filters/grep.js");
     const input = makeGrepOutput();
-    const out = grep(input);
+    const out = grepLegacy(input);
     expect(out).toContain("50 matches in 2F:");
     expect(out).toContain("[file] src/foo.js (40):");
     expect(out).toContain("[file] src/bar.js (10):");
     expect(out).toMatch(/\+\d+/); // overflow marker
     expect(out.length).toBeLessThan(input.length);
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   it("find groups paths by parent dir, shows basenames (Rust format)", () => {
@@ -387,7 +397,10 @@ describe("RTK filters (extras)", () => {
     expect(out.length).toBeLessThan(input.length);
   });
 
-  it("searchList: groups Cursor Glob output by parent dir", () => {
+  it("searchList: groups Cursor Glob output by parent dir and caps when RTK_SAFE_CAPS=off", async () => {
+    vi.resetModules();
+    vi.stubEnv("RTK_SAFE_CAPS", "off");
+    const { searchList: searchListLegacy } = await import("../../open-sse/rtk/filters/searchList.js");
     const paths = [];
     for (let i = 0; i < 30; i++) paths.push(`- src/a/f${i}.js`);
     for (let i = 0; i < 10; i++) paths.push(`- src/b/g${i}.js`);
@@ -395,13 +408,15 @@ describe("RTK filters (extras)", () => {
       "Result of search in '/Users/x' (total 40 files):",
       ...paths
     ].join("\n");
-    const out = searchList(input);
+    const out = searchListLegacy(input);
     expect(out).toContain("Result of search in");
     expect(out).toContain("40 files in 2 dirs:");
     expect(out).toContain("src/a/ (30):");
     expect(out).toContain("src/b/ (10):");
     expect(out).toMatch(/\+\d+/);
     expect(out.length).toBeLessThan(input.length);
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 });
 
@@ -611,21 +626,21 @@ describe("lossy guard (RTK_LOSSY)", () => {
     vi.resetModules();
   });
 
-  it("RTK_LOSSY=off still summarises git status", async () => {
+  it("RTK_LOSSY=off still summarises verbose git status while keeping all file names", async () => {
     vi.resetModules();
     vi.stubEnv("RTK_LOSSY", "off");
     const { compressMessages: compress } = await import("../../open-sse/rtk/index.js");
-    const status = " M src/a.js\n M src/b.js\n M src/c.js\n M src/d.js\n?? new1.js\n?? new2.js\n".repeat(20);
+    const status = makeSafeStatus();
     const body = { messages: [{ role: "tool", content: status }] };
     const stats = compress(body, true);
     expect(stats.hits[0].filter).toBe("git-status");
     expect(body.messages[0].content.length).toBeLessThan(status.length);
-    expect(body.messages[0].content).toContain("src/a.js");
+    expect(body.messages[0].content).toContain("src/file0.js");
     vi.unstubAllEnvs();
     vi.resetModules();
   });
 
-  it("default (lossy on) still truncates an oversized Read body", async () => {
+  it("when opted in (RTK_LOSSY=on) still truncates an oversized Read body", async () => {
     vi.resetModules();
     vi.stubEnv("RTK_LOSSY", "on");
     vi.stubEnv("RTK_HARD_CAP_BYTES", "65536");
