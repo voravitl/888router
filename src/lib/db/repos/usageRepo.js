@@ -352,7 +352,8 @@ export async function getActiveRequests() {
     .slice(0, 20);
 
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
-  return { activeRequests, recentRequests, errorProvider };
+  const { last10Minutes, lastActivityAt } = computeLast10MinutesActivity(await getAdapter());
+  return { activeRequests, recentRequests, errorProvider, last10Minutes, lastActivityAt };
 }
 
 export async function saveRequestUsage(entry) {
@@ -438,6 +439,11 @@ export async function saveRequestUsage(entry) {
     });
 
     if (inserted) {
+      const entryTs = new Date(entry.timestamp).getTime();
+      const prevTs = global._lastGatewayAttemptAt ? new Date(global._lastGatewayAttemptAt).getTime() : 0;
+      if (Number.isFinite(entryTs) && (!Number.isFinite(prevTs) || entryTs >= prevTs)) {
+        global._lastGatewayAttemptAt = entry.timestamp;
+      }
       pushToRing(entry);
       scheduleStatsEvent("update", 250);
     }
@@ -530,6 +536,7 @@ export async function getUsageStats(period = "all") {
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
     byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
     last10Minutes: [],
+    lastActivityAt: null,
     pending: pendingRequests,
     activeRequests: [],
     recentRequests,
@@ -551,30 +558,9 @@ export async function getUsageStats(period = "all") {
     }
   }
 
-  // last10Minutes — query 10min window
-  const now = new Date();
-  const currentMinuteStart = new Date(Math.floor(now.getTime() / 60000) * 60000);
-  const tenMinutesAgo = new Date(currentMinuteStart.getTime() - 9 * 60 * 1000);
-  const bucketMap = {};
-  for (let i = 0; i < 10; i++) {
-    const ts = currentMinuteStart.getTime() - (9 - i) * 60 * 1000;
-    bucketMap[ts] = { requests: 0, promptTokens: 0, completionTokens: 0, cost: 0 };
-    stats.last10Minutes.push(bucketMap[ts]);
-  }
-  const recent10 = db.all(
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
-    [tenMinutesAgo.toISOString(), now.toISOString()]
-  );
-  for (const r of recent10) {
-    const tt = new Date(r.timestamp).getTime();
-    const minuteStart = Math.floor(tt / 60000) * 60000;
-    if (bucketMap[minuteStart]) {
-      bucketMap[minuteStart].requests++;
-      bucketMap[minuteStart].promptTokens += r.promptTokens || 0;
-      bucketMap[minuteStart].completionTokens += r.completionTokens || 0;
-      bucketMap[minuteStart].cost += r.cost || 0;
-    }
-  }
+  const activity10m = computeLast10MinutesActivity(db);
+  stats.last10Minutes = activity10m.last10Minutes;
+  stats.lastActivityAt = activity10m.lastActivityAt;
 
   const useDailySummary = period !== "24h" && period !== "today";
 
@@ -791,55 +777,98 @@ export async function getUsageStats(period = "all") {
   return stats;
 }
 
+function buildHourlyChartBuckets(db, { startTime, endTime, now, inclusiveEnd }) {
+  const bucketCount = 24;
+  const bucketMs = 3600000;
+  const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+    label: labelFn(startTime + i * bucketMs),
+    tokens: 0,
+    cost: 0,
+    requests: 0,
+    errors: 0,
+  }));
+  const memErrors = new Array(bucketCount).fill(0);
+  const sqlErrors = new Array(bucketCount).fill(0);
+
+  const getBucketIndex = (tsValue) => {
+    const t = typeof tsValue === "number" ? tsValue : new Date(tsValue).getTime();
+    if (!Number.isFinite(t)) return -1;
+    if (t < startTime) return -1;
+    if (inclusiveEnd ? t > endTime : t >= endTime) return -1;
+    return Math.min(Math.max(Math.floor((t - startTime) / bucketMs), 0), bucketCount - 1);
+  };
+
+  const startIso = new Date(startTime).toISOString();
+  const rows = db.all(
+    `SELECT timestamp, promptTokens, completionTokens, cost, status FROM usageHistory WHERE timestamp >= ?`,
+    [startIso]
+  );
+  for (const r of rows) {
+    const idx = getBucketIndex(r.timestamp);
+    if (idx < 0) continue;
+    buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+    buckets[idx].cost += r.cost || 0;
+    if (r.status === "error" || r.status === "failed") {
+      buckets[idx].errors++;
+    } else {
+      buckets[idx].requests++;
+    }
+  }
+
+  try {
+    const detailErrors = db.all(
+      `SELECT timestamp, status FROM requestDetails WHERE timestamp >= ? AND status IS NOT NULL AND status != 'success' AND status != 'empty'`,
+      [startIso]
+    );
+    for (const d of detailErrors) {
+      const idx = getBucketIndex(d.timestamp);
+      if (idx >= 0) sqlErrors[idx]++;
+    }
+  } catch {
+    // requestDetails table may not exist in lightweight unit test DBs
+  }
+
+  for (let i = recentErrorActivity.length - 1; i >= 0; i--) {
+    const ts = recentErrorActivity[i];
+    if (ts < now - ERROR_RING_TTL_MS) {
+      recentErrorActivity.splice(i, 1);
+      continue;
+    }
+    const idx = getBucketIndex(ts);
+    if (idx >= 0) memErrors[idx]++;
+  }
+
+  for (let i = 0; i < bucketCount; i++) {
+    buckets[i].errors += Math.max(memErrors[i], sqlErrors[i]);
+  }
+
+  return buckets;
+}
+
 export async function getChartData(period = "7d") {
   const db = await getAdapter();
   const now = Date.now();
 
   if (period === "today") {
-    const bucketCount = 24;
-    const bucketMs = 3600000;
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const startTime = startOfDay.getTime();
-    const endTime = startTime + bucketCount * bucketMs;
-    const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
-
-    const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
-    );
-    for (const r of rows) {
-      const t = new Date(r.timestamp).getTime();
-      if (t < startTime || t >= endTime) continue;
-      const idx = Math.floor((t - startTime) / bucketMs);
-      if (idx >= 0 && idx < bucketCount) {
-        buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-        buckets[idx].cost += r.cost || 0;
-      }
-    }
-    return buckets;
+    return buildHourlyChartBuckets(db, {
+      startTime,
+      endTime: startTime + 24 * 3600000,
+      now,
+      inclusiveEnd: false,
+    });
   }
 
   if (period === "24h") {
-    const bucketCount = 24;
-    const bucketMs = 3600000;
-    const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
-
-    const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
-    );
-    for (const r of rows) {
-      const t = new Date(r.timestamp).getTime();
-      if (t < startTime || t > now) continue;
-      const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
-      buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-      buckets[idx].cost += r.cost || 0;
-    }
-    return buckets;
+    return buildHourlyChartBuckets(db, {
+      startTime: now - 24 * 3600000,
+      endTime: now,
+      now,
+      inclusiveEnd: true,
+    });
   }
 
   const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
