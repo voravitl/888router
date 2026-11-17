@@ -1,3 +1,21 @@
+# v0.15.259 (2026-11-17)
+
+## Session Affinity, Runaway Loop Breaker, 10-Minute Activity & Hermes Compatibility
+- **Session-to-Account Affinity (`open-sse/utils/sessionAffinity.js`, `open-sse/utils/sessionManager.js`, `src/sse/handlers/chat.js`, `tests/unit/session-affinity.test.js`)**:
+  - Expanded session header/metadata extraction (`x-hermes-session-id`, `x-opencode-session`, `x-litellm-session-id`, `x-grok-conv-id`, `x-conversation-id`, `metadata.live_session_id`) and exported `extractClientSessionId` / `resolveConversationAffinityId` (skips stateless one-shot requests).
+  - Added provider-scoped LRU (`2000` cap, `30m` TTL) affinity pinning (`resolveChatSessionAffinityKey`, `getPinnedConnection`, `pinConnection`) wired into `handleSingleModelChat` (including top-level and nested combo/fusion callbacks with zero extra `getSettings()` calls), preserving prompt cache warmth while respecting `excludeConnectionIds` on failover.
+- **Runaway Loop Circuit Breaker (`open-sse/utils/loopBreaker.js`, `src/sse/handlers/chat.js`, `tests/unit/loop-breaker.test.js`)**:
+  - Added 2-layer loop protection (`IDENTICAL_TOOL_STREAK = 5`, `IDENTICAL_ERROR_STREAK = 4`, `SESSION_BURST_THRESHOLD = 6` within `5m` for multi-turn/tool histories while skipping health pings) running after `handleBypassRequest` so warmup/naming bypasses never trip.
+  - Resets trailing streak at plain human turns including Responses API `input_text` content blocks; normalizes timing/hex variance in tool errors; short-circuits tripped loops before upstream dispatch with HTTP `400` (`loop_detected`, `X-888-Loop-Breaker: tripped`) in OpenAI and Claude formats (respects `loopBreakerEnabled` setting and `LOOP_BREAKER=off` env opt-out).
+- **Gateway Controls & Token Saver UI (`src/lib/db/repos/settingsRepo.js`, `src/app/api/settings/route.js`, `src/app/(dashboard)/dashboard/token-saver/TokenSaverClient.js`)**:
+  - Added `sessionAffinityEnabled` and `loopBreakerEnabled` defaults (`true`), strict boolean validation on `PATCH /api/settings`, and working toggles inside the Token Saver Controls card.
+- **10-Minute Gateway Activity Telemetry (`src/lib/db/repos/usageRepo.js`, `src/app/api/usage/stream/route.js`, `src/app/(dashboard)/dashboard/endpoint/components/HyperionBentoHero.js`)**:
+  - Added `computeLast10MinutesActivity` merging live in-memory failed/tripped attempts with `requestDetails` (deduplicated via `Math.max` per bucket) and monotonic `lastActivityAt` tracking across `getActiveRequests()`, `getUsageStats()`, and `getChartData("24h" | "today")` (`requests` + `errors`).
+  - Upgraded `/api/usage/stream` SSE to use bounded `"24h"` scans, push live `last10Minutes`/`lastActivityAt` updates, add a 30s rollover timer, and set `X-Accel-Buffering: no` + `Cache-Control: no-cache, no-transform`.
+  - Updated `HyperionBentoHero.js` with `10m`/`24h` toggle pill, `/api/usage/chart?period=24h` fallback view, red error bars, 30s disconnected poll, and `"No requests in last 10m"` idle overlay with `Last call:` timestamp.
+- **Hermes Agent Compatibility (`open-sse/utils/clientDetector.js`, `src/app/api/cli-tools/hermes-settings/route.js`, `src/app/(dashboard)/dashboard/cli-tools/components/HermesToolCard.js`, `HyperionBentoHero.js`, `tests/unit/gateway-activity-and-hermes.test.js`)**:
+  - Added `"hermes"` detection in `detectClientTool` (`User-Agent: HermesAgent/*`, `X-Title: Hermes Agent`, `originator: hermes-agent`), upgraded `hermes-settings` and `HermesToolCard` for `providers.888router` (`custom:888router`, `session_affinity_header: "x-session-id"`, `discover_models: true`, `models:` preservation), and added a `Hermes` quickstart tab in `HyperionBentoHero`.
+
 # v0.15.258 (2026-11-17)
 
 ## Make Lossless RTK Default in Code & Remove `RTK_*` Config Overrides
