@@ -1,3 +1,13 @@
+# v0.15.260 (2026-11-17)
+
+## Retire Caveman UI & Add Optimized Thai Simple Response Style
+- **Token Saver Cleanup (`TokenSaverClient.js`, `CommandPalette.js`, `settingsRepo.js`, `src/sse/handlers/chat.js`, `tests/unit/token-saver-ui-no-headroom.test.js`)**:
+  - Removed the `Compress LLM output (Caveman)` UI control, settings defaults (`cavemanEnabled`, `cavemanLevel`), and `chat.js` gateway forwarding (and stripped retired Caveman/Ponytail keywords from `CommandPalette.js`).
+- **Optimized Thai Simple Output Style (`open-sse/rtk/thaiSimple.js`, `open-sse/handlers/chatCore.js`, `src/app/api/settings/route.js`, `src/app/(dashboard)/dashboard/profile/page.js`, `tests/unit/thai-simple.test.js`)**:
+  - Added compact (~160-token), cache-safe `THAI_SIMPLE_PROMPT` using natural active Thai phrasing, answer-first lead, compact `<=3`-column comparison tables / ASCII diagrams, anti-Chinese/language-drift guard, exact code/path preservation, and neutral register (no forced gendered particles).
+  - Exposed `thaiSimpleMode` (`"off" | "auto" | "all"`, default `"off"`, strictly validated in `PATCH /api/settings`) on the Settings & Profile page (`Response Style (Thai Simple)` card) with per-request `x-888-output-style: thai-simple | off` header override.
+  - Mode `"auto"` targets bare OpenAI/Gemini/translated clients while auto-skipping Claude Code passthrough, Hermes Agent (`SOUL.md` / `thai-communication`), structured JSON/schema outputs (`response_format`, `text.format`, `responseMimeType`/`responseSchema`), low-budget probes (`<= 64` tokens), and prompts already carrying Thai style rules; active non-Claude sessions keep a stable system prefix past `100k` tokens to avoid mid-session cache invalidation.
+
 # v0.15.259 (2026-11-17)
 
 ## Session Affinity, Runaway Loop Breaker, 10-Minute Activity & Hermes Compatibility

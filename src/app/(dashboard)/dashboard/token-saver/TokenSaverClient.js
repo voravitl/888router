@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import {
   BarChart,
@@ -16,11 +16,6 @@ import {
 } from "recharts";
 import { Card, Button, Toggle, PageHero } from "@/shared/components";
 import { ThunderboltOutlined } from "@ant-design/icons";
-import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
-import {
-  WENYAN_LOCALES,
-  CAVEMAN_LEVELS,
-} from "../endpoint/endpointConstants";
 
 const REASONING_EFFORT_CAPS = [
   { id: "off", label: "Off", desc: "Pass caller reasoning effort untouched" },
@@ -51,12 +46,9 @@ function fmtChartBytes(n) {
 
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
-  const [cavemanEnabled, setCavemanEnabled] = useState(false);
-  const [cavemanLevel, setCavemanLevel] = useState("full");
   const [reasoningEffortCap, setReasoningEffortCap] = useState("off");
   const [sessionAffinityEnabled, setSessionAffinityEnabled] = useState(true);
   const [loopBreakerEnabled, setLoopBreakerEnabled] = useState(true);
-  const locale = useSyncExternalStore(onLocaleChange, getCurrentLocale, () => "en");
   const [summaryPeriod, setSummaryPeriod] = useState("7d");
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
@@ -76,20 +68,6 @@ export default function TokenSaverClient() {
     }
   }, []);
 
-  const isWenyanLocale = WENYAN_LOCALES.includes(locale);
-  const visibleCavemanLevels = isWenyanLocale
-    ? CAVEMAN_LEVELS
-    : CAVEMAN_LEVELS.filter((lvl) => !lvl.wenyan);
-  const currentCavemanSpec = CAVEMAN_LEVELS.find((lvl) => lvl.id === cavemanLevel);
-  const needsWenyanFallback = Boolean(currentCavemanSpec?.wenyan && !isWenyanLocale);
-  const effectiveCavemanLevel = needsWenyanFallback ? "ultra" : cavemanLevel;
-
-  useEffect(() => {
-    if (needsWenyanFallback) {
-      void patchSetting({ cavemanLevel: "ultra" });
-    }
-  }, [needsWenyanFallback, patchSetting]);
-
   const handleRtkEnabled = async (value) => {
     const ok = await patchSetting({ rtkEnabled: value });
     if (ok) setRtkEnabledState(value);
@@ -101,21 +79,6 @@ export default function TokenSaverClient() {
     setReasoningEffortCap(cap);
     const ok = await patchSetting({ reasoningEffortCap: cap });
     if (!ok) setReasoningEffortCap((cur) => (cur === cap ? prev : cur));
-  };
-
-  const handleCavemanEnabled = async (value) => {
-    const prev = cavemanEnabled;
-    setCavemanEnabled(value);
-    const ok = await patchSetting({ cavemanEnabled: value });
-    if (!ok) setCavemanEnabled((cur) => (cur === value ? prev : cur));
-  };
-
-  const handleCavemanLevel = async (level) => {
-    const prev = cavemanLevel;
-    if (prev === level) return;
-    setCavemanLevel(level);
-    const ok = await patchSetting({ cavemanLevel: level });
-    if (!ok) setCavemanLevel((cur) => (cur === level ? prev : cur));
   };
 
   const handleSessionAffinityEnabled = async (value) => {
@@ -150,8 +113,6 @@ export default function TokenSaverClient() {
         if (res.ok && active) {
           const data = await res.json();
           setRtkEnabledState(data.rtkEnabled !== false);
-          setCavemanEnabled(!!data.cavemanEnabled);
-          setCavemanLevel(data.cavemanLevel || "full");
           const cap = data.reasoningEffortCap;
           setReasoningEffortCap(cap === "low" || cap === "medium" ? cap : "off");
           setSessionAffinityEnabled(data.sessionAffinityEnabled !== false);
@@ -552,60 +513,6 @@ export default function TokenSaverClient() {
             <p className="text-xs text-primary">
               {REASONING_EFFORT_CAPS.find((opt) => opt.id === reasoningEffortCap)?.desc}
             </p>
-          </div>
-        </div>
-        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">
-              Compress LLM output{" "}
-              <a
-                href="https://github.com/JuliusBrussee/caveman"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
-              >
-                (Caveman)
-              </a>
-            </p>
-            <p className="text-sm text-text-muted">
-              Terse-style system prompt → ~65% fewer output tokens (up to 87%)
-            </p>
-            <p className="text-xs text-text-muted mt-1">
-              Applies to translated/OpenAI/DeepSeek/Gemini traffic (skipped on Claude Code passthrough to protect prompt cache)
-            </p>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            {cavemanEnabled && (
-              <div className="flex flex-col items-end gap-1">
-                <div className="flex items-center gap-1.5">
-                  {visibleCavemanLevels.map((lvl) => (
-                    <button
-                      key={lvl.id}
-                      type="button"
-                      onClick={() => handleCavemanLevel(lvl.id)}
-                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                        effectiveCavemanLevel === lvl.id
-                          ? "bg-primary text-white border-primary"
-                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
-                      }`}
-                      title={lvl.desc}
-                    >
-                      {lvl.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-primary">
-                  {
-                    CAVEMAN_LEVELS.find((lvl) => lvl.id === effectiveCavemanLevel)
-                      ?.desc
-                  }
-                </p>
-              </div>
-            )}
-            <Toggle
-              checked={cavemanEnabled}
-              onChange={() => handleCavemanEnabled(!cavemanEnabled)}
-            />
           </div>
         </div>
         <div className="flex items-center justify-between py-4 border-b border-border gap-4">

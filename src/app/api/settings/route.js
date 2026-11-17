@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { resolveUniversalToolsMode, universalToolsLockedByEnv } from "open-sse/translator/concerns/universalToolPrompt.js";
+import { normalizeThaiSimpleMode, THAI_SIMPLE_MODES } from "open-sse/rtk/thaiSimple.js";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation, normalizePersistedStrategy } from "open-sse/services/combo.js";
 import { runQuotaAutoPingTick } from "@/shared/services/quotaAutoPing";
@@ -32,6 +33,7 @@ export async function GET() {
       // Effective universal tools mode: resolveUniversalToolsMode is the single
       // source of truth (env set = authoritative; else DB value, default "auto").
       universalToolsMode: resolveUniversalToolsMode(safeSettings.universalToolsMode),
+      thaiSimpleMode: normalizeThaiSimpleMode(safeSettings.thaiSimpleMode),
       // True when env UNIVERSAL_TOOLS_MODE is set — UI toggle should be read-only.
       universalToolsLockedByEnv: universalToolsLockedByEnv(),
       hasPassword: !!password
@@ -125,6 +127,17 @@ export async function PATCH(request) {
       }
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, "thaiSimpleMode")) {
+      const mode = typeof body.thaiSimpleMode === "string" ? body.thaiSimpleMode.trim().toLowerCase() : "";
+      if (!Object.values(THAI_SIMPLE_MODES).includes(mode)) {
+        return NextResponse.json(
+          { error: "thaiSimpleMode must be 'off', 'auto', or 'all'" },
+          { status: 400 }
+        );
+      }
+      body.thaiSimpleMode = mode;
+    }
+
     // Normalize persisted strategy strings at the trust boundary BEFORE
     // persisting: a raw PATCH can otherwise store a value the gateway cannot
     // run (stale UI copy, hand-edited settings, legacy aliases). Fail-open —
@@ -176,6 +189,7 @@ export async function PATCH(request) {
     // (single source of truth: resolveUniversalToolsMode).
     safeSettings.universalToolsMode = resolveUniversalToolsMode(safeSettings.universalToolsMode);
     safeSettings.universalToolsLockedByEnv = universalToolsLockedByEnv();
+    safeSettings.thaiSimpleMode = normalizeThaiSimpleMode(safeSettings.thaiSimpleMode);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);
