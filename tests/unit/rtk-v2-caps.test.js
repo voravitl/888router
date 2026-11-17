@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { compressMessages, applyHardCap } from "../../open-sse/rtk/index.js";
 import { HARD_CAP_BYTES } from "../../open-sse/rtk/constants.js";
 
@@ -20,43 +20,53 @@ describe("RTK v2 Hard Caps & Gemini Format Compression (Hardened)", () => {
     expect(capped.length).toBeLessThanOrEqual(20);
   });
 
-  it("compresses Gemini contents function/tool responses while preserving object structure", () => {
-    const hugeToolOutput = Array.from({ length: 500 }, (_, i) => `log output line ${i}: ` + "a".repeat(100)).join("\n");
-    const body = {
-      contents: [
-        {
-          role: "function",
-          parts: [
-            {
-              functionResponse: {
-                name: "execute_command",
-                response: { output: hugeToolOutput }
+  it("compresses Gemini contents function/tool responses while preserving object structure when RTK_LOSSY=on", () => {
+    vi.stubEnv("RTK_LOSSY", "on");
+    try {
+      const hugeToolOutput = Array.from({ length: 500 }, (_, i) => `log output line ${i}: ` + "a".repeat(100)).join("\n");
+      const body = {
+        contents: [
+          {
+            role: "function",
+            parts: [
+              {
+                functionResponse: {
+                  name: "execute_command",
+                  response: { output: hugeToolOutput }
+                }
               }
-            }
-          ]
-        }
-      ]
-    };
+            ]
+          }
+        ]
+      };
 
-    const stats = compressMessages(body, true);
-    expect(stats).not.toBeNull();
-    expect(stats.hits.length).toBeGreaterThan(0);
-    expect(typeof body.contents[0].parts[0].functionResponse.response).toBe("object"); // Object preserved!
-    expect(stats.bytesAfter).toBeLessThan(stats.bytesBefore);
+      const stats = compressMessages(body, true);
+      expect(stats).not.toBeNull();
+      expect(stats.hits.length).toBeGreaterThan(0);
+      expect(typeof body.contents[0].parts[0].functionResponse.response).toBe("object"); // Object preserved!
+      expect(stats.bytesAfter).toBeLessThan(stats.bytesBefore);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
-  it("still applies hard cap when input exceeds RAW_CAP (>10MB)", () => {
-    const massiveText = "a".repeat(11 * 1024 * 1024); // 11 MB
-    const body = {
-      messages: [
-        { role: "user", content: "hello" },
-        { role: "tool", content: massiveText }
-      ]
-    };
+  it("still applies hard cap when input exceeds RAW_CAP (>10MB) and RTK_LOSSY=on", () => {
+    vi.stubEnv("RTK_LOSSY", "on");
+    try {
+      const massiveText = "a".repeat(11 * 1024 * 1024); // 11 MB
+      const body = {
+        messages: [
+          { role: "user", content: "hello" },
+          { role: "tool", content: massiveText }
+        ]
+      };
 
-    const stats = compressMessages(body, true);
-    expect(stats).not.toBeNull();
-    expect(body.messages[1].content.length).toBeLessThanOrEqual(HARD_CAP_BYTES);
+      const stats = compressMessages(body, true);
+      expect(stats).not.toBeNull();
+      expect(body.messages[1].content.length).toBeLessThanOrEqual(HARD_CAP_BYTES);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("handles undefined, null, and non-string Gemini response gracefully without crash", () => {

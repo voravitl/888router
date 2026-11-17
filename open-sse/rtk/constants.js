@@ -6,8 +6,8 @@ export const DETECT_WINDOW = 1024;             // autodetect peeks first N chars
 // Per-filter caps. These are the only place RTK drops whole entries rather than
 // reformatting them, so they are env-tunable: raise them (or set 0 = unlimited)
 // to trade savings for completeness without touching filter logic.
-// Defaults keep upstream parity; `RTK_SAFE_CAPS=on` raises every cap so that a
-// listing is never truncated and the fidelity gate has nothing to refuse.
+// Safe caps default to ON so listings are never truncated and the fidelity gate
+// has nothing to refuse; set `RTK_SAFE_CAPS=off` to restore tight upstream caps.
 function capFromEnv(name, fallback) {
   const raw = process.env[name];
   if (raw === undefined) return fallback;
@@ -15,8 +15,8 @@ function capFromEnv(name, fallback) {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
-const SAFE_CAPS = String(process.env.RTK_SAFE_CAPS || "").toLowerCase();
-export const SAFE_CAPS_ENABLED = SAFE_CAPS === "on" || SAFE_CAPS === "1" || SAFE_CAPS === "true";
+const SAFE_CAPS = String(process.env.RTK_SAFE_CAPS || "on").trim().toLowerCase();
+export const SAFE_CAPS_ENABLED = !(SAFE_CAPS === "off" || SAFE_CAPS === "0" || SAFE_CAPS === "false");
 // Large enough that no realistic listing is cut; the fidelity gate still refuses
 // any rewrite that loses a protected token.
 const SAFE_CAP = 100000;
@@ -67,19 +67,20 @@ const rawCap = parseInt(process.env.RTK_HARD_CAP_BYTES || "32768", 10);
 export const HARD_CAP_BYTES = (Number.isFinite(rawCap) && rawCap > 0) ? rawCap : 32768; // 32 KB default cap
 
 // Lossy guard. Filters that summarise an ALREADY-condensed tool output (ls, git
-// status, find, grep, build logs) lose only detail the tool itself could re-emit.
-// Filters that trim RAW FILE CONTENT — read-numbered, smart-truncate, dedup-log —
-// and the hard-cap head/tail cut permanently remove bytes the model was asked to
-// read; a model that never saw line 250 answers from nothing. RTK_LOSSY=off keeps
-// only the first group so agent traffic cannot be corrupted.
+// status, find, grep, build logs, json-compact, ansi-clean) preserve structure
+// and lose only detail the tool itself could re-emit. Filters that trim RAW FILE
+// CONTENT — read-numbered, smart-truncate, dedup-log — and the hard-cap
+// head/tail cut permanently remove bytes the model was asked to read. Lossless
+// mode is the built-in default (lossy off) so agent traffic stays safe out of
+// the box; set `RTK_LOSSY=on` only when explicit lossy truncation is wanted.
 const LOSSY_FILTERS = new Set(["read-numbered", "smart-truncate", "dedup-log"]);
 
 // Read per call, not at import: a module-level constant freezes whatever env
 // the process started with, so a settings toggle or a test could never change
 // it without a restart (and a stale `on` would silently truncate file reads).
 export function isLossyEnabled() {
-  const raw = String(process.env.RTK_LOSSY || "on").toLowerCase();
-  return !(raw === "off" || raw === "0" || raw === "false");
+  const raw = String(process.env.RTK_LOSSY || "off").trim().toLowerCase();
+  return raw === "on" || raw === "1" || raw === "true";
 }
 
 export function isLossyFilter(name) {

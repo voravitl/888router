@@ -44,6 +44,28 @@ function claudeBody() {
   };
 }
 
+function statusBody() {
+  const text = [
+    "On branch main",
+    "Changes not staged for commit:",
+    '  (use "git add <file>..." to update what will be committed)',
+    '  (use "git restore <file>..." to discard changes in working directory)',
+    "  (commit or discard the untracked or modified content in submodules)",
+    '  (use "git add <file>..." to mark resolution)',
+    '  (use "git checkout -- <file>..." to discard changes)',
+    "",
+    ...Array.from({ length: 10 }, (_, i) => `\tmodified:   src/file${i}.js`),
+    "\tmodified:   src/a.js",
+  ].join("\n");
+  return {
+    model: "claude-sonnet-4-5", max_tokens: 64, messages: [
+      { role: "user", content: "check status" },
+      { role: "assistant", content: [{ type: "text", text: "ok" }, { type: "tool_use", id: "t1", name: "Bash", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: [{ type: "text", text }] }] },
+    ],
+  };
+}
+
 async function run(headers = {}, body = claudeBody()) {
   executeMock.mockResolvedValue({
     response: new Response(JSON.stringify({
@@ -90,13 +112,26 @@ describe("RTK on preserved (Claude Code) input", () => {
   });
   const allLogText = () => logs.join("\n");
 
-  it("stays off by default, so preserved input is untouched", async () => {
-    await run();
+  it("runs Lossless RTK on preserved input by default (zero env vars set)", async () => {
+    // Raw 1|code file reads stay byte-identical under default lossless mode
+    const { executed: codeExec } = await run();
+    expect(JSON.stringify(codeExec?.body ?? codeExec ?? {})).toContain("  1|const a = 1;");
+    expect(allLogText()).not.toContain("[RTK]");
+
+    // Format-only filters (git-status / json-compact) compress automatically without env config
+    const { executed: statusExec } = await run({}, statusBody());
+    expect(JSON.stringify(statusExec?.body ?? statusExec ?? {})).toContain("src/a.js");
+    expect(allLogText()).toContain("git-status");
+  });
+
+  it("can still opt out via RTK_ON_PRESERVED_INPUT=off", async () => {
+    process.env.RTK_ON_PRESERVED_INPUT = "off";
+    await run({}, statusBody());
     expect(allLogText()).not.toContain("[RTK]");
   });
 
-  it("runs with RTK_ON_PRESERVED_INPUT=on", async () => {
-    process.env.RTK_ON_PRESERVED_INPUT = "on";
+  it("runs lossy filters on preserved input only when explicitly opted in with RTK_LOSSY=on", async () => {
+    process.env.RTK_LOSSY = "on";
     await run();
     expect(allLogText()).toContain("[RTK]");
   });
@@ -116,15 +151,7 @@ describe("RTK on preserved (Claude Code) input", () => {
   it("RTK_LOSSY=off still applies a format-only filter", async () => {
     process.env.RTK_ON_PRESERVED_INPUT = "on";
     process.env.RTK_LOSSY = "off";
-    const status = " M src/a.js\n M src/b.js\n M src/c.js\n?? n1.js\n?? n2.js\n";
-    const statusBody = {
-      model: "claude-sonnet-4-5", max_tokens: 64, messages: [
-        { role: "user", content: "check status" },
-        { role: "assistant", content: [{ type: "text", text: "ok" }, { type: "tool_use", id: "t1", name: "Bash", input: {} }] },
-        { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: [{ type: "text", text: status.repeat(20) }] }] },
-      ],
-    };
-    const { executed } = await run({}, statusBody);
+    const { executed } = await run({}, statusBody());
     const json = JSON.stringify(executed?.body ?? executed ?? {});
     // git-status collapses the listing but keeps every file name.
     expect(json).toContain("src/a.js");
