@@ -90,8 +90,102 @@ const STRIKE_KEY_SEP = "|";
 // That is slower to trip, never wrong, and self-heals through
 // STRIKE_ONLY_BLOCK_MS — and a sticky combo retries the same failing model, so
 // the count still reaches the threshold.
+function isAntigravityProvider(providerId) {
+  return providerId === "antigravity" || providerId === "ag";
+}
+
+/**
+ * Canonicalize aliased Antigravity model spellings for strike/cache keys so
+ * `gemini-4-hydrogen-tiered-xhigh`, `gemini-4-hydrogen(xhigh)`, and
+ * `gemini-4-hydrogen-xhigh` share the same strike counter and lookup key.
+ */
+function canonicalizeQuotaModel(providerId, model) {
+  if (!model || typeof model !== "string" || !isAntigravityProvider(providerId)) return model;
+  const parenMatch = model.match(/\(([^()]+)\)\s*$/);
+  const parenLevel = parenMatch ? parenMatch[1].trim().toLowerCase() : "";
+  const rawBase = parenMatch ? model.slice(0, parenMatch.index).trim() : model;
+  const base = rawBase.replace(/-tiered(?=-|$)/i, "");
+  if (!parenLevel) return base;
+  const tierMatch = base.match(/-(xhigh|high|medium|low)$/i);
+  if (!tierMatch) return `${base}-${parenLevel}`;
+  if (tierMatch[1].toLowerCase() === parenLevel) return base;
+  return `${base.slice(0, tierMatch.index)}-${parenLevel}`;
+}
+
+/**
+ * Build ordered quota-table candidate keys for a requested model:
+ * exact key first, then stripped `(level)` / `-tiered` equivalents, then bare base.
+ */
+function getQuotaLookupCandidates(providerId, model) {
+  if (!model || typeof model !== "string") return [];
+  if (!isAntigravityProvider(providerId)) return [model];
+
+  const candidates = [];
+  const push = (id) => {
+    if (id && !candidates.includes(id)) candidates.push(id);
+  };
+
+  // 1. Exact key first
+  push(model);
+
+  // 2. Canonicalized form (e.g. gemini-4-hydrogen(xhigh) / -tiered-xhigh -> gemini-4-hydrogen-xhigh)
+  push(canonicalizeQuotaModel(providerId, model));
+
+  // 3. Stripped "(level)" and "-tiered" variants while keeping explicit tier level if present
+  const parenMatch = model.match(/\(([^()]+)\)\s*$/);
+  const parenLevel = parenMatch ? parenMatch[1].trim().toLowerCase() : "";
+  const withoutParens = parenMatch ? model.slice(0, parenMatch.index).trim() : model;
+  const deTieredRaw = model.replace(/-tiered(?=-|$)/i, "");
+  const deTieredBase = withoutParens.replace(/-tiered(?=-|$)/i, "");
+  if (parenLevel && !deTieredBase.match(/-(xhigh|high|medium|low)$/i)) {
+    push(`${deTieredBase}-${parenLevel}`);
+  }
+  push(deTieredRaw);
+  push(withoutParens);
+  push(deTieredBase);
+
+  // 4. Bare base model without trailing tier suffix (e.g. gemini-4-hydrogen-xhigh -> gemini-4-hydrogen)
+  const snapshot = [...candidates];
+  for (const id of snapshot) {
+    const bare = id.replace(/-(xhigh|high|medium|low)$/i, "");
+    if (bare !== id) {
+      push(bare.replace(/-tiered(?=-|$)/i, ""));
+    }
+  }
+  for (const id of snapshot) {
+    const bare = id.replace(/-(xhigh|high|medium|low)$/i, "");
+    if (bare !== id) {
+      push(bare);
+    }
+  }
+
+  // 5. Base -> -high / -tiered fallback when upstream uses a single base or -high key
+  if (deTieredBase && !deTieredBase.match(/-(xhigh|high|medium|low)$/i)) {
+    if (deTieredBase === "gemini-4-hydrogen" && (!parenLevel || parenLevel === "high")) {
+      push(`${deTieredBase}-high`);
+    }
+    push(`${deTieredBase}-tiered`);
+  } else if (deTieredBase) {
+    const bareRoot = deTieredBase.replace(/-(xhigh|high|medium|low)$/i, "");
+    if (bareRoot) push(`${bareRoot}-tiered`);
+  }
+
+  return candidates;
+}
+
+function resolveQuotaEntry(quotas, providerId, model) {
+  if (!quotas || typeof quotas !== "object" || !model || typeof model !== "string") return null;
+  for (const key of getQuotaLookupCandidates(providerId, model)) {
+    if (Object.prototype.hasOwnProperty.call(quotas, key) && quotas[key] != null) {
+      return quotas[key];
+    }
+  }
+  return null;
+}
+
 function strikeKey(providerId, connectionId, model) {
-  return `${connectionId}${STRIKE_KEY_SEP}${model}`;
+  const normalizedModel = canonicalizeQuotaModel(providerId, model);
+  return `${connectionId}${STRIKE_KEY_SEP}${normalizedModel}`;
 }
 const strikeCounts = new Map(); // strikeKey → { count, windowStart (anchored at first strike) }
 const strikeBlocks = new Map(); // strikeKey → blockedUntil ms
@@ -157,17 +251,25 @@ function applyActiveStrikeBlocks(connectionId, quotas) {
  * the account-level-key bug — see strikeKey.)
  */
 export function clearProviderStrikes(providerId, connectionId, model) {
-  const key = strikeKey(providerId, connectionId, model);
+  const canonicalModel = canonicalizeQuotaModel(providerId, model);
+  const key = strikeKey(providerId, connectionId, canonicalModel);
   strikeCounts.delete(key);
   const until = strikeBlocks.get(key);
   if (until) {
     strikeBlocks.delete(key);
     const cached = quotaCache.get(connectionId);
-    if (cached && cached[model]?.resetAt === new Date(until).toISOString()) {
-      delete cached[model];
+    const untilIso = new Date(until).toISOString();
+    let cleared = false;
+    for (const targetKey of new Set([canonicalModel, model])) {
+      if (cached && Object.prototype.hasOwnProperty.call(cached, targetKey) && cached[targetKey]?.resetAt === untilIso) {
+        delete cached[targetKey];
+        cleared = true;
+      }
+    }
+    if (cleared) {
       if (Object.keys(cached).length === 0) quotaCache.delete(connectionId);
       else quotaCache.set(connectionId, cached);
-      log.info("PQ", `${String(connectionId).slice(0, 8)} | strike cleared for ${model} after success`);
+      log.info("PQ", `${String(connectionId).slice(0, 8)} | strike cleared for ${canonicalModel} after success`);
     }
   }
 }
@@ -184,12 +286,13 @@ export function getProviderQuotaCache() {
  * skipped while its healthy siblings on the same account keep serving.
  */
 export function isPairBlocked(providerId, connectionId, model) {
+  if (!model || typeof model !== "string") return null;
   const now = Date.now();
   const key = strikeKey(providerId, connectionId, model);
   const blockedUntil = strikeBlocks.get(key);
   if (blockedUntil && blockedUntil > now) return blockedUntil;
 
-  const quota = quotaCache.get(connectionId)?.[model];
+  const quota = resolveQuotaEntry(quotaCache.get(connectionId), providerId, model);
   if (quota && quota.remainingPercentage <= 0 && quota.resetAt) {
     const resetMs = new Date(quota.resetAt).getTime();
     if (resetMs > now) return resetMs;
@@ -264,7 +367,8 @@ export async function handleProviderQuotaError(providerId, connectionId, status,
   const hasQuotaApi = QUOTA_API_PROVIDERS.has(providerId);
   let quota = null;
   if (hasQuotaApi) {
-    quota = (await refreshProviderQuota(connectionId, accessToken, providerSpecificData))?.[model] || null;
+    const quotas = await refreshProviderQuota(connectionId, accessToken, providerSpecificData);
+    quota = resolveQuotaEntry(quotas, providerId, model);
   }
 
   // Strike breaker: count every 429 whose quota reading is optimistic
@@ -273,7 +377,8 @@ export async function handleProviderQuotaError(providerId, connectionId, status,
   // 409 counts too by design: antigravity signals pool exhaustion with 409 as
   // well, and poisoning by transient 409s requires 3 inside 60s on one pair.
   if (!quota || quota.remainingPercentage > 0) {
-    const key = strikeKey(providerId, connectionId, model);
+    const canonicalModel = canonicalizeQuotaModel(providerId, model);
+    const key = strikeKey(providerId, connectionId, canonicalModel);
     const now = Date.now();
     const strike = strikeCounts.get(key);
     // Fixed window anchored at the FIRST qualifying strike: three 429s must
@@ -286,12 +391,12 @@ export async function handleProviderQuotaError(providerId, connectionId, status,
       const blockMs = hasQuotaApi ? STRIKE_BLOCK_MS : STRIKE_ONLY_BLOCK_MS;
       const blockedUntil = now + blockMs;
       const reading = quota ? `${Math.round(quota.remainingPercentage)}%` : "none";
-      log.warn("PQ", `${String(connectionId).slice(0, 8)} | STRIKE_${status} ${providerId} ${model} — ${count}x (quota ${reading}); CACHE_BLOCK ${Math.round(blockMs / 60000)}m`);
+      log.warn("PQ", `${String(connectionId).slice(0, 8)} | STRIKE_${status} ${providerId} ${canonicalModel} — ${count}x (quota ${reading}); CACHE_BLOCK ${Math.round(blockMs / 60000)}m`);
       // Synthesize a 0% entry in the shared cache so the auth pre-filter skips
       // this pair on subsequent requests too — the chat handler does not
       // persist a modelLock_* for this path.
       const cached = quotaCache.get(connectionId) || {};
-      cached[model] = { remainingPercentage: 0, resetAt: new Date(blockedUntil).toISOString() };
+      cached[canonicalModel] = { remainingPercentage: 0, resetAt: new Date(blockedUntil).toISOString() };
       quotaCache.set(connectionId, cached);
       strikeBlocks.set(key, blockedUntil);
       return blockedUntil;

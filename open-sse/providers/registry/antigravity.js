@@ -51,6 +51,9 @@ const antigravityConfig = {
     // Gemini 4 Hydrogen (default high, also supports low/medium/high/xhigh).
     { id: "gemini-4-hydrogen", name: "Gemini 4 Hydrogen", upstreamModelId: "gemini-4-hydrogen(high)" },
     { id: "gemini-4-hydrogen-xhigh", name: "Gemini 4 Hydrogen (XHigh)", upstreamModelId: "gemini-4-hydrogen(xhigh)" },
+    { id: "gemini-4-hydrogen-high", name: "Gemini 4 Hydrogen (High)", upstreamModelId: "gemini-4-hydrogen(high)" },
+    { id: "gemini-4-hydrogen-medium", name: "Gemini 4 Hydrogen (Medium)", upstreamModelId: "gemini-4-hydrogen(medium)" },
+    { id: "gemini-4-hydrogen-low", name: "Gemini 4 Hydrogen (Low)", upstreamModelId: "gemini-4-hydrogen(low)" },
     // Backported from upstream f172c3c4: Argon is supported on the Hub surface.
     { id: "gemini-4-argon-high", name: "Gemini 4 Argon (High)", upstreamModelId: "gemini-4-argon-high(high)" },
     { id: "gemini-4-argon-medium", name: "Gemini 4 Argon (Medium)", upstreamModelId: "gemini-4-argon-medium(medium)" },

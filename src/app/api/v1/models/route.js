@@ -21,6 +21,7 @@ import { OllamaService } from "@/lib/oauth/services/ollama";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials, refreshGoogleToken } from "@/sse/services/tokenRefresh";
 import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "open-sse/providers/shared.js";
+import { isAntigravityHiddenModel, parseAntigravityLiveModels } from "open-sse/providers/models/helpers.js";
 import { PROVIDERS } from "open-sse/config/providers.js";
 import { capabilitiesFromServiceKind, DEFAULT_CAPABILITIES, getCapabilitiesForModel, resolveKnownContextWindow, resolveKnownLimits } from "open-sse/providers/capabilities.js";
 import { MODELS_LIVE_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
@@ -244,52 +245,7 @@ const LIVE_MODEL_RESOLVERS = {
     }
     if (!res?.ok) return null;
     const data = await res.json().catch(() => null);
-    let parsed = [];
-    const expandTiered = (id, displayName) => {
-      const match = typeof id === "string" ? id.match(/^(gemini-[\d.]+-flash)-tiered$/) : null;
-      if (match) {
-        const prefix = match[1];
-        const ver = prefix.replace("gemini-", "").replace("-flash", "");
-        return [
-          { id, name: displayName || id },
-          { id: `${prefix}-high`, name: `Gemini ${ver} Flash (High)` },
-          { id: `${prefix}-medium`, name: `Gemini ${ver} Flash (Medium)` },
-          { id: `${prefix}-low`, name: `Gemini ${ver} Flash (Low)` },
-        ];
-      }
-      return [{ id, name: displayName || id }];
-    };
-
-    if (Array.isArray(data?.models)) {
-      parsed = data.models
-        .flatMap((item) => {
-          const id = item?.id || item?.model || item?.name;
-          if (!id) return [];
-          return expandTiered(id, item?.displayName || item?.name || id);
-        })
-        .filter(Boolean);
-    } else if (data?.models && typeof data.models === "object") {
-      parsed = Object.entries(data.models)
-        .filter(([, info]) => !info?.isInternal)
-        .flatMap(([id, info]) => {
-          return expandTiered(id, info?.displayName || info?.name || id);
-        });
-    }
-
-    if (PROVIDERS.antigravity?.models) {
-      const seen = new Set(parsed.map((m) => m.id));
-      for (const staticModel of PROVIDERS.antigravity.models) {
-        if (/gemini-[34]/i.test(staticModel.id) && !seen.has(staticModel.id)) {
-          seen.add(staticModel.id);
-          parsed.push({
-            ...staticModel,
-            id: staticModel.id,
-            name: staticModel.name || staticModel.id,
-          });
-        }
-      }
-    }
-
+    const parsed = parseAntigravityLiveModels(data, PROVIDERS.antigravity?.models);
     return parsed.length ? { models: parsed } : null;
   }
 };
@@ -853,7 +809,8 @@ async function buildProviderEntries({
           }
           return modelId;
         })
-        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
+        .filter((modelId) => providerId !== "antigravity" || !isAntigravityHiddenModel(modelId));
 
       const customModelKindById = new Map();
       const customModelIds = customModels
@@ -894,7 +851,8 @@ async function buildProviderEntries({
           }
           return fullModel;
         })
-        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
+        .filter((modelId) => providerId !== "antigravity" || !isAntigravityHiddenModel(modelId));
 
       const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
 

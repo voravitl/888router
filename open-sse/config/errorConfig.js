@@ -45,6 +45,7 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 // stops hammering flagged OAuth accounts (especially Google Antigravity) every few minutes.
 export const ACCOUNT_VALIDATION_PARK_MS = 6 * 60 * 60 * 1000; // 6 hours
 export const ANTIGRAVITY_PERMISSION_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
+export const ANTIGRAVITY_429_MIN_COOLDOWN_MS = 60 * 1000; // 1 minute minimum floor on bare 429s
 
 export const ACCOUNT_RESTRICTION_PATTERNS = /validation_required|verify your account|account_disabled|account(?:\s+(?:is|has\s+been))?\s+(?:disabled|suspended)|terms of service/i;
 
