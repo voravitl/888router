@@ -3,7 +3,13 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getProxyPools, updateProxyPool, getProxyPoolById } from "@/lib/db/repos/proxyPoolsRepo";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { isPairBlocked, isQuotaTrackedProvider } from "./providerQuota.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS, TRANSIENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import {
+  MAX_RATE_LIMIT_COOLDOWN_MS,
+  TRANSIENT_COOLDOWN_MS,
+  ACCOUNT_VALIDATION_PARK_MS,
+  ANTIGRAVITY_PERMISSION_COOLDOWN_MS,
+  ACCOUNT_RESTRICTION_PATTERNS,
+} from "open-sse/config/errorConfig.js";
 import { isLocalProviderError } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { resolveProviderId, FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers.js";
@@ -833,18 +839,28 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
-  let shouldFallback, cooldownMs, newBackoffLevel, modelError;
+  const resolvedProvider = provider ? resolveProviderId(provider) : null;
+  let shouldFallback, cooldownMs, parkMs, newBackoffLevel, modelError;
   if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
     cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel, modelError } = checkFallbackError(status, errorText, backoffLevel));
+    ({ shouldFallback, cooldownMs, parkMs, newBackoffLevel, modelError } = checkFallbackError(status, errorText, backoffLevel));
+    if (parkMs && parkMs > (cooldownMs || 0)) {
+      cooldownMs = parkMs;
+    }
+  }
+  if ((resolvedProvider === "antigravity" || resolvedProvider === "ag") && status === 403) {
+    const minAg403Ms = ACCOUNT_RESTRICTION_PATTERNS.test(typeof errorText === "string" ? errorText : "")
+      ? ACCOUNT_VALIDATION_PARK_MS
+      : ANTIGRAVITY_PERMISSION_COOLDOWN_MS;
+    cooldownMs = Math.max(cooldownMs || 0, minAg403Ms);
+    shouldFallback = true;
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0, modelError: !!modelError };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const resolvedProvider = provider ? resolveProviderId(provider) : null;
   // OpenCode's free-tier quota wall ("FreeUsageLimitError: Free usage limit
   // reached") is per-MODEL, not account-wide — see providerQuota.js and the
   // pool branch at line 764. Locking modelLock___all here takes every sibling

@@ -957,6 +957,15 @@ export async function testSingleConnection(id) {
     lastErrorAt: result.valid ? null : new Date().toISOString(),
   };
 
+  if (result.valid) {
+    updateData.backoffLevel = 0;
+    for (const key of Object.keys(connection)) {
+      if (key.startsWith("modelLock_")) {
+        updateData[key] = null;
+      }
+    }
+  }
+
   if (result.refreshed && result.newTokens) {
     if (result.newTokens.accessToken) updateData.accessToken = result.newTokens.accessToken;
     if (result.newTokens.refreshToken) updateData.refreshToken = result.newTokens.refreshToken;
