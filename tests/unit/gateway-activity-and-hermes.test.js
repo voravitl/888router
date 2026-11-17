@@ -53,6 +53,8 @@ describe("Hermes compatibility & 10-Minute Gateway Activity telemetry", () => {
     let tempDir;
 
     beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 10, 17, 14, 30, 15, 0));
       tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "gateway-activity-"));
       process.env.DATA_DIR = tempDir;
       try { global._dbAdapter?.instance?.close?.(); } catch {}
@@ -62,6 +64,7 @@ describe("Hermes compatibility & 10-Minute Gateway Activity telemetry", () => {
     });
 
     afterEach(() => {
+      vi.useRealTimers();
       try { global._dbAdapter?.instance?.close?.(); } catch {}
       delete global._dbAdapter;
       delete global._recentErrorActivity;
