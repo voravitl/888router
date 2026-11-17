@@ -1,3 +1,14 @@
+# v0.15.263 (2026-11-17)
+
+## Antigravity 429 Quota Storm Prevention & Model Listing Hygiene
+- **Filter Internal/Retired Antigravity Models & Resolve Cached `-tiered-*` Aliases (`open-sse/providers/models/helpers.js`, `open-sse/providers/registry/antigravity.js`, `open-sse/config/providerModels.js`, `src/app/api/v1/models/route.js`, `src/app/api/providers/[id]/models/route.js`, `tests/unit/antigravity-hydrogen-models-v1.test.js`)**:
+  - Added `parseAntigravityLiveModels`, `isAntigravityHiddenModel`, and `resolveAntigravityHydrogenModel` to filter `isInternal`/`disabled` entries, `tab_*`, `*-disabled`, `*-sonar`, retired `gemini-3.6-flash-*` / `gemini-3.7-flash-*` / `gemini-3.1-pro-*` / `gemini-3.5-flash-extra-low` / `gemini-pro-agent` IDs, and raw `-tiered` / `-tiered-*` names across live `/v1/models`, provider model sync, and saved `enabledModels` (expanding `gemini-4-hydrogen-tiered` and `gemini-<ver>-flash-tiered` cleanly while keeping empty filtered results falling back to the static registry).
+  - Registered `gemini-4-hydrogen-{high,medium,low}` alongside `gemini-4-hydrogen` / `gemini-4-hydrogen-xhigh` and mapped cached `gemini-4-hydrogen-tiered-{xhigh,high,medium,low}` requests in `findModel` / `getModelUpstreamId` to canonical `gemini-4-hydrogen(<level>)` with preset-overridable suffixes (`applyPresetSuffix`).
+- **Prevent Hintless 429 Retry Storms, Enforce 60s Cooldown Floor & Fix Aliased Quota Lookups (`open-sse/executors/antigravity.js`, `open-sse/config/errorConfig.js`, `src/sse/services/providerQuota.js`, `src/sse/services/auth.js`, `tests/unit/antigravity-429-hardening.test.js`)**:
+  - Updated `AntigravityExecutor.computeRetryDelay` to skip retry loops immediately (`false`, 0 extra attempts) on `RESOURCE_EXHAUSTED` / quota-exhaustion `429` bodies without a short retry hint while preserving bounded `2s/4s/8s` (`attempt <= 3`) retries for transient capacity/high-traffic `429`s (`ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS`) and capping blind bodyless `429` backoff at 3 attempts (`MAX_ANTIGRAVITY_429_BACKOFF_ATTEMPTS = 3`).
+  - Added `ANTIGRAVITY_429_MIN_COOLDOWN_MS = 60_000` in `errorConfig.js` and enforced a 60-second minimum account/model lock floor in `markAccountUnavailable` for fallback `antigravity`/`ag` `429`s without future `resetsAtMs` (eliminating `2s` immediate re-hit loops) while fixing `resolvedProvider` ordering for alias `ag`.
+  - Updated `providerQuota.js` (`canonicalizeQuotaModel`, `getQuotaLookupCandidates`, `resolveQuotaEntry`) so `(level)` and `-tiered` aliases hit live quota cache entries and share unified strike keys cleanly across `isPairBlocked`, `handleProviderQuotaError`, and `clearProviderStrikes`.
+
 # v0.15.262 (2026-11-17)
 
 ## Antigravity Anti-Ban Hardening (Leak Stripping & Restriction Quarantine)
