@@ -1163,9 +1163,16 @@ export default function ProviderDetailPage() {
     }
     // Combine hardcoded models with Kilo free models (deduplicated)
     // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
-    // Also merge in dynamic models fetched from the provider API
+    // Also merge in dynamic models fetched from the provider API; overlay live
+    // dynamic metadata onto matching static rows so live caps / releasedAt win.
+    const dynamicById = new Map(
+      dynamicModels.filter((dm) => dm?.id).map((dm) => [dm.id, dm])
+    );
+    const enrichedBuiltIn = models.map((m) =>
+      dynamicById.has(m.id) ? { ...m, ...dynamicById.get(m.id) } : m
+    );
     const allModels = [
-      ...models,
+      ...enrichedBuiltIn,
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
       ...dynamicModels.filter((dm) => !models.some((m) => m.id === dm.id)),
     ].filter((m) => { const k = getModelKind(m); return !k || k === "llm" || k === "chat" || k === "research"; });
@@ -1256,7 +1263,7 @@ export default function ProviderDetailPage() {
           isCustom: false,
           lastSyncedAt: synced.lastSyncedAt || m.lastSyncedAt || null,
           firstSeenAt: synced.firstSeenAt || m.firstSeenAt || null,
-          releasedAt: getReleasedAt(m),
+          releasedAt: m.releasedAt || getReleasedAt(m),
           thinkingSuffix: resolveThinkingSuffix(m.id),
         });
       }),

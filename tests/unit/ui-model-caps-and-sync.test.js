@@ -244,4 +244,13 @@ describe("Live / synced / stale partitioning guard", () => {
     expect(result.status).toBe("stale");
     expect(result.missingSince).toBe("2026-03-01T00:00:00.000Z");
   });
+
+  it("CAPACITY_META exposes multimodal badge metadata for vision, pdf, audioInput, videoInput, reasoning", async () => {
+    const { CAPACITY_META } = await import("../../src/shared/constants/models.js");
+    expect(CAPACITY_META.vision).toBeDefined();
+    expect(CAPACITY_META.pdf).toBeDefined();
+    expect(CAPACITY_META.audioInput).toBeDefined();
+    expect(CAPACITY_META.videoInput).toBeDefined();
+    expect(CAPACITY_META.reasoning).toBeDefined();
+  });
 });

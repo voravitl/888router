@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getModelAliases, setModelAlias } from "@/models";
+import { getModelAliases, setModelAlias, getProviderConnections } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias, resolveProviderId, ALIAS_TO_ID } from "@/shared/constants/providers";
@@ -35,6 +35,7 @@ export async function GET() {
     // never take the dashboard model list down.
     let dynamicCapsRows = new Map();
     let syncedMap = {};
+    let connProviderById = new Map();
     try {
       dynamicCapsRows = (await getAllModelDynamicCapabilities()) || new Map();
     } catch (error) {
@@ -45,13 +46,46 @@ export async function GET() {
     } catch (error) {
       console.log("Could not load synced models map:", error?.message);
     }
-
-    const staleModelIds = new Set();
-    for (const [key, entry] of Object.entries(syncedMap)) {
-      if (entry?.status !== "stale") continue;
-      const colon = key.indexOf(":");
-      if (colon >= 0) staleModelIds.add(key.slice(colon + 1));
+    try {
+      if (typeof getProviderConnections === "function") {
+        const conns = (await getProviderConnections()) || [];
+        for (const c of conns) {
+          if (c?.id && c?.provider) connProviderById.set(c.id, c.provider);
+        }
+      }
+    } catch (error) {
+      console.log("Could not load connections for synced status scoping:", error?.message);
     }
+
+    const activeScoped = new Set();
+    const staleScoped = new Set();
+    const unmappedActiveModels = new Set();
+    const unmappedStaleModels = new Set();
+    for (const [key, entry] of Object.entries(syncedMap)) {
+      const colon = key.indexOf(":");
+      if (colon < 0) continue;
+      const connId = key.slice(0, colon);
+      const modelId = key.slice(colon + 1);
+      const mappedProvider = connProviderById.get(connId)
+        || (connId.startsWith("public:") ? connId.slice("public:".length) : null);
+      const isStale = entry?.status === "stale";
+      if (mappedProvider) {
+        const scoped = `${mappedProvider}:${modelId}`;
+        if (isStale) staleScoped.add(scoped);
+        else activeScoped.add(scoped);
+      } else {
+        if (isStale) unmappedStaleModels.add(modelId);
+        else unmappedActiveModels.add(modelId);
+      }
+    }
+
+    const isStaleForProvider = (providerId, modelId) => {
+      const scoped = `${providerId}:${modelId}`;
+      if (activeScoped.has(scoped)) return false;
+      if (staleScoped.has(scoped)) return true;
+      if (unmappedActiveModels.has(modelId)) return false;
+      return unmappedStaleModels.has(modelId);
+    };
 
     const dynamicCapsByKey = {};
     const dynamicModels = [];
@@ -73,7 +107,7 @@ export async function GET() {
 
       // Stale ghosts keep their capabilities available for lookup but are not
       // injected as live selectable models (no auto-breaking of combos/aliases).
-      if (staleModelIds.has(modelId)) continue;
+      if (isStaleForProvider(providerId, modelId)) continue;
       dynamicModels.push({
         provider: providerId,
         model: modelId,
@@ -100,7 +134,13 @@ export async function GET() {
           ...m,
           fullModel,
           alias: modelAliases[fullModel] || m.model,
-          caps: { vision: c.vision, search: c.search, reasoning: c.reasoning, contextWindow: c.contextWindow },
+          caps: {
+            vision: c.vision,
+            search: c.search,
+            reasoning: c.reasoning,
+            contextWindow: c.contextWindow,
+            ...(dynamicCapsByKey[fullModel] || {}),
+          },
         };
       });
 

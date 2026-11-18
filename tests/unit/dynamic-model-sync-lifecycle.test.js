@@ -254,6 +254,27 @@ describe("synced capabilities on HTTP surfaces", () => {
     expect(data.models.some((m) => m.fullModel === "opencode-go/hy4-flash-free")).toBe(true);
   });
 
+  it("GET /api/models isolates stale status per provider without hiding another provider's active model", async () => {
+    mocks.getAllModelDynamicCapabilities.mockResolvedValue(new Map([
+      ["opencode-go:shared-model", { contextWindow: 128000, vision: true }],
+      ["openrouter:shared-model", { contextWindow: 128000, vision: false }],
+    ]));
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "conn-ocg", provider: "opencode-go" },
+      { id: "conn-or", provider: "openrouter" },
+    ]);
+    mocks.getSyncedModelsMap.mockResolvedValue({
+      "conn-ocg:shared-model": { status: "active", firstSeenAt: "t1", lastSyncedAt: "t2" },
+      "conn-or:shared-model": { status: "stale", firstSeenAt: "t1", missingSince: "t2" },
+    });
+    const { GET } = await import("../../src/app/api/models/route.js");
+    const res = await GET();
+    const data = await res.json();
+    expect(data.models.some((m) => m.fullModel === "opencode-go/shared-model")).toBe(true);
+    expect(data.models.some((m) => m.fullModel === "openrouter/shared-model")).toBe(false);
+    expect(data.dynamicCapsByKey["openrouter/shared-model"].vision).toBe(false);
+  });
+
   it("GET /api/v1/models/info?id=ocg/hy4-flash-free resolves from synced caps", async () => {
     const { GET } = await import("../../src/app/api/v1/models/info/route.js");
     const res = await GET(new Request("http://localhost/v1/models/info?id=ocg/hy4-flash-free"));

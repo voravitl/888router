@@ -184,10 +184,11 @@ export default function ModelSelectModal({
     []
   );
 
-  // Pre-index syncedModels by connId to turn O(Providers * SyncedModels) loop into O(1) Map lookup
+  // Pre-index active syncedModels by connId to turn O(Providers * SyncedModels) loop into O(1) Map lookup
   const syncedModelsByConn = useMemo(() => {
     const map = new Map();
-    for (const key of Object.keys(syncedModels || {})) {
+    for (const [key, entry] of Object.entries(syncedModels || {})) {
+      if (entry?.status === "stale") continue;
       const colon = key.indexOf(":");
       if (colon <= 0) continue;
       const connId = key.slice(0, colon);
@@ -222,7 +223,7 @@ export default function ModelSelectModal({
               id: modelId,
               name: modelId,
               value: `${targetAlias}/${modelId}`,
-              isCustom: true,
+              isSynced: true,
             });
           }
         }
@@ -241,7 +242,7 @@ export default function ModelSelectModal({
     const ALLOW_PROVIDER_FALLBACK_KINDS = new Set(["tts", "image", "webFetch"]);
 
     const filterByKind = (models) => {
-      if (!kindFilter) return models.filter((m) => m.isPlaceholder || m.isCustom || !getModelKind(m) || getModelKind(m) === "llm");
+      if (!kindFilter) return models.filter((m) => m.isPlaceholder || m.isCustom || m.isSynced || !getModelKind(m) || getModelKind(m) === "llm");
       if (!TYPED_KINDS.has(kindFilter)) return models;
       return models.filter((m) => m.isPlaceholder || getModelKind(m) === kindFilter);
     };

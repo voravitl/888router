@@ -1,3 +1,15 @@
+# v0.15.265 (2026-11-18)
+
+## Dynamic Model Sync Lifecycle & Unified Capabilities Pipeline
+- **Unified Upstream Capability Normalizer (`open-sse/services/upstreamModelNormalizer.js`, `open-sse/services/modelsDevModality.js`, `src/app/api/providers/[id]/models/route.js`, `src/app/api/v1/models/route.js`, `tests/unit/dynamic-model-sync-lifecycle.test.js`)**:
+  - Added `normalizeUpstreamModel` and `collectNormalizedCapabilities` to extract `modalities.input` (MIME types such as `image/jpeg`, `application/pdf`, `audio/*`, `video/*`), `input_modalities`, `limit.{context,output}`, `capabilities.{reasoning,tools}.supported`, `search`, and `release_date` / `created` / `created_at` (`releasedAt`) uniformly across providers before and after `models.dev` enrichment (preserving upstream values while expanding `modelsDevModality` to cover `pdf`, `audioInput`, `videoInput`, `tools`, and `maxOutput`).
+- **Active vs Stale Synced Lifecycle & Full DB Capability Persistence (`src/lib/db/repos/syncedModelsRepo.js`, `src/app/api/models/route.js`, `src/app/api/v1/models/info/route.js`)**:
+  - Added `status: "active"` / `"stale"` and `missingSince` tracking in `stampSyncedModels` and `reconcileSyncedModelsForConnection` (guarded to run only on non-empty live upstream responses, never deleting stale rows referenced by combos/aliases).
+  - Updated `getAllModelDynamicCapabilities` to keep capability-only rows (e.g. `vision: true`) while still rejecting malformed `contextWindow <= 1`; updated `GET /api/models` to expose provider-scoped `dynamicCapsByKey` (both canonical provider IDs and aliases) plus active synced models without cross-provider stale bleed; and updated `GET /api/v1/models/info` to resolve dynamically synced models (including `ocg/hy4-flash-free`) instead of returning `404`.
+- **Dashboard Capability Badges & Old/New Catalog Hygiene (`src/shared/utils/modelCapsMerge.js`, `src/shared/hooks/useModelCaps.js`, `src/shared/constants/models.js`, `src/shared/components/ModelSelectModal.js`, `src/app/(dashboard)/dashboard/providers/[id]/page.js`, `ModelsTable.js`, `ModelRow.js`, `SyncProviderModelsModal.js`, `tests/unit/ui-model-caps-and-sync.test.js`)**:
+  - Upgraded `useModelCaps` (`getCaps(key, modelOverride, aliasKey)`) via `buildCapsIndexes` / `resolveModelCaps` so explicit live row caps and scoped `dynamicCapsByKey` take precedence over browser static fallbacks, and expanded `CAPACITY_META` to display `vision`, `pdf`, `audioInput`, `videoInput`, and `reasoning` badges.
+  - Updated Provider Detail (`page.js`, `ModelsTable.js`, `ModelRow.js`), `SyncProviderModelsModal.js` (per-row badges + `Vision` filter tab), and `ModelSelectModal.js` to overlay live metadata onto matching static rows, separate `synced`/`custom`/`stale` states cleanly, filter stale ghosts from new selections by default, and expose a `Hide stale / Show stale (N)` toggle + safe stale cleanup action.
+
 # v0.15.264 (2026-11-17)
 
 ## Fix Gemini 4 Hydrogen Upstream Wire Model IDs (Prevent 404 NOT_FOUND)
