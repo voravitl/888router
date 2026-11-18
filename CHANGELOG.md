@@ -1,3 +1,16 @@
+# v0.15.266 (2026-11-18)
+
+## Unified Model Sync Pipeline & Antigravity Hermes Prompt 429 Fix
+- **Batch Model Sync & Lifecycle Accuracy (`src/app/api/models/sync/route.js`, `src/app/api/providers/[id]/models/route.js`, `src/app/api/v1/models/route.js`, `src/app/api/providers/suggested-models/filters.js`, `src/app/api/sync-opencode/route.js`, `tests/unit/unified-model-sync.test.js`, `tests/unit/dynamic-model-sync-lifecycle.test.js`)**:
+  - Added `GET /api/models/sync` (live synced summary aggregated across connections/providers) and `POST /api/models/sync` (on-demand batch sync with bounded concurrency `4`, per-target `10s` timeout, and `globalThis.__modelSyncInFlight` deduplication).
+  - Fixed `buildModelsResponse` with `reconcile: false` (static fallback lists) so failed live fetches no longer falsely stamp `syncedModels` or overwrite SQLite dynamic capabilities, while still reading prior synced metadata best-effort.
+  - Normalized generic OpenAI-compatible live models (`LIVE_MODEL_RESOLVERS["__openai-generic__"]` in `/v1/models` and `FILTERS.openai` in `suggested-models`) through `normalizeUpstreamModel` / `collectNormalizedCapabilities`, and updated `POST /api/sync-opencode` to trigger live SQLite sync for `opencode` and `opencode-go` even when the source-tree script cannot write in a read-only container.
+- **Dashboard `Sync All Models` Actions & Last-Synced Indicator (`src/app/(dashboard)/dashboard/providers/page.js`, `src/app/(dashboard)/dashboard/providers/[id]/page.js`, `src/app/(dashboard)/dashboard/providers/[id]/ModelsTable.js`, `tests/unit/ui-model-caps-and-sync.test.js`)**:
+  - Added `Sync All Models` controls to the Providers page hero actions and catalog matrix toolbar backed by `POST /api/models/sync`, displayed relative/absolute `Synced ...` timestamps in `ModelsTable`, and refreshed `syncedMap` after dynamic model loads, additions, and modal close.
+- **Fix Google Antigravity Fake `429 RESOURCE_EXHAUSTED` on Hermes Prompts & Missing `.clone()` in Bypass Transport (`open-sse/executors/antigravity.js`, `open-sse/utils/proxyFetch.js`, `tests/unit/antigravity-429-cooldown.test.js`)**:
+  - Expanded `sanitizeAntigravityPrompt` to rewrite server-blocked Hermes Agent `prompt_builder.py` boilerplate spans while preserving semantic instructions, restoring live `HTTP 200` on 181KB Hermes `ag/gemini-4-hydrogen-low` requests.
+  - Updated `createBypassRequest` (`buildBypassResponse` in `proxyFetch.js`) and `AntigravityExecutor.computeRetryDelay` (`readResponseTextSafely`) so bypass transport responses expose `.clone()` and fallback cleanly via `tee()`, ensuring `RESOURCE_EXHAUSTED` 429 retry vetoes run instead of throwing `TypeError: response.clone is not a function` and retrying 3 times.
+
 # v0.15.265 (2026-11-18)
 
 ## Dynamic Model Sync Lifecycle & Unified Capabilities Pipeline

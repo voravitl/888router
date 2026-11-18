@@ -11,7 +11,7 @@ import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignatur
 import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { ACCOUNT_RESTRICTION_PATTERNS } from "../config/errorConfig.js";
 
-// Sanitize competitive system prompts (Zed, Claude Code, Anthropic Agent SDK)
+// Sanitize competitive system prompts (Zed, Claude Code, Anthropic Agent SDK, Hermes Agent)
 // to prevent Google Antigravity backend from flagging requests and returning 429 Quota Exhausted.
 export function sanitizeAntigravityPrompt(text) {
   if (typeof text !== "string") return text;
@@ -20,7 +20,18 @@ export function sanitizeAntigravityPrompt(text) {
     .replace(/You are Claude Code(?:,?\s*Anthropic's official CLI for Claude)?\.\s*/gi, "")
     .replace(/Claude Code is Anthropic's official CLI for Claude\.\s*/gi, "")
     .replace(/Anthropic's official CLI for Claude/gi, "an AI programming CLI")
-    .replace(/Anthropic's Claude Agent SDK/gi, "the Agent SDK");
+    .replace(/Anthropic's Claude Agent SDK/gi, "the Agent SDK")
+    .replace(/You are Hermes Agent(?:,\s*built by Nous Research)?/gi, "You are an AI assistant")
+    .replace(/You run on Hermes Agent(?:\s*\(by Nous Research\))?/gi, "You run on the local agent runtime")
+    .replace(/For help with Hermes Agent itself/gi, "For help with the agent runtime itself")
+    .replace(/Be direct:\s*match the length of your reply to the weight of the ask/gi, "Be direct and match your reply length to the complexity of the request")
+    .replace(/https?:\/\/hermes-agent\.nousresearch\.com\/docs/gi, "the local agent documentation")
+    .replace(/the deliverable is a working artifact backed by real tool output/gi, "the deliverable is a verified working result backed by real tool output")
+    .replace(/Reporting a blocker honestly is always better than inventing a result\./gi, "Reporting a blocker honestly is always preferable to fabricating a result.")
+    .replace(/Hermes delivers their message as a standalone user message right after the latest tool results/gi, "the runtime delivers their message as a standalone user message right after the latest tool results")
+    .replace(/#\s*Google model operational directives/gi, "# Model operational directives")
+    .replace(/#\s*Hermes runtime environment/gi, "# Runtime environment")
+    .replace(/<!--\s*End Hermes runtime environment\s*-->/gi, "<!-- End runtime environment -->");
 }
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
@@ -29,6 +40,30 @@ function sanitizeFunctionName(name) {
   let s = name.replace(/[^a-zA-Z0-9_.:\-]/g, "_");
   if (!/^[a-zA-Z_]/.test(s)) s = "_" + s;
   return s.substring(0, 64);
+}
+
+async function readResponseTextSafely(response) {
+  if (!response) return "";
+  if (typeof response.clone === "function") {
+    return await response.clone().text();
+  }
+  if (response.body && typeof response.body.tee === "function" && !response.body.locked) {
+    const [inspectBranch, callerBranch] = response.body.tee();
+    try {
+      response.body = callerBranch;
+      if (typeof response.text === "function") {
+        response.text = () => new Response(callerBranch).text();
+        response.json = () => new Response(callerBranch).json();
+      }
+    } catch {
+      // ignore if response properties are non-writable
+    }
+    return await new Response(inspectBranch).text();
+  }
+  if (typeof response.text === "function") {
+    return await response.text();
+  }
+  return "";
 }
 
 const MAX_RETRY_AFTER_MS = 10000;
@@ -596,7 +631,7 @@ export class AntigravityExecutor extends BaseExecutor {
     let retryMs = this.parseRetryHeaders(response.headers);
 
     try {
-      bodyText = await response.clone().text();
+      bodyText = await readResponseTextSafely(response);
       errorJson = bodyText ? JSON.parse(bodyText) : null;
     } catch {
       // ignore parse errors → fall through to status/message based retry

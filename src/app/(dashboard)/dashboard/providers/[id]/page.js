@@ -492,11 +492,13 @@ export default function ProviderDetailPage() {
     fetch(targetEndpoint, { cache: "no-store", signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
-        if (data.models && Array.isArray(data.models)) {
+        if (controller.signal.aborted) return;
+        if (data?.models && Array.isArray(data.models)) {
           setDynamicModels(data.models);
         } else {
           setDynamicModels([]);
         }
+        fetchSyncedModels();
       })
       .catch((err) => {
         if (err?.name === "AbortError") return;
@@ -505,7 +507,7 @@ export default function ProviderDetailPage() {
       });
 
     return () => controller.abort();
-  }, [connections, providerId, isCompatible]);
+  }, [connections, providerId, isCompatible, fetchSyncedModels]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -770,6 +772,7 @@ export default function ProviderDetailPage() {
     }
 
     await fetchAliases();
+    await fetchSyncedModels();
   };
 
   const handleDelete = async (id) => {
@@ -1994,7 +1997,10 @@ export default function ProviderDetailPage() {
           passthroughModels={!!providerInfo.passthroughModels}
           providerId={providerId}
           onAddModels={handleAddSyncedModels}
-          onClose={() => setShowSyncModels(false)}
+          onClose={() => {
+            setShowSyncModels(false);
+            fetchSyncedModels();
+          }}
         />
       )}
     </div>

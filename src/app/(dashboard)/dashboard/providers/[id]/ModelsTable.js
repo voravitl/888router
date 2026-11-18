@@ -7,24 +7,47 @@ import SortIcon from "@/shared/components/SortIcon";
 import { fullModelWithSuffix } from "@/shared/utils/claudeCodeModelId";
 import { compareModels } from "./models-table-sort";
 
-export { compareModels };
+export { compareModels, fmtRelative, fmtAbsolute };
 
 function fmtRelative(iso) {
   if (!iso) return "";
-  const diffMins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  const ts = new Date(iso).getTime();
+  if (!Number.isFinite(ts)) return "";
+  const diffMins = Math.floor((Date.now() - ts) / 60000);
   if (diffMins < 1) return "Just now";
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
-  return new Date(iso).toLocaleDateString();
+  return new Date(ts).toLocaleDateString();
 }
 
 function fmtAbsolute(iso) {
   if (!iso) return "";
   try {
-    return new Date(iso).toLocaleString();
+    const d = new Date(iso);
+    return Number.isFinite(d.getTime()) ? d.toLocaleString() : "";
   } catch {
     return "";
   }
+}
+
+export function getLatestSyncedAt(models) {
+  if (!Array.isArray(models) || models.length === 0) return null;
+  let latestTs = -Infinity;
+  let latestIso = null;
+  for (const model of models) {
+    if (!model?.lastSyncedAt) continue;
+    const ts = typeof model.lastSyncedAt === "number"
+      ? model.lastSyncedAt
+      : Date.parse(model.lastSyncedAt);
+    if (!Number.isFinite(ts)) continue;
+    if (ts > latestTs) {
+      latestTs = ts;
+      latestIso = typeof model.lastSyncedAt === "string"
+        ? model.lastSyncedAt
+        : new Date(ts).toISOString();
+    }
+  }
+  return latestIso;
 }
 
 /**
@@ -57,6 +80,8 @@ export default function ModelsTable({
     () => (Array.isArray(models) ? models : []).filter((m) => m.status === "stale").length,
     [models]
   );
+
+  const latestSyncedAt = useMemo(() => getLatestSyncedAt(models), [models]);
 
   const toggleSort = (field) => {
     if (sortField === field) {
@@ -129,7 +154,7 @@ export default function ModelsTable({
             </button>
           )}
         </div>
-        <div className="flex items-center gap-3 px-1">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-1">
           <span className="text-xs text-text-muted">
             {searchQuery ? (
               <>Showing {sorted.length} of {models.length} model{models.length !== 1 ? "s" : ""}</>
@@ -137,6 +162,16 @@ export default function ModelsTable({
               <>{models.length} model{models.length !== 1 ? "s" : ""} available</>
             )}
           </span>
+          {latestSyncedAt && (
+            <span
+              data-testid="models-last-synced"
+              title={`Last synced: ${fmtAbsolute(latestSyncedAt)}`}
+              className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-background px-2 py-0.5 text-[11px] font-medium text-text-muted whitespace-nowrap"
+            >
+              <span className="material-symbols-outlined text-[12px]">sync</span>
+              Synced {fmtRelative(latestSyncedAt)}
+            </span>
+          )}
           {staleCount > 0 && (
             <button
               onClick={() => setShowStale((v) => !v)}

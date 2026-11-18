@@ -106,6 +106,7 @@ export default function ProvidersPage() {
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
+  const [syncingModels, setSyncingModels] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [viewMode, setViewMode] = useState("matrix");
   const [drawerProvider, setDrawerProvider] = useState(null);
@@ -259,6 +260,43 @@ export default function ProvidersPage() {
       notify.error("Provider test failed");
     } finally {
       setTestingMode(null);
+    }
+  };
+
+  const handleSyncAllModels = async () => {
+    if (syncingModels) return;
+    setSyncingModels(true);
+    try {
+      const res = await fetch("/api/models/sync", { method: "POST" });
+      let data = {};
+      try {
+        const parsed = await res.json();
+        if (parsed && typeof parsed === "object") data = parsed;
+      } catch {
+        data = {};
+      }
+
+      if (!res.ok || data.ok === false) {
+        notify.error(data.error || `Failed to sync models (HTTP ${res.status})`);
+        return;
+      }
+
+      const syncedProviders = data.syncedProviders ?? 0;
+      const totalModels = data.totalModels ?? 0;
+      const results = Array.isArray(data.results) ? data.results : [];
+      const failedCount = results.filter((r) => r && (r.ok === false || Boolean(r.error))).length;
+
+      if (failedCount > 0) {
+        notify.warning(
+          `Synced ${syncedProviders} providers (${totalModels} models) — ${failedCount} failed`
+        );
+      } else {
+        notify.success(`Synced ${syncedProviders} providers (${totalModels} models)`);
+      }
+    } catch (error) {
+      notify.error(error?.message ? `Failed to sync models: ${error.message}` : "Failed to sync models");
+    } finally {
+      setSyncingModels(false);
     }
   };
 
@@ -603,6 +641,16 @@ export default function ProvidersPage() {
             <ModelAvailabilityBadge />
             <Button
               size="sm"
+              variant="secondary"
+              icon="sync"
+              loading={syncingModels}
+              disabled={syncingModels}
+              onClick={handleSyncAllModels}
+            >
+              {syncingModels ? "Syncing..." : "Sync All Models"}
+            </Button>
+            <Button
+              size="sm"
               variant="outline"
               icon="add"
               onClick={() => setShowAddAnthropicCompatibleModal(true)}
@@ -670,6 +718,14 @@ export default function ProvidersPage() {
               Provider Catalog ({matrixRows.length})
             </span>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSyncAllModels}
+                disabled={syncingModels}
+                className="px-2.5 py-1 rounded-md border border-border bg-surface hover:bg-surface-2 disabled:opacity-50 disabled:cursor-not-allowed text-[11px] font-medium text-text-main transition-colors cursor-pointer"
+              >
+                {syncingModels ? "Syncing Models..." : "Sync All Models"}
+              </button>
               <button
                 type="button"
                 onClick={() => handleBatchTest("oauth")}
