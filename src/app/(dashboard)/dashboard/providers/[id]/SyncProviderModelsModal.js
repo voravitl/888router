@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { Button, CapacityBadges, Modal } from "@/shared/components";
 import { filterSyncModels, normalizeSyncModel } from "@/shared/utils/modelCapsMerge";
+import { getCapabilitiesForModel, resolveKnownLimits } from "open-sse/providers/capabilities.js";
+import { findModelName, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 
 const normalizeModel = normalizeSyncModel;
 
@@ -87,7 +89,33 @@ export default function SyncProviderModelsModal({
         setError(data.error || `HTTP ${res.status}`);
         return;
       }
-      const nextModels = (data.models || []).map(normalizeModel).filter(Boolean);
+      const effectiveProviderId = data.provider
+        || providerId
+        || activeConnections.find((conn) => conn.id === targetId)?.provider
+        || "";
+      const modelAlias = effectiveProviderId
+        ? (PROVIDER_ID_TO_ALIAS[effectiveProviderId] || effectiveProviderId)
+        : "";
+      const nextModels = (data.models || [])
+        .map((item) => {
+          const rawId = typeof item === "string"
+            ? item
+            : (item?.id || item?.modelId || item?.model || item?.name);
+          let fallbackCaps = null;
+          if (effectiveProviderId && rawId) {
+            const c = getCapabilitiesForModel(effectiveProviderId, rawId);
+            const known = resolveKnownLimits(effectiveProviderId, rawId);
+            fallbackCaps = {
+              ...c,
+              contextWindow: known.contextWindow,
+              maxOutput: known.maxOutput,
+            };
+          }
+          const rawFallbackName = modelAlias && rawId ? findModelName(modelAlias, rawId) : null;
+          const fallbackName = rawFallbackName && rawFallbackName !== rawId ? rawFallbackName : null;
+          return normalizeModel(item, fallbackCaps, fallbackName);
+        })
+        .filter(Boolean);
       setModels(nextModels);
       setSelected({});
       setWarning(data.warning || "");
@@ -157,6 +185,7 @@ export default function SyncProviderModelsModal({
       await onAddModels(selectedModels.map((model) => ({
         id: model.id,
         alias: defaultAlias(model.id, passthroughModels),
+        ...(model.name && model.name !== model.id ? { name: model.name } : {}),
         // Carry the upstream context window so the dashboard table can show
         // the real value (e.g. Ollama details.context_length) instead of
         // falling back to a catalogue pattern guess (e.g. *qwen*coder* → 1M).

@@ -13,16 +13,50 @@ export const CAP_FIELDS = [
   "maxOutput",
 ];
 
+const BOOLEAN_CAP_FIELDS = new Set([
+  "vision",
+  "pdf",
+  "audioInput",
+  "videoInput",
+  "tools",
+  "reasoning",
+  "search",
+]);
+const NUMERIC_CAP_FIELDS = new Set(["contextWindow", "maxOutput"]);
+
 const hasOwn = (obj, key) => obj != null && Object.prototype.hasOwnProperty.call(obj, key);
 
-// Copy only concrete cap values. `false` is meaningful (an explicit "no vision")
-// and must survive; undefined/null mean "not stated" and are dropped.
+function firstPositiveNumber(...values) {
+  for (const val of values) {
+    if (val === undefined || val === null || val === "" || typeof val === "boolean" || typeof val === "object") {
+      continue;
+    }
+    const n = typeof val === "number" ? val : Number(val);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return undefined;
+}
+
+function pickNonEmptyString(...values) {
+  for (const val of values) {
+    if (typeof val === "string" && val.trim() !== "") return val.trim();
+  }
+  return "";
+}
+
+// Copy only concrete, type-valid cap values. `false` is meaningful (an explicit
+// "no vision") and must survive; undefined/null/malformed types mean "not stated"
+// and are dropped.
 export function pickCaps(source) {
-  if (!source || typeof source !== "object") return {};
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
   const out = {};
   for (const field of CAP_FIELDS) {
-    if (hasOwn(source, field) && source[field] !== undefined && source[field] !== null) {
-      out[field] = source[field];
+    if (!hasOwn(source, field)) continue;
+    const val = source[field];
+    if (BOOLEAN_CAP_FIELDS.has(field)) {
+      if (typeof val === "boolean") out[field] = val;
+    } else if (NUMERIC_CAP_FIELDS.has(field)) {
+      if (typeof val === "number" && Number.isFinite(val) && val > 0) out[field] = val;
     }
   }
   return out;
@@ -105,29 +139,59 @@ export function resolveModelCaps({
 
 // Normalize a row from GET /api/providers/[id]/models without losing the caps
 // the upstream reported — they drive the badges and the Vision filter.
-export function normalizeSyncModel(item) {
+// Bare upstream rows fall back to `fallbackCaps` / `fallbackName` while letting
+// any valid upstream value (including explicit `false`) win.
+export function normalizeSyncModel(item, fallbackCaps = null, fallbackName = null) {
   if (!item) return null;
-  if (typeof item === "string") return { id: item, name: item };
-  const id = item.id || item.modelId || item.model || item.name;
+  const resolvedFallbackCaps = pickCaps(fallbackCaps);
+  const resolvedFallbackName = pickNonEmptyString(fallbackName);
+
+  if (typeof item === "string") {
+    const hasFallbackCaps = Object.keys(resolvedFallbackCaps).length > 0;
+    const fallbackMaxInput = resolvedFallbackCaps.contextWindow;
+    if (!hasFallbackCaps && !resolvedFallbackName) return { id: item, name: item };
+    return {
+      id: item,
+      name: resolvedFallbackName || item,
+      ...resolvedFallbackCaps,
+      ...(fallbackMaxInput ? { maxInputTokens: fallbackMaxInput } : {}),
+    };
+  }
+
+  if (typeof item !== "object" || Array.isArray(item)) return null;
+  const id = pickNonEmptyString(item.id, item.modelId, item.model, item.name);
   if (!id) return null;
-  const rawCaps = item.caps && typeof item.caps === "object" ? item.caps : item;
-  const caps = pickCaps(rawCaps);
-  const maxInputTokens = Number(
-    item.maxInputTokens ??
-      item.max_input_tokens ??
-      item.max_context_window ??
-      item.context_window ??
-      item.contextLength ??
-      item.contextWindow ??
-      item.context_length ??
-      item.top_provider?.context_length ??
-      caps.contextWindow ??
-      0
+
+  const rawCaps = item.caps && typeof item.caps === "object" && !Array.isArray(item.caps) ? item.caps : item;
+  const upstreamCaps = pickCaps(rawCaps);
+  const upstreamContextWindow = firstPositiveNumber(
+    item.maxInputTokens,
+    item.max_input_tokens,
+    item.max_context_window,
+    item.context_window,
+    item.contextLength,
+    item.contextWindow,
+    item.context_length,
+    item.top_provider?.context_length,
+    item.details?.context_length,
+    upstreamCaps.contextWindow
   );
+  // Keep any upstream context spelling (e.g. max_input_tokens) ahead of
+  // fallbackCaps.contextWindow so catalogue guesses never mask real limits.
+  const caps = mergeCapsPreferFirst(
+    upstreamCaps,
+    upstreamContextWindow !== undefined
+      ? { ...resolvedFallbackCaps, contextWindow: upstreamContextWindow }
+      : resolvedFallbackCaps
+  );
+  const maxInputTokens = upstreamContextWindow ?? resolvedFallbackCaps.contextWindow ?? 0;
+
+  const rawName = pickNonEmptyString(item.name, item.modelName, item.displayName, item.display_name);
+  const name = (rawName && rawName !== id ? rawName : "") || resolvedFallbackName || rawName || id;
 
   return {
     id,
-    name: item.name || item.modelName || item.displayName || item.display_name || id,
+    name,
     description: item.description || "",
     ...caps,
     ...(Number.isFinite(maxInputTokens) && maxInputTokens > 0 ? { maxInputTokens } : {}),

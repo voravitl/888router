@@ -7,15 +7,32 @@ const KNOWN_FREE_OPENCODE_MODELS = ["big-pickle"];
 
 export const FILTERS = {
   "openrouter-free": (models) =>
-    models
+    (Array.isArray(models) ? models : [])
       .filter(
         (m) =>
-          m.pricing?.prompt === "0" &&
-          m.pricing?.completion === "0" &&
-          m.context_length >= 200000
+          m?.pricing?.prompt === "0" &&
+          m?.pricing?.completion === "0" &&
+          m?.context_length >= 200000
       )
-      .map((m) => ({ id: m.id, name: m.name, contextLength: m.context_length }))
-      .sort((a, b) => b.contextLength - a.contextLength),
+      .map((m) => {
+        const normalized = normalizeUpstreamModel("openrouter", m);
+        const contextLength = normalized.contextWindow ?? m.context_length;
+        return {
+          id: normalized.id || m.id,
+          name: normalized.name || m.name || m.id,
+          contextLength,
+          ...(normalized.maxOutput !== undefined ? { maxOutput: normalized.maxOutput } : {}),
+          ...(normalized.vision !== undefined ? { vision: normalized.vision } : {}),
+          ...(normalized.reasoning !== undefined ? { reasoning: normalized.reasoning } : {}),
+          ...(normalized.tools !== undefined ? { tools: normalized.tools } : {}),
+          ...(normalized.pdf !== undefined ? { pdf: normalized.pdf } : {}),
+          ...(normalized.audioInput !== undefined ? { audioInput: normalized.audioInput } : {}),
+          ...(normalized.videoInput !== undefined ? { videoInput: normalized.videoInput } : {}),
+          ...(normalized.search !== undefined ? { search: normalized.search } : {}),
+          ...(normalized.releasedAt !== undefined ? { releasedAt: normalized.releasedAt } : {}),
+        };
+      })
+      .sort((a, b) => (b.contextLength || 0) - (a.contextLength || 0)),
 
   "opencode-free": (models) =>
     models

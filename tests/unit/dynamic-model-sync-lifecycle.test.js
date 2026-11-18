@@ -186,6 +186,319 @@ describe("normalizeUpstreamModel", () => {
       search: true,
     });
   });
+
+  it("normalizes OpenRouter & NousResearch modalities, reasoning objects, maxOutput, and supported_parameters", async () => {
+    const { normalizeUpstreamModel, collectNormalizedCapabilities } = await import(
+      "../../open-sse/services/upstreamModelNormalizer.js"
+    );
+
+    const openrouterRich = normalizeUpstreamModel("openrouter", {
+      id: "google/gemini-2.5-pro",
+      name: "Gemini 2.5 Pro",
+      context_length: 1000000,
+      top_provider: { context_length: 1000000, max_completion_tokens: 65536 },
+      architecture: {
+        input_modalities: ["file", "image", "text", "video", "audio"],
+        modality: "text->text",
+      },
+      reasoning: { mandatory: true, default_enabled: true, supported_efforts: ["low", "medium", "high"] },
+      supported_parameters: ["tools", "web_search"],
+    });
+    expect(openrouterRich.vision).toBe(true);
+    expect(openrouterRich.pdf).toBe(true);
+    expect(openrouterRich.audioInput).toBe(true);
+    expect(openrouterRich.videoInput).toBe(true);
+    expect(openrouterRich.maxOutput).toBe(65536);
+    expect(openrouterRich.reasoning).toBe(true);
+    expect(openrouterRich.tools).toBe(true);
+    expect(openrouterRich.search).toBe(true);
+
+    // Fallback to architecture.modality string when input_modalities is absent
+    const modalityFallback = normalizeUpstreamModel("openrouter", {
+      id: "nousresearch/hermes-vision",
+      architecture: { modality: "text+image+file->text" },
+      outputTokenLimit: 16384,
+      supported_parameters: ["include_reasoning", "tool_choice", "web_search_options"],
+    });
+    expect(modalityFallback.vision).toBe(true);
+    expect(modalityFallback.pdf).toBe(true);
+    expect(modalityFallback.maxOutput).toBe(16384);
+    expect(modalityFallback.reasoning).toBe(true);
+    expect(modalityFallback.tools).toBe(true);
+    expect(modalityFallback.search).toBe(true);
+
+    // architecture.input_modalities wins over architecture.modality string
+    const inputModalitiesWin = normalizeUpstreamModel("openrouter", {
+      id: "text-only-override",
+      architecture: {
+        input_modalities: ["text"],
+        modality: "text+image+file->text",
+      },
+      output_token_limit: 8192,
+      supported_parameters: ["reasoning_effort", "functions"],
+    });
+    expect(inputModalitiesWin.vision).toBe(false);
+    expect(inputModalitiesWin.pdf).toBe(false);
+    expect(inputModalitiesWin.maxOutput).toBe(8192);
+    expect(inputModalitiesWin.reasoning).toBe(true);
+    expect(inputModalitiesWin.tools).toBe(true);
+    expect(inputModalitiesWin.search).toBeUndefined();
+
+    // reasoning: { enabled: false } resolves to false; document modality -> pdf: true; limit.max_output_tokens
+    const disabledReasoning = normalizeUpstreamModel("nousresearch", {
+      id: "hermes-4",
+      modalities: { input: ["text", "document"] },
+      limit: { context: 131072, max_output_tokens: 32768 },
+      reasoning: { enabled: false },
+      supported_parameters: ["reasoning", "temperature"],
+    });
+    expect(disabledReasoning.pdf).toBe(true);
+    expect(disabledReasoning.maxOutput).toBe(32768);
+    expect(disabledReasoning.reasoning).toBe(false);
+    expect(disabledReasoning.tools).toBeUndefined();
+
+    // limit.max_tokens & non-boolean empty reasoning {}
+    const emptyReasoningObj = normalizeUpstreamModel("openrouter", {
+      id: "plain-model",
+      limit: { context: 64000, max_tokens: 4096 },
+      reasoning: {},
+      supported_parameters: ["thinking"],
+    });
+    expect(emptyReasoningObj.maxOutput).toBe(4096);
+    expect(emptyReasoningObj.reasoning).toBe(true);
+
+    const unresolvedReasoningObj = normalizeUpstreamModel("openrouter", {
+      id: "raw-obj-model",
+      reasoning: {},
+    });
+    expect(unresolvedReasoningObj.reasoning).toBeUndefined();
+    expect(collectNormalizedCapabilities(unresolvedReasoningObj)).toEqual({});
+  });
+
+  it("normalizes Codex capabilities (supported_reasoning_levels, parallel tools, apply_patch, web_search_tool_type)", async () => {
+    const { normalizeUpstreamModel } = await import(
+      "../../open-sse/services/upstreamModelNormalizer.js"
+    );
+
+    const codexFull = normalizeUpstreamModel("codex", {
+      id: "gpt-5.3-codex",
+      max_context_window: 400000,
+      input_modalities: ["text", "image"],
+      supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }, { effort: "high" }],
+      default_reasoning_level: "medium",
+      supports_parallel_tool_calls: true,
+      apply_patch_tool_type: "freeform",
+      web_search_tool_type: "text_and_image",
+    });
+    expect(codexFull.vision).toBe(true);
+    expect(codexFull.reasoning).toBe(true);
+    expect(codexFull.tools).toBe(true);
+    expect(codexFull.search).toBe(true);
+
+    const codexToolCalling = normalizeUpstreamModel("codex", {
+      id: "gpt-5-codex-mini",
+      default_reasoning_level: "high",
+      toolCalling: true,
+    });
+    expect(codexToolCalling.reasoning).toBe(true);
+    expect(codexToolCalling.tools).toBe(true);
+
+    const codexPatchOnly = normalizeUpstreamModel("codex", {
+      id: "gpt-5-patch",
+      apply_patch_tool_type: "freeform",
+    });
+    expect(codexPatchOnly.tools).toBe(true);
+
+    // "none" and empty arrays must NOT fabricate true
+    const codexNone = normalizeUpstreamModel("codex", {
+      id: "gpt-codex-none",
+      supported_reasoning_levels: [],
+      default_reasoning_level: "none",
+      supports_parallel_tool_calls: false,
+      apply_patch_tool_type: "none",
+      web_search_tool_type: "none",
+    });
+    expect(codexNone.reasoning).toBeUndefined();
+    expect(codexNone.tools).toBeUndefined();
+    expect(codexNone.search).toBeUndefined();
+  });
+
+  it("normalizes GitHub Copilot capabilities.limits and capabilities.supports", async () => {
+    const { normalizeUpstreamModel, collectNormalizedCapabilities } = await import(
+      "../../open-sse/services/upstreamModelNormalizer.js"
+    );
+
+    const copilot = normalizeUpstreamModel("github", {
+      id: "claude-opus-4.6",
+      name: "Claude Opus 4.6",
+      capabilities: {
+        type: "chat",
+        limits: {
+          max_context_window_tokens: 200000,
+          max_prompt_tokens: 128000,
+          max_output_tokens: 32000,
+          max_thinking_budget: 16000,
+        },
+        supports: {
+          vision: true,
+          tool_calls: true,
+          parallel_tool_calls: true,
+          thinking: true,
+        },
+      },
+    });
+    expect(copilot.contextWindow).toBe(200000);
+    expect(copilot.maxOutput).toBe(32000);
+    expect(copilot.vision).toBe(true);
+    expect(copilot.tools).toBe(true);
+    expect(copilot.reasoning).toBe(true);
+    expect(collectNormalizedCapabilities(copilot)).toMatchObject({
+      contextWindow: 200000,
+      maxOutput: 32000,
+      vision: true,
+      tools: true,
+      reasoning: true,
+    });
+
+    const copilotPromptBudget = normalizeUpstreamModel("github", {
+      id: "o3-mini",
+      capabilities: {
+        type: "chat",
+        limits: {
+          max_prompt_tokens: 100000,
+          max_thinking_budget: 8192,
+        },
+        supports: {
+          vision: false,
+          parallel_tool_calls: true,
+        },
+      },
+    });
+    expect(copilotPromptBudget.contextWindow).toBe(100000);
+    expect(copilotPromptBudget.vision).toBe(false);
+    expect(copilotPromptBudget.tools).toBe(true);
+    expect(copilotPromptBudget.reasoning).toBe(true);
+  });
+
+  it("rejects non-boolean objects and invalid types in collectNormalizedCapabilities", async () => {
+    const { collectNormalizedCapabilities } = await import(
+      "../../open-sse/services/upstreamModelNormalizer.js"
+    );
+    const sanitized = collectNormalizedCapabilities({
+      id: "dirty",
+      vision: "yes",
+      pdf: 1,
+      audioInput: {},
+      videoInput: [],
+      tools: "true",
+      reasoning: { mandatory: true },
+      search: null,
+      contextWindow: -100,
+      maxOutput: Number.NaN,
+      releasedAt: "",
+    });
+    expect(sanitized).toEqual({});
+
+    const valid = collectNormalizedCapabilities({
+      vision: false,
+      reasoning: true,
+      contextWindow: 128000,
+      maxOutput: 8192,
+      releasedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(valid).toEqual({
+      vision: false,
+      reasoning: true,
+      contextWindow: 128000,
+      maxOutput: 8192,
+      releasedAt: "2026-01-01T00:00:00.000Z",
+    });
+  });
+
+  it("sets vision: true on Cloudflare AI vision tasks without mislabeling text-to-image or text-generation", async () => {
+    const { parseCloudflareModelsResponse } = await import(
+      "../../src/lib/cloudflareAiModels.js"
+    );
+    const parsed = parseCloudflareModelsResponse({
+      result: [
+        { id: "@cf/unum/uform-gen2-qwen-500m", name: "@cf/unum/uform-gen2-qwen-500m", task: { name: "Image-to-Text" } },
+        { id: "@cf/meta/llama-3.2-11b-vision-instruct", name: "@cf/meta/llama-3.2-11b-vision-instruct", task: { name: "Image Text to Text" } },
+        { id: "@cf/llava/llava-1.5-7b-hf", name: "@cf/llava/llava-1.5-7b-hf", task: { name: "Visual Question Answering" } },
+        { id: "@cf/custom/visual-caption", name: "@cf/custom/visual-caption", task: { name: "Visual Captioning" } },
+        { id: "@cf/black-forest-labs/flux-1-schnell", name: "@cf/black-forest-labs/flux-1-schnell", task: { name: "Text-to-Image" } },
+        { id: "@cf/meta/llama-3.3-70b", name: "@cf/meta/llama-3.3-70b", task: { name: "Text Generation" } },
+      ],
+    });
+    const byId = Object.fromEntries(parsed.map((m) => [m.id, m]));
+    expect(byId["@cf/unum/uform-gen2-qwen-500m"]).toMatchObject({ kind: "llm", vision: true });
+    expect(byId["@cf/meta/llama-3.2-11b-vision-instruct"]).toMatchObject({ kind: "llm", vision: true });
+    expect(byId["@cf/llava/llava-1.5-7b-hf"]).toMatchObject({ kind: "llm", vision: true });
+    expect(byId["@cf/custom/visual-caption"]).toMatchObject({ kind: "llm", vision: true });
+    expect(byId["@cf/black-forest-labs/flux-1-schnell"].kind).toBe("image");
+    expect(byId["@cf/black-forest-labs/flux-1-schnell"].vision).toBeUndefined();
+    expect(byId["@cf/meta/llama-3.3-70b"].kind).toBe("llm");
+    expect(byId["@cf/meta/llama-3.3-70b"].vision).toBeUndefined();
+  });
+
+  it("normalizes FILTERS['openrouter-free'] entries while preserving id, name, contextLength", async () => {
+    const { FILTERS } = await import(
+      "../../src/app/api/providers/suggested-models/filters.js"
+    );
+    const out = FILTERS["openrouter-free"]([
+      {
+        id: "text/free-256k",
+        display_name: "Text Free 256K",
+        context_length: 256000,
+        pricing: { prompt: "0", completion: "0" },
+        architecture: { modality: "text->text" },
+        reasoning: {},
+      },
+      {
+        id: "google/gemini-2.5-pro:free",
+        name: "Gemini 2.5 Pro Free",
+        context_length: 1000000,
+        created: 1767321600,
+        pricing: { prompt: "0", completion: "0" },
+        architecture: { input_modalities: ["text", "image", "file"] },
+        top_provider: { max_completion_tokens: 65536 },
+        reasoning: { mandatory: true },
+        supported_parameters: ["tools", "web_search"],
+      },
+      {
+        id: "paid/model",
+        name: "Paid",
+        context_length: 1000000,
+        pricing: { prompt: "0.001", completion: "0.002" },
+      },
+      {
+        id: "small/free",
+        name: "Small Free",
+        context_length: 32000,
+        pricing: { prompt: "0", completion: "0" },
+      },
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({
+      id: "google/gemini-2.5-pro:free",
+      name: "Gemini 2.5 Pro Free",
+      contextLength: 1000000,
+      maxOutput: 65536,
+      vision: true,
+      pdf: true,
+      reasoning: true,
+      tools: true,
+      search: true,
+    });
+    expect(String(out[0].releasedAt)).toMatch(/^2026-01-02T/);
+    expect(out[1]).toMatchObject({
+      id: "text/free-256k",
+      name: "Text Free 256K",
+      contextLength: 256000,
+      vision: false,
+      pdf: false,
+    });
+    expect(out[1].reasoning).toBeUndefined();
+  });
 });
 
 describe("reconcileSyncedModelsForConnection", () => {

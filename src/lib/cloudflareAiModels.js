@@ -49,19 +49,30 @@ function kindForTaskKey(key) {
   return null;
 }
 
+function isVisionTaskKey(key) {
+  return (
+    key === "image-to-text" ||
+    key === "image-text-to-text" ||
+    key === "visual-question-answering" ||
+    key.startsWith("visual-")
+  );
+}
+
 export function parseCloudflareModelsResponse(data) {
   const list = Array.isArray(data?.result) ? data.result : Array.isArray(data) ? data : [];
   return list
     .map((m) => {
       const modelId = resolveModelId(m);
       if (!modelId) return null;
-      const kind = kindForTaskKey(taskKeyFromTask(m?.task));
+      const taskKey = taskKeyFromTask(m?.task);
+      const kind = kindForTaskKey(taskKey);
       if (!kind) return null;
       return {
         id: modelId,
         name: m?.name || modelId,
         description: m?.description || "",
         kind,
+        ...(isVisionTaskKey(taskKey) ? { vision: true } : {}),
       };
     })
     .filter(Boolean);
