@@ -688,3 +688,378 @@ describe("Unified model sync UI wiring", () => {
     expect(ids).toContain("claude-haiku-5-5");
   });
 });
+
+async function loadSyncProviderModelsModalModule({ fetchImpl } = {}) {
+  const filePath = resolve(
+    repoRoot,
+    "src/app/(dashboard)/dashboard/providers/[id]/SyncProviderModelsModal.js"
+  );
+  const raw = readFileSync(filePath, "utf8");
+  const { code } = await transformWithOxc(raw, "SyncProviderModelsModal.jsx", {
+    jsx: { runtime: "classic" },
+  });
+
+  const body = code
+    .replace(/^\s*["']use client["'];?\s*/m, "")
+    .replace(/^\s*import\s+[\s\S]*?from\s+["'][^"']+["'];?\s*$/gm, "")
+    .replace(/\bexport\s+default\s+function\s+/g, "function ");
+
+  const capsMod = await import("../../open-sse/providers/capabilities.js");
+  const modelsMod = await import("@/shared/constants/models");
+
+  const states = [];
+  let cursor = 0;
+  let pendingEffects = [];
+
+  const useStateStub = (initial) => {
+    const slot = cursor++;
+    if (!(slot in states)) {
+      states[slot] = typeof initial === "function" ? initial() : initial;
+    }
+    const setter = (val) => {
+      states[slot] = typeof val === "function" ? val(states[slot]) : val;
+    };
+    return [states[slot], setter];
+  };
+  const useMemoStub = (fn) => fn();
+  const useEffectStub = (fn) => {
+    pendingEffects.push(fn);
+  };
+
+  const Modal = ({ isOpen, title, children }) =>
+    isOpen ? React.createElement("div", { "data-comp": "Modal", title }, children) : null;
+  const Button = ({ children, onClick, disabled, loading, ...rest }) =>
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick,
+        disabled: Boolean(disabled || loading),
+        "data-loading": loading ? "true" : "false",
+        ...rest,
+      },
+      children
+    );
+  const CapacityBadges = ({ caps }) =>
+    React.createElement("span", {
+      "data-comp": "CapacityBadges",
+      "data-vision": String(Boolean(caps?.vision)),
+      "data-reasoning": String(Boolean(caps?.reasoning)),
+      "data-pdf": String(Boolean(caps?.pdf)),
+    });
+
+  const factory = new Function(
+    "React",
+    "useEffect",
+    "useMemo",
+    "useState",
+    "PropTypes",
+    "Button",
+    "CapacityBadges",
+    "Modal",
+    "filterSyncModels",
+    "normalizeSyncModel",
+    "getCapabilitiesForModel",
+    "resolveKnownLimits",
+    "findModelName",
+    "PROVIDER_ID_TO_ALIAS",
+    "fetch",
+    `${body}\nreturn { SyncProviderModelsModal };`
+  );
+
+  const { SyncProviderModelsModal } = factory(
+    React,
+    useEffectStub,
+    useMemoStub,
+    useStateStub,
+    PropTypes,
+    Button,
+    CapacityBadges,
+    Modal,
+    filterSyncModels,
+    normalizeSyncModel,
+    capsMod.getCapabilitiesForModel,
+    capsMod.resolveKnownLimits,
+    modelsMod.findModelName,
+    modelsMod.PROVIDER_ID_TO_ALIAS,
+    fetchImpl || globalThis.fetch
+  );
+
+  return {
+    render(props) {
+      cursor = 0;
+      pendingEffects = [];
+      return SyncProviderModelsModal(props);
+    },
+    flushEffects() {
+      const effects = pendingEffects;
+      pendingEffects = [];
+      for (const fn of effects) fn();
+    },
+  };
+}
+
+function collectElements(node, predicate, out = []) {
+  if (!node || typeof node !== "object") return out;
+  if (Array.isArray(node)) {
+    for (const child of node) collectElements(child, predicate, out);
+    return out;
+  }
+  if (predicate(node)) out.push(node);
+  if (node.props) {
+    collectElements(node.props.children, predicate, out);
+  }
+  return out;
+}
+
+describe("pickCaps type hygiene and normalizeSyncModel fallback backfill", () => {
+  it("pickCaps rejects non-boolean capability objects/strings and non-positive numeric limits", () => {
+    expect(
+      pickCaps({
+        reasoning: { mandatory: true },
+        vision: "yes",
+        pdf: 1,
+        audioInput: "true",
+        videoInput: [],
+        tools: "false",
+        search: {},
+        contextWindow: -1,
+        maxOutput: 0,
+      })
+    ).toEqual({});
+
+    expect(
+      pickCaps({
+        contextWindow: NaN,
+        maxOutput: Infinity,
+      })
+    ).toEqual({});
+
+    expect(
+      pickCaps({
+        contextWindow: "128000",
+        maxOutput: null,
+        vision: false,
+        reasoning: true,
+      })
+    ).toEqual({
+      vision: false,
+      reasoning: true,
+    });
+
+    expect(pickCaps(["vision"])).toEqual({});
+    expect(pickCaps(null)).toEqual({});
+  });
+
+  it("normalizeSyncModel backfills name, contextWindow, maxInputTokens, and caps from fallbacks while letting upstream win", () => {
+    const backfilled = normalizeSyncModel(
+      { id: "qwen3.7-max", object: "model" },
+      { contextWindow: 1000000, vision: true, reasoning: true, maxOutput: 65536 },
+      "Qwen 3.7 Max"
+    );
+    expect(backfilled).toMatchObject({
+      id: "qwen3.7-max",
+      name: "Qwen 3.7 Max",
+      contextWindow: 1000000,
+      maxInputTokens: 1000000,
+      maxOutput: 65536,
+      vision: true,
+      reasoning: true,
+    });
+
+    const overridden = normalizeSyncModel(
+      {
+        id: "qwen3.7-max",
+        object: "model",
+        name: "Custom Upstream Name",
+        vision: false,
+        max_input_tokens: 131072,
+      },
+      { contextWindow: 1000000, vision: true, reasoning: true },
+      "Qwen 3.7 Max"
+    );
+    expect(overridden).toMatchObject({
+      id: "qwen3.7-max",
+      name: "Custom Upstream Name",
+      vision: false,
+      reasoning: true,
+      maxInputTokens: 131072,
+      contextWindow: 131072,
+    });
+
+    // Malformed upstream objects/strings must not shadow valid fallbacks or leak into output.
+    const sanitized = normalizeSyncModel(
+      {
+        id: "qwen3.7-max",
+        reasoning: { mandatory: true },
+        vision: "yes",
+        contextWindow: -1,
+      },
+      { contextWindow: 1000000, vision: true, reasoning: true },
+      "Qwen 3.7 Max"
+    );
+    expect(sanitized).toMatchObject({
+      id: "qwen3.7-max",
+      name: "Qwen 3.7 Max",
+      contextWindow: 1000000,
+      maxInputTokens: 1000000,
+      vision: true,
+      reasoning: true,
+    });
+
+    // When upstream only stamped name === id, fallbackName still provides the display name.
+    const idNamed = normalizeSyncModel(
+      { id: "gemini-4-hydrogen", name: "gemini-4-hydrogen" },
+      { contextWindow: 1048576, vision: true, reasoning: true },
+      "Gemini 4 Hydrogen"
+    );
+    expect(idNamed.name).toBe("Gemini 4 Hydrogen");
+
+    // Upstream max_input_tokens / context_length wins over fallbackCaps.contextWindow
+    // (critical for Ollama details.context_length vs 1M catalogue wildcards).
+    const explicitCtx = normalizeSyncModel(
+      { id: "qwen2.5-coder:14b", max_input_tokens: 32768 },
+      { contextWindow: 1000000, reasoning: true },
+      null
+    );
+    expect(explicitCtx).toMatchObject({
+      id: "qwen2.5-coder:14b",
+      maxInputTokens: 32768,
+      contextWindow: 32768,
+      reasoning: true,
+    });
+
+    // String rows also accept fallbackCaps & fallbackName when provided.
+    expect(
+      normalizeSyncModel("gpt-6-astra", { contextWindow: 1050000, vision: true }, "GPT-6 Astra")
+    ).toEqual({
+      id: "gpt-6-astra",
+      name: "GPT-6 Astra",
+      contextWindow: 1050000,
+      maxInputTokens: 1050000,
+      vision: true,
+    });
+  });
+});
+
+describe("SyncProviderModelsModal static catalogue and name fallback", () => {
+  it("backfills caps and display names for bare rows across alitp-intl, codex (alias cx), and antigravity (alias ag) without fabricating limits for unknown nvidia models", async () => {
+    const fetchMock = vi.fn();
+    const runModalForProvider = async ({ providerId, upstreamModels }) => {
+      const addedBatches = [];
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ provider: providerId, models: upstreamModels }),
+      });
+      const modal = await loadSyncProviderModelsModalModule({ fetchImpl: fetchMock });
+      const baseProps = {
+        isOpen: true,
+        connections: [{ id: `conn-${providerId}`, provider: providerId, isActive: true }],
+        existingModelIds: [],
+        providerDisplayAlias: providerId,
+        passthroughModels: false,
+        onAddModels: async (items) => {
+          addedBatches.push(items);
+        },
+        onClose: vi.fn(),
+        providerId,
+      };
+      modal.render(baseProps);
+      modal.flushEffects();
+      const treeBeforeFetch = modal.render(baseProps);
+      const refreshBtn = collectElements(
+        treeBeforeFetch,
+        (el) => el.props?.icon === "sync" && typeof el.props?.onClick === "function"
+      )[0];
+      expect(refreshBtn).toBeDefined();
+      await refreshBtn.props.onClick();
+
+      const treeAfterFetch = modal.render(baseProps);
+      const rowButtons = collectElements(
+        treeAfterFetch,
+        (el) => el.type === "button" && typeof el.props?.onClick === "function" && el.key
+      );
+      return { modal, baseProps, treeAfterFetch, rowButtons, addedBatches };
+    };
+
+    // 1. alitp-intl bare model gets 1M context, reasoning, and display name "Qwen3.7 Max",
+    //    while upstream explicit vision:false and max_input_tokens override fallbacks.
+    const alitp = await runModalForProvider({
+      providerId: "alitp-intl",
+      upstreamModels: [
+        { id: "qwen3.7-max", object: "model" },
+        { id: "qwen3.7-plus", object: "model", vision: false, max_input_tokens: 131072 },
+      ],
+    });
+    const alitpRowHtml = renderToStaticMarkup(alitp.rowButtons[0]);
+    expect(alitpRowHtml).toContain("qwen3.7-max");
+    expect(alitpRowHtml).toContain("1M ctx");
+    expect(alitpRowHtml).toContain("Qwen3.7 Max");
+    expect(alitpRowHtml).toContain('data-reasoning="true"');
+    expect(alitpRowHtml).toContain('data-vision="false"');
+
+    const alitpOverrideHtml = renderToStaticMarkup(alitp.rowButtons[1]);
+    expect(alitpOverrideHtml).toContain("131k ctx");
+    expect(alitpOverrideHtml).toContain("Qwen3.7 Plus");
+    expect(alitpOverrideHtml).toContain('data-vision="false"');
+
+    // Select first row and trigger Add Selected
+    alitp.rowButtons[0].props.onClick();
+    const alitpSelectedTree = alitp.modal.render(alitp.baseProps);
+    const addBtn = collectElements(
+      alitpSelectedTree,
+      (el) => el.props?.icon === "add" && typeof el.props?.onClick === "function"
+    )[0];
+    await addBtn.props.onClick();
+    expect(alitp.addedBatches).toHaveLength(1);
+    expect(alitp.addedBatches[0][0]).toMatchObject({
+      id: "qwen3.7-max",
+      name: "Qwen3.7 Max",
+      contextLength: 1000000,
+      reasoning: true,
+    });
+
+    // 2. codex resolves static alias "cx" so bare/id-named rows get "GPT-6 Astra", vision, reasoning, and 1.1M ctx
+    const codex = await runModalForProvider({
+      providerId: "codex",
+      upstreamModels: [{ id: "gpt-6-astra", name: "gpt-6-astra" }],
+    });
+    const codexHtml = renderToStaticMarkup(codex.rowButtons[0]);
+    expect(codexHtml).toContain("GPT-6 Astra");
+    expect(codexHtml).toContain("1.1M ctx");
+    expect(codexHtml).toContain('data-vision="true"');
+    expect(codexHtml).toContain('data-reasoning="true"');
+
+    // 3. antigravity resolves static alias "ag" so bare row gets "Gemini 4 Hydrogen" + vision:true,
+    //    while explicit upstream vision:false overrides fallbackCaps vision:true.
+    const ag = await runModalForProvider({
+      providerId: "antigravity",
+      upstreamModels: [
+        { id: "gemini-4-hydrogen", object: "model" },
+        { id: "gemini-4-hydrogen-low", object: "model", vision: false },
+      ],
+    });
+    const agHtml0 = renderToStaticMarkup(ag.rowButtons[0]);
+    expect(agHtml0).toContain("Gemini 4 Hydrogen");
+    expect(agHtml0).toContain('data-vision="true"');
+    const agHtml1 = renderToStaticMarkup(ag.rowButtons[1]);
+    expect(agHtml1).toContain("Gemini 4 Hydrogen (Low)");
+    expect(agHtml1).toContain('data-vision="false"');
+
+    // 4. unknown nvidia model must NOT fabricate a 200k context badge or contextLength
+    const nvidia = await runModalForProvider({
+      providerId: "nvidia",
+      upstreamModels: [{ id: "totally-unknown-bare-model", object: "model" }],
+    });
+    expect(renderToStaticMarkup(nvidia.rowButtons[0])).not.toContain("200k");
+    nvidia.rowButtons[0].props.onClick();
+    const nvSelectedTree = nvidia.modal.render(nvidia.baseProps);
+    const nvAddBtn = collectElements(
+      nvSelectedTree,
+      (el) => el.props?.icon === "add" && typeof el.props?.onClick === "function"
+    )[0];
+    await nvAddBtn.props.onClick();
+    expect(nvidia.addedBatches[0][0].contextLength).toBeUndefined();
+  });
+});
