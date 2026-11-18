@@ -141,6 +141,51 @@ describe("normalizeUpstreamModel", () => {
     });
     expect(explicit.vision).toBe(false);
   });
+
+  it("normalizes Anthropic /v1/models wire shape (display_name, max_input_tokens, capabilities.*.supported)", async () => {
+    const { normalizeUpstreamModel, collectNormalizedCapabilities } = await import(
+      "../../open-sse/services/upstreamModelNormalizer.js"
+    );
+    const raw = {
+      type: "model",
+      id: "claude-fable-5-2",
+      display_name: "Claude Fable 5.2",
+      created_at: "2026-11-09T18:30:00Z",
+      max_input_tokens: 1000000,
+      max_tokens: 128000,
+      capabilities: {
+        image_input: { supported: true },
+        pdf_input: { supported: true },
+        server_tools: { supported: true, web_search: { supported: true } },
+        thinking: {
+          supported: true,
+          types: {
+            enabled: { supported: false },
+            adaptive: { supported: true },
+          },
+        },
+      },
+    };
+
+    const model = normalizeUpstreamModel("claude", raw);
+    expect(model.name).toBe("Claude Fable 5.2");
+    expect(model.contextWindow).toBe(1000000);
+    expect(model.context_length).toBe(1000000);
+    expect(model.maxOutput).toBe(128000);
+    expect(model.vision).toBe(true);
+    expect(model.pdf).toBe(true);
+    expect(model.reasoning).toBe(true);
+    expect(model.search).toBe(true);
+    expect(model.releasedAt).toBe("2026-11-09T18:30:00.000Z");
+    expect(collectNormalizedCapabilities(model)).toMatchObject({
+      contextWindow: 1000000,
+      maxOutput: 128000,
+      vision: true,
+      pdf: true,
+      reasoning: true,
+      search: true,
+    });
+  });
 });
 
 describe("reconcileSyncedModelsForConnection", () => {

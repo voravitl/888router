@@ -655,4 +655,36 @@ describe("Unified model sync UI wiring", () => {
       /onClose=\{\(\)\s*=>\s*\{\s*setShowSyncModels\(false\);\s*fetchSyncedModels\(\);\s*\}\}/
     );
   });
+
+  it("ignores Anthropic wire tag type='model' in getModelKind, preserves display_name/max_input_tokens in normalizeSyncModel, and includes Claude 5.2/Haiku 5.5 in registry", async () => {
+    const { getModelKind } = await import("@/shared/constants/models");
+    const claudeConfig = (await import("../../open-sse/providers/registry/claude.js")).default;
+
+    expect(getModelKind({ id: "claude-fable-5-2", type: "model" })).toBeNull();
+    expect(getModelKind({ id: "claude-fable-5-2", type: "model" }, "llm")).toBe("llm");
+    expect(getModelKind({ id: "dall-e-3", type: "image" })).toBe("image");
+
+    const normalized = normalizeSyncModel({
+      id: "claude-fable-5-2",
+      type: "model",
+      display_name: "Claude Fable 5.2",
+      max_input_tokens: 1000000,
+      vision: true,
+      pdf: true,
+      reasoning: true,
+    });
+    expect(normalized).toMatchObject({
+      id: "claude-fable-5-2",
+      name: "Claude Fable 5.2",
+      maxInputTokens: 1000000,
+      contextWindow: 1000000,
+      vision: true,
+      pdf: true,
+      reasoning: true,
+    });
+
+    const ids = claudeConfig.models.map((m) => m.id);
+    expect(ids).toContain("claude-fable-5-2");
+    expect(ids).toContain("claude-haiku-5-5");
+  });
 });

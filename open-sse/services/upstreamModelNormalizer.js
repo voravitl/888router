@@ -119,18 +119,38 @@ export function normalizeUpstreamModel(providerId, raw) {
   // Some resolvers (opencode-go live catalog) hang the truth under
   // `capabilities`; top-level fields always win over that nested block.
   const nestedCaps = isObject(raw.capabilities) ? raw.capabilities : {};
+  const nestedLimits = isObject(raw.limit) ? raw.limit : {};
   const src = { ...nestedCaps, ...raw };
 
   const input = modalityList(src.modalities?.input, src.input_modalities, src.modalities);
   const delta = {};
 
+  if (!raw.name) {
+    const fallbackName =
+      typeof raw.display_name === "string" && raw.display_name.trim()
+        ? raw.display_name.trim()
+        : typeof raw.displayName === "string" && raw.displayName.trim()
+          ? raw.displayName.trim()
+          : null;
+    if (fallbackName) delta.name = fallbackName;
+  }
+
   const contextWindow = firstNumber(
-    src.limit?.context,
+    nestedLimits.context,
+    nestedLimits.context_window,
+    nestedLimits.input,
+    nestedLimits.max_input_tokens,
     src.context_length,
     src.max_context_window,
     src.context_window,
     src.contextWindow,
+    src.contextLength,
     src.maxInputTokens,
+    src.max_input_tokens,
+    src.max_context_length,
+    src.inputTokenLimit,
+    src.input_token_limit,
+    src.top_provider?.context_length,
     src.details?.context_length,
   );
   if (contextWindow !== undefined) {
@@ -153,12 +173,18 @@ export function normalizeUpstreamModel(providerId, raw) {
     src.supportsImages,
     src.supportsVision,
     src.attachment,
+    booleanFromCap(nestedCaps.image_input),
+    booleanFromCap(src.image_input),
   );
   if (vision === undefined) vision = familiesSayVision(src);
   if (vision === undefined && input.length > 0) vision = hasImage(input);
   if (vision !== undefined) delta.vision = vision;
 
-  const pdf = firstBoolean(src.pdf) ?? (input.length > 0 ? hasPdf(input) : undefined);
+  const pdf = firstBoolean(
+    src.pdf,
+    booleanFromCap(nestedCaps.pdf_input),
+    booleanFromCap(src.pdf_input),
+  ) ?? (input.length > 0 ? hasPdf(input) : undefined);
   if (pdf !== undefined) delta.pdf = pdf;
 
   const audioInput = firstBoolean(src.audioInput) ?? (input.length > 0 ? hasAudio(input) : undefined);
@@ -170,13 +196,20 @@ export function normalizeUpstreamModel(providerId, raw) {
   const reasoning = firstBoolean(
     booleanFromCap(nestedCaps.reasoning),
     booleanFromCap(src.reasoning),
+    booleanFromCap(nestedCaps.thinking),
+    booleanFromCap(src.thinking),
   ) ?? (Array.isArray(src.thinking) ? src.thinking.length > 0 : firstBoolean(src.thinking));
   if (reasoning !== undefined) delta.reasoning = reasoning;
 
   const tools = firstBoolean(booleanFromCap(nestedCaps.tools), booleanFromCap(src.tools));
   if (tools !== undefined) delta.tools = tools;
 
-  const search = firstBoolean(src.search, src.web_search, nestedCaps.search);
+  const search = firstBoolean(
+    src.search,
+    src.web_search,
+    booleanFromCap(nestedCaps.search),
+    booleanFromCap(nestedCaps.server_tools?.web_search),
+  );
   if (search !== undefined) delta.search = search;
 
   const releasedAt = toIsoDate(src.release_date ?? src.created_at ?? src.created);

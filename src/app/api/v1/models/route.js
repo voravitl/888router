@@ -606,7 +606,7 @@ export async function buildModelsList(kindFilter) {
     }
 
     for (const customModel of customModels) {
-      if (!customModel?.id || (customModel.type && customModel.type !== "llm")) continue;
+      if (!customModel?.id || (customModel.type && customModel.type !== "llm" && customModel.type !== "model")) continue;
       // Custom models without active connection are LLM-only by current schema
       if (!kindFilter.includes(LLM_KIND)) continue;
       const providerAlias = customModel.providerAlias;

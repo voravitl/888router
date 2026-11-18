@@ -114,6 +114,7 @@ export function normalizeSyncModel(item) {
   const caps = pickCaps(rawCaps);
   const maxInputTokens = Number(
     item.maxInputTokens ??
+      item.max_input_tokens ??
       item.max_context_window ??
       item.context_window ??
       item.contextLength ??
@@ -126,7 +127,7 @@ export function normalizeSyncModel(item) {
 
   return {
     id,
-    name: item.name || item.modelName || item.displayName || id,
+    name: item.name || item.modelName || item.displayName || item.display_name || id,
     description: item.description || "",
     ...caps,
     ...(Number.isFinite(maxInputTokens) && maxInputTokens > 0 ? { maxInputTokens } : {}),

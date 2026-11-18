@@ -1,3 +1,13 @@
+# v0.15.267 (2026-11-18)
+
+## Fix Claude Code Incomplete Available Models & Anthropic Wire Schema Normalization
+- **Preserve Anthropic `type: "model"` Entries in Provider & Gateway Model Lists (`src/shared/constants/models.js`, `src/shared/utils/providerCustomModels.js`, `src/app/api/v1/models/route.js`, `src/app/(dashboard)/dashboard/providers/[id]/page.js`, `tests/unit/ui-model-caps-and-sync.test.js`, `tests/unit/provider-custom-models.test.js`)**:
+  - Updated `getModelKind` and `modelType` (`providerCustomModels.js`) to treat wire object tag `type === "model"` (returned by Anthropic's `/v1/models` endpoint) as unspecified LLM metadata rather than a non-LLM media kind, and allowed `type === "model"` defensively in `/v1/models` and Provider Detail filtering so live synced Claude models and matched built-in rows are no longer hidden from the Available Models table.
+- **Normalize Anthropic `/v1/models` Metadata & Nested Capabilities (`open-sse/services/upstreamModelNormalizer.js`, `src/shared/utils/modelCapsMerge.js`, `tests/unit/dynamic-model-sync-lifecycle.test.js`)**:
+  - Updated `normalizeUpstreamModel` and `normalizeSyncModel` to map `display_name` (when `name` is absent), `max_input_tokens` (into `contextWindow` / `context_length` / `maxInputTokens`), `capabilities.image_input.supported` (`vision`), `capabilities.pdf_input.supported` (`pdf`), `capabilities.thinking.supported` (`reasoning`), and `capabilities.server_tools.web_search.supported` (`search`).
+- **Complete Static Claude Code Registry (`open-sse/providers/registry/claude.js`)**:
+  - Added `claude-fable-5-2` (`Claude Fable 5.2`) and `claude-haiku-5-5` (`Claude Haiku 5.5`) to `claudeConfig.models` so static fallback and `/v1/models` include all 14 live Claude models.
+
 # v0.15.266 (2026-11-18)
 
 ## Unified Model Sync Pipeline & Antigravity Hermes Prompt 429 Fix
