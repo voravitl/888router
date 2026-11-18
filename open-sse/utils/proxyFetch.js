@@ -119,6 +119,62 @@ const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX = 300;
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+function buildNodeHeaders(rawHeaders) {
+  const headers = new Headers();
+  for (const [k, v] of Object.entries(rawHeaders || {})) {
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        try {
+          headers.append(k, String(item));
+        } catch {
+          // ignore malformed header entries
+        }
+      }
+    } else if (v !== undefined && v !== null) {
+      try {
+        headers.set(k, String(v));
+      } catch {
+        // ignore malformed header entries
+      }
+    }
+  }
+  return headers;
+}
+
+export function buildBypassResponse(res) {
+  const status = res.statusCode ?? 200;
+  const statusText = res.statusMessage || "";
+  const headers = buildNodeHeaders(res.headers);
+  const nullBody = NULL_BODY_STATUSES.has(status);
+  const webBody = nullBody ? null : Readable.toWeb(res);
+  if (nullBody && typeof res.resume === "function") res.resume();
+  try {
+    return new Response(webBody, { status, statusText, headers });
+  } catch {
+    const wrapStream = (stream, resHeaders) => {
+      let current = stream;
+      const wrapper = {
+        ok: status >= HTTP_SUCCESS_MIN && status < HTTP_SUCCESS_MAX,
+        status,
+        statusText,
+        headers: resHeaders,
+        get body() { return current; },
+        clone() {
+          if (!current) return wrapStream(null, resHeaders);
+          const [a, b] = current.tee();
+          current = a;
+          return wrapStream(b, resHeaders);
+        },
+        text: async () => (current ? new Response(current).text() : ""),
+        json: async () => JSON.parse(await wrapper.text()),
+      };
+      return wrapper;
+    };
+    return wrapStream(webBody, headers);
+  }
+}
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
@@ -313,20 +369,7 @@ async function createBypassRequest(parsedUrl, realIP, options) {
       };
 
       const req = https.request(reqOptions, (res) => {
-        const response = {
-          ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
-          status: res.statusCode,
-          statusText: res.statusMessage,
-          headers: new Map(Object.entries(res.headers)),
-          body: Readable.toWeb(res),
-          text: async () => {
-            const chunks = [];
-            for await (const chunk of res) chunks.push(chunk);
-            return Buffer.concat(chunks).toString();
-          },
-          json: async () => JSON.parse(await response.text()),
-        };
-        resolve(response);
+        resolve(buildBypassResponse(res));
       });
 
       req.on("error", reject);

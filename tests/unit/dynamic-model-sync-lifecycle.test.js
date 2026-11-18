@@ -306,6 +306,7 @@ describe("buildModelsResponse reconciliation guard", () => {
     vi.resetModules();
     mocks.stampSyncedModels.mockReset().mockResolvedValue({});
     mocks.getSyncedModelsMap.mockReset().mockResolvedValue({});
+    mocks.saveModelDynamicCapabilities.mockReset().mockResolvedValue();
   });
 
   afterEach(() => {
@@ -333,5 +334,50 @@ describe("buildModelsResponse reconciliation guard", () => {
     const body = await res.json();
     expect(body.models).toHaveLength(1);
     expect(reconcile).not.toHaveBeenCalled();
+  });
+
+  it("does not stamp or save dynamic capabilities when reconcile is false, while preserving prior syncedMap metadata", async () => {
+    mocks.getSyncedModelsMap.mockResolvedValueOnce({
+      "conn-fallback:grok-4": {
+        lastSyncedAt: "2026-01-01T00:00:00.000Z",
+        firstSeenAt: "2025-12-01T00:00:00.000Z",
+        status: "stale",
+        missingSince: "2026-01-02T00:00:00.000Z",
+      },
+    });
+    const { buildModelsResponse } = await import("../../src/app/api/providers/[id]/models/route.js");
+    const res = await buildModelsResponse({
+      provider: "xai",
+      connectionId: "conn-fallback",
+      models: [
+        { id: "grok-4", contextWindow: 131072, vision: true },
+        { id: "grok-static-only", contextWindow: 64000 },
+      ],
+      reconcile: false,
+    });
+    const body = await res.json();
+
+    expect(mocks.stampSyncedModels).not.toHaveBeenCalled();
+    expect(reconcile).not.toHaveBeenCalled();
+    expect(mocks.saveModelDynamicCapabilities).not.toHaveBeenCalled();
+    expect(mocks.getSyncedModelsMap).toHaveBeenCalledTimes(1);
+
+    expect(body.models).toHaveLength(2);
+    expect(body.models[0]).toMatchObject({
+      id: "grok-4",
+      lastSyncedAt: "2026-01-01T00:00:00.000Z",
+      firstSeenAt: "2025-12-01T00:00:00.000Z",
+      status: "stale",
+      missingSince: "2026-01-02T00:00:00.000Z",
+      source: "synced",
+    });
+    expect(body.models[1]).toMatchObject({
+      id: "grok-static-only",
+      lastSyncedAt: null,
+      firstSeenAt: null,
+      status: "active",
+      missingSince: null,
+      source: "static",
+    });
   });
 });

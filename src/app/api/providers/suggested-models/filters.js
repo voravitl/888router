@@ -1,6 +1,7 @@
 // Free OpenCode models that don't use the "-free" id suffix
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { parseOpenCodeGoCatalog } from "open-sse/services/opencodeGoModels.js";
+import { normalizeUpstreamModel } from "open-sse/services/upstreamModelNormalizer.js";
 
 const KNOWN_FREE_OPENCODE_MODELS = ["big-pickle"];
 
@@ -54,9 +55,12 @@ export const FILTERS = {
         if (!m || typeof m !== "object") return null;
         const id = m.id;
         if (!id) return null;
-        const ctxRaw = m.max_context_window || m.context_length || m.contextWindow || m.context_window || m.maxInputTokens;
+        const normalized = normalizeUpstreamModel(providerHint || "openai", m);
+        const ctxRaw = normalized.contextWindow ?? m.max_context_window ?? m.context_length ?? m.contextWindow ?? m.context_window ?? m.maxInputTokens;
         // Guard against non-numeric upstream values producing NaN (9-opus review).
-        let ctx = Number.isFinite(Number(ctxRaw)) ? Number(ctxRaw) : null;
+        let ctx = (ctxRaw !== null && ctxRaw !== undefined && ctxRaw !== "" && Number.isFinite(Number(ctxRaw)) && Number(ctxRaw) > 0)
+          ? Number(ctxRaw)
+          : null;
         // Fall back to capabilities.js when upstream omits context — required
         // for OpenAI-compatible providers that do not extend the response
         // schema. The dashboard needs a non-NaN contextLength to render UI.
@@ -68,10 +72,18 @@ export const FILTERS = {
             // capabilities lookup is best-effort; do not let it kill the row.
           }
         }
+        const contextLength = normalized.contextWindow || ctx;
         return {
           id,
-          name: m.name || m.display_name || id,
-          ...(ctx ? { contextLength: ctx } : {}),
+          name: normalized.name || normalized.display_name || id,
+          ...(contextLength ? { contextLength } : {}),
+          ...(normalized.vision !== undefined ? { vision: normalized.vision } : {}),
+          ...(normalized.reasoning !== undefined ? { reasoning: normalized.reasoning } : {}),
+          ...(normalized.tools !== undefined ? { tools: normalized.tools } : {}),
+          ...(normalized.pdf !== undefined ? { pdf: normalized.pdf } : {}),
+          ...(normalized.audioInput !== undefined ? { audioInput: normalized.audioInput } : {}),
+          ...(normalized.videoInput !== undefined ? { videoInput: normalized.videoInput } : {}),
+          ...(normalized.releasedAt !== undefined ? { releasedAt: normalized.releasedAt } : {}),
         };
       })
       .filter(Boolean),
