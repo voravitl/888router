@@ -107,10 +107,11 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
     safeModels.push(m);
   }
   let stampMap = {};
+  const shouldReconcile = reconcile !== false;
   if (safeModels.length > 0) {
     try {
       const db = await import("@/lib/db");
-      if (typeof db.stampSyncedModels === "function") {
+      if (shouldReconcile && typeof db.stampSyncedModels === "function") {
         await db.stampSyncedModels(safeModels.map((m) => ({ connectionId, modelId: m.id })));
       }
       if (typeof db.getSyncedModelsMap === "function") {
@@ -120,32 +121,32 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
       // A NON-EMPTY model list means the live upstream answered. Mark this
       // connection's previously-synced-but-now-absent ids as `stale` ghosts
       // instead of deleting them (combos/aliases may still reference them).
-      // Never run on an empty list — that is a failed-fetch/static-fallback
-      // signal and must not reclassify every model.
-      try {
-        if (reconcile) {
+      // Never run on an empty list or static-fallback response — that must
+      // not stamp, reconcile, or overwrite synced capabilities.
+      if (shouldReconcile) {
+        try {
           const repo = await import("@/lib/db/repos/syncedModelsRepo.js");
           if (typeof repo.reconcileSyncedModelsForConnection === "function") {
             await repo.reconcileSyncedModelsForConnection(connectionId, safeModels.map((m) => m.id));
           }
+        } catch (reconcileErr) {
+          console.log("Failed to reconcile synced models:", reconcileErr?.message);
         }
-      } catch (reconcileErr) {
-        console.log("Failed to reconcile synced models:", reconcileErr?.message);
-      }
 
-      // Extract & persist the full normalized capability set from the upstream
-      // response. Provider-scoped only: the bare-modelId in-memory register
-      // bled caps across providers sharing an id (PR #292 lesson).
-      try {
-        if (typeof db.saveModelDynamicCapabilities === "function") {
-          for (const m of safeModels) {
-            const caps = collectNormalizedCapabilities(m);
-            if (Object.keys(caps).length === 0) continue;
-            await db.saveModelDynamicCapabilities(provider, m.id, caps);
+        // Extract & persist the full normalized capability set from the upstream
+        // response. Provider-scoped only: the bare-modelId in-memory register
+        // bled caps across providers sharing an id (PR #292 lesson).
+        try {
+          if (typeof db.saveModelDynamicCapabilities === "function") {
+            for (const m of safeModels) {
+              const caps = collectNormalizedCapabilities(m);
+              if (Object.keys(caps).length === 0) continue;
+              await db.saveModelDynamicCapabilities(provider, m.id, caps);
+            }
           }
+        } catch (capErr) {
+          console.log("Failed to save dynamic capabilities:", capErr?.message);
         }
-      } catch (capErr) {
-        console.log("Failed to save dynamic capabilities:", capErr?.message);
       }
     } catch (error) {
       console.log("Failed to stamp synced models:", error?.message);
@@ -161,7 +162,7 @@ export async function buildModelsResponse({ provider, connectionId, models, warn
       status: entry?.status || "active",
       missingSince: entry?.missingSince ?? null,
       ...collectNormalizedCapabilities(m),
-      source: "synced",
+      source: shouldReconcile ? "synced" : (entry ? "synced" : (m.source || "static")),
     };
   });
   const payload = {

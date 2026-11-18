@@ -198,7 +198,18 @@ const LIVE_MODEL_RESOLVERS = {
       const json = await res.json();
       const data = Array.isArray(json?.data) ? json.data : Array.isArray(json) ? json : [];
       const models = data
-        .map((m) => (m && typeof m === "object" && m.id ? { id: m.id, name: m.name || m.id } : null))
+        .map((m) => {
+          if (!m || typeof m !== "object" || typeof m.id !== "string" || !m.id.trim()) return null;
+          const normalized = normalizeUpstreamModel(providerId, m);
+          const existingCaps = (m.capabilities && typeof m.capabilities === "object" && !Array.isArray(m.capabilities))
+            ? m.capabilities
+            : {};
+          return {
+            ...normalized,
+            name: normalized.name || normalized.display_name || normalized.id,
+            capabilities: { ...existingCaps, ...collectNormalizedCapabilities(normalized) },
+          };
+        })
         .filter(Boolean);
       return models.length ? { models } : null;
     } catch {
@@ -765,6 +776,41 @@ async function buildProviderEntries({
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
+      const stripKnownPrefix = (modelId) => {
+        if (typeof modelId !== "string") return "";
+        if (modelId.startsWith(`${outputAlias}/`)) {
+          return modelId.slice(outputAlias.length + 1);
+        }
+        if (modelId.startsWith(`${staticAlias}/`)) {
+          return modelId.slice(staticAlias.length + 1);
+        }
+        if (modelId.startsWith(`${providerId}/`)) {
+          return modelId.slice(providerId.length + 1);
+        }
+        return modelId;
+      };
+
+      const recordLiveMetadata = (list) => {
+        rawModelIds = list.map((m) => m.id);
+        liveModelKindById = new Map();
+        liveCapabilitiesById = new Map();
+        for (const m of list) {
+          if (typeof m?.id !== "string" || !m.id.trim()) continue;
+          const stripped = stripKnownPrefix(m.id);
+          const kind = modelKind(m);
+          liveModelKindById.set(m.id, kind);
+          if (stripped !== m.id && !liveModelKindById.has(stripped)) {
+            liveModelKindById.set(stripped, kind);
+          }
+          if (m.capabilities) {
+            liveCapabilitiesById.set(m.id, m.capabilities);
+            if (stripped !== m.id && !liveCapabilitiesById.has(stripped)) {
+              liveCapabilitiesById.set(stripped, m.capabilities);
+            }
+          }
+        }
+      };
+
       // Config-driven live catalog override (e.g. Kiro returns dynamic
       // -thinking/-agentic variants per account). On failure or timeout, fall
       // back to whatever rawModelIds already holds.
@@ -773,17 +819,7 @@ async function buildProviderEntries({
         try {
           const live = await withLiveFetchTimeout(liveResolver(conn), providerId);
           if (live?.models?.length) {
-            rawModelIds = live.models.map((m) => m.id);
-            liveModelKindById = new Map(
-              live.models
-                .filter((m) => m?.id)
-                .map((m) => [m.id, modelKind(m)])
-            );
-            liveCapabilitiesById = new Map(
-              live.models
-                .filter((m) => m?.id && m.capabilities)
-                .map((m) => [m.id, m.capabilities])
-            );
+            recordLiveMetadata(live.models);
           }
         } catch (err) {
           console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
@@ -802,7 +838,7 @@ async function buildProviderEntries({
             `${providerId} (openai-generic)`,
           );
           if (generic?.models?.length) {
-            rawModelIds = generic.models.map((m) => m.id);
+            recordLiveMetadata(generic.models);
           }
         } catch (err) {
           console.log(`Generic openai fetch failed for ${providerId}: ${err?.message || err}`);
@@ -810,18 +846,7 @@ async function buildProviderEntries({
       }
 
       const modelIds = rawModelIds
-        .map((modelId) => {
-          if (modelId.startsWith(`${outputAlias}/`)) {
-            return modelId.slice(outputAlias.length + 1);
-          }
-          if (modelId.startsWith(`${staticAlias}/`)) {
-            return modelId.slice(staticAlias.length + 1);
-          }
-          if (modelId.startsWith(`${providerId}/`)) {
-            return modelId.slice(providerId.length + 1);
-          }
-          return modelId;
-        })
+        .map(stripKnownPrefix)
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
         .filter((modelId) => providerId !== "antigravity" || !isAntigravityHiddenModel(modelId));
 
