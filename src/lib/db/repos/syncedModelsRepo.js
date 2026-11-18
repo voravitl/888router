@@ -14,11 +14,14 @@ export async function getSyncedModelsMap() {
 }
 
 // entries: [{ connectionId, modelId }]
-// Returns the map of just-stamped keys → { lastSyncedAt, firstSeenAt }.
-export async function stampSyncedModels(entries) {
+// Returns the map of just-stamped keys → { lastSyncedAt, firstSeenAt, status: "active" }.
+// `options.now` lets tests pin the clock; `options.status` is an escape hatch
+// (normal syncs always stamp "active").
+export async function stampSyncedModels(entries, options = {}) {
   if (!Array.isArray(entries) || entries.length === 0) return {};
   const db = await getAdapter();
-  const now = new Date().toISOString();
+  const now = options?.now || new Date().toISOString();
+  const status = options?.status || "active";
   const stamped = {};
 
   db.transaction(() => {
@@ -28,7 +31,10 @@ export async function stampSyncedModels(entries) {
       const row = db.get(`SELECT value FROM kv WHERE scope = 'syncedModels' AND key = ?`, [key]);
       const existing = row ? parseJson(row.value, {}) : {};
       const firstSeenAt = existing.firstSeenAt || now;
-      const value = { lastSyncedAt: now, firstSeenAt };
+      const value = { lastSyncedAt: now, firstSeenAt, status };
+      // A model seen again is live again: clear the ghost marker from a prior
+      // failed sync. Deleting (rather than setting null) keeps old rows clean.
+      delete value.missingSince;
       db.run(
         `INSERT INTO kv(scope, key, value) VALUES('syncedModels', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
         [key, stringifyJson(value)]
@@ -38,6 +44,48 @@ export async function stampSyncedModels(entries) {
   });
 
   return stamped;
+}
+
+/**
+ * Lifecycle reconciliation for one connection. A successful live sync declares
+ * exactly which model ids are active; anything previously active for the same
+ * connection that is absent becomes `stale` with a `missingSince` timestamp.
+ *
+ * Stale rows are NEVER deleted: combos/aliases that still reference a retired
+ * upstream id keep resolving instead of breaking outright. A failed/empty
+ * upstream response must never run this — pass a non-empty `activeModelIds`
+ * only when the live fetch actually succeeded.
+ *
+ * @returns {Record<string, object>} the keys that transitioned to stale
+ */
+export async function reconcileSyncedModelsForConnection(connectionId, activeModelIds, options = {}) {
+  if (!connectionId || !Array.isArray(activeModelIds) || activeModelIds.length === 0) return {};
+  const db = await getAdapter();
+  const now = options?.now || new Date().toISOString();
+  const prefix = `${connectionId}:`;
+  const active = new Set(activeModelIds.map(String));
+  const changed = {};
+
+  db.transaction(() => {
+    const rows = db.all(`SELECT key, value FROM kv WHERE scope = 'syncedModels'`);
+    for (const row of rows) {
+      if (typeof row?.key !== "string" || !row.key.startsWith(prefix)) continue;
+      const modelId = row.key.slice(prefix.length);
+      if (active.has(modelId)) continue;
+      const existing = parseJson(row.value, {});
+      // Already-stale ghosts keep their original missingSince — do not refresh
+      // the clock on every sync or they never look "long missing".
+      if (existing.status === "stale") continue;
+      const value = { ...existing, status: "stale", missingSince: existing.missingSince || now };
+      db.run(
+        `UPDATE kv SET value = ? WHERE scope = 'syncedModels' AND key = ?`,
+        [stringifyJson(value), row.key]
+      );
+      changed[row.key] = value;
+    }
+  });
+
+  return changed;
 }
 
 export async function upsertSyncedModel(connectionId, modelId) {
@@ -86,9 +134,11 @@ export async function getAllModelDynamicCapabilities() {
     const cw = caps.contextWindow;
     // Reject a malformed context window at the read boundary — a bad/zero/
     // negative/gateway-`1` value must not permanently override the static
-    // catalogue. Validating here (not coupling to `updatedAt`) also lets
-    // rows written before the stamp existed pass.
-    if (!Number.isFinite(cw) || cw <= 0) continue;
+    // catalogue. Rows that carry NO context window (vision-only syncs) are
+    // valid: they simply contribute modality/feature fields. Validating only
+    // rows that DO carry the field keeps the bad-cache-row guard intact while
+    // letting the expanded capability set through.
+    if (cw !== undefined && cw !== null && (!Number.isFinite(cw) || cw <= 1)) continue;
     // Strip the persistence timestamp — it is repo metadata, not a capability,
     // and leaking it into /v1/models model.capabilities pollutes the payload.
     const { updatedAt, ...clean } = caps;

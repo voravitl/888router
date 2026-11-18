@@ -45,11 +45,18 @@ export default function ModelsTable({
   isCustomMap = {},
   capsMap = {},
   fullModelFor,
+  onCleanupStale,
   emptyMessage = "No models",
 }) {
   const [sortField, setSortField] = useState("releasedAt");
   const [sortOrder, setSortOrder] = useState("desc");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showStale, setShowStale] = useState(false);
+
+  const staleCount = useMemo(
+    () => (Array.isArray(models) ? models : []).filter((m) => m.status === "stale").length,
+    [models]
+  );
 
   const toggleSort = (field) => {
     if (sortField === field) {
@@ -61,7 +68,9 @@ export default function ModelsTable({
   };
 
   const filteredModels = useMemo(() => {
-    const arr = Array.isArray(models) ? [...models] : [];
+    const arr = Array.isArray(models)
+      ? models.filter((m) => showStale || m.status !== "stale")
+      : [];
     if (!searchQuery.trim()) return arr;
     const q = searchQuery.trim().toLowerCase();
     return arr.filter((m) => {
@@ -76,7 +85,7 @@ export default function ModelsTable({
         alias.toLowerCase().includes(q)
       );
     });
-  }, [models, searchQuery, fullModelFor]);
+  }, [models, searchQuery, fullModelFor, showStale]);
 
   const sorted = useMemo(() => {
     const arr = [...filteredModels];
@@ -120,11 +129,30 @@ export default function ModelsTable({
             </button>
           )}
         </div>
-        <div className="text-xs text-text-muted px-1">
-          {searchQuery ? (
-            <span>Showing {sorted.length} of {models.length} model{models.length !== 1 ? "s" : ""}</span>
-          ) : (
-            <span>{models.length} model{models.length !== 1 ? "s" : ""} available</span>
+        <div className="flex items-center gap-3 px-1">
+          <span className="text-xs text-text-muted">
+            {searchQuery ? (
+              <>Showing {sorted.length} of {models.length} model{models.length !== 1 ? "s" : ""}</>
+            ) : (
+              <>{models.length} model{models.length !== 1 ? "s" : ""} available</>
+            )}
+          </span>
+          {staleCount > 0 && (
+            <button
+              onClick={() => setShowStale((v) => !v)}
+              aria-pressed={showStale}
+              className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                showStale
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                  : "border-border/60 text-text-muted hover:border-amber-500/40 hover:text-text-main"
+              }`}
+              title="Toggle retired synced models"
+            >
+              <span className="material-symbols-outlined text-[13px]">
+                {showStale ? "visibility_off" : "visibility"}
+              </span>
+              {showStale ? "Hide stale" : `Show stale (${staleCount})`}
+            </button>
           )}
         </div>
       </div>
@@ -144,13 +172,19 @@ export default function ModelsTable({
                 <td colSpan={4} className="px-4 py-8 text-center text-text-muted">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <span className="material-symbols-outlined text-[32px] text-text-muted/40">search_off</span>
-                    <span>No models matching "{searchQuery}"</span>
-                    <button
-                      onClick={() => setSearchQuery("")}
-                      className="text-xs text-primary hover:underline font-medium mt-1"
-                    >
-                      Clear search
-                    </button>
+                    <span>
+                      {searchQuery
+                        ? `No models matching "${searchQuery}"`
+                        : "No active models — use “Show stale” to see retired ones"}
+                    </span>
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className="text-xs text-primary hover:underline font-medium mt-1"
+                      >
+                        Clear search
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -220,6 +254,14 @@ export default function ModelsTable({
                               custom
                             </span>
                           ) : null}
+                          {model.status === "stale" && (
+                            <span
+                              title={model.missingSince ? `Missing since ${fmtAbsolute(model.missingSince)}` : "No longer in upstream catalog"}
+                              className="rounded bg-border/40 border border-border/60 px-1.5 py-0.5 text-[10px] font-medium text-text-muted line-through"
+                            >
+                              stale
+                            </span>
+                          )}
                         </div>
                         <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-text-muted/80 pl-0.5">
                           {model.name && <span className="truncate italic">{model.name}</span>}
@@ -278,7 +320,15 @@ export default function ModelsTable({
                           {copied === `model-${model.id}` ? "check" : "content_copy"}
                         </span>
                       </button>
-                      {isCustom ? (
+                      {isCustom && model.status === "stale" && onCleanupStale ? (
+                        <button
+                          onClick={() => onCleanupStale(model)}
+                          className="rounded-lg p-1.5 text-text-muted transition-all hover:bg-red-500/10 hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+                          title="Clean up stale synced model"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete_sweep</span>
+                        </button>
+                      ) : isCustom ? (
                         <button
                           onClick={() => onDeleteAlias(model.id)}
                           className="rounded-lg p-1.5 text-text-muted transition-all hover:bg-red-500/10 hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
@@ -332,5 +382,6 @@ ModelsTable.propTypes = {
   isCustomMap: PropTypes.object,
   capsMap: PropTypes.object,
   fullModelFor: PropTypes.func,
+  onCleanupStale: PropTypes.func,
   emptyMessage: PropTypes.string,
 };

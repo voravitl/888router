@@ -184,10 +184,11 @@ export default function ModelSelectModal({
     []
   );
 
-  // Pre-index syncedModels by connId to turn O(Providers * SyncedModels) loop into O(1) Map lookup
+  // Pre-index active syncedModels by connId to turn O(Providers * SyncedModels) loop into O(1) Map lookup
   const syncedModelsByConn = useMemo(() => {
     const map = new Map();
-    for (const key of Object.keys(syncedModels || {})) {
+    for (const [key, entry] of Object.entries(syncedModels || {})) {
+      if (entry?.status === "stale") continue;
       const colon = key.indexOf(":");
       if (colon <= 0) continue;
       const connId = key.slice(0, colon);
@@ -222,7 +223,7 @@ export default function ModelSelectModal({
               id: modelId,
               name: modelId,
               value: `${targetAlias}/${modelId}`,
-              isCustom: true,
+              isSynced: true,
             });
           }
         }
@@ -241,7 +242,7 @@ export default function ModelSelectModal({
     const ALLOW_PROVIDER_FALLBACK_KINDS = new Set(["tts", "image", "webFetch"]);
 
     const filterByKind = (models) => {
-      if (!kindFilter) return models.filter((m) => m.isPlaceholder || m.isCustom || !getModelKind(m) || getModelKind(m) === "llm");
+      if (!kindFilter) return models.filter((m) => m.isPlaceholder || m.isCustom || m.isSynced || !getModelKind(m) || getModelKind(m) === "llm");
       if (!TYPED_KINDS.has(kindFilter)) return models;
       return models.filter((m) => m.isPlaceholder || getModelKind(m) === kindFilter);
     };
@@ -495,7 +496,7 @@ export default function ModelSelectModal({
         const members = c.models || [];
         if (members.length === 0) return false;
         return members.some((m) => {
-          const caps = getCaps(m) || {};
+          const caps = getCaps(m, m && typeof m === "object" ? m : null) || {};
           if (contextFilter > 0 && (caps.contextWindow || 0) < contextFilter) return false;
           if (filterVision && !caps.vision) return false;
           if (filterReasoning && !caps.reasoning) return false;
@@ -533,7 +534,7 @@ export default function ModelSelectModal({
       if (effectiveCtx > 0 || filterVision || filterReasoning) {
         models = models.filter((m) => {
           if (m.isPlaceholder) return false;
-          const caps = getCaps(m.value) || {};
+          const caps = getCaps(m.value, m) || {};
           if (effectiveCtx > 0) {
             const cw = caps.contextWindow;
             // Genuine unknown models have undefined cw and must not pass context filters
@@ -894,7 +895,7 @@ export default function ModelSelectModal({
                 const isSelected = selectedModel === model.value;
                 const isPlaceholder = model.isPlaceholder;
                 const isAdded = addedSet.has(model.value);
-                const caps = getCaps(model.value) || {};
+                const caps = getCaps(model.value, model) || {};
                 const cwLabel = formatContextWindow(caps?.contextWindow);
 
                 return (

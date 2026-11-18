@@ -20,12 +20,21 @@ const MODELS_DEV_URL = "https://models.dev/api.json";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h — catalog changes rarely
 const FETCH_TIMEOUT_MS = 10_000;
 
-/** @type {{ ts: number, byId: Map<string, {vision:boolean, reasoning:boolean, contextWindow?:number}> } | null} */
+/** @type {{ ts: number, byId: Map<string, object> } | null} */
 let cache = null;
+
+function inputModalities(info) {
+  const input = info?.modalities?.input;
+  return Array.isArray(input) ? input : [];
+}
+
+function hasModality(list, pattern) {
+  return list.some((x) => pattern.test(String(x).trim()));
+}
 
 /**
  * Fetch + index models.dev once (cached). Returns a Map keyed by model id
- * (both bare and provider-prefixed) → { vision, reasoning, contextWindow }.
+ * (both bare and provider-prefixed) → canonical capability fields.
  * Returns null on any failure (callers fail-open to the static table).
  */
 async function loadModelsDevIndex() {
@@ -54,11 +63,20 @@ async function loadModelsDevIndex() {
     if (!pv || typeof pv !== "object") continue;
     for (const [mid, info] of Object.entries(pv.models || {})) {
       if (!info || typeof info !== "object") continue;
-      const input = info.modalities?.input;
+      const input = inputModalities(info);
       const entry = {
-        vision: Array.isArray(input) && input.includes("image"),
-        reasoning: info.reasoning === true,
+        vision: hasModality(input, /^image(\/|$|\*)/i),
+        pdf: hasModality(input, /^(application\/(x-)?pdf|pdf)$/i),
+        audioInput: hasModality(input, /^audio(\/|$|\*)/i),
+        videoInput: hasModality(input, /^video(\/|$|\*)/i),
+        reasoning: info.reasoning === true || info.capabilities?.reasoning?.supported === true,
+        // Only declare tools when models.dev actually states it; absence must
+        // not silently turn tool calling off for an otherwise capable model.
+        tools: typeof info.tool_call === "boolean"
+          ? info.tool_call
+          : (typeof info.capabilities?.tools?.supported === "boolean" ? info.capabilities.tools.supported : undefined),
         contextWindow: info.limit?.context,
+        maxOutput: info.limit?.output,
       };
       // index by bare id (deepseek-v4-flash-free), prefixed (opencode/deepseek-v4-flash-free),
       // and provider-scoped (opencode:deepseek-v4-flash-free) so lookups can prefer
@@ -98,9 +116,17 @@ export async function enrichModalityFromModelsDev(models, provider = "") {
       : index.get(m.id);
     if (!entry) continue;
     // Only set when the live sync didn't already provide it (upstream wins).
+    // Every field is guarded so a raw model object keeps all fields the
+    // upstream already stated — models.dev only fills the gaps.
     if (m.vision === undefined) m.vision = entry.vision;
     if (m.reasoning === undefined) m.reasoning = entry.reasoning;
+    if (m.pdf === undefined && entry.pdf !== undefined) m.pdf = entry.pdf;
+    if (m.audioInput === undefined && entry.audioInput !== undefined) m.audioInput = entry.audioInput;
+    if (m.videoInput === undefined && entry.videoInput !== undefined) m.videoInput = entry.videoInput;
+    if (m.tools === undefined && entry.tools !== undefined) m.tools = entry.tools;
     if (m.context_length === undefined && entry.contextWindow) m.context_length = entry.contextWindow;
+    if (m.contextWindow === undefined && entry.contextWindow) m.contextWindow = entry.contextWindow;
+    if (m.maxOutput === undefined && entry.maxOutput) m.maxOutput = entry.maxOutput;
   }
   return models;
 }
