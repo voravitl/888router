@@ -81,4 +81,25 @@ describe("provider custom model rows", () => {
       },
     ]);
   });
+
+  it("treats Anthropic wire tag type='model' as llm instead of filtering it out", () => {
+    const rows = getProviderCustomModelRows({
+      customModels: [
+        { providerAlias: "cc", id: "claude-fable-5-2", type: "model", name: "Claude Fable 5.2" },
+      ],
+      providerAlias: "cc",
+      builtInModels: [],
+      type: "llm",
+    });
+
+    expect(rows).toEqual([
+      {
+        id: "claude-fable-5-2",
+        name: "Claude Fable 5.2",
+        fullModel: "cc/claude-fable-5-2",
+        source: "custom",
+        type: "llm",
+      },
+    ]);
+  });
 });

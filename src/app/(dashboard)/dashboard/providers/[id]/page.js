@@ -1178,7 +1178,7 @@ export default function ProviderDetailPage() {
       ...enrichedBuiltIn,
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
       ...dynamicModels.filter((dm) => !models.some((m) => m.id === dm.id)),
-    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm" || k === "chat" || k === "research"; });
+    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm" || k === "chat" || k === "research" || k === "model"; });
     const disabledSet = new Set(disabledModelIds);
     const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
     const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
@@ -1838,7 +1838,7 @@ export default function ProviderDetailPage() {
             const allIds = [
               ...models,
               ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm" || k === "chat" || k === "research"; }).map((m) => m.id);
+            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm" || k === "chat" || k === "research" || k === "model"; }).map((m) => m.id);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">

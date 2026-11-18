@@ -1,5 +1,5 @@
 function modelType(model) {
-  return model?.kind || model?.type || "llm";
+  return model?.kind || (model?.type && model.type !== "model" ? model.type : null) || "llm";
 }
 
 export function getProviderCustomModelRows({
