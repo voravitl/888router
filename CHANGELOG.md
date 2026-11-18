@@ -1,3 +1,13 @@
+# v0.15.268 (2026-11-18)
+
+## All-Provider Upstream Model Schema Normalization & Type Hygiene
+- **OpenRouter, NousResearch, Codex, GitHub Copilot & Cloudflare AI Normalization (`open-sse/services/upstreamModelNormalizer.js`, `src/lib/cloudflareAiModels.js`, `src/app/api/providers/suggested-models/filters.js`, `tests/unit/dynamic-model-sync-lifecycle.test.js`, `tests/unit/cloudflare-models-sync.test.js`)**:
+  - Extended `normalizeUpstreamModel` to extract OpenRouter/NousResearch `architecture.input_modalities` / `architecture.modality` (mapping `"file"` and `"document"` to `pdf: true`, alongside `"image"`, `"audio"`, and `"video"`), `top_provider.max_completion_tokens`, nested `reasoning` capability objects (`mandatory`, `default_enabled`, `enabled`, `supported_efforts`), and `supported_parameters` (`reasoning`/`include_reasoning`/`reasoning_effort`, `tools`/`tool_choice`/`functions`, `web_search`/`web_search_options`).
+  - Added Codex (`supported_reasoning_levels`, `default_reasoning_level`, `supports_parallel_tool_calls`, `apply_patch_tool_type`, `web_search_tool_type`) and GitHub Copilot (`capabilities.limits`, `capabilities.supports`) normalization paths, marked Cloudflare AI `image-to-text` / `visual-*` tasks `vision: true` in `parseCloudflareModelsResponse`, and normalized `FILTERS["openrouter-free"]` through `normalizeUpstreamModel`.
+  - Stripped malformed non-boolean/non-numeric capability values in `normalizeUpstreamModel` and `collectNormalizedCapabilities` so raw objects like `reasoning: {}` never persist into SQLite or reach UI consumers.
+- **Sync Modal Fallback Backfill & Strict `pickCaps` Type Hygiene (`src/shared/utils/modelCapsMerge.js`, `src/app/(dashboard)/dashboard/providers/[id]/SyncProviderModelsModal.js`, `tests/unit/ui-model-caps-and-sync.test.js`)**:
+  - Hardened `pickCaps` to accept only strict booleans for boolean capability fields and positive finite numbers for `contextWindow`/`maxOutput`, and extended `normalizeSyncModel(item, fallbackCaps, fallbackName)` so bare `{ id, object: "model" }` upstreams backfill known limits, capability badges, and curated names while upstream values (including explicit `false`) continue to win.
+
 # v0.15.267 (2026-11-18)
 
 ## Fix Claude Code Incomplete Available Models & Anthropic Wire Schema Normalization
