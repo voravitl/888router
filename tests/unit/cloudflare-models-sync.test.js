@@ -111,13 +111,15 @@ describe("Cloudflare Workers AI Model Sync Parser", () => {
         id: "@hf/thebloke/deepseek-coder-6.7b-instruct",
         name: "@hf/thebloke/deepseek-coder-6.7b-instruct",
         description: "DeepSeek Coder 6.7B",
-        kind: "llm"
+        kind: "llm",
+        vision: true
       },
       {
         id: "LLaVA 1.5",
         name: "LLaVA 1.5",
         description: "Visual Question Answering",
-        kind: "llm"
+        kind: "llm",
+        vision: true
       }
     ]);
   });

@@ -25,8 +25,39 @@ export const NORMALIZED_CAPABILITY_FIELDS = [
   "releasedAt",
 ];
 
+const BOOLEAN_CAPABILITY_FIELDS = new Set([
+  "vision",
+  "pdf",
+  "audioInput",
+  "videoInput",
+  "tools",
+  "reasoning",
+  "search",
+]);
+const NUMERIC_CAPABILITY_FIELDS = new Set(["contextWindow", "maxOutput"]);
+
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isValidCapabilityValue(field, value) {
+  if (BOOLEAN_CAPABILITY_FIELDS.has(field)) return typeof value === "boolean";
+  if (NUMERIC_CAPABILITY_FIELDS.has(field)) {
+    return typeof value === "number" && Number.isFinite(value) && value > 0;
+  }
+  if (field === "releasedAt") return typeof value === "string" && value.length > 0;
+  return value !== undefined && value !== null;
+}
+
+function isNonNoneString(value) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return trimmed !== "" && trimmed.toLowerCase() !== "none";
+}
+
+function hasAnyParam(paramSet, names) {
+  if (!paramSet) return false;
+  return names.some((name) => paramSet.has(name));
 }
 
 function firstNumber(...values) {
@@ -49,13 +80,19 @@ function firstBoolean(...values) {
 
 function booleanFromCap(value) {
   if (typeof value === "boolean") return value;
-  if (isObject(value) && typeof value.supported === "boolean") return value.supported;
+  if (isObject(value)) {
+    if (typeof value.supported === "boolean") return value.supported;
+    if (typeof value.enabled === "boolean") return value.enabled;
+    if (typeof value.default_enabled === "boolean" && value.default_enabled) return true;
+    if (typeof value.mandatory === "boolean" && value.mandatory) return true;
+    if (Array.isArray(value.supported_efforts) && value.supported_efforts.length > 0) return true;
+  }
   return undefined;
 }
 
 function modalityList(...values) {
   for (const value of values) {
-    if (Array.isArray(value)) return value;
+    if (Array.isArray(value) && value.length > 0) return value;
   }
   return [];
 }
@@ -65,7 +102,7 @@ function hasImage(list) {
 }
 
 function hasPdf(list) {
-  return list.some((x) => /^(application\/(x-)?pdf|pdf)$/i.test(String(x).trim()));
+  return list.some((x) => /^(application\/(x-)?pdf|pdf|file|document)$/i.test(String(x).trim()));
 }
 
 function hasAudio(list) {
@@ -120,9 +157,26 @@ export function normalizeUpstreamModel(providerId, raw) {
   // `capabilities`; top-level fields always win over that nested block.
   const nestedCaps = isObject(raw.capabilities) ? raw.capabilities : {};
   const nestedLimits = isObject(raw.limit) ? raw.limit : {};
+  const copilotLimits = isObject(nestedCaps.limits) ? nestedCaps.limits : {};
+  const copilotSupports = isObject(nestedCaps.supports) ? nestedCaps.supports : {};
   const src = { ...nestedCaps, ...raw };
 
-  const input = modalityList(src.modalities?.input, src.input_modalities, src.modalities);
+  let input = modalityList(
+    src.modalities?.input,
+    src.input_modalities,
+    src.architecture?.input_modalities,
+    src.modalities,
+  );
+  if (input.length === 0 && typeof src.architecture?.modality === "string") {
+    const inputPart = src.architecture.modality.split("->")[0] || "";
+    input = inputPart
+      .split("+")
+      .map((token) => token.trim())
+      .filter(Boolean);
+  }
+  const supportedParams = Array.isArray(src.supported_parameters)
+    ? new Set(src.supported_parameters.filter((p) => typeof p === "string").map((p) => p.trim()))
+    : null;
   const delta = {};
 
   if (!raw.name) {
@@ -152,6 +206,8 @@ export function normalizeUpstreamModel(providerId, raw) {
     src.input_token_limit,
     src.top_provider?.context_length,
     src.details?.context_length,
+    copilotLimits.max_context_window_tokens,
+    copilotLimits.max_prompt_tokens,
   );
   if (contextWindow !== undefined) {
     delta.contextWindow = contextWindow;
@@ -161,10 +217,16 @@ export function normalizeUpstreamModel(providerId, raw) {
 
   const maxOutput = firstNumber(
     src.limit?.output,
+    nestedLimits.max_output_tokens,
+    nestedLimits.max_tokens,
     src.max_tokens,
     src.maxOutput,
     src.max_completion_tokens,
     src.maxOutputTokens,
+    src.outputTokenLimit,
+    src.output_token_limit,
+    src.top_provider?.max_completion_tokens,
+    copilotLimits.max_output_tokens,
   );
   if (maxOutput !== undefined) delta.maxOutput = maxOutput;
 
@@ -175,6 +237,7 @@ export function normalizeUpstreamModel(providerId, raw) {
     src.attachment,
     booleanFromCap(nestedCaps.image_input),
     booleanFromCap(src.image_input),
+    booleanFromCap(copilotSupports.vision),
   );
   if (vision === undefined) vision = familiesSayVision(src);
   if (vision === undefined && input.length > 0) vision = hasImage(input);
@@ -198,10 +261,29 @@ export function normalizeUpstreamModel(providerId, raw) {
     booleanFromCap(src.reasoning),
     booleanFromCap(nestedCaps.thinking),
     booleanFromCap(src.thinking),
-  ) ?? (Array.isArray(src.thinking) ? src.thinking.length > 0 : firstBoolean(src.thinking));
+    booleanFromCap(copilotSupports.thinking),
+    typeof copilotLimits.max_thinking_budget === "number" && copilotLimits.max_thinking_budget > 0 ? true : undefined,
+    Array.isArray(src.thinking) ? src.thinking.length > 0 : undefined,
+    hasAnyParam(supportedParams, ["reasoning", "include_reasoning", "reasoning_effort", "thinking"]) ? true : undefined,
+    (Array.isArray(src.supported_reasoning_levels) && src.supported_reasoning_levels.length > 0) ||
+      isNonNoneString(src.default_reasoning_level)
+      ? true
+      : undefined,
+  );
   if (reasoning !== undefined) delta.reasoning = reasoning;
 
-  const tools = firstBoolean(booleanFromCap(nestedCaps.tools), booleanFromCap(src.tools));
+  const tools = firstBoolean(
+    booleanFromCap(nestedCaps.tools),
+    booleanFromCap(src.tools),
+    booleanFromCap(copilotSupports.tool_calls),
+    booleanFromCap(copilotSupports.parallel_tool_calls),
+    hasAnyParam(supportedParams, ["tools", "tool_choice", "functions"]) ? true : undefined,
+    src.supports_parallel_tool_calls === true ||
+      isNonNoneString(src.apply_patch_tool_type) ||
+      src.toolCalling === true
+      ? true
+      : undefined,
+  );
   if (tools !== undefined) delta.tools = tools;
 
   const search = firstBoolean(
@@ -209,13 +291,21 @@ export function normalizeUpstreamModel(providerId, raw) {
     src.web_search,
     booleanFromCap(nestedCaps.search),
     booleanFromCap(nestedCaps.server_tools?.web_search),
+    hasAnyParam(supportedParams, ["web_search", "web_search_options"]) ? true : undefined,
+    isNonNoneString(src.web_search_tool_type) ? true : undefined,
   );
   if (search !== undefined) delta.search = search;
 
   const releasedAt = toIsoDate(src.release_date ?? src.created_at ?? src.created);
   if (releasedAt !== undefined) delta.releasedAt = releasedAt;
 
-  return { ...raw, ...delta };
+  const out = { ...raw, ...delta };
+  for (const field of NORMALIZED_CAPABILITY_FIELDS) {
+    if (field in out && !isValidCapabilityValue(field, out[field])) {
+      delete out[field];
+    }
+  }
+  return out;
 }
 
 /**
@@ -228,8 +318,9 @@ export function collectNormalizedCapabilities(model) {
   const out = {};
   for (const field of NORMALIZED_CAPABILITY_FIELDS) {
     const value = model[field];
-    if (value === undefined || value === null) continue;
-    out[field] = value;
+    if (isValidCapabilityValue(field, value)) {
+      out[field] = value;
+    }
   }
   return out;
 }
