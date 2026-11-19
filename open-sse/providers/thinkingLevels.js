@@ -33,11 +33,24 @@ const FORMAT_LEVELS = {
 };
 
 const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+const CLAUDE_XHIGH_MAX_LEVELS = ["none", "low", "medium", "high", "xhigh", "max"];
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
-  // Gemini 4 Hydrogen supports low, medium, high, and xhigh (no minimal/none).
+  // Claude 4.7+/4.8/5/5.5/Fable/Mythos support xhigh + max (4.6 keeps FORMAT_LEVELS without xhigh).
+  // getThinkingLevels strips "none" automatically when caps.thinkingCanDisable === false.
+  { pattern: "*claude*opus-4.7*", levels: CLAUDE_XHIGH_MAX_LEVELS },
+  { pattern: "*claude*opus-4-7*", levels: CLAUDE_XHIGH_MAX_LEVELS },
+  { pattern: "*claude*opus-4.8*", levels: CLAUDE_XHIGH_MAX_LEVELS },
+  { pattern: "*claude*opus-4-8*", levels: CLAUDE_XHIGH_MAX_LEVELS },
+  { pattern: "*claude*opus-5*",   levels: CLAUDE_XHIGH_MAX_LEVELS },
+  { pattern: "*claude*sonnet-5*", levels: CLAUDE_XHIGH_MAX_LEVELS },
+  { pattern: "*claude*haiku-5*",  levels: CLAUDE_XHIGH_MAX_LEVELS },
+  { pattern: "*claude*fable*",    levels: CLAUDE_XHIGH_MAX_LEVELS },
+  { pattern: "*claude*mythos*",   levels: CLAUDE_XHIGH_MAX_LEVELS },
+  // Gemini 4 Hydrogen & Neon support low, medium, high, and xhigh (no minimal/none).
   { pattern: "*gemini-4-hydrogen*", levels: ["low", "medium", "high", "xhigh"] },
+  { pattern: "*gemini-4-neon*",     levels: ["low", "medium", "high", "xhigh"] },
   // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
   // Gemini 3.8 flash rejects "minimal" with 400 ("Thinking level MINIMAL is

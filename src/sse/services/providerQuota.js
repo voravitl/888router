@@ -112,6 +112,8 @@ function canonicalizeQuotaModel(providerId, model) {
   return `${base.slice(0, tierMatch.index)}-${parenLevel}`;
 }
 
+const ANTIGRAVITY_HIGH_DEFAULT_BASES = new Set(["gemini-4-hydrogen", "gemini-4-neon"]);
+
 /**
  * Build ordered quota-table candidate keys for a requested model:
  * exact key first, then stripped `(level)` / `-tiered` equivalents, then bare base.
@@ -161,7 +163,7 @@ function getQuotaLookupCandidates(providerId, model) {
 
   // 5. Base -> -high / -tiered fallback when upstream uses a single base or -high key
   if (deTieredBase && !deTieredBase.match(/-(xhigh|high|medium|low)$/i)) {
-    if (deTieredBase === "gemini-4-hydrogen" && (!parenLevel || parenLevel === "high")) {
+    if (ANTIGRAVITY_HIGH_DEFAULT_BASES.has(deTieredBase) && (!parenLevel || parenLevel === "high")) {
       push(`${deTieredBase}-high`);
     }
     push(`${deTieredBase}-tiered`);

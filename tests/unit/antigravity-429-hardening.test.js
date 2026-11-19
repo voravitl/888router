@@ -356,6 +356,70 @@ describe("Antigravity 429 & Quota Hardening", () => {
       expect(creds?.allRateLimited).toBe(true);
       expect(creds?.retryAfter).toBe(resetAt);
     });
+
+    it("resolves gemini-4-neon-tiered-xhigh to gemini-4-neon-xhigh quota & resetAt", async () => {
+      const resetAt = new Date(Date.now() + 80 * HOUR).toISOString();
+      mocks.getAntigravityUsage.mockResolvedValueOnce({
+        quotas: {
+          "gemini-4-neon-xhigh": { remainingPercentage: 0, resetAt },
+        },
+      });
+
+      const resetMs = await handleProviderQuotaError(
+        "antigravity",
+        CONN,
+        429,
+        "gemini-4-neon-tiered-xhigh",
+        "tok",
+        {}
+      );
+
+      expect(resetMs).toBe(new Date(resetAt).getTime());
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon-tiered-xhigh")).toBe(resetMs);
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon(xhigh)")).toBe(resetMs);
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon-xhigh")).toBe(resetMs);
+    });
+
+    it("resolves bare gemini-4-neon and gemini-4-neon-tiered against gemini-4-neon-high quota key without crossing xhigh", async () => {
+      const resetAt = new Date(Date.now() + 5 * HOUR).toISOString();
+      mocks.getAntigravityUsage.mockResolvedValue({
+        quotas: {
+          "gemini-4-neon-high": { remainingPercentage: 0, resetAt },
+        },
+      });
+
+      const resetMs = await handleProviderQuotaError(
+        "antigravity",
+        CONN,
+        429,
+        "gemini-4-neon",
+        "tok",
+        {}
+      );
+
+      expect(resetMs).toBe(new Date(resetAt).getTime());
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon")).toBe(resetMs);
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon-tiered")).toBe(resetMs);
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon(high)")).toBe(resetMs);
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon(xhigh)")).toBeNull();
+    });
+
+    it("coalesces optimistic strikes across Neon aliases and clears cleanly on success", async () => {
+      mocks.getAntigravityUsage.mockResolvedValue({
+        quotas: {
+          "gemini-4-neon-xhigh": { remainingPercentage: 10, resetAt: new Date(Date.now() + HOUR).toISOString() },
+        },
+      });
+
+      expect(await handleProviderQuotaError("antigravity", CONN, 429, "gemini-4-neon-tiered-xhigh", "tok", {})).toBeNull();
+      expect(await handleProviderQuotaError("antigravity", CONN, 429, "gemini-4-neon(xhigh)", "tok", {})).toBeNull();
+      const blockedUntil = await handleProviderQuotaError("antigravity", CONN, 429, "gemini-4-neon-xhigh", "tok", {});
+      expect(blockedUntil).not.toBeNull();
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon-tiered-xhigh")).toBe(blockedUntil);
+
+      clearProviderStrikes("antigravity", CONN, "gemini-4-neon(xhigh)");
+      expect(isPairBlocked("antigravity", CONN, "gemini-4-neon-tiered-xhigh")).toBeNull();
+    });
   });
 
   describe("3. markAccountUnavailable Antigravity 429 minimum cooldown floor", () => {

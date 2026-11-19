@@ -4,7 +4,13 @@ import REGISTRY from "../providers/registry/index.js";
 import { PROVIDER_MODELS } from "../providers/index.js";
 import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
 import { deriveModelName } from "../providers/models/namePatterns.js";
-import { CODEX_REVIEW_SUFFIX, resolveAntigravityFlashModel, resolveAntigravityHydrogenModel, isMuseSparkModel } from "../providers/models/helpers.js";
+import {
+  CODEX_REVIEW_SUFFIX,
+  resolveAntigravityFlashModel,
+  resolveAntigravityHydrogenModel,
+  resolveAntigravityNeonModel,
+  isMuseSparkModel,
+} from "../providers/models/helpers.js";
 import { FORMATS } from "../translator/formats.js";
 
 export { PROVIDER_MODELS };
@@ -25,6 +31,11 @@ export function getDefaultModel(aliasOrId) {
 // digit-hyphen-digit to digit-dot-digit before lookup. Other providers are left untouched.
 const DOT_VERSION_PROVIDERS = new Set(["kr", "kiro"]);
 
+const ANTIGRAVITY_TIERED_RESOLVERS = [
+  { fn: resolveAntigravityHydrogenModel, baseId: "gemini-4-hydrogen" },
+  { fn: resolveAntigravityNeonModel, baseId: "gemini-4-neon" },
+];
+
 // Find a registry entry by id. For Kiro models, tolerates dash/dot version separators
 // ("claude-sonnet-4-5" ~= "claude-sonnet-4.5"). Other providers use exact match only.
 function findModel(models, modelId, aliasOrId) {
@@ -35,16 +46,18 @@ function findModel(models, modelId, aliasOrId) {
   const found = models.find(m => m.id === modelId || m.id === baseModelId);
   if (found) return found;
   if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof baseModelId === "string") {
-    const hydrogenResolved = resolveAntigravityHydrogenModel(baseModelId);
-    if (hydrogenResolved !== baseModelId) {
-      const baseEntry = models.find(m => m.id === "gemini-4-hydrogen");
-      if (baseEntry) {
-        return {
-          ...baseEntry,
-          id: modelId,
-          name: deriveModelName(modelId),
-          upstreamModelId: hydrogenResolved,
-        };
+    for (const { fn, baseId } of ANTIGRAVITY_TIERED_RESOLVERS) {
+      const tieredResolved = fn(baseModelId);
+      if (tieredResolved !== baseModelId) {
+        const baseEntry = models.find(m => m.id === baseId);
+        if (baseEntry) {
+          return {
+            ...baseEntry,
+            id: modelId,
+            name: deriveModelName(modelId),
+            upstreamModelId: tieredResolved,
+          };
+        }
       }
     }
     const resolved = resolveAntigravityFlashModel(baseModelId);
@@ -128,8 +141,10 @@ export function getModelUpstreamId(aliasOrId, modelId) {
     return applyPresetSuffix(resolvedId, suffix);
   }
   if ((aliasOrId === "ag" || aliasOrId === "antigravity") && typeof baseId === "string") {
-    const hydrogenResolved = resolveAntigravityHydrogenModel(baseId);
-    if (hydrogenResolved !== baseId) return applyPresetSuffix(hydrogenResolved, suffix);
+    for (const { fn } of ANTIGRAVITY_TIERED_RESOLVERS) {
+      const tieredResolved = fn(baseId);
+      if (tieredResolved !== baseId) return applyPresetSuffix(tieredResolved, suffix);
+    }
     const resolved = resolveAntigravityFlashModel(baseId);
     if (resolved !== baseId) return resolved + suffix;
   }

@@ -1,4 +1,5 @@
 import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
+import { KIRO_IDE_VERSION } from "../../../../open-sse/providers/shared.js";
 
 /**
  * Kiro OAuth Service
@@ -17,8 +18,8 @@ const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev";
 // chat (GenerateAssistantResponse) succeeds with the same token, because chat sends these
 // same headers. Mirror the chat transport's identity on every CodeWhisperer call.
 const KIRO_IDE_UA_HEADERS = {
-  "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-  "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
+  "User-Agent": `AWS-SDK-JS/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`,
+  "X-Amz-User-Agent": `aws-sdk-js/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`,
 };
 
 export class KiroService {

@@ -135,7 +135,6 @@ export const FREE_MODEL_BUDGETS = [
   { provider: "cloudflare-ai", modelId: "@cf/meta/llama-3.2-3b-instruct", displayName: "Llama 3.2 3B (🆓)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-daily", poolKey: "cloudflare-ai", tos: "caution" },
   { provider: "cloudflare-ai", modelId: "@cf/qwen/qwq-32b", displayName: "QwQ 32B (🆓)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-daily", poolKey: "cloudflare-ai", tos: "caution" },
   { provider: "cloudflare-ai", modelId: "@cf/zai-org/glm-4.7-flash", displayName: "GLM 4.7 Flash (🆓)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-daily", poolKey: "cloudflare-ai", tos: "caution" },
-  { provider: "cloudflare-ai", modelId: "@cf/moonshotai/kimi-k2.6", displayName: "Kimi K2.6 (🆓)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-daily", poolKey: "cloudflare-ai", tos: "caution" },
   { provider: "cloudflare-ai", modelId: "@cf/google/gemma-4-26b-a4b-it", displayName: "Gemma 4 26B (🆓)", monthlyTokens: 0, creditTokens: 0, freeType: "recurring-daily", poolKey: "cloudflare-ai", tos: "caution" },
   { provider: "cohere", modelId: "command-a-reasoning-08-2025", displayName: "Command A Reasoning (Aug 2025)", monthlyTokens: 800000, creditTokens: 0, freeType: "recurring-monthly", poolKey: "cohere", tos: "caution" },
   { provider: "cohere", modelId: "command-a-vision-07-2025", displayName: "Command A Vision (Jul 2025)", monthlyTokens: 800000, creditTokens: 0, freeType: "recurring-monthly", poolKey: "cohere", tos: "caution" },

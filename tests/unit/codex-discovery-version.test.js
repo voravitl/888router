@@ -15,9 +15,9 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("Codex discovery release version", () => {
   it("refreshes each successful Sync so a later release needs no code edit", async () => {
-    fetchMock.mockResolvedValueOnce(release("0.160.0")).mockResolvedValueOnce(release("0.200.0"));
+    fetchMock.mockResolvedValueOnce(release("0.180.0")).mockResolvedValueOnce(release("0.200.0"));
     const { resolveCodexDiscoveryVersion } = await load();
-    expect(await resolveCodexDiscoveryVersion()).toEqual({ version: "0.160.0" });
+    expect(await resolveCodexDiscoveryVersion()).toEqual({ version: "0.180.0" });
     expect(await resolveCodexDiscoveryVersion()).toEqual({ version: "0.200.0" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [url, options] = fetchMock.mock.calls[0];
@@ -32,18 +32,18 @@ describe("Codex discovery release version", () => {
     const { resolveCodexDiscoveryVersion } = await load();
     const first = resolveCodexDiscoveryVersion();
     const second = resolveCodexDiscoveryVersion();
-    finish(release("0.160.0"));
-    expect(await Promise.all([first, second])).toEqual([{ version: "0.160.0" }, { version: "0.160.0" }]);
+    finish(release("0.180.0"));
+    expect(await Promise.all([first, second])).toEqual([{ version: "0.180.0" }, { version: "0.180.0" }]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the last good version during an outage, backs off and recovers", async () => {
-    fetchMock.mockResolvedValueOnce(release("0.160.0")).mockRejectedValueOnce(new Error("offline"))
+    fetchMock.mockResolvedValueOnce(release("0.180.0")).mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(release("0.200.0"));
     const { resolveCodexDiscoveryVersion } = await load();
     await resolveCodexDiscoveryVersion();
     const fallback = await resolveCodexDiscoveryVersion();
-    expect(fallback.version).toBe("0.160.0");
+    expect(fallback.version).toBe("0.180.0");
     expect(fallback.warning).toContain("newly released models may be missing");
     expect(await resolveCodexDiscoveryVersion()).toEqual(fallback);
     expect(fetchMock).toHaveBeenCalledTimes(2);

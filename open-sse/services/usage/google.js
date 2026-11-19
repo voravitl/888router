@@ -188,6 +188,12 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'gemini-4-hydrogen-medium',
         'gemini-4-hydrogen-low',
         'gemini-4-hydrogen-tiered',
+        'gemini-4-neon',
+        'gemini-4-neon-xhigh',
+        'gemini-4-neon-high',
+        'gemini-4-neon-medium',
+        'gemini-4-neon-low',
+        'gemini-4-neon-tiered',
         'gemini-4-argon-high',
         'gemini-4-argon-medium',
         'gemini-4-argon-low',
@@ -319,13 +325,19 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         };
       }
 
-      // Registry aliases `gemini-4-hydrogen` to `gemini-4-hydrogen(high)`, while
-      // live daily-cloudcode-pa `:fetchAvailableModels` returns `gemini-4-hydrogen-high`.
-      if (!quotas["gemini-4-hydrogen"] && quotas["gemini-4-hydrogen-high"]) {
-        quotas["gemini-4-hydrogen"] = {
-          ...quotas["gemini-4-hydrogen-high"],
-          displayName: "Gemini 4 Hydrogen",
-        };
+      // Registry aliases bare `gemini-4-{hydrogen,neon}` to `...-high(high)`, while
+      // live daily-cloudcode-pa `:fetchAvailableModels` returns `...-high`.
+      for (const [bareId, displayName] of [
+        ["gemini-4-hydrogen", "Gemini 4 Hydrogen"],
+        ["gemini-4-neon", "Gemini 4 Neon"],
+      ]) {
+        const highId = `${bareId}-high`;
+        if (!quotas[bareId] && quotas[highId]) {
+          quotas[bareId] = {
+            ...quotas[highId],
+            displayName,
+          };
+        }
       }
     }
 

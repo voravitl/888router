@@ -50,20 +50,26 @@ const DEAD = [
   // (verified live against opencode.ai/zen/v1).
   "nemotron-3-ultra-free",             // 400 Bad Request
   "longcat-2.5-preview-free",          // 400 Bad Request
+  // Retired by 2026-11-19 (removed from live /zen/v1/models):
+  "glm-5.3-flash-free",
+  "pulse-alpha-free",
+  "crouton-alpha-free",
 ];
 
-// Verified serving on 2026-11-04 against live /zen/v1/models + /zen/v1/chat/completions.
+// Verified serving on 2026-11-19 against live /zen/v1/models.
 const ALIVE = [
   "nemotron-3.5-lightning-free",       // 200
   "mimo-v2.6-flash-free",              // 200
   "big-pickle",                        // 200
   "beam-free",                         // 200
   "deepseek-v4.1-flash-free",          // 200
-  "glm-5.3-flash-free",                // 200
   "nemotron-3.5-super-vl-free",        // 200
-  "pulse-alpha-free",                  // 200
   "flint-40b-free",                    // 200
-  "crouton-alpha-free",                // 200
+  "longcat-2.5-free",
+  "iceman-free",
+  "inkling-2-small-free",
+  "hy4-flash-free",
+  "tidepool-alpha-free",
 ];
 
 describe("opencode free catalogue lists only models that serve", () => {

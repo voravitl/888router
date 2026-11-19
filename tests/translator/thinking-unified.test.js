@@ -111,17 +111,61 @@ describe("applyThinking per provider format", () => {
     "claude-sonnet-5", "claude-sonnet-5-5",
     "claude-opus-5", "claude-opus-5-5",
     "claude-opus-4-7", "claude-opus-4.8",
+    "claude-haiku-5-5", "claude-haiku-5.5",
   ])("claude-adaptive %s keeps max", (model) => {
     const out = apply("claude", model, { reasoning_effort: "max" }, "claude");
     expect(out.thinking).toEqual({ type: "adaptive" });
     expect(out.output_config).toEqual({ effort: "max" });
   });
   it.each([
-    "claude-fable-5-1", "claude-fable-5.1",
-  ])("claude-adaptive %s keeps max without a redundant thinking switch", (model) => {
-    const out = apply("claude", model, { reasoning_effort: "max" }, "claude");
+    "claude-opus-4-7", "claude-opus-4.8",
+    "claude-opus-5", "claude-opus-5-5",
+    "claude-sonnet-5", "claude-sonnet-5-5",
+    "claude-haiku-5-5", "claude-haiku-5.5",
+  ])("claude-adaptive %s keeps xhigh", (model) => {
+    const out = apply("claude", model, { reasoning_effort: "xhigh" }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "xhigh" });
+  });
+  it.each([
+    "claude-sonnet-4-6", "claude-sonnet-4.6",
+    "claude-opus-4-6", "claude-opus-4.6",
+  ])("claude-adaptive %s clamps xhigh to high (no xhigh support on 4.6)", (model) => {
+    const out = apply("claude", model, { reasoning_effort: "xhigh" }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "high" });
+  });
+  it.each([
+    "claude-fable-5", "claude-fable-5-1", "claude-fable-5.1", "claude-fable-5-2", "claude-fable-5.2",
+  ])("claude-adaptive %s keeps max and xhigh without a redundant thinking switch", (model) => {
+    const outMax = apply("claude", model, { reasoning_effort: "max" }, "claude");
+    expect(outMax.thinking).toBeUndefined();
+    expect(outMax.output_config).toEqual({ effort: "max" });
+    const outXhigh = apply("claude", model, { reasoning_effort: "xhigh" }, "claude");
+    expect(outXhigh.thinking).toBeUndefined();
+    expect(outXhigh.output_config).toEqual({ effort: "xhigh" });
+  });
+  it.each([
+    "claude-sonnet-5-5", "claude-sonnet-5-5-high", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-low", "claude-sonnet-5.5",
+  ])("claude-adaptive %s uses between_tools when thinking is disabled", (model) => {
+    const outNone = apply("claude", model, { reasoning_effort: "none" }, "claude");
+    expect(outNone.thinking).toEqual({ type: "between_tools" });
+    const outDisabled = apply("claude", model, { thinking: { type: "disabled" } }, "claude");
+    expect(outDisabled.thinking).toEqual({ type: "between_tools" });
+  });
+  it.each([
+    "claude-opus-5-5", "claude-opus-5-5-high", "claude-opus-5.5",
+  ])("claude-adaptive %s clamps none to low while keeping adaptive thinking", (model) => {
+    const out = apply("claude", model, { reasoning_effort: "none" }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toEqual({ effort: "low" });
+  });
+  it.each([
+    "claude-fable-5", "claude-fable-5-1", "claude-fable-5-2", "claude-fable-5.2",
+  ])("claude-adaptive %s clamps none to low without a thinking switch", (model) => {
+    const out = apply("claude", model, { reasoning_effort: "none" }, "claude");
     expect(out.thinking).toBeUndefined();
-    expect(out.output_config).toEqual({ effort: "max" });
+    expect(out.output_config).toEqual({ effort: "low" });
   });
   it("claude haiku max stays on the output-capped budget path", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "max" }, "claude");
@@ -210,10 +254,14 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "ultra" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
   });
-  it("ultra clamps to high for claude-adaptive (native enum low/medium/high only)", () => {
-    const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "ultra" }, "claude");
-    expect(out.thinking).toEqual({ type: "adaptive" });
-    expect(out.output_config).toEqual({ effort: "high" });
+  it("ultra maps to xhigh for 4.7+ claude-adaptive and clamps to high for 4.6", () => {
+    const out47 = apply("claude", "claude-opus-4.7", { reasoning_effort: "ultra" }, "claude");
+    expect(out47.thinking).toEqual({ type: "adaptive" });
+    expect(out47.output_config).toEqual({ effort: "xhigh" });
+
+    const out46 = apply("claude", "claude-opus-4.6", { reasoning_effort: "ultra" }, "claude");
+    expect(out46.thinking).toEqual({ type: "adaptive" });
+    expect(out46.output_config).toEqual({ effort: "high" });
   });
   it("claude-adaptive minimal maps to low (no silent cost escalation)", () => {
     const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "minimal" }, "claude");

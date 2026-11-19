@@ -54,6 +54,12 @@ const antigravityConfig = {
     { id: "gemini-4-hydrogen-high", name: "Gemini 4 Hydrogen (High)", upstreamModelId: "gemini-4-hydrogen-high(high)" },
     { id: "gemini-4-hydrogen-medium", name: "Gemini 4 Hydrogen (Medium)", upstreamModelId: "gemini-4-hydrogen-medium(medium)" },
     { id: "gemini-4-hydrogen-low", name: "Gemini 4 Hydrogen (Low)", upstreamModelId: "gemini-4-hydrogen-low(low)" },
+    // Gemini 4 Neon (wire IDs include tier suffix matching live :fetchAvailableModels).
+    { id: "gemini-4-neon", name: "Gemini 4 Neon", upstreamModelId: "gemini-4-neon-high(high)" },
+    { id: "gemini-4-neon-xhigh", name: "Gemini 4 Neon (XHigh)", upstreamModelId: "gemini-4-neon-xhigh(xhigh)" },
+    { id: "gemini-4-neon-high", name: "Gemini 4 Neon (High)", upstreamModelId: "gemini-4-neon-high(high)" },
+    { id: "gemini-4-neon-medium", name: "Gemini 4 Neon (Medium)", upstreamModelId: "gemini-4-neon-medium(medium)" },
+    { id: "gemini-4-neon-low", name: "Gemini 4 Neon (Low)", upstreamModelId: "gemini-4-neon-low(low)" },
     // Backported from upstream f172c3c4: Argon is supported on the Hub surface.
     { id: "gemini-4-argon-high", name: "Gemini 4 Argon (High)", upstreamModelId: "gemini-4-argon-high(high)" },
     { id: "gemini-4-argon-medium", name: "Gemini 4 Argon (Medium)", upstreamModelId: "gemini-4-argon-medium(medium)" },

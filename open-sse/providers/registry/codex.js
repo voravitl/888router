@@ -1,4 +1,5 @@
 import { withCodexReviewModels } from "../models/helpers.js";
+import { CODEX_CLI_VERSION } from "../shared.js";
 
 const codexConfig = {
   id: "codex",
@@ -36,7 +37,7 @@ const codexConfig = {
     forceStream: true,
     headers: {
       originator: "codex_cli_rs",
-      "User-Agent": "codex_cli_rs/0.136.0",
+      "User-Agent": `codex_cli_rs/${CODEX_CLI_VERSION}`,
     },
     usage: {
       url: "https://chatgpt.com/backend-api/wham/usage",

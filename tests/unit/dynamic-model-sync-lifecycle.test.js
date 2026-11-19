@@ -633,9 +633,13 @@ describe("synced capabilities on HTTP surfaces", () => {
     expect(data.dynamicCapsByKey["openrouter/shared-model"].vision).toBe(false);
   });
 
-  it("GET /api/v1/models/info?id=ocg/hy4-flash-free resolves from synced caps", async () => {
+  it("GET /api/v1/models/info?id=ocg/uncatalogued-flash-free resolves from synced caps", async () => {
+    mocks.getModelDynamicCapabilities.mockResolvedValueOnce(SYNCED_MAP.get("opencode-go:hy4-flash-free"));
+    mocks.getSyncedModelsMap.mockResolvedValueOnce({
+      "conn-ocg:uncatalogued-flash-free": { status: "active", firstSeenAt: "t1", lastSyncedAt: "t2" },
+    });
     const { GET } = await import("../../src/app/api/v1/models/info/route.js");
-    const res = await GET(new Request("http://localhost/v1/models/info?id=ocg/hy4-flash-free"));
+    const res = await GET(new Request("http://localhost/v1/models/info?id=ocg/uncatalogued-flash-free"));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.vision).toBe(true);
