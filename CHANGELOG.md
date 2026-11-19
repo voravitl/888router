@@ -1,3 +1,18 @@
+# v0.15.269 (2026-11-19)
+
+## Multi-Provider Bugfixes (Kiro, Claude Code, Codex), Full Gemini 4 Neon Support & Catalog Hygiene
+- **Kiro IDE/CLI & Codex Fingerprint Version Bumps (`open-sse/providers/shared.js`, `open-sse/providers/registry/kiro.js`, `open-sse/services/usage/kiro.js`, `src/lib/oauth/services/kiro.js`, `open-sse/executors/default.js`, `open-sse/services/tokenRefresh/providers.js`, `open-sse/providers/registry/codex.js`, `open-sse/handlers/imageProviders/codex.js`, `src/app/api/providers/[id]/test/testUtils.js`)**:
+  - Added shared `KIRO_IDE_VERSION` (`"1.4.154"`) and `KIRO_CLI_VERSION` (`"3.5.0"`) and wired them across Kiro transport, OAuth, usage, token-refresh, and test headers to prevent AWS Kiro's HTTP `400` `"This version of Kiro is no longer supported"` rejection on `kiro-ide/1.0.0`, while adding active Kiro models (`auto`, `claude-*-5.5`, `gpt-5.6-*`, `grok-4.7`, `kimi-k3`, etc.) to the static catalog.
+  - Bumped `CODEX_CLI_VERSION` to `"0.164.0"` and unified legacy `"codex_cli_rs/0.136.0"` hardcoded headers in the Codex registry, image handler, and test utilities.
+- **Claude Code Client Gate, Thinking-Disable Modes (`between_tools` / Clamp) & Full `xhigh`/`max` Effort (`open-sse/providers/shared.js`, `open-sse/providers/capabilities.js`, `open-sse/providers/thinkingLevels.js`, `open-sse/translator/concerns/thinkingUnified.js`)**:
+  - Bumped `CLAUDE_CLI_VERSION` to `"2.1.328"` (clearing the `>= 2.1.290` gate required by `claude-fable-5-2`) and extended `selectAnthropicBeta()` to cover `haiku-5` and `opus-4-7` / `opus-4.7`.
+  - Set `thinkingDisableType: "between_tools"` on `claude-sonnet-5-5*` so disabling thinking (`none`) emits `{ type: "between_tools" }` instead of rejected `disabled`; marked `claude-opus-5-5*` and `claude-fable-5*` (`omitThinkingSwitch: true`) as `thinkingCanDisable: false` so `none` clamps cleanly to `low`.
+  - Enabled `xhigh` effort (`XHIGH_EFFORT_SUPPORTED`) across Claude 4.7/4.8/5/5.5/Fable/Mythos and `max` effort for `haiku-5` while keeping `4.6` capped at `high`.
+- **Full Gemini 4 Neon & Hydrogen Parity (`open-sse/providers/registry/antigravity.js`, `open-sse/providers/models/helpers.js`, `open-sse/config/providerModels.js`, `open-sse/providers/capabilities.js`, `open-sse/providers/thinkingLevels.js`, `open-sse/services/usage/google.js`, `src/sse/services/providerQuota.js`, `open-sse/providers/pricing.js`)**:
+  - Added static Antigravity `gemini-4-neon*` entries, `resolveAntigravityNeonModel` / `gemini-4-neon-tiered` alias resolution, `262144` maxOutput + `pdf: true` for Gemini 4 Hydrogen/Neon, `xhigh` thinking-level support, Quota Tracker `importantModels` + family rollup + strike canonicalization, and `GEMINI_4_NEON_PRICING` (`$3.00 / $15.00 / $0.15`).
+- **Provider Catalog & Free-Tier Cleanup (`open-sse/config/freeModelCatalog.data.js`, `open-sse/providers/registry/{nvidia,nousresearch,ollama,opencode,opencode-go}.js`, `open-sse/providers/capabilities.js`)**:
+  - Removed `@cf/moonshotai/kimi-k2.6` (HTTP `403` Workers Free plan) from `freeModelCatalog.data.js`, pruned EOL `minimaxai/minimax-m3` (`nvidia`) and `nousresearch/hermes-4-70b` (`nousresearch`), refreshed static `ollama` and `opencode` catalogs against live models (with explicit `capabilities.js` entries for the 5 new `opencode` models), and added `longcat-2.5-free`, `hy4-flash-free`, and `qwen4-max` to `opencode-go.js`.
+
 # v0.15.268 (2026-11-18)
 
 ## All-Provider Upstream Model Schema Normalization & Type Hygiene
