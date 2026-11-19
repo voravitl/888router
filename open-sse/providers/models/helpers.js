@@ -31,7 +31,22 @@ export function resolveAntigravityFlashModel(modelId) {
   return `gemini-${version}-flash${tier}`;
 }
 
-const HYDROGEN_TIERS = new Set(["xhigh", "high", "medium", "low"]);
+const ANTIGRAVITY_GEMINI4_TIERS = new Set(["xhigh", "high", "medium", "low"]);
+
+const GEMINI4_TIERED_PATTERNS = {
+  "gemini-4-hydrogen": /^gemini-4-hydrogen(?:-tiered)?(?:-(xhigh|high|medium|low))?$/i,
+  "gemini-4-neon": /^gemini-4-neon(?:-tiered)?(?:-(xhigh|high|medium|low))?$/i,
+};
+
+function resolveAntigravityTieredModel(modelId, baseId) {
+  if (typeof modelId !== "string" || !modelId) return modelId;
+  const pattern = GEMINI4_TIERED_PATTERNS[baseId];
+  const match = pattern ? modelId.trim().match(pattern) : null;
+  if (!match) return modelId;
+  const tier = match[1] ? match[1].toLowerCase() : "high";
+  const resolvedTier = ANTIGRAVITY_GEMINI4_TIERS.has(tier) ? tier : "high";
+  return `${baseId}-${resolvedTier}(${resolvedTier})`;
+}
 
 /**
  * Resolve Gemini 4 Hydrogen aliases (including bare "gemini-4-hydrogen",
@@ -40,12 +55,17 @@ const HYDROGEN_TIERS = new Set(["xhigh", "high", "medium", "low"]);
  * (bare "gemini-4-hydrogen" returns 404 NOT_FOUND upstream) plus matching thinkingLevel.
  */
 export function resolveAntigravityHydrogenModel(modelId) {
-  if (typeof modelId !== "string" || !modelId) return modelId;
-  const match = modelId.trim().match(/^gemini-4-hydrogen(?:-tiered)?(?:-(xhigh|high|medium|low))?$/i);
-  if (!match) return modelId;
-  const tier = match[1] ? match[1].toLowerCase() : "high";
-  const resolvedTier = HYDROGEN_TIERS.has(tier) ? tier : "high";
-  return `gemini-4-hydrogen-${resolvedTier}(${resolvedTier})`;
+  return resolveAntigravityTieredModel(modelId, "gemini-4-hydrogen");
+}
+
+/**
+ * Resolve Gemini 4 Neon aliases (including bare "gemini-4-neon",
+ * "-tiered", and "-tiered-<level>") to canonical "gemini-4-neon-<level>(<level>)"
+ * so Antigravity receives the live wire model "gemini-4-neon-<level>"
+ * (bare "gemini-4-neon" returns 404 NOT_FOUND upstream) plus matching thinkingLevel.
+ */
+export function resolveAntigravityNeonModel(modelId) {
+  return resolveAntigravityTieredModel(modelId, "gemini-4-neon");
 }
 
 // Antigravity retired/unroutable live-API patterns to exclude from /v1/models and sync.
@@ -75,20 +95,32 @@ export function isAntigravityHiddenModel(modelId) {
   );
 }
 
+const GEMINI4_TIER_EXPANSION_ENTRIES = [
+  { suffix: "", labelSuffix: "" },
+  { suffix: "-xhigh", labelSuffix: " (XHigh)" },
+  { suffix: "-high", labelSuffix: " (High)" },
+  { suffix: "-medium", labelSuffix: " (Medium)" },
+  { suffix: "-low", labelSuffix: " (Low)" },
+];
+
+const GEMINI4_TIERED_EXPANSIONS = [
+  { re: /^gemini-4-hydrogen-tiered$/i, baseId: "gemini-4-hydrogen", label: "Gemini 4 Hydrogen" },
+  { re: /^gemini-4-neon-tiered$/i, baseId: "gemini-4-neon", label: "Gemini 4 Neon" },
+];
+
 function expandAntigravityLiveModel(id, displayName) {
   if (typeof id !== "string") return [];
   const trimmed = id.trim();
   if (!trimmed) return [];
   if (ANTIGRAVITY_RETIRED_OR_JUNK_INPUT_PATTERNS.some((re) => re.test(trimmed))) return [];
 
-  if (/^gemini-4-hydrogen-tiered$/i.test(trimmed)) {
-    return [
-      { id: "gemini-4-hydrogen", name: "Gemini 4 Hydrogen" },
-      { id: "gemini-4-hydrogen-xhigh", name: "Gemini 4 Hydrogen (XHigh)" },
-      { id: "gemini-4-hydrogen-high", name: "Gemini 4 Hydrogen (High)" },
-      { id: "gemini-4-hydrogen-medium", name: "Gemini 4 Hydrogen (Medium)" },
-      { id: "gemini-4-hydrogen-low", name: "Gemini 4 Hydrogen (Low)" },
-    ];
+  for (const { re, baseId, label } of GEMINI4_TIERED_EXPANSIONS) {
+    if (re.test(trimmed)) {
+      return GEMINI4_TIER_EXPANSION_ENTRIES.map(({ suffix, labelSuffix }) => ({
+        id: `${baseId}${suffix}`,
+        name: `${label}${labelSuffix}`,
+      }));
+    }
   }
 
   const flashMatch = trimmed.match(/^(gemini-[\d.]+-flash)-tiered$/i);
