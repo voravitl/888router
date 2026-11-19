@@ -244,7 +244,7 @@ describe("handleChatCore claude passthrough thinking", () => {
   it("haiku-5-5 keeps adaptive thinking — Anthropic rejects enabled for this model", async () => {
     const { sentBody } = await runPassthrough("claude-haiku-5-5");
     expect(sentBody.thinking).toEqual({ type: "adaptive" });
-    expect(sentBody.output_config).toEqual({ effort: "high" });
+    expect(sentBody.output_config).toEqual({ effort: "max" });
   });
 
   it("native-faithful haiku-5-5 rewrites an enabled thinking shape to adaptive", async () => {

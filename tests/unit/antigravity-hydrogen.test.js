@@ -31,15 +31,18 @@ describe("Gemini 4 Hydrogen capabilities and thinking levels", () => {
 
     const caps = getCapabilitiesForModel(provider, "gemini-4-hydrogen");
     expect(caps.reasoning).toBe(true);
+    expect(caps.pdf).toBe(true);
     expect(caps.thinkingFormat).toBe("gemini-level");
     expect(caps.thinkingCanDisable).toBe(false);
     expect(caps.contextWindow).toBe(1048576);
-    expect(caps.maxOutput).toBe(65536);
+    expect(caps.maxOutput).toBe(262144);
     expect(getThinkingLevels(provider, "gemini-4-hydrogen")).toEqual(["low", "medium", "high", "xhigh"]);
   });
 
-  it("keeps Gemini 4 Argon capped at high without xhigh", async () => {
+  it("keeps Gemini 4 Argon capped at high without xhigh and 65536 maxOutput", async () => {
+    const { getCapabilitiesForModel } = await import("../../open-sse/providers/capabilities.js");
     const { getThinkingLevels } = await import("../../open-sse/providers/thinkingLevels.js");
+    expect(getCapabilitiesForModel("antigravity", "gemini-4-argon-high").maxOutput).toBe(65536);
     expect(getThinkingLevels("antigravity", "gemini-4-argon-high")).toEqual(["low", "medium", "high"]);
   });
 

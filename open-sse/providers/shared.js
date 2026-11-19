@@ -22,8 +22,10 @@ export function mapStainlessArch() {
 
 // Anthropic API version (single source — reused across claude-format providers/executors)
 export const ANTHROPIC_API_VERSION = "2023-06-01";
-export const CLAUDE_CLI_VERSION = "2.1.287";
-export const CODEX_CLI_VERSION = "0.156.1";
+export const CLAUDE_CLI_VERSION = "2.1.328";
+export const CODEX_CLI_VERSION = "0.164.0";
+export const KIRO_IDE_VERSION = "1.4.154";
+export const KIRO_CLI_VERSION = "3.5.0";
 
 // Shared Claude-compatible API headers (reused across claude-format providers)
 export const CLAUDE_API_HEADERS = {
@@ -31,11 +33,23 @@ export const CLAUDE_API_HEADERS = {
   "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
 };
 
+const FULL_BETA_MODEL_TOKENS = [
+  "opus-5",
+  "sonnet-5",
+  "haiku-5",
+  "opus-4.8",
+  "opus-4-8",
+  "opus-4.7",
+  "opus-4-7",
+  "claude-fable",
+  "fable-5",
+];
+
 // Dynamically select Anthropic-Beta flags per model capability
 export function selectAnthropicBeta(model = "") {
   const baseFlags = "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05";
   const m = String(model).toLowerCase();
-  if (m.includes("opus-5") || m.includes("sonnet-5") || m.includes("opus-4.8") || m.includes("opus-4-8") || m.includes("claude-fable") || m.includes("fable-5")) {
+  if (FULL_BETA_MODEL_TOKENS.some((token) => m.includes(token))) {
     return `${baseFlags},advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28`;
   }
   return baseFlags;

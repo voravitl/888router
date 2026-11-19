@@ -73,7 +73,7 @@ export function extractThinking(body) {
   // Claude shape
   const t = body.thinking;
   if (t && typeof t === "object") {
-    if (t.type === "disabled") return { mode: "none" };
+    if (t.type === "disabled" || t.type === "between_tools") return { mode: "none" };
     if (t.type === "adaptive" || t.type === "enabled") {
       const budget = Number(t.budget_tokens);
       if (Number.isFinite(budget) && budget > 0) return { mode: "budget", budget };
@@ -218,16 +218,34 @@ function stripAll(body) {
   if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
 }
 
-// Models whose claude-adaptive output_config enum includes "max".
+// Models whose claude-adaptive output_config enum includes "max" / "xhigh".
 // Effort docs (https://platform.claude.com/docs/en/build-with-claude/effort)
 // list max broadly, but live 400s show Sonnet 4.6 / Opus 4.6 top out at high,
-// so 4.6 is deliberately excluded: an unsupported max risks an upstream 400,
+// so 4.6 is deliberately excluded: an unsupported max/xhigh risks an upstream 400,
 // while high is always accepted. Re-verify against the effort page before
 // extending this list. Dash and dot spellings, case-insensitive.
-const MAX_EFFORT_SUPPORTED = [/opus[-.]4[-.]7/i, /opus[-.]4[-.]8/i, /opus[-.]5/i, /sonnet[-.]5/i, /fable/i, /mythos/i];
+const CLAUDE_47_PLUS_EFFORT_PATTERNS = [
+  /opus[-.]4[-.]7/i,
+  /opus[-.]4[-.]8/i,
+  /opus[-.]5/i,
+  /sonnet[-.]5/i,
+  /haiku[-.]5/i,
+  /fable/i,
+  /mythos/i,
+];
+const MAX_EFFORT_SUPPORTED = CLAUDE_47_PLUS_EFFORT_PATTERNS;
+const XHIGH_EFFORT_SUPPORTED = CLAUDE_47_PLUS_EFFORT_PATTERNS;
+
+function matchesEffortSupport(modelId, patterns) {
+  return typeof modelId === "string" && patterns.some((re) => re.test(modelId));
+}
 
 function supportsMaxEffort(modelId) {
-  return typeof modelId === "string" && MAX_EFFORT_SUPPORTED.some((re) => re.test(modelId));
+  return matchesEffortSupport(modelId, MAX_EFFORT_SUPPORTED);
+}
+
+function supportsXhighEffort(modelId) {
+  return matchesEffortSupport(modelId, XHIGH_EFFORT_SUPPORTED);
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
@@ -264,14 +282,20 @@ function applyFormat(fmt, body, cfg, caps, modelId = "", supportedLevels = null)
       break;
     }
     case "claude-adaptive": {
-      if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      // Models that can disable thinking need the explicit adaptive switch.
-      // Permanently adaptive models such as Fable 5.1 accept effort directly.
-      if (canDisable) body.thinking = { type: "adaptive" };
-      else delete body.thinking;
+      if (none && canDisable) {
+        body.thinking = caps.thinkingDisableType === "between_tools"
+          ? { type: "between_tools" }
+          : { type: "disabled" };
+        break;
+      }
+      // Permanently adaptive models that reject the thinking switch (Fable) omit it;
+      // models that accept an explicit switch (including Opus 5.5) keep adaptive.
+      if (caps.omitThinkingSwitch) delete body.thinking;
+      else body.thinking = { type: "adaptive" };
       const level = toLevel(eff);
       if (level && level !== "auto") {
-        let effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "high", max: "max", ultra: "high" }[level];
+        let effort = { minimal: "low", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max", ultra: "high" }[level];
+        if (effort === "xhigh" && !supportsXhighEffort(modelId)) effort = "high";
         // Gate "max": only models whose enum includes it keep it; the rest
         // fall back to high (previous behavior) instead of risking a 400.
         if (effort === "max" && !supportsMaxEffort(modelId)) effort = "high";

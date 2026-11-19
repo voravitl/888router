@@ -4,6 +4,7 @@ import path from "node:path";
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { KIRO_CLI_VERSION } from "../../providers/shared.js";
 import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
@@ -586,7 +587,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
-      "User-Agent": "kiro-cli/1.0.0",
+      "User-Agent": `kiro-cli/${KIRO_CLI_VERSION}`,
     },
     body: JSON.stringify({
       refreshToken: refreshToken,

@@ -4,6 +4,7 @@
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { resolveDefaultProfileArn } from "../../config/kiroConstants.js";
+import { KIRO_IDE_VERSION } from "../../providers/shared.js";
 import { U, parseResetTime } from "./shared.js";
 
 /**
@@ -83,8 +84,8 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
           headers: {
             "Authorization": `Bearer ${accessToken}`,
             "Accept": "application/json",
-            "x-amz-user-agent": "aws-sdk-js/1.0.0 KiroIDE",
-            "user-agent": "aws-sdk-js/1.0.0 KiroIDE",
+            "x-amz-user-agent": `aws-sdk-js/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`,
+            "user-agent": `AWS-SDK-JS/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`,
             ...apiKeyHeaders,
             ...externalIdpHeaders,
           },

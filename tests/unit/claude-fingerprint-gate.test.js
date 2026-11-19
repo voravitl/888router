@@ -6,8 +6,8 @@ import { describe, it, expect } from "vitest";
 import { CLAUDE_CLI_VERSION, CLAUDE_CLI_SPOOF_HEADERS } from "../../open-sse/providers/shared.js";
 import claudeConfig from "../../open-sse/providers/registry/claude.js";
 
-// Known Anthropic minimum for the opus-5-5 / fable-5-1 class models.
-const MIN_CLI_VERSION = "2.1.280";
+// Known Anthropic minimum for the fable-5-2 / opus-5-5 class models.
+const MIN_CLI_VERSION = "2.1.290";
 
 function parse(v) {
   return String(v).split(".").map((n) => parseInt(n, 10));
@@ -42,7 +42,7 @@ describe("claude fingerprint gate", () => {
   });
 
   it("registry serves gated new models only with a passing fingerprint", () => {
-    const gated = ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-opus-4-6", "claude-sonnet-4-6"];
+    const gated = ["claude-fable-5-2", "claude-haiku-5-5", "claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-opus-4-6", "claude-sonnet-4-6"];
     const ids = claudeConfig.models.map((m) => m.id);
     for (const id of gated) {
       expect(ids).toContain(id);

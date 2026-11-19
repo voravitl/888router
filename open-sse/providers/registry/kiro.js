@@ -1,3 +1,14 @@
+import { KIRO_IDE_VERSION } from "../shared.js";
+
+function kiroClaudeVariants(id, name) {
+  return [
+    { id, name },
+    { id: `${id}-thinking`, name: `${name} (Thinking)` },
+    { id: `${id}-agentic`, name: `${name} (Agentic)` },
+    { id: `${id}-thinking-agentic`, name: `${name} (Thinking + Agentic)` },
+  ];
+}
+
 const kiroConfig = {
   id: "kiro",
   priority: 10,
@@ -32,8 +43,8 @@ const kiroConfig = {
       "Content-Type": "application/json",
       Accept: "application/vnd.amazon.eventstream",
       "X-Amz-Target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
-      "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
-      "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
+      "User-Agent": `AWS-SDK-JS/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`,
+      "X-Amz-User-Agent": `aws-sdk-js/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`,
     },
     tokenUrl: "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
     authUrl: "https://prod.us-east-1.auth.desktop.kiro.dev",
@@ -83,6 +94,20 @@ const kiroConfig = {
     { id: "claude-sonnet-5-thinking-agentic", name: "Claude Sonnet 5 (Thinking + Agentic)" },
     { id: "claude-sonnet-4.5-thinking-agentic", name: "Claude Sonnet 4.5 (Thinking + Agentic)" },
     { id: "claude-haiku-4.5-thinking-agentic", name: "Claude Haiku 4.5 (Thinking + Agentic)" },
+    // Active live Kiro models + synthetic variants
+    { id: "auto", name: "Auto" },
+    ...kiroClaudeVariants("claude-opus-5.5", "Claude Opus 5.5"),
+    ...kiroClaudeVariants("claude-sonnet-5.5", "Claude Sonnet 5.5"),
+    ...kiroClaudeVariants("claude-haiku-5.5", "Claude Haiku 5.5"),
+    ...kiroClaudeVariants("claude-opus-4.6", "Claude Opus 4.6"),
+    ...kiroClaudeVariants("claude-sonnet-4.6", "Claude Sonnet 4.6"),
+    { id: "gpt-5.6-sol", name: "GPT 5.6 Sol" },
+    { id: "gpt-5.6-terra", name: "GPT 5.6 Terra" },
+    { id: "gpt-5.6-luna", name: "GPT 5.6 Luna" },
+    { id: "grok-4.7", name: "Grok 4.7" },
+    { id: "kimi-k3", name: "Kimi K3" },
+    { id: "minimax-m2.5", name: "MiniMax M2.5" },
+    { id: "minimax-m2.1", name: "MiniMax M2.1" },
   ],
   oauth: {
     ssoOidcEndpoint: "https://oidc.us-east-1.amazonaws.com",

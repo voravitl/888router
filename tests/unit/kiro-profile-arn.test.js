@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { KiroService } from "../../src/lib/oauth/services/kiro.js";
+import { KIRO_IDE_VERSION } from "../../open-sse/providers/shared.js";
 
 /**
  * Regression tests for Kiro API-key auth.
@@ -55,8 +56,9 @@ describe("kiro API-key auth (KiroService.validateApiKey)", () => {
       expect.objectContaining({ id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" }),
     ]);
     const [, init] = fetchMock.mock.calls[0];
-    expect(init.headers["User-Agent"]).toBe("AWS-SDK-JS/3.0.0 kiro-ide/1.0.0");
-    expect(init.headers["X-Amz-User-Agent"]).toBe("aws-sdk-js/3.0.0 kiro-ide/1.0.0");
+    expect(KIRO_IDE_VERSION).toBe("1.4.154");
+    expect(init.headers["User-Agent"]).toBe(`AWS-SDK-JS/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`);
+    expect(init.headers["X-Amz-User-Agent"]).toBe(`aws-sdk-js/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`);
     expect(init.headers["x-amz-target"]).toBe("AmazonCodeWhispererService.ListAvailableModels");
   });
 
@@ -70,8 +72,8 @@ describe("kiro API-key auth (KiroService.validateApiKey)", () => {
     await svc.listAvailableProfiles("tok");
 
     const [, init] = fetchMock.mock.calls[0];
-    expect(init.headers["User-Agent"]).toBe("AWS-SDK-JS/3.0.0 kiro-ide/1.0.0");
-    expect(init.headers["X-Amz-User-Agent"]).toBe("aws-sdk-js/3.0.0 kiro-ide/1.0.0");
+    expect(init.headers["User-Agent"]).toBe(`AWS-SDK-JS/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`);
+    expect(init.headers["X-Amz-User-Agent"]).toBe(`aws-sdk-js/3.0.0 kiro-ide/${KIRO_IDE_VERSION}`);
   });
 
   it("rejects an empty API key without a network call", async () => {
