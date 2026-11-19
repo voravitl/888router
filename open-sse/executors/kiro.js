@@ -1,6 +1,7 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import {
+  buildKiroIdeUserAgents,
   KIRO_CODEWHISPERER_TARGET,
   KIRO_ENDPOINT_FALLBACK_STATUSES,
   resolveKiroModel,
@@ -231,8 +232,11 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   buildHeaders(credentials, stream = true, url = "") {
+    const { userAgent, amzUserAgent } = buildKiroIdeUserAgents(credentials, "codewhispererstreaming");
     const headers = {
       ...this.config.headers,
+      "User-Agent": userAgent,
+      "X-Amz-User-Agent": amzUserAgent,
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4()
     };

@@ -36,7 +36,9 @@ import kiroConfig from "../../open-sse/providers/registry/kiro.js";
 import codexConfig from "../../open-sse/providers/registry/codex.js";
 import codexImageProvider from "../../open-sse/handlers/imageProviders/codex.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
+import { KiroExecutor } from "../../open-sse/executors/kiro.js";
 import { getKiroUsage } from "../../open-sse/services/usage/kiro.js";
+import { resolveKiroModels } from "../../open-sse/services/kiroModels.js";
 import { refreshKiroToken } from "../../open-sse/services/tokenRefresh/providers.js";
 import { KiroService } from "../../src/lib/oauth/services/kiro.js";
 import { testSingleConnection } from "../../src/app/api/providers/[id]/test/testUtils.js";
@@ -185,6 +187,32 @@ describe("Kiro UA unification and live static models", () => {
     const result = await testSingleConnection("kiro-social-1");
     expect(result.valid).toBe(true);
     expect(global.fetch.mock.calls[0][1].headers["User-Agent"]).toBe("kiro-cli/3.5.0");
+  });
+
+  it("sets deterministic KiroIDE-1.4.154-<machineId> fingerprint headers on KiroExecutor.buildHeaders", () => {
+    const executor = new KiroExecutor();
+    const credsA = { accessToken: "tok-a", refreshToken: "ref-a", providerSpecificData: { clientId: "client-a", authMethod: "idc" } };
+    const credsB = { accessToken: "tok-b", refreshToken: "ref-b", providerSpecificData: { clientId: "client-b", authMethod: "idc" } };
+
+    const headersA1 = executor.buildHeaders(credsA, true, "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse");
+    const headersA2 = executor.buildHeaders(credsA, true, "https://q.us-east-1.amazonaws.com/generateAssistantResponse");
+    const headersB = executor.buildHeaders(credsB, true, "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse");
+
+    expect(headersA1["User-Agent"]).toMatch(/^aws-sdk-js\/1\.0\.0 ua\/2\.1 .* api\/codewhispererstreaming#1\.0\.0 m\/E KiroIDE-1\.4\.154-[0-9a-f]{64}$/);
+    expect(headersA1["X-Amz-User-Agent"]).toMatch(/^aws-sdk-js\/1\.0\.0 KiroIDE-1\.4\.154-[0-9a-f]{64}$/);
+    expect(headersA2["User-Agent"]).toBe(headersA1["User-Agent"]);
+    expect(headersB["User-Agent"]).not.toBe(headersA1["User-Agent"]);
+  });
+
+  it("uses KIRO_IDE_VERSION (1.4.154, never 0.10.32) in kiroModels.resolveKiroModels", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ models: [{ modelId: "claude-sonnet-5.5", modelName: "Claude Sonnet 5.5" }] }), { status: 200 })
+    );
+    await resolveKiroModels({ accessToken: "tok-kiro-models", providerSpecificData: { clientId: "client-km" } }, { forceRefresh: true });
+    const [, init] = global.fetch.mock.calls[0];
+    expect(init.headers["User-Agent"]).toContain("KiroIDE-1.4.154-");
+    expect(init.headers["x-amz-user-agent"]).toContain("KiroIDE-1.4.154-");
+    expect(init.headers["User-Agent"]).not.toContain("0.10.32");
   });
 });
 

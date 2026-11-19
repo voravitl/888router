@@ -15,8 +15,43 @@
  * fiction. The suffix is stripped before the request leaves this process.
  */
 
+import { createHash } from "crypto";
 import { extractThinking, parseSuffix } from "../translator/concerns/thinkingUnified.js";
 import { effortToBudget } from "../translator/concerns/thinking.js";
+import { KIRO_IDE_VERSION } from "../providers/shared.js";
+
+const KIRO_RUNTIME_SDK_VERSION = "1.0.0";
+const KIRO_AGENT_OS = "windows";
+const KIRO_AGENT_OS_VERSION = "10.0.26200";
+const KIRO_NODE_VERSION = "22.21.1";
+
+/**
+ * Build deterministic per-account Kiro IDE User-Agent headers.
+ * AWS CodeWhisperer / Amazon Q rejects legacy `kiro-ide/1.0.0` and outdated
+ * `KiroIDE-*` strings with HTTP 400 "This version of Kiro is no longer supported".
+ *
+ * @param {object} [credentials]
+ * @param {string} [api="codewhispererstreaming"]
+ * @returns {{ userAgent: string, amzUserAgent: string, machineId: string }}
+ */
+export function buildKiroIdeUserAgents(credentials, api = "codewhispererstreaming") {
+  const seed =
+    credentials?.providerSpecificData?.clientId
+    || credentials?.refreshToken
+    || credentials?.providerSpecificData?.profileArn
+    || credentials?.accessToken
+    || "kiro-anonymous";
+  const machineId = createHash("sha256").update(String(seed)).digest("hex");
+  const modeFlags = api === "codewhispererruntime" ? "m/N,E" : "m/E";
+  const userAgent =
+    `aws-sdk-js/${KIRO_RUNTIME_SDK_VERSION} ua/2.1 ` +
+    `os/${KIRO_AGENT_OS}#${KIRO_AGENT_OS_VERSION} ` +
+    `lang/js md/nodejs#${KIRO_NODE_VERSION} ` +
+    `api/${api}#${KIRO_RUNTIME_SDK_VERSION} ${modeFlags} ` +
+    `KiroIDE-${KIRO_IDE_VERSION}-${machineId}`;
+  const amzUserAgent = `aws-sdk-js/${KIRO_RUNTIME_SDK_VERSION} KiroIDE-${KIRO_IDE_VERSION}-${machineId}`;
+  return { userAgent, amzUserAgent, machineId };
+}
 
 export const KIRO_AGENTIC_SUFFIX = "-agentic";
 export const KIRO_THINKING_SUFFIX = "-thinking";

@@ -1,3 +1,9 @@
+# v0.15.270 (2026-11-19)
+
+## Fix Kiro IDE Runtime Fingerprint Headers for CodeWhisperer & Amazon Q Chat
+- **Shared `KiroIDE-<version>-<machineId>` User-Agent Builder (`open-sse/config/kiroConstants.js`, `open-sse/executors/kiro.js`, `open-sse/services/kiroModels.js`, `tests/unit/claude-kiro-codex-fixes.test.js`)**:
+  - Exported shared `buildKiroIdeUserAgents(credentials, api)` using `KIRO_IDE_VERSION` (`"1.4.154"`) and a deterministic SHA-256 `machineId`, replacing legacy `"0.10.32"` in `kiroModels.js` and overriding static `"AWS-SDK-JS/3.0.0 kiro-ide/1.4.154"` in `KiroExecutor.buildHeaders` (`codewhisperer.*` and `q.*` rejected `kiro-ide/1.4.154` with HTTP `400` `"This version of Kiro is no longer supported"` and require `KiroIDE-1.4.154-<machineId>`).
+
 # v0.15.269 (2026-11-19)
 
 ## Multi-Provider Bugfixes (Kiro, Claude Code, Codex), Full Gemini 4 Neon Support & Catalog Hygiene
