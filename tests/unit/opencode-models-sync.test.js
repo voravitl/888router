@@ -31,11 +31,16 @@ describe("OpenCode Model Sync Support", () => {
     expect(modelIds).toContain("mimo-v2.6-flash-free");
     expect(modelIds).toContain("beam-free");
     expect(modelIds).toContain("deepseek-v4.1-flash-free");
-    expect(modelIds).toContain("glm-5.3-flash-free");
-    expect(modelIds).toContain("pulse-alpha-free");
     expect(modelIds).toContain("flint-40b-free");
-    expect(modelIds).toContain("crouton-alpha-free");
     expect(modelIds).toContain("big-pickle");
+    expect(modelIds).toContain("longcat-2.5-free");
+    expect(modelIds).toContain("iceman-free");
+    expect(modelIds).toContain("inkling-2-small-free");
+    expect(modelIds).toContain("hy4-flash-free");
+    expect(modelIds).toContain("tidepool-alpha-free");
+    expect(modelIds).not.toContain("glm-5.3-flash-free");
+    expect(modelIds).not.toContain("pulse-alpha-free");
+    expect(modelIds).not.toContain("crouton-alpha-free");
   });
 
   it("should resolve capabilities correctly for new free models", () => {

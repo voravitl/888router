@@ -39,10 +39,13 @@ describe("Nous Research Portal provider", () => {
     expect(nousresearch.embeddingConfig.baseUrl).toBe("https://inference-api.nousresearch.com/v1/embeddings");
   });
 
-  it("seeds live Hermes 4 + agentic catalog ids (2026-08-23 Portal /v1/models)", () => {
+  it("seeds live Hermes 4 + agentic catalog ids (2026-11-19 Portal /v1/models)", () => {
     const ids = nousresearch.models.map((m) => m.id);
     expect(ids).toContain("nousresearch/hermes-4-405b");
-    expect(ids).toContain("nousresearch/hermes-4-70b");
+    expect(ids).not.toContain("nousresearch/hermes-4-70b");
+    expect(ids).toContain("google/gemini-4-neon");
+    expect(ids).toContain("google/gemini-4-hydrogen");
+    expect(ids).toContain("anthropic/claude-fable-5.2");
     expect(ids).toContain("anthropic/claude-sonnet-4.6");
     expect(ids).not.toContain("nousresearch/hermes-3-llama-3.1-405b");
   });
@@ -51,9 +54,9 @@ describe("Nous Research Portal provider", () => {
     expect(resolveProviderAlias("nous")).toBe("nousresearch");
     expect(resolveProviderAlias("nous-portal")).toBe("nousresearch");
     expect(resolveProviderAlias("nousresearch")).toBe("nousresearch");
-    expect(parseModel("nous/nousresearch/hermes-4-70b")).toEqual({
+    expect(parseModel("nous/nousresearch/hermes-4-405b")).toEqual({
       provider: "nousresearch",
-      model: "nousresearch/hermes-4-70b",
+      model: "nousresearch/hermes-4-405b",
       isAlias: false,
       providerAlias: "nous",
     });
@@ -65,7 +68,7 @@ describe("Nous Research Portal provider", () => {
   });
 
   it("declares Hermes 4 as reasoning text-only with 131k context", () => {
-    const caps = getCapabilitiesForModel("nousresearch", "nousresearch/hermes-4-70b");
+    const caps = getCapabilitiesForModel("nousresearch", "nousresearch/hermes-4-405b");
     expect(caps.reasoning).toBe(true);
     expect(caps.vision).toBe(false);
     expect(caps.thinkingFormat).toBe("openai");

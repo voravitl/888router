@@ -42,6 +42,7 @@ describe("OpenCode Go model catalog", () => {
       "gpt-6-luna", "gpt-5.6-luna",
       "muse-spark-1.3-contributor", "muse-spark-1.2-contributor",
       "gemini-4-argon", "claude-haiku-5-5",
+      "longcat-2.5-free", "hy4-flash-free", "qwen4-max",
     ]);
   });
 

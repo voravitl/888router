@@ -88,6 +88,9 @@ const opencode_goConfig = {
     { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", supportedFormats: ["openai-responses"] },
     { id: "gemini-4-argon", name: "Gemini 4 Argon", supportedFormats: ["openai"] },
     { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", supportedFormats: ["claude"] },
+    { id: "longcat-2.5-free", name: "LongCat 2.5 Free", supportedFormats: ["openai"] },
+    { id: "hy4-flash-free", name: "Hy4 Flash Free", supportedFormats: ["openai"] },
+    { id: "qwen4-max", name: "Qwen 4 Max", supportedFormats: ["openai"] },
   ],
 };
 

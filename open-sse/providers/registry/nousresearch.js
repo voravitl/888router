@@ -34,7 +34,9 @@ const nousresearchConfig = {
   // Full catalogue is fetched via modelsFetcher; other ids via passthroughModels.
   models: [
     { id: "nousresearch/hermes-4-405b", name: "Hermes 4 405B" },
-    { id: "nousresearch/hermes-4-70b", name: "Hermes 4 70B" },
+    { id: "google/gemini-4-neon", name: "Gemini 4 Neon" },
+    { id: "google/gemini-4-hydrogen", name: "Gemini 4 Hydrogen" },
+    { id: "anthropic/claude-fable-5.2", name: "Claude Fable 5.2" },
     { id: "anthropic/claude-opus-5", name: "Claude Opus 5" },
     { id: "anthropic/claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
     { id: "openai/gpt-5.5", name: "GPT-5.5" },
