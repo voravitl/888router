@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, OPENAI_FINISH } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, OPENAI_FINISH, CLAUDE_STOP } from "../schema/index.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
@@ -62,7 +62,9 @@ export function claudeToOpenAIResponse(chunk, state) {
       } else if (block?.type === CLAUDE_BLOCK.THINKING) {
         state.inThinkingBlock = true;
         state.currentBlockIndex = chunk.index;
-        results.push(createChunk(state, { content: "<think>" }));
+        state.sawThinking = true;
+      } else if (block?.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+        state.sawThinking = true;
       } else if (block?.type === CLAUDE_BLOCK.TOOL_USE) {
         const toolCallIndex = state.toolCallIndex++;
         // Restore original tool name from mapping (Claude OAuth)
@@ -87,6 +89,7 @@ export function claudeToOpenAIResponse(chunk, state) {
       if (chunk.index === state.serverToolBlockIndex) break;
       const delta = chunk.delta;
       if (delta?.type === "text_delta" && delta.text) {
+        state.hasTextOutput = true;
         results.push(createChunk(state, { content: delta.text }));
       } else if (delta?.type === "thinking_delta" && delta.thinking) {
         results.push(createChunk(state, reasoningDelta(delta.thinking)));
@@ -113,7 +116,6 @@ export function claudeToOpenAIResponse(chunk, state) {
         break;
       }
       if (state.inThinkingBlock && chunk.index === state.currentBlockIndex) {
-        results.push(createChunk(state, { content: "</think>" }));
         state.inThinkingBlock = false;
       }
       state.textBlockStarted = false;
@@ -131,6 +133,9 @@ export function claudeToOpenAIResponse(chunk, state) {
         const outputTokens = typeof chunk.usage.output_tokens === "number" ? chunk.usage.output_tokens : 0;
         const cacheReadTokens = typeof chunk.usage.cache_read_input_tokens === "number" ? chunk.usage.cache_read_input_tokens : (prev.cache_read_input_tokens || 0);
         const cacheCreationTokens = typeof chunk.usage.cache_creation_input_tokens === "number" ? chunk.usage.cache_creation_input_tokens : (prev.cache_creation_input_tokens || 0);
+        const thinkingTokens = typeof chunk.usage.output_tokens_details?.thinking_tokens === "number"
+          ? chunk.usage.output_tokens_details.thinking_tokens
+          : (prev.thinking_tokens || 0);
 
         // prompt_tokens = input_tokens + cache_read + cache_creation (all prompt-side tokens)
         const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
@@ -145,9 +150,19 @@ export function claudeToOpenAIResponse(chunk, state) {
 
         if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
         if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
+        if (thinkingTokens > 0) state.usage.thinking_tokens = thinkingTokens;
       }
 
       if (chunk.delta?.stop_reason) {
+        if (
+          chunk.delta.stop_reason === CLAUDE_STOP.REFUSAL &&
+          !state.hasTextOutput &&
+          typeof chunk.delta?.stop_details?.explanation === "string" &&
+          chunk.delta.stop_details.explanation.length > 0
+        ) {
+          results.push(createChunk(state, { refusal: chunk.delta.stop_details.explanation }));
+        }
+
         state.finishReason = convertStopReason(chunk.delta.stop_reason);
         const finalChunk = createChunk(state, {}, state.finishReason);
 
@@ -158,7 +173,10 @@ export function claudeToOpenAIResponse(chunk, state) {
             input_tokens: state.usage.input_tokens || 0,
             output_tokens: state.usage.output_tokens || 0,
             cache_read_input_tokens: state.usage.cache_read_input_tokens,
-            cache_creation_input_tokens: state.usage.cache_creation_input_tokens
+            cache_creation_input_tokens: state.usage.cache_creation_input_tokens,
+            output_tokens_details: state.usage.thinking_tokens > 0
+              ? { thinking_tokens: state.usage.thinking_tokens }
+              : undefined,
           }, "claude");
         }
 

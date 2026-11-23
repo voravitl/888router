@@ -161,11 +161,17 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       if (textContent) message.content = textContent;
       if (thinkingContent) message.reasoning_content = thinkingContent;
       if (toolCalls.length > 0) message.tool_calls = toolCalls;
+      if (
+        responseBody.stop_reason === "refusal" &&
+        !textContent &&
+        typeof responseBody.stop_details?.explanation === "string" &&
+        responseBody.stop_details.explanation.length > 0
+      ) {
+        message.refusal = responseBody.stop_details.explanation;
+      }
       if (!message.content && !message.tool_calls) message.content = "";
 
-      let finishReason = responseBody.stop_reason || "stop";
-      if (finishReason === "end_turn") finishReason = "stop";
-      if (finishReason === "tool_use") finishReason = "tool_calls";
+      const finishReason = toOpenAIFinish(responseBody.stop_reason || "end_turn", FORMATS.CLAUDE);
 
       const result = {
         id: `chatcmpl-${responseBody.id || Date.now()}`,
@@ -181,6 +187,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
           completion_tokens: responseBody.usage.output_tokens || 0,
           total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
         };
+        if (responseBody.usage.output_tokens_details?.thinking_tokens > 0) {
+          result.usage.completion_tokens_details = {
+            reasoning_tokens: responseBody.usage.output_tokens_details.thinking_tokens
+          };
+        }
       }
       openAIFormatted = result;
     }
