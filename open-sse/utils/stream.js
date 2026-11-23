@@ -64,6 +64,7 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
+  let lastFinishReason = null;
   // Tool-call accumulator: null = none seen yet (avoid allocating an empty
   // array for plain text responses), [] = at least one tool delta was seen.
   // Mirrors the text/thinking pattern so requestDetails reflects the full
@@ -190,6 +191,37 @@ export function createSSEStream(options = {}) {
 
     const extracted = extractUsage(parsed);
     if (extracted) usage = mergeUsage(usage, extracted);
+    capturePassthroughFinishReason(parsed);
+  }
+
+  function capturePassthroughFinishReason(parsed) {
+    const passthroughFinish =
+      parsed?.choices?.[0]?.finish_reason ||
+      parsed?.delta?.stop_reason ||
+      parsed?.candidates?.[0]?.finishReason;
+    if (passthroughFinish) {
+      lastFinishReason = String(passthroughFinish);
+    }
+  }
+
+  function captureTranslateFinishReason(items) {
+    if (state?.finishReason) {
+      lastFinishReason = String(state.finishReason);
+    }
+    if (Array.isArray(items)) {
+      for (const item of items) {
+        const itemFinish =
+          item?.choices?.[0]?.finish_reason ||
+          item?.delta?.stop_reason ||
+          item?.candidates?.[0]?.finishReason;
+        if (itemFinish) {
+          lastFinishReason = String(itemFinish);
+        }
+      }
+    }
+    if (state?.finishReason) {
+      lastFinishReason = String(state.finishReason);
+    }
   }
 
   // Shared field repair for passthrough frames, used by both the streaming
@@ -508,6 +540,7 @@ export function createSSEStream(options = {}) {
               // client and the stream accumulator both see the answer.
               const normalized = normalizeWholeCompletionChunk(parsed);
               const { idFixed, fieldsInjected } = normalizePassthroughFields(parsed, normalized);
+              capturePassthroughFinishReason(parsed);
 
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
@@ -627,6 +660,7 @@ export function createSSEStream(options = {}) {
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        captureTranslateFinishReason(translated);
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -768,7 +802,8 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking,
-              toolCalls: accumulatedToolCalls
+              toolCalls: accumulatedToolCalls,
+              finishReason: lastFinishReason || null
             }, usage, ttftAt);
           }
           return;
@@ -784,6 +819,7 @@ export function createSSEStream(options = {}) {
             // before translating so content/tool calls/usage are not lost.
             accumulateTranslateChunk(parsed);
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            captureTranslateFinishReason(translated);
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -807,6 +843,7 @@ export function createSSEStream(options = {}) {
         }
 
         const flushed = translateResponse(targetFormat, sourceFormat, null, state);
+        captureTranslateFinishReason(flushed);
 
         if (flushed?._openaiIntermediate) {
           for (const item of flushed._openaiIntermediate) {
@@ -858,7 +895,8 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking,
-            toolCalls: accumulatedToolCalls
+            toolCalls: accumulatedToolCalls,
+            finishReason: state?.finishReason || lastFinishReason || null
           }, state?.usage, ttftAt);
         }
       } catch (error) {
@@ -910,6 +948,7 @@ export function createClaudeNativeStreamWithLogger(provider = null, reqLogger = 
   let accumulatedContent = "";
   let accumulatedThinking = "";
   let accumulatedToolCalls = null;
+  let lastFinishReason = null;
   let completed = false;
   let eventChars = 0;
   let eventLines = 0;
@@ -957,6 +996,10 @@ export function createClaudeNativeStreamWithLogger(provider = null, reqLogger = 
               }
             }
           }
+        }
+        const stopReason = parsed?.delta?.stop_reason || parsed?.stop_reason;
+        if (stopReason) {
+          lastFinishReason = String(stopReason);
         }
         const extracted = extractUsage(parsed);
         if (extracted) usage = mergeUsage(usage, extracted);
@@ -1025,7 +1068,7 @@ export function createClaudeNativeStreamWithLogger(provider = null, reqLogger = 
       if (!hasValidUsage(usage) && contentLength > 0) usage = estimateUsage(body, contentLength, FORMATS.CLAUDE);
       if (hasValidUsage(usage)) logUsage(provider, usage, model, connectionId, apiKey);
       else appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => {});
-      onStreamComplete?.({ content: accumulatedContent, thinking: accumulatedThinking, toolCalls: accumulatedToolCalls }, usage, ttftAt);
+      onStreamComplete?.({ content: accumulatedContent, thinking: accumulatedThinking, toolCalls: accumulatedToolCalls, finishReason: lastFinishReason || null }, usage, ttftAt);
     }
   });
 }
