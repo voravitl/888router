@@ -47,7 +47,7 @@ describe("Claude native stream observer", () => {
 
     expect(output.equals(bytes)).toBe(true);
     expect(output.toString()).not.toContain("[DONE]");
-    expect(completion[0]).toEqual({ content: "héllo", thinking: "let me think", toolCalls: null });
+    expect(completion[0]).toEqual({ content: "héllo", thinking: "let me think", toolCalls: null, finishReason: null });
     expect(completion[1]).toMatchObject({ prompt_tokens: 17, completion_tokens: 9, cache_read_input_tokens: 4 });
   });
 
@@ -55,7 +55,7 @@ describe("Claude native stream observer", () => {
     const source = 'event: content_block_start\ndata: {"type":"content_block_start","content_block":{"type":"tool_use","id":"toolu_1","name":"read_file"}}\n\nevent: message_delta\ndata: {"type":"message_delta","usage":{"output_tokens":3}}';
     const { output, completion } = await runChunks([Buffer.from(source)]);
     expect(output.toString()).toBe(source);
-    expect(completion[0]).toEqual({ content: "", thinking: "", toolCalls: [{ id: "toolu_1", name: "read_file" }] });
+    expect(completion[0]).toEqual({ content: "", thinking: "", toolCalls: [{ id: "toolu_1", name: "read_file" }], finishReason: null });
     expect(completion[1]).toMatchObject({ completion_tokens: 3 });
   });
 

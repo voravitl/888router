@@ -294,6 +294,9 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
+    const stripLeadingEmptyThinkTags = (text) =>
+      typeof text === "string" ? text.replace(/^(?:\s*<think>\s*<\/think>)+/i, "") : text;
+
     if (msg.reasoning_content && typeof msg.reasoning_content === "string" && msg.reasoning_content.trim()) {
       blocks.push({ type: CLAUDE_BLOCK.THINKING, thinking: msg.reasoning_content, signature: "reasoning" });
     }
@@ -303,7 +306,10 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
-          blocks.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
+          const cleaned = stripLeadingEmptyThinkTags(part.text);
+          if (cleaned && cleaned.trim()) {
+            blocks.push({ type: CLAUDE_BLOCK.TEXT, text: cleaned });
+          }
         } else if (part.type === CLAUDE_BLOCK.TOOL_USE) {
           // Tool name already has prefix from tool declarations, keep as-is
           blocks.push({ type: CLAUDE_BLOCK.TOOL_USE, id: part.id, name: part.name, input: part.input });
@@ -314,9 +320,10 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
         }
       }
     } else if (msg.content) {
-      const text = typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n");
-      if (text) {
-        blocks.push({ type: CLAUDE_BLOCK.TEXT, text });
+      const rawText = typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n");
+      const cleaned = stripLeadingEmptyThinkTags(rawText);
+      if (cleaned && cleaned.trim()) {
+        blocks.push({ type: CLAUDE_BLOCK.TEXT, text: cleaned });
       }
     }
 

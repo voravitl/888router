@@ -1,3 +1,16 @@
+# v0.15.271 (2026-11-24)
+
+## Fix Claude Fable Empty `<think></think>` Leak, Refusal Surface & Omitted-Thinking Stream Guard
+- **Claude-to-OpenAI Empty `<think></think>` Leak Fix & OpenAI-to-Claude Sanitizer (`open-sse/translator/response/claude-to-openai.js`, `open-sse/translator/request/openai-to-claude.js`, `tests/unit/claude-fable-think-refusal.test.js`, `tests/translator/golden/__snapshots__/golden-response-stream.test.js.snap`)**:
+  - Deferred emitting `<think>` in `claude-to-openai.js` until the first non-empty `thinking_delta` arrives (preventing `claude-fable-5-2` omitted thinking blocks from leaking literal `<think></think>` into OpenAI `delta.content` on tool-call turns).
+  - Sanitized leading empty `<think></think>` wrappers in `openai-to-claude.js` assistant history messages so poisoned client histories recover cleanly instead of triggering upstream refusals.
+- **Claude `refusal` Stop Reason & Thinking Token Usage Accounting (`open-sse/translator/schema/finishReasons.js`, `open-sse/translator/concerns/finishReason.js`, `open-sse/translator/concerns/usage.js`, `open-sse/translator/response/claude-to-openai.js`, `open-sse/handlers/chatCore/nonStreamingHandler.js`)**:
+  - Mapped Claude `stop_reason: "refusal"` to OpenAI `"content_filter"` and surfaced `stop_details.explanation` into `delta.refusal` (streaming) and `message.refusal` (non-streaming).
+  - Propagated Claude `output_tokens_details.thinking_tokens` into OpenAI `completion_tokens_details.reasoning_tokens`.
+- **Stream `finishReason` Propagation & Omitted-Thinking Budget-Exhaustion Guard (`open-sse/utils/stream.js`, `open-sse/services/comboStreamGuard.js`, `tests/unit/stream-finish-reason-and-guard.test.js`, `tests/unit/claude-native-stream.test.js`)**:
+  - Propagated final `finishReason` into `onStreamComplete` from both translated OpenAI chunks and raw Claude `message_delta` events.
+  - Extended `comboStreamGuard` to detect omitted-thinking budget exhaustion (`finishReason === "length"` with empty content/toolCalls and `completion_tokens > 0` or `reasoning_tokens > 0`).
+
 # v0.15.270 (2026-11-19)
 
 ## Fix Kiro IDE Runtime Fingerprint Headers for CodeWhisperer & Amazon Q Chat

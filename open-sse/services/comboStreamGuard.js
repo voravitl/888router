@@ -124,6 +124,7 @@ export function createComboStreamGuard() {
    * a generic empty verdict.
    */
   let sawReasoning = false;
+  let sawOutputTokens = false;
   const inlineThinkState = { inInlineThinking: false, thinkingTagBuffer: "" };
   const flushNonThinkingTagBuffer = () => {
     if (!inlineThinkState.inInlineThinking && inlineThinkState.thinkingTagBuffer.length > 0) {
@@ -277,6 +278,23 @@ export function createComboStreamGuard() {
           if (finishReason === "tool_use" || finishReason === "tool_calls") {
             sawText = true;
           }
+        }
+
+        if (
+          json.usage?.completion_tokens_details?.reasoning_tokens > 0 ||
+          json.usage?.output_tokens_details?.thinking_tokens > 0
+        ) {
+          sawReasoning = true;
+        }
+        if (json.usage?.completion_tokens > 0 || json.usage?.output_tokens > 0) {
+          sawOutputTokens = true;
+        }
+        if (
+          (finishReason === "length" || finishReason === "max_tokens") &&
+          !sawText &&
+          (sawOutputTokens || json.usage?.completion_tokens > 0 || json.usage?.output_tokens > 0)
+        ) {
+          sawReasoning = true;
         }
       } catch { /* incomplete / non-JSON line — not meaningful for the guard */ }
       }

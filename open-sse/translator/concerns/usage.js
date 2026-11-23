@@ -21,8 +21,9 @@ const USAGE_EXTRACTORS = {
   claude(raw) {
     const input = n(raw.input_tokens), output = n(raw.output_tokens);
     const cacheRead = n(raw.cache_read_input_tokens), cacheCreate = n(raw.cache_creation_input_tokens);
+    const reasoningTokens = n(raw.output_tokens_details?.thinking_tokens);
     const prompt = input + cacheRead + cacheCreate;
-    return { promptTokens: prompt, completionTokens: output, totalTokens: prompt + output, cachedTokens: cacheRead, cacheCreationTokens: cacheCreate };
+    return { promptTokens: prompt, completionTokens: output, totalTokens: prompt + output, cachedTokens: cacheRead, cacheCreationTokens: cacheCreate, reasoningTokens };
   },
   gemini(raw) {
     const cached = n(raw.cachedContentTokenCount);
