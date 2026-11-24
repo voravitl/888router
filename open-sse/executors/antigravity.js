@@ -31,7 +31,11 @@ export function sanitizeAntigravityPrompt(text) {
     .replace(/Hermes delivers their message as a standalone user message right after the latest tool results/gi, "the runtime delivers their message as a standalone user message right after the latest tool results")
     .replace(/#\s*Google model operational directives/gi, "# Model operational directives")
     .replace(/#\s*Hermes runtime environment/gi, "# Runtime environment")
-    .replace(/<!--\s*End Hermes runtime environment\s*-->/gi, "<!-- End runtime environment -->");
+    .replace(/<!--\s*End Hermes runtime environment\s*-->/gi, "<!-- End runtime environment -->")
+    .replace(/You are an AI agent running in OpenCode(?:,\s*a coding agent harness)?\.?/gi, "You are an AI coding assistant.")
+    .replace(/You are OpenCode(?:,\s*the best coding agent on the planet)?\.?/gi, "You are an AI coding assistant.")
+    .replace(/You are Cline(?:,\s*a highly skilled software engineer)?/gi, "You are a highly skilled software engineer")
+    .replace(/You are a powerful agentic AI coding assistant,\s*powered by [^.]+\.\s*You operate exclusively in Cursor[^.]*\./gi, "You are an AI coding assistant.");
 }
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
@@ -72,6 +76,51 @@ const ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS = 15000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
 const MAX_RETIREMENT_NOTICE_BYTES = 8192;
 const RETIREMENT_NOTICE_STREAM_WAIT_MS = 1000;
+
+const ANTIGRAVITY_DEFAULT_MIN_SPACING_MS = 300;
+const ANTIGRAVITY_DEFAULT_JITTER_MS = 200;
+const ANTIGRAVITY_STALE_SLOT_MS = 5 * 60 * 1000;
+const antigravityAccountSlots = new Map();
+
+/**
+ * Per-account dispatch pacing + random jitter to avoid robotic burst patterns.
+ * Reserves the next slot BEFORE awaiting so concurrent requests serialize cleanly.
+ */
+export async function paceAntigravityRequest(accountKey, opts = {}) {
+  const explicitMin = typeof opts.minSpacingMs === "number" && Number.isFinite(opts.minSpacingMs);
+  if (!explicitMin && (process.env.NODE_ENV === "test" || process.env.VITEST)) {
+    return 0;
+  }
+  const envSpacing = Number(process.env.ANTIGRAVITY_MIN_SPACING_MS);
+  const minSpacing = explicitMin
+    ? Math.max(0, opts.minSpacingMs)
+    : Number.isFinite(envSpacing) && envSpacing >= 0
+      ? envSpacing
+      : ANTIGRAVITY_DEFAULT_MIN_SPACING_MS;
+  const jitterWindow = typeof opts.jitterMs === "number" && Number.isFinite(opts.jitterMs)
+    ? Math.max(0, opts.jitterMs)
+    : ANTIGRAVITY_DEFAULT_JITTER_MS;
+  const jitter = jitterWindow > 0 ? Math.floor(Math.random() * jitterWindow) : 0;
+  const spacing = minSpacing + jitter;
+  if (spacing <= 0) return 0;
+
+  const key = accountKey || "default";
+  const now = Date.now();
+  if (antigravityAccountSlots.size > 64) {
+    for (const [k, ts] of antigravityAccountSlots) {
+      if (now - ts > ANTIGRAVITY_STALE_SLOT_MS) antigravityAccountSlots.delete(k);
+    }
+  }
+
+  const prevSlot = antigravityAccountSlots.get(key) || 0;
+  const scheduledAt = Math.max(now, prevSlot + spacing);
+  antigravityAccountSlots.set(key, scheduledAt);
+  const waitMs = scheduledAt - now;
+  if (waitMs > 0) {
+    await new Promise(resolve => setTimeout(resolve, waitMs));
+  }
+  return waitMs;
+}
 
 async function readStreamRetirementNotice(response) {
   if (Number(response.headers.get("content-length")) > MAX_RETIREMENT_NOTICE_BYTES) return null;
@@ -277,6 +326,8 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   async execute(args) {
+    const accountKey = args.credentials?.email || args.credentials?.connectionId || "default";
+    await paceAntigravityRequest(accountKey);
     const rawSessionId = args.body?.request?.sessionId || args.credentials?._clientSessionId || resolveSessionId({
       headers: args.credentials?.rawHeaders,
       body: args.body,

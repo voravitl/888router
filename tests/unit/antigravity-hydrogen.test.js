@@ -67,7 +67,7 @@ describe("Gemini 4 Hydrogen capabilities and thinking levels", () => {
   });
 });
 
-describe("Gemini 4 Hydrogen Antigravity registry & Hub 2.31.2 transport", () => {
+describe("Gemini 4 Hydrogen Antigravity registry & Hub 2.35.0 transport", () => {
   it("maps hydrogen and hydrogen-xhigh to live tier wire IDs with expected thinkingLevel", async () => {
     const { getModelUpstreamId } = await import("../../open-sse/config/providerModels.js");
     const { AntigravityExecutor } = await import("../../open-sse/executors/antigravity.js");
@@ -95,7 +95,7 @@ describe("Gemini 4 Hydrogen Antigravity registry & Hub 2.31.2 transport", () => 
     });
 
     const headers = executor.buildHeaders({ accessToken: "fixture-token" });
-    expect(headers["User-Agent"]).toBe("antigravity/hub/2.31.2 darwin/arm64");
+    expect(headers["User-Agent"]).toBe("antigravity/hub/2.35.0 darwin/arm64");
   });
 });
 

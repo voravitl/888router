@@ -36,6 +36,7 @@ const ANTIGRAVITY_GEMINI4_TIERS = new Set(["xhigh", "high", "medium", "low"]);
 const GEMINI4_TIERED_PATTERNS = {
   "gemini-4-hydrogen": /^gemini-4-hydrogen(?:-tiered)?(?:-(xhigh|high|medium|low))?$/i,
   "gemini-4-neon": /^gemini-4-neon(?:-tiered)?(?:-(xhigh|high|medium|low))?$/i,
+  "gemini-4-carbon": /^gemini-4-carbon(?:-tiered)?(?:-(high|medium|low))?$/i,
 };
 
 function resolveAntigravityTieredModel(modelId, baseId) {
@@ -66,6 +67,14 @@ export function resolveAntigravityHydrogenModel(modelId) {
  */
 export function resolveAntigravityNeonModel(modelId) {
   return resolveAntigravityTieredModel(modelId, "gemini-4-neon");
+}
+
+/**
+ * Resolve Gemini 4 Carbon aliases (including bare "gemini-4-carbon",
+ * "-tiered", and "-tiered-<level>") to canonical "gemini-4-carbon-<level>(<level>)".
+ */
+export function resolveAntigravityCarbonModel(modelId) {
+  return resolveAntigravityTieredModel(modelId, "gemini-4-carbon");
 }
 
 // Antigravity retired/unroutable live-API patterns to exclude from /v1/models and sync.
@@ -106,6 +115,7 @@ const GEMINI4_TIER_EXPANSION_ENTRIES = [
 const GEMINI4_TIERED_EXPANSIONS = [
   { re: /^gemini-4-hydrogen-tiered$/i, baseId: "gemini-4-hydrogen", label: "Gemini 4 Hydrogen" },
   { re: /^gemini-4-neon-tiered$/i, baseId: "gemini-4-neon", label: "Gemini 4 Neon" },
+  { re: /^gemini-4-carbon-tiered$/i, baseId: "gemini-4-carbon", label: "Gemini 4 Carbon", tiers: ["", "-high", "-medium", "-low"] },
 ];
 
 function expandAntigravityLiveModel(id, displayName) {
@@ -114,9 +124,12 @@ function expandAntigravityLiveModel(id, displayName) {
   if (!trimmed) return [];
   if (ANTIGRAVITY_RETIRED_OR_JUNK_INPUT_PATTERNS.some((re) => re.test(trimmed))) return [];
 
-  for (const { re, baseId, label } of GEMINI4_TIERED_EXPANSIONS) {
+  for (const { re, baseId, label, tiers } of GEMINI4_TIERED_EXPANSIONS) {
     if (re.test(trimmed)) {
-      return GEMINI4_TIER_EXPANSION_ENTRIES.map(({ suffix, labelSuffix }) => ({
+      const entries = tiers
+        ? GEMINI4_TIER_EXPANSION_ENTRIES.filter((e) => tiers.includes(e.suffix))
+        : GEMINI4_TIER_EXPANSION_ENTRIES;
+      return entries.map(({ suffix, labelSuffix }) => ({
         id: `${baseId}${suffix}`,
         name: `${label}${labelSuffix}`,
       }));

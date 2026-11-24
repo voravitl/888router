@@ -13,6 +13,10 @@ const GEMINI_4_NEON_PRICING = {
   cache_creation: 3.00,
 };
 
+const GEMINI_4_CARBON_PRICING = {
+  ...GEMINI_4_NEON_PRICING,
+};
+
 /**
  * Canonical model pricing — provider-agnostic.
  * Cover all known models; deduplicated across providers.
@@ -78,6 +82,11 @@ export const MODEL_PRICING = {
   "gemini-4-neon-medium":         { ...GEMINI_4_NEON_PRICING },
   "gemini-4-neon-low":            { ...GEMINI_4_NEON_PRICING },
   "google/gemini-4-neon":         { ...GEMINI_4_NEON_PRICING },
+  "gemini-4-carbon":              { ...GEMINI_4_CARBON_PRICING },
+  "gemini-4-carbon-high":         { ...GEMINI_4_CARBON_PRICING },
+  "gemini-4-carbon-medium":       { ...GEMINI_4_CARBON_PRICING },
+  "gemini-4-carbon-low":          { ...GEMINI_4_CARBON_PRICING },
+  "google/gemini-4-carbon":       { ...GEMINI_4_CARBON_PRICING },
   "gemini-3.7-flash-high":        { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  },
   "gemini-3.7-flash-medium":      { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  },
   "gemini-3.7-flash-low":         { input: 0.50,  output: 3.00,  cached: 0.03,  reasoning: 4.50,   cache_creation: 0.50  },
@@ -262,6 +271,7 @@ export const PATTERN_PRICING = [
 
   // --- Gemini (specific first, generic last) ---
   { pattern: "gemini-4-neon*",  pricing: { ...GEMINI_4_NEON_PRICING } },
+  { pattern: "gemini-4-carbon*", pricing: { ...GEMINI_4_CARBON_PRICING } },
   { pattern: "gemini-*-flash-lite", pricing: { input: 0.15, output: 1.25, cached: 0.015, reasoning: 1.875, cache_creation: 0.15 } },
   { pattern: "gemini-*-flash",  pricing: { input: 0.30,  output: 2.50,  cached: 0.03,  reasoning: 3.75,   cache_creation: 0.30  } },
   { pattern: "gemini-*-pro",    pricing: { input: 2.00,  output: 12.00, cached: 0.25,  reasoning: 18.00,  cache_creation: 2.00  } },

@@ -194,6 +194,11 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'gemini-4-neon-medium',
         'gemini-4-neon-low',
         'gemini-4-neon-tiered',
+        'gemini-4-carbon',
+        'gemini-4-carbon-high',
+        'gemini-4-carbon-medium',
+        'gemini-4-carbon-low',
+        'gemini-4-carbon-tiered',
         'gemini-4-argon-high',
         'gemini-4-argon-medium',
         'gemini-4-argon-low',
@@ -325,11 +330,12 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         };
       }
 
-      // Registry aliases bare `gemini-4-{hydrogen,neon}` to `...-high(high)`, while
+      // Registry aliases bare `gemini-4-{hydrogen,neon,carbon}` to `...-high(high)`, while
       // live daily-cloudcode-pa `:fetchAvailableModels` returns `...-high`.
       for (const [bareId, displayName] of [
         ["gemini-4-hydrogen", "Gemini 4 Hydrogen"],
         ["gemini-4-neon", "Gemini 4 Neon"],
+        ["gemini-4-carbon", "Gemini 4 Carbon"],
       ]) {
         const highId = `${bareId}-high`;
         if (!quotas[bareId] && quotas[highId]) {

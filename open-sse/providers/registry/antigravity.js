@@ -64,6 +64,11 @@ const antigravityConfig = {
     { id: "gemini-4-argon-high", name: "Gemini 4 Argon (High)", upstreamModelId: "gemini-4-argon-high(high)" },
     { id: "gemini-4-argon-medium", name: "Gemini 4 Argon (Medium)", upstreamModelId: "gemini-4-argon-medium(medium)" },
     { id: "gemini-4-argon-low", name: "Gemini 4 Argon (Low)", upstreamModelId: "gemini-4-argon-low(low)" },
+    // Gemini 4 Carbon (low/medium/high — live :fetchAvailableModels).
+    { id: "gemini-4-carbon", name: "Gemini 4 Carbon", upstreamModelId: "gemini-4-carbon-high(high)" },
+    { id: "gemini-4-carbon-high", name: "Gemini 4 Carbon (High)", upstreamModelId: "gemini-4-carbon-high(high)" },
+    { id: "gemini-4-carbon-medium", name: "Gemini 4 Carbon (Medium)", upstreamModelId: "gemini-4-carbon-medium(medium)" },
+    { id: "gemini-4-carbon-low", name: "Gemini 4 Carbon (Low)", upstreamModelId: "gemini-4-carbon-low(low)" },
     { id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)" },
     { id: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)" },
     { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)" },
