@@ -39,9 +39,10 @@ describe("Nous Research Portal provider", () => {
     expect(nousresearch.embeddingConfig.baseUrl).toBe("https://inference-api.nousresearch.com/v1/embeddings");
   });
 
-  it("seeds live Hermes 4 + agentic catalog ids (2026-11-19 Portal /v1/models)", () => {
+  it("seeds live featured catalog ids (excluding retired hermes-4-70b, hermes-4-405b, voyage-4)", () => {
     const ids = nousresearch.models.map((m) => m.id);
-    expect(ids).toContain("nousresearch/hermes-4-405b");
+    expect(ids).not.toContain("nousresearch/hermes-4-405b");
+    expect(ids).not.toContain("voyageai/voyage-4");
     expect(ids).not.toContain("nousresearch/hermes-4-70b");
     expect(ids).toContain("google/gemini-4-neon");
     expect(ids).toContain("google/gemini-4-hydrogen");

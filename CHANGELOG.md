@@ -1,3 +1,14 @@
+# v0.15.272 (2026-11-24)
+
+## Cloudflare Workers AI Tool-Call Content Fix, NVIDIA EOL Cleanup & Vendor-Prefix Preservation
+- **Cloudflare Workers AI `null`/`undefined` Content Normalization (`open-sse/translator/concerns/paramSupport.js`, `tests/unit/cf-nvidia-nous-live-fixes.test.js`)**:
+  - Extended `stripUnsupportedParams` (`flattenContent: true`) so `messages[i].content` that is `null` or `undefined` (standard OpenAI `assistant` tool-call turns) is normalized to `""`, preventing Cloudflare Workers AI HTTP `400` (`AiError: Bad input: Error: oneOf at '/' not met`).
+- **NVIDIA NIM & Nous Research Catalog Cleanup (`open-sse/providers/registry/nvidia.js`, `open-sse/providers/registry/nousresearch.js`, `tests/unit/catalog-eol-cleanup.test.js`, `tests/unit/nousresearch-provider.test.js`)**:
+  - Removed 5 dead/EOL NVIDIA NIM entries (`minimaxai/minimax-m2.7`, `z-ai/glm-5.2`, `deepseek-ai/deepseek-v4-pro`, `deepseek-ai/deepseek-v4-flash`, `moonshotai/kimi-k2.6`) verified against live NIM `/v1/models` (`HTTP 410`).
+  - Removed dead seed entries `nousresearch/hermes-4-405b` and `voyageai/voyage-4` from `nousresearch.js` verified against live Nous Portal `/v1/models` (`HTTP 404`).
+- **Vendor-Prefix Preservation in `/v1/models` & Live E2E Matrix Defaults (`src/app/api/v1/models/route.js`, `scripts/live-e2e-matrix.mjs`, `package.json`)**:
+  - Stopped stripping `${providerId}/` and upstream vendor namespaces from static catalog IDs and live upstream model IDs in `GET /v1/models` (fixing `nvidia/nvidia/nemotron-3-ultra-550b-a55b` and `nous/nousresearch/*` collisions while continuing to strip redundant router aliases on `enabledModels`), and added `"test:live-e2e"` script entry in `package.json`.
+
 # v0.15.271 (2026-11-24)
 
 ## Fix Claude Fable Empty `<think></think>` Leak, Refusal Surface & Omitted-Thinking Stream Guard

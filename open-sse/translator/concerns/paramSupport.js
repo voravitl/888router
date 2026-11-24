@@ -55,6 +55,8 @@ export function stripUnsupportedParams(provider, model, body) {
           msg.content = msg.content
             .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
             .join("");
+        } else if (msg && msg.content == null) {
+          msg.content = "";
         }
       }
     }

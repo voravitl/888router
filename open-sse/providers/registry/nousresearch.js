@@ -33,7 +33,6 @@ const nousresearchConfig = {
   // Featured seed from live GET /v1/models (2026-08-23, 373 entries).
   // Full catalogue is fetched via modelsFetcher; other ids via passthroughModels.
   models: [
-    { id: "nousresearch/hermes-4-405b", name: "Hermes 4 405B" },
     { id: "google/gemini-4-neon", name: "Gemini 4 Neon" },
     { id: "google/gemini-4-hydrogen", name: "Gemini 4 Hydrogen" },
     { id: "anthropic/claude-fable-5.2", name: "Claude Fable 5.2" },
@@ -45,7 +44,6 @@ const nousresearchConfig = {
     { id: "z-ai/glm-5.2", name: "GLM 5.2" },
     { id: "moonshotai/kimi-k2.6", name: "Kimi K2.6" },
     { id: "minimax/minimax-m2.7", name: "MiniMax M2.7" },
-    { id: "voyageai/voyage-4", name: "Voyage 4", kind: "embedding" },
     { id: "google/gemini-embedding-2", name: "Gemini Embedding 2", kind: "embedding" },
   ],
   serviceKinds: ["llm", "embedding"],

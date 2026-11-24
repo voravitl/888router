@@ -38,17 +38,27 @@ describe("Registry & Free Model Catalog EOL cleanup (2026-11-19)", () => {
       expect(entry.name).toBe(name);
       expect(modelIds).toContain(id);
     }
-    expect(modelIds).toContain("minimaxai/minimax-m2.7");
+    for (const dead of [
+      "minimaxai/minimax-m2.7",
+      "z-ai/glm-5.2",
+      "deepseek-ai/deepseek-v4-pro",
+      "deepseek-ai/deepseek-v4-flash",
+      "moonshotai/kimi-k2.6",
+    ]) {
+      expect(regIds).not.toContain(dead);
+      expect(modelIds).not.toContain(dead);
+    }
     expect(modelIds).toContain("nvidia/nv-embedqa-e5-v5");
   });
 
-  it("removes retired nousresearch/hermes-4-70b and adds live featured models in nousresearch", () => {
+  it("removes retired nousresearch/hermes-4-70b, hermes-4-405b, and voyage-4 and keeps live featured models in nousresearch", () => {
     const ids = nousresearchRegistry.models.map((m) => m.id);
     const modelIds = (PROVIDER_MODELS.nous || []).map((m) => m.id);
 
     expect(ids).not.toContain("nousresearch/hermes-4-70b");
     expect(modelIds).not.toContain("nousresearch/hermes-4-70b");
-    expect(ids).toContain("nousresearch/hermes-4-405b");
+    expect(ids).not.toContain("nousresearch/hermes-4-405b");
+    expect(ids).not.toContain("voyageai/voyage-4");
 
     const added = [
       ["google/gemini-4-neon", "Gemini 4 Neon"],

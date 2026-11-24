@@ -778,14 +778,12 @@ async function buildProviderEntries({
 
       const stripKnownPrefix = (modelId) => {
         if (typeof modelId !== "string") return "";
+        if (staticModelKindById.has(modelId)) return modelId;
         if (modelId.startsWith(`${outputAlias}/`)) {
           return modelId.slice(outputAlias.length + 1);
         }
         if (modelId.startsWith(`${staticAlias}/`)) {
           return modelId.slice(staticAlias.length + 1);
-        }
-        if (modelId.startsWith(`${providerId}/`)) {
-          return modelId.slice(providerId.length + 1);
         }
         return modelId;
       };
@@ -796,17 +794,10 @@ async function buildProviderEntries({
         liveCapabilitiesById = new Map();
         for (const m of list) {
           if (typeof m?.id !== "string" || !m.id.trim()) continue;
-          const stripped = stripKnownPrefix(m.id);
           const kind = modelKind(m);
           liveModelKindById.set(m.id, kind);
-          if (stripped !== m.id && !liveModelKindById.has(stripped)) {
-            liveModelKindById.set(stripped, kind);
-          }
           if (m.capabilities) {
             liveCapabilitiesById.set(m.id, m.capabilities);
-            if (stripped !== m.id && !liveCapabilitiesById.has(stripped)) {
-              liveCapabilitiesById.set(stripped, m.capabilities);
-            }
           }
         }
       };
@@ -845,8 +836,7 @@ async function buildProviderEntries({
         }
       }
 
-      const modelIds = rawModelIds
-        .map(stripKnownPrefix)
+      const modelIds = (hasExplicitEnabledModels ? rawModelIds.map(stripKnownPrefix) : rawModelIds)
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
         .filter((modelId) => providerId !== "antigravity" || !isAntigravityHiddenModel(modelId));
 
