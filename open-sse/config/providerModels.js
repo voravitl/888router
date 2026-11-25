@@ -9,6 +9,7 @@ import {
   resolveAntigravityFlashModel,
   resolveAntigravityHydrogenModel,
   resolveAntigravityNeonModel,
+  resolveAntigravityCarbonModel,
   isMuseSparkModel,
 } from "../providers/models/helpers.js";
 import { FORMATS } from "../translator/formats.js";
@@ -34,6 +35,7 @@ const DOT_VERSION_PROVIDERS = new Set(["kr", "kiro"]);
 const ANTIGRAVITY_TIERED_RESOLVERS = [
   { fn: resolveAntigravityHydrogenModel, baseId: "gemini-4-hydrogen" },
   { fn: resolveAntigravityNeonModel, baseId: "gemini-4-neon" },
+  { fn: resolveAntigravityCarbonModel, baseId: "gemini-4-carbon" },
 ];
 
 // Find a registry entry by id. For Kiro models, tolerates dash/dot version separators

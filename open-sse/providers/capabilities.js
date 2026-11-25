@@ -637,6 +637,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gemini*image*",  caps: { vision: true, imageOutput: true, contextWindow: 1048576 } },
   { pattern: "*gemini-4-hydrogen*", caps: GEMINI4_PRO_CAPS },
   { pattern: "*gemini-4-neon*",     caps: GEMINI4_PRO_CAPS },
+  { pattern: "*gemini-4-carbon*",   caps: GEMINI4_PRO_CAPS },
   { pattern: "*gemini-4*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-3*pro*",  caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65535 } },
   { pattern: "*gemini-3*",      caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-level", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 } },

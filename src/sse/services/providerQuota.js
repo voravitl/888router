@@ -112,7 +112,7 @@ function canonicalizeQuotaModel(providerId, model) {
   return `${base.slice(0, tierMatch.index)}-${parenLevel}`;
 }
 
-const ANTIGRAVITY_HIGH_DEFAULT_BASES = new Set(["gemini-4-hydrogen", "gemini-4-neon"]);
+const ANTIGRAVITY_HIGH_DEFAULT_BASES = new Set(["gemini-4-hydrogen", "gemini-4-neon", "gemini-4-carbon"]);
 
 /**
  * Build ordered quota-table candidate keys for a requested model:

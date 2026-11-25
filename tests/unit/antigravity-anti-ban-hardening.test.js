@@ -129,7 +129,7 @@ describe("Antigravity Anti-Ban Hardening", () => {
       const { stripInternalLoopHeaders } = require("../../src/mitm/passthroughHeaders.js");
       const sanitized = stripInternalLoopHeaders({
         authorization: "Bearer secret",
-        "user-agent": "antigravity/hub/2.31.2 darwin/arm64",
+        "user-agent": "antigravity/hub/2.35.0 darwin/arm64",
         "x-request-source": "local",
         "X-Request-Source": "local",
         host: "daily-cloudcode-pa.googleapis.com",
@@ -138,7 +138,7 @@ describe("Antigravity Anti-Ban Hardening", () => {
       expect(sanitized["x-request-source"]).toBeUndefined();
       expect(sanitized["X-Request-Source"]).toBeUndefined();
       expect(sanitized.authorization).toBe("Bearer secret");
-      expect(sanitized["user-agent"]).toBe("antigravity/hub/2.31.2 darwin/arm64");
+      expect(sanitized["user-agent"]).toBe("antigravity/hub/2.35.0 darwin/arm64");
     });
 
     it("OAuth postExchange never hardcodes x-request-source on www.googleapis.com userInfo", () => {

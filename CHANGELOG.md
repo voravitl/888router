@@ -1,3 +1,15 @@
+# v0.15.273 (2026-11-24)
+
+## Antigravity Anti-Ban Hardening, `gemini-4-carbon` Parity & Live E2E Matrix Polish
+- **Antigravity Anti-Ban Hardening (`open-sse/providers/shared.js`, `open-sse/executors/antigravity.js`, `tests/unit/antigravity-carbon-and-antiban.test.js`)**:
+  - Updated `ANTIGRAVITY_IDE_VERSION` from `"2.31.2"` to `"2.35.0"` (`antigravity/hub/2.35.0 darwin/arm64`) to align with live Antigravity Desktop Hub headers.
+  - Extended `sanitizeAntigravityPrompt` to strip/rewrite OpenCode, Cline, and Cursor self-identification harness strings before forwarding prompts upstream.
+  - Added `paceAntigravityRequest` per-account request pacing (300ms minimum spacing + 0–200ms random jitter, stale slot pruning, and no-op guard in Vitest unless overridden) at the start of `AntigravityExecutor.execute`, while preserving existing `MAX_ANTIGRAVITY_429_BACKOFF_ATTEMPTS = 3` and `retry["429"].attempts = 6` anti-429-storm invariants.
+- **Full `gemini-4-carbon` Support (`open-sse/providers/registry/antigravity.js`, `open-sse/providers/models/helpers.js`, `open-sse/config/providerModels.js`, `open-sse/providers/capabilities.js`, `open-sse/providers/thinkingLevels.js`, `open-sse/providers/pricing.js`, `open-sse/services/usage/google.js`, `src/sse/services/providerQuota.js`)**:
+  - Added static catalog entries, tiered ID resolution (`resolveAntigravityCarbonModel`, `gemini-4-carbon-tiered` for bare/`-high`/`-medium`/`-low`), capabilities (`GEMINI4_PRO_CAPS`), thinking levels (`["low", "medium", "high"]`), `GEMINI_4_CARBON_PRICING`, and usage/quota mapping parity.
+- **Live E2E Matrix Polish (`scripts/live-e2e-matrix.mjs`)**:
+  - Classified `HTTP 503` upstream cooldown responses as `WARN:429/QUOTA`, updated NVIDIA NIM first target preference to `nvidia/minimaxai/minimax-m3.1-flash`, added `1000ms` pacing between `ag/` target probes, and fixed `Target` column truncation.
+
 # v0.15.272 (2026-11-24)
 
 ## Cloudflare Workers AI Tool-Call Content Fix, NVIDIA EOL Cleanup & Vendor-Prefix Preservation

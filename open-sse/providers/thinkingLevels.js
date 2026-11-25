@@ -51,7 +51,8 @@ const PATTERN_THINKING = [
   // Gemini 4 Hydrogen & Neon support low, medium, high, and xhigh (no minimal/none).
   { pattern: "*gemini-4-hydrogen*", levels: ["low", "medium", "high", "xhigh"] },
   { pattern: "*gemini-4-neon*",     levels: ["low", "medium", "high", "xhigh"] },
-  // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
+  // Gemini 4 (Argon & Carbon) reject "minimal" with 400 — LOW is the floor; cannot disable thinking.
+  { pattern: "*gemini-4-carbon*",   levels: ["low", "medium", "high"] },
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
   // Gemini 3.8 flash rejects "minimal" with 400 ("Thinking level MINIMAL is
   // not supported for this model") — every TIER of it, verified live

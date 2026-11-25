@@ -62,7 +62,11 @@ function resolveLocalApiKey(baseUrl) {
 
 function classifyHttpError(status, bodyText) {
   const text = String(bodyText || "");
-  if (status === 429 || /\b429\b|rate[_ ]?limit|quota|too many requests|credit balance|insufficient[_ ](?:quota|balance|credits)|exhausted|capacity|overloaded|try again later/i.test(text)) {
+  if (
+    status === 429
+    || (status === 503 && /unavailable\s*\(reset\s+after|cooldown|quota/i.test(text))
+    || /\b429\b|rate[_ ]?limit|quota|too many requests|credit balance|insufficient[_ ](?:quota|balance|credits)|exhausted|capacity|overloaded|try again later|unavailable\s*\(reset\s+after/i.test(text)
+  ) {
     return { level: "WARN", tag: "429/QUOTA", detail: `HTTP ${status}: ${compactErr(text)}` };
   }
   if (status === 401 || status === 403 || /invalid[_ ]api[_ ]key|unauthorized|token.*expired|reauth/i.test(text)) {
@@ -374,7 +378,7 @@ const TARGET_SPECS = [
   { key: "opencode", prefix: "oc/", preferred: ["oc/deepseek-v4.1-flash-free", "oc/mimo-v2.6-flash-free", "oc/big-pickle"], extra: null },
   { key: "opencode-go", prefix: "ocg/", preferred: ["ocg/deepseek-v4.1-flash", "ocg/glm-5.3-flash", "ocg/gpt-6-luna"], extra: null },
   { key: "cloudflare-ai", prefix: "cf/", preferred: ["cf/@cf/meta/llama-3.3-70b-instruct-fp8-fast", "cf/@cf/meta/llama-3.1-8b-instruct-fp8-fast"], extra: null },
-  { key: "nvidia", prefix: "nvidia/", preferred: ["nvidia/z-ai/glm-5.3-flash", "nvidia/minimaxai/minimax-m3.1-flash", "nvidia/moonshotai/kimi-k3.1-pro"], extra: null },
+  { key: "nvidia", prefix: "nvidia/", preferred: ["nvidia/minimaxai/minimax-m3.1-flash", "nvidia/z-ai/glm-5.3-flash", "nvidia/moonshotai/kimi-k3.1-pro"], extra: null },
   { key: "openrouter", prefix: "openrouter/", preferred: ["openrouter/nvidia/nemotron-3.5-super-vl:free", "openrouter/recursive/flint-v1.0:free"], excludeRe: /:batch$/i, extra: null },
   { key: "nous", prefix: "nous/", preferred: ["nous/google/gemini-4-neon", "nous/anthropic/claude-sonnet-4.6", "nous/deepseek/deepseek-v4-pro"], extra: null },
   { key: "combo-fusion", exactList: ["9-fusion"], extra: null },
@@ -444,7 +448,11 @@ async function main() {
   }
 
   const results = [];
-  for (const t of targets) {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    const isAg = t.model.startsWith("ag/");
+    if (i > 0 && isAg) await sleep(1000);
     const start = Date.now();
     const checks = {};
     try {
@@ -452,6 +460,7 @@ async function main() {
     } catch (e) {
       checks.stream = { level: "FAIL", tag: "EXC", detail: e.message };
     }
+    if (isAg) await sleep(1000);
     try {
       checks.tools = await probeMultiTurnTools(opts, t.model);
     } catch (e) {
@@ -497,7 +506,7 @@ async function main() {
     console.log("-".repeat(122));
     for (const r of results) {
       console.log(
-        r.key.padEnd(16) +
+        r.key.slice(0, 15).padEnd(16) +
         r.model.slice(0, 38).padEnd(40) +
         r.status.padEnd(8) +
         fmtCell(r.checks.stream).padEnd(18) +
