@@ -4,7 +4,7 @@ import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
 
 // Chat-only models (no /messages, no /responses support on opencode-go)
-const CHAT_ONLY = ["glm-5.2", "kimi-k2.7-code"];
+const CHAT_ONLY = ["glm-5.3-flash", "kimi-k2.7-code"];
 // Models that also expose the Anthropic /messages endpoint
 const CLAUDE_CAPABLE = ["minimax-m3", "qwen3.7-plus"];
 // Models that also expose the OpenAI /responses endpoint
@@ -29,9 +29,9 @@ describe("OpenCode Go model catalog", () => {
     // registry edit. This test pins the seed contract, not the live list.
     const ids = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
     expect(ids).toEqual([
-      "glm-5.3-flash", "glm-5.3", "glm-5.2",
+      "glm-5.3-flash", "glm-5.3",
       "kimi-k3", "kimi-k2.7-code", "kimi-k3.1-pro",
-      "longcat-2.0",
+      "longcat-2.5",
       "deepseek-v4-pro", "deepseek-v4.1-flash",
       "mimo-v2.6-flash", "mimo-v2.6-pro",
       "hy4-preview", "hy4", "hy3", "step-5-preview",
@@ -42,8 +42,20 @@ describe("OpenCode Go model catalog", () => {
       "gpt-6-luna", "gpt-5.6-luna",
       "muse-spark-1.3-contributor", "muse-spark-1.2-contributor",
       "gemini-4-argon", "claude-haiku-5-5",
-      "longcat-2.5-free", "hy4-flash-free", "qwen4-max",
+      "hy4-flash-free", "qwen4-max",
     ]);
+  });
+
+  it("does NOT advertise ids the upstream deprecated (410 ModelDeprecated, live-verified 2026-11-27)", () => {
+    // Live probes through the gateway: longcat-2.5-free → "Use longcat-2.5
+    // instead"; glm-5.2 → "Use glm-5.3 instead"; longcat-2.0 → "Use
+    // longcat-2.5 instead". All three are absent from GET /zen/go/v1/models.
+    for (const retired of ["glm-5.2", "longcat-2.0", "longcat-2.5-free"]) {
+      expect(
+        (PROVIDER_MODELS["opencode-go"] || []).find((m) => m.id === retired),
+        `opencode-go must not advertise retired id ${retired}`
+      ).toBeUndefined();
+    }
   });
 
   it("declares a live modelsFetcher so new upstream models sync without edits", async () => {
@@ -127,13 +139,13 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
   });
 
   it("routes chat-only seed models via Chat Completions only (not /messages or /responses)", () => {
-    // Representative chat-only seed id (glm-5.2); all CHAT_ONLY ids share the
-    // same openai-only declaration.
-    expect(getModelSupportedFormats("opencode-go", "glm-5.2")).toEqual(["openai"]);
-    expect(pickTransport("opencode-go", "openai", "opencode-go", "glm-5.2")?.baseUrl).toBe(
+    // Representative chat-only seed id (glm-5.3-flash); all CHAT_ONLY ids share
+    // the same openai-only declaration.
+    expect(getModelSupportedFormats("opencode-go", "glm-5.3-flash")).toEqual(["openai"]);
+    expect(pickTransport("opencode-go", "openai", "opencode-go", "glm-5.3-flash")?.baseUrl).toBe(
       "https://opencode.ai/zen/go/v1/chat/completions",
     );
-    expect(pickTransport("opencode-go", "claude", "opencode-go", "glm-5.2")).toBeNull();
-    expect(pickTransport("opencode-go", "openai-responses", "opencode-go", "glm-5.2")).toBeNull();
+    expect(pickTransport("opencode-go", "claude", "opencode-go", "glm-5.3-flash")).toBeNull();
+    expect(pickTransport("opencode-go", "openai-responses", "opencode-go", "glm-5.3-flash")).toBeNull();
   });
 });

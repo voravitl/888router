@@ -73,6 +73,9 @@ const EXCLUDED_FREE_CANDIDATES = new Set([
   "opencode/pulse-alpha-free",
   "opencode/crouton-alpha-free",
   "opencode/minimax-m3.1-flash-free",
+  // Retired OpenCode Go free ID (410 ModelDeprecated, live 2026-11-27) that
+  // may persist in stale kv modelCapabilities rows
+  "opencode-go/longcat-2.5-free",
 ]);
 
 /**

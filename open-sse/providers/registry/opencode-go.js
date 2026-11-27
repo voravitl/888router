@@ -61,11 +61,14 @@ const opencode_goConfig = {
     // 400 ModelProtocolUnsupported.
     { id: "glm-5.3-flash", name: "GLM 5.3 Flash", supportedFormats: ["openai"] },
     { id: "glm-5.3", name: "GLM 5.3", supportedFormats: ["openai"] },
-    { id: "glm-5.2", name: "GLM 5.2", supportedFormats: ["openai"] },
     { id: "kimi-k3", name: "Kimi K3", supportedFormats: ["openai"] },
     { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", supportedFormats: ["openai"] },
     { id: "kimi-k3.1-pro", name: "Kimi K3.1 Pro", supportedFormats: ["openai"] },
-    { id: "longcat-2.0", name: "LongCat 2.0", supportedFormats: ["openai"] },
+    // Retired by 2026-11-27 (410 ModelDeprecated in live gateway probes; absent
+    // from GET /zen/go/v1/models): glm-5.2 (→ glm-5.3), longcat-2.0 and
+    // longcat-2.5-free (→ longcat-2.5). The replacement longcat-2.5 is seeded
+    // below so the offline fallback still routes the family.
+    { id: "longcat-2.5", name: "LongCat 2.5", supportedFormats: ["openai"] },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai"] },
     { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", supportedFormats: ["openai"] },
     { id: "mimo-v2.6-flash", name: "MiMo V2.6 Flash", supportedFormats: ["openai"] },
@@ -88,7 +91,6 @@ const opencode_goConfig = {
     { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", supportedFormats: ["openai-responses"] },
     { id: "gemini-4-argon", name: "Gemini 4 Argon", supportedFormats: ["openai"] },
     { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", supportedFormats: ["claude"] },
-    { id: "longcat-2.5-free", name: "LongCat 2.5 Free", supportedFormats: ["openai"] },
     { id: "hy4-flash-free", name: "Hy4 Flash Free", supportedFormats: ["openai"] },
     { id: "qwen4-max", name: "Qwen 4 Max", supportedFormats: ["openai"] },
   ],
