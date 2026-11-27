@@ -191,7 +191,7 @@ describe("Antigravity quota: Gemini 4 Neon", () => {
     _clearWeeklyCache();
   });
 
-  it("tracks gemini-4-neon-high, aliases bare gemini-4-neon, and pools under Gemini (all models) instead of Argon", async () => {
+  it("tracks gemini-4-neon-high, aliases bare gemini-4-neon, and pools both Neon and Argon under Gemini (all models)", async () => {
     proxyAwareFetch.mockImplementation(
       makeUsageFetchMock({
         "gemini-4-neon-high": {
@@ -221,13 +221,12 @@ describe("Antigravity quota: Gemini 4 Neon", () => {
       displayName: "Gemini 4 Neon",
     });
     expect(usage.quotas["Gemini (all models)"]).toMatchObject({
-      remainingPercentage: 65,
-      memberCount: 1,
-    });
-    expect(usage.quotas["Gemini 4 Argon (all models)"]).toMatchObject({
       remainingPercentage: 25,
-      memberCount: 1,
+      memberCount: 2,
+      family: "gemini",
+      familyKey: "gemini",
     });
+    expect(usage.quotas["Gemini 4 Argon (all models)"]).toBeUndefined();
   });
 
   it("preserves explicit bare gemini-4-neon entry and tracks all Neon tier variants in importantModels", async () => {
@@ -275,7 +274,7 @@ describe("Antigravity quota: Gemini 4 Neon", () => {
     });
   });
 
-  it("reconciles Gemini 4 Neon with gemini_weekly rather than gemini_argon_weekly", async () => {
+  it("reconciles both Gemini 4 Neon and Gemini 4 Argon with gemini_weekly and ignores legacy Argon weekly group", async () => {
     proxyAwareFetch.mockImplementation(
       makeUsageFetchMock(
         {
@@ -316,8 +315,10 @@ describe("Antigravity quota: Gemini 4 Neon", () => {
 
     expect(usage.quotas["gemini-4-neon-high"].remainingPercentage).toBe(0);
     expect(usage.quotas["gemini-4-neon"].remainingPercentage).toBe(0);
+    expect(usage.quotas["gemini-4-argon-high"].remainingPercentage).toBe(0);
     expect(usage.quotas["Gemini (all models)"].remainingPercentage).toBe(0);
-    expect(usage.quotas["gemini-4-argon-high"].remainingPercentage).toBe(80);
+    expect(usage.quotas.gemini_argon_weekly).toBeUndefined();
+    expect(usage.quotas["Gemini 4 Argon (all models)"]).toBeUndefined();
   });
 });
 

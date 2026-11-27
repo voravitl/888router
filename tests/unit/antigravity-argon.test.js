@@ -141,7 +141,7 @@ describe("Gemini 4 Argon Antigravity tier", () => {
 describe("Antigravity quota: Gemini 4 Argon (High)", () => {
   beforeEach(() => proxyAwareFetch.mockClear());
 
-  it("parses the argon quota bar independently from the Gemini family pool", async () => {
+  it("pools argon into the unified Gemini family pool instead of emitting a separate Argon rollup", async () => {
     const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
 
     const usage = await getAntigravityUsage("access-token", {});
@@ -152,13 +152,18 @@ describe("Antigravity quota: Gemini 4 Argon (High)", () => {
       remainingPercentage: 25,
       displayName: "Gemini 4 Argon (High)",
     });
-    // Argon has its own independent pool (gemini-argon-wtu-weekly) and does not
-    // poison the Gemini family pool. Gemini (all models) reflects the 3.8 Flash member.
-    expect(usage.quotas["Gemini (all models)"]).toMatchObject({ remainingPercentage: 80 });
+    // Argon shares the unified Gemini pool: min(0.25, 0.80) = 25% across 2 members.
+    expect(usage.quotas["Gemini (all models)"]).toMatchObject({
+      remainingPercentage: 25,
+      family: "gemini",
+      familyKey: "gemini",
+      memberCount: 2,
+    });
+    expect(usage.quotas["Gemini 4 Argon (all models)"]).toBeUndefined();
     expect(usage.quotas["Claude (all models)"]).toMatchObject({ remainingPercentage: 90 });
   });
 
-  it("queries daily-cloudcode-pa Host for Antigravity quota, preserves live Argon remaining quota, and populates gemini-4-hydrogen alias", async () => {
+  it("queries daily-cloudcode-pa Host for Antigravity quota, pools Argon into Gemini (all models) and gemini_weekly, and populates gemini-4-hydrogen alias", async () => {
     const { PROVIDERS } = await import("../../open-sse/config/providers.js");
     const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
     const { _clearWeeklyCache } = await import("../../open-sse/services/usage/antigravity-weekly.js");
@@ -200,19 +205,23 @@ describe("Antigravity quota: Gemini 4 Argon (High)", () => {
               models: {
                 "gemini-4-argon-high": {
                   displayName: "Gemini 4 Argon (High)",
-                  quotaInfo: { remainingFraction: 0.788, resetTime: "2026-11-21T01:04:23Z" },
+                  quotaInfo: { remainingFraction: 0.44700566, resetTime: "2026-11-27T04:18:07Z" },
                 },
                 "gemini-4-argon-medium": {
                   displayName: "Gemini 4 Argon (Medium)",
-                  quotaInfo: { remainingFraction: 0.788, resetTime: "2026-11-21T01:04:23Z" },
+                  quotaInfo: { remainingFraction: 0.44700566, resetTime: "2026-11-27T04:18:07Z" },
                 },
                 "gemini-4-argon-low": {
                   displayName: "Gemini 4 Argon (Low)",
-                  quotaInfo: { remainingFraction: 0.788, resetTime: "2026-11-21T01:04:23Z" },
+                  quotaInfo: { remainingFraction: 0.44700566, resetTime: "2026-11-27T04:18:07Z" },
                 },
                 "gemini-4-hydrogen-high": {
                   displayName: "Gemini 4 Hydrogen (High)",
-                  quotaInfo: { remainingFraction: 0.677, resetTime: "2026-11-14T06:07:50Z" },
+                  quotaInfo: { remainingFraction: 0.44700566, resetTime: "2026-11-27T04:18:07Z" },
+                },
+                "claude-sonnet-5-5-high": {
+                  displayName: "Claude Sonnet 5.5 (High)",
+                  quotaInfo: { remainingFraction: 1, resetTime: "2026-11-27T04:18:07Z" },
                 },
               },
             }),
@@ -226,14 +235,36 @@ describe("Antigravity quota: Gemini 4 Argon (High)", () => {
             json: async () => ({
               groups: [
                 {
-                  displayName: "Gemini 4 Argon",
+                  displayName: "Gemini Models",
                   buckets: [
                     {
-                      bucketId: "gemini-argon-wtu-weekly",
-                      displayName: "Gemini 4 Argon Weekly Limit",
-                      window: "weekly",
-                      remainingFraction: 0.788,
-                      resetTime: "2026-11-21T01:04:23Z",
+                      bucketId: "gemini-weekly",
+                      displayName: "Weekly Limit Remaining",
+                      remainingFraction: 0.14706177,
+                      resetTime: "2026-12-03T08:18:07Z",
+                    },
+                    {
+                      bucketId: "gemini-5h",
+                      displayName: "Five Hour Limit Remaining",
+                      remainingFraction: 0.44700566,
+                      resetTime: "2026-11-27T04:18:07Z",
+                    },
+                  ],
+                },
+                {
+                  displayName: "Claude and GPT models",
+                  buckets: [
+                    {
+                      bucketId: "3p-weekly",
+                      displayName: "Weekly Limit Remaining",
+                      remainingFraction: 0.9980344,
+                      resetTime: "2026-12-02T03:35:26Z",
+                    },
+                    {
+                      bucketId: "3p-5h",
+                      displayName: "Five Hour Limit Remaining",
+                      remainingFraction: 1,
+                      resetTime: "2026-11-27T04:18:07Z",
                     },
                   ],
                 },
@@ -253,13 +284,22 @@ describe("Antigravity quota: Gemini 4 Argon (High)", () => {
         "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
       ]);
 
-      expect(usage.quotas["Gemini 4 Argon (all models)"].remainingPercentage).toBeCloseTo(78.8, 1);
-      expect(usage.quotas.gemini_argon_weekly.remainingPercentage).toBeCloseTo(78.8, 1);
+      expect(usage.quotas["Gemini (all models)"]).toMatchObject({
+        family: "gemini",
+        familyKey: "gemini",
+        memberCount: 4,
+      });
+      expect(usage.quotas["Gemini (all models)"].remainingPercentage).toBeCloseTo(44.7, 1);
+      expect(usage.quotas["Gemini 4 Argon (all models)"]).toBeUndefined();
+      expect(usage.quotas.gemini_argon_weekly).toBeUndefined();
+      expect(usage.quotas.gemini_weekly.remainingPercentage).toBeCloseTo(14.7, 1);
+      expect(usage.quotas.gemini_weekly.isWeekly).toBe(true);
+      expect(usage.quotas.claude_gpt_weekly.remainingPercentage).toBeCloseTo(99.8, 1);
       expect(usage.quotas["gemini-4-hydrogen"]).toMatchObject({
         displayName: "Gemini 4 Hydrogen",
-        resetAt: "2026-11-14T06:07:50.000Z",
+        resetAt: "2026-11-27T04:18:07.000Z",
       });
-      expect(usage.quotas["gemini-4-hydrogen"].remainingPercentage).toBeCloseTo(67.7, 1);
+      expect(usage.quotas["gemini-4-hydrogen"].remainingPercentage).toBeCloseTo(44.7, 1);
     } finally {
       _clearWeeklyCache();
       proxyAwareFetch.mockImplementation(prevImpl);
