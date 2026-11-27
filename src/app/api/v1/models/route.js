@@ -8,7 +8,7 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { AUTO_COMBO_TEMPLATES } from "open-sse/services/autoCombo/builtinCatalog.js";
-import { resolveVirtualAutoCombo } from "open-sse/services/autoCombo/virtualFactory.js";
+import { resolveVirtualAutoCombo, filterAutoComboModelsByRuntime } from "open-sse/services/autoCombo/virtualFactory.js";
 import { getAllModelDynamicCapabilities } from "@/lib/db";
 import { registerDynamicCapabilitiesScoped } from "open-sse/providers/capabilities.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
@@ -371,21 +371,6 @@ export function collectActiveProviders(connections = []) {
   return active;
 }
 
-/** Narrow virtual-combo members to active providers when any active member exists. */
-export function filterActiveComboMembers(memberIds, activeProviders) {
-  if (!Array.isArray(memberIds) || memberIds.length === 0) return [];
-  if (!activeProviders || activeProviders.size === 0) return memberIds;
-  const filtered = memberIds.filter((ref) => {
-    if (typeof ref !== "string") return false;
-    const slash = ref.indexOf("/");
-    if (slash <= 0) return true;
-    const rawProvider = ref.slice(0, slash);
-    const canonical = ALIAS_TO_ID[rawProvider] || rawProvider;
-    return activeProviders.has(rawProvider) || activeProviders.has(canonical);
-  });
-  return filtered.length > 0 ? filtered : memberIds;
-}
-
 /** Attach LLM combo context/max fields only when catalog-resolved (no fabricated floor). */
 export function applyComboContextFields(entry, combo) {
   if (!entry || !combo) return entry;
@@ -727,12 +712,25 @@ export async function buildModelsList(kindFilter) {
   const shouldIncludeLlm = !kindFilter || kindFilter.includes("all") || kindFilter.includes("llm");
   if (shouldIncludeLlm) {
     const activeProviders = collectActiveProviders(connections);
+    let syncedModels = {};
+    if (connections.length > 0) {
+      try {
+        const dbMod = await import("@/lib/db");
+        if (typeof dbMod?.getSyncedModelsMap === "function") {
+          syncedModels = (await dbMod.getSyncedModelsMap()) || {};
+        }
+      } catch {}
+    }
     for (const tpl of AUTO_COMBO_TEMPLATES) {
       if (models.some((m) => m.id === tpl.name)) continue;
       const virtual = resolveVirtualAutoCombo(tpl.name);
       const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
       if (memberIds.length === 0) continue; // Skip ghost combos with no usable members
-      const effectiveMemberIds = filterActiveComboMembers(memberIds, activeProviders);
+      const effectiveMemberIds = filterAutoComboModelsByRuntime(memberIds, {
+        connections,
+        syncedModels,
+        activeProviders,
+      });
       const entry = {
         id: tpl.name,
         object: "model",

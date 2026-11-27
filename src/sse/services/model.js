@@ -1,5 +1,6 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore, resolveProviderAlias } from "open-sse/services/model.js";
 import { splitThinkingSuffix } from "open-sse/translator/concerns/thinkingUnified.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
@@ -114,16 +115,56 @@ export function applyThinkingSuffixToMembers(members, suffix) {
 
 export async function getComboModels(modelStr) {
   if (modelStr && modelStr.startsWith("auto/")) {
-    const { resolveVirtualAutoCombo, setDynamicCapabilitiesHydrator } = await import(
-      "open-sse/services/autoCombo/virtualFactory.js"
-    );
+    const {
+      resolveVirtualAutoCombo,
+      setDynamicCapabilitiesHydrator,
+      filterAutoComboModelsByRuntime,
+    } = await import("open-sse/services/autoCombo/virtualFactory.js");
     const { getScopedDynamicCapabilities } = await import(
       "open-sse/providers/capabilities.js"
     );
     setDynamicCapabilitiesHydrator(getScopedDynamicCapabilities);
     const virtual = resolveVirtualAutoCombo(modelStr);
     if (virtual && virtual.models && virtual.models.length > 0) {
-      return virtual.models;
+      let connections = [];
+      let syncedModels = {};
+      try {
+        const localDb = await import("@/lib/localDb");
+        if (typeof localDb?.getProviderConnections === "function") {
+          const rawConns = await localDb.getProviderConnections();
+          if (Array.isArray(rawConns)) {
+            connections = rawConns.filter((c) => c && c.isActive !== false);
+          }
+        }
+      } catch {}
+      try {
+        const dbMod = await import("@/lib/db");
+        if (typeof dbMod?.getSyncedModelsMap === "function") {
+          const rawSynced = await dbMod.getSyncedModelsMap();
+          if (rawSynced && typeof rawSynced === "object") syncedModels = rawSynced;
+        }
+      } catch {}
+
+      const activeProviders = new Set();
+      if (connections.length > 0) {
+        for (const conn of connections) {
+          if (!conn?.provider) continue;
+          activeProviders.add(conn.provider);
+          activeProviders.add(ALIAS_TO_ID[conn.provider] || conn.provider);
+        }
+        for (const [pid, def] of Object.entries(AI_PROVIDERS)) {
+          if (def?.noAuth && def?.hasFree) {
+            activeProviders.add(pid);
+            activeProviders.add(ALIAS_TO_ID[pid] || pid);
+          }
+        }
+      }
+
+      return filterAutoComboModelsByRuntime(virtual.models, {
+        connections,
+        syncedModels,
+        activeProviders,
+      });
     }
   }
 

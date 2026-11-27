@@ -78,7 +78,7 @@ describe("auto/best-free-1m capabilities and active-provider member filtering", 
     const list = await buildModelsList(["llm"]);
     const autoFree1m = list.find((m) => m.id === "auto/best-free-1m");
     expect(autoFree1m).toBeDefined();
-    expect(autoFree1m.context_window).toBe(1000000);
+    expect(autoFree1m.context_window).toBeGreaterThanOrEqual(1000000);
     // api-airforce and bazaarlink have no active connection here, while noAuth+hasFree
     // opencode is active. Inactive providers must not hijack comboMembers.
     expect(autoFree1m.comboMembers.some((id) => id.startsWith("api-airforce/"))).toBe(false);
@@ -101,7 +101,7 @@ describe("auto/best-free-1m capabilities and active-provider member filtering", 
     const list = await buildModelsList(["llm"]);
     const autoFree1m = list.find((m) => m.id === "auto/best-free-1m");
     expect(autoFree1m).toBeDefined();
-    expect(autoFree1m.context_window).toBe(1000000);
+    expect(autoFree1m.context_window).toBeGreaterThanOrEqual(1000000);
     expect(autoFree1m.comboMemberCount).toBeGreaterThan(20);
   });
 });

@@ -60,6 +60,19 @@ const EXCLUDED_FREE_CANDIDATES = new Set([
   "nara/muse-spark-1.3-contributor-free",
   "nara/qwen3.8-flash-free",
   "nara/ling-3.0-flash-fin-free",
+  // Retired OpenCode Zen free IDs that may persist in stale kv modelCapabilities rows
+  "opencode/x-preview-f-free",
+  "opencode/muse-spark-1.2-contributor-free",
+  "opencode/muse-spark-1.3-contributor-free",
+  "opencode/nemotron-3-ultra-free",
+  "opencode/longcat-2.5-preview-free",
+  "opencode/longcat-2.5-free",
+  "opencode/inkling-2-small-free",
+  "opencode/tidepool-alpha-free",
+  "opencode/glm-5.3-flash-free",
+  "opencode/pulse-alpha-free",
+  "opencode/crouton-alpha-free",
+  "opencode/minimax-m3.1-flash-free",
 ]);
 
 /**
@@ -282,6 +295,30 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
   const dynMap = dynSnapshot;
   const seen = new Set(candidates.map((c) => c.modelStr));
   if (dynMap && dynMap.size > 0) {
+    const providerStaticMeta = new Map();
+    const getStaticMeta = (pid) => {
+      let meta = providerStaticMeta.get(pid);
+      if (meta) return meta;
+      const staticModels = PROVIDERS[pid]?.models || [];
+      const staticBareNames = new Set();
+      let hasSlash = false;
+      let allSlashed = staticModels.length > 0;
+      for (const sm of staticModels) {
+        const sid = typeof sm === "string" ? sm : sm?.id;
+        if (!sid) continue;
+        if (sid.includes("/")) {
+          hasSlash = true;
+          staticBareNames.add(sid.split("/").pop());
+        } else {
+          allSlashed = false;
+          staticBareNames.add(sid);
+        }
+      }
+      meta = { staticBareNames, usesVendorPrefix: hasSlash && allSlashed };
+      providerStaticMeta.set(pid, meta);
+      return meta;
+    };
+
     for (const [scopedKey, dynCaps] of dynMap.entries()) {
       const colon = scopedKey.indexOf(":");
       if (colon <= 0) continue;
@@ -291,6 +328,10 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
       if (!PROVIDERS[providerId]) continue;
       // Skip models already covered by the static loop.
       if (seen.has(`${providerId}/${modelId}`)) continue;
+      // Guard against vendor-stripped capabilityKey shadows (e.g. openrouter:nemotron-3.5-lightning:free
+      // when static catalog uses nvidia/nemotron-3.5-lightning:free, or nousresearch:longcat-2.0:free).
+      const meta = getStaticMeta(providerId);
+      if (!modelId.includes("/") && (meta.usesVendorPrefix || meta.staticBareNames.has(modelId))) continue;
 
       const isFree = isFreeCandidate(providerId, modelId);
       if (freeOnly && !isFree) continue;
@@ -397,4 +438,64 @@ export function resolveVirtualAutoCombo(modelStr, options = {}) {
     strategy,
     models: candidates.map((c) => c.modelStr),
   };
+}
+
+/**
+ * Filter virtual auto-combo candidate IDs to active providers and drop
+ * dynamic-only models that are marked stale in syncedModels on active connections.
+ */
+export function filterAutoComboModelsByRuntime(
+  memberIds,
+  { connections = [], syncedModels = {}, activeProviders = null } = {}
+) {
+  if (!Array.isArray(memberIds) || memberIds.length === 0) return [];
+  const activeConns = Array.isArray(connections)
+    ? connections.filter((c) => c && c.isActive !== false && c.provider)
+    : [];
+
+  let filtered = memberIds;
+
+  if (activeProviders && activeProviders.size > 0) {
+    const byProvider = filtered.filter((ref) => {
+      if (typeof ref !== "string") return false;
+      const slash = ref.indexOf("/");
+      if (slash <= 0) return true;
+      return activeProviders.has(ref.slice(0, slash));
+    });
+    if (byProvider.length > 0) filtered = byProvider;
+  }
+
+  if (syncedModels && typeof syncedModels === "object" && Object.keys(syncedModels).length > 0) {
+    const activeConnIdsByProvider = new Map();
+    for (const c of activeConns) {
+      if (!activeConnIdsByProvider.has(c.provider)) activeConnIdsByProvider.set(c.provider, []);
+      activeConnIdsByProvider.get(c.provider).push(c.id);
+    }
+    const withoutStale = filtered.filter((ref) => {
+      const slash = typeof ref === "string" ? ref.indexOf("/") : -1;
+      if (slash <= 0) return true;
+      const providerId = ref.slice(0, slash);
+      const modelId = ref.slice(slash + 1);
+      const staticModels = PROVIDERS[providerId]?.models;
+      if (
+        Array.isArray(staticModels) &&
+        staticModels.some((m) => (typeof m === "string" ? m : m?.id) === modelId)
+      ) {
+        return true;
+      }
+      const connIds = activeConnIdsByProvider.get(providerId) || [];
+      if (connIds.length === 0) return true;
+      let sawStale = false;
+      for (const connId of connIds) {
+        const entry = syncedModels[`${connId}:${modelId}`];
+        if (!entry) continue;
+        if (entry.status === "active") return true;
+        if (entry.status === "stale") sawStale = true;
+      }
+      return !sawStale;
+    });
+    if (withoutStale.length > 0) filtered = withoutStale;
+  }
+
+  return filtered;
 }
