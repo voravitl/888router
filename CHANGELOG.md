@@ -1,3 +1,12 @@
+# v0.15.275 (2026-11-27)
+
+## `auto/best-free-1m` Split-Provider Capability Parity & Active-Provider Filtering
+- **`auto` Provider Capabilities (`open-sse/providers/capabilities.js`, `tests/unit/auto-best-free-1m-caps.test.js`)**:
+  - Added `"auto": { "best-free-1m": ..., "free-1m": ... }` to `PROVIDER_CAPABILITIES` so split-provider lookups (`getCapabilitiesForModel("auto", "best-free-1m")` and `resolveKnownContextWindow("auto", "best-free-1m")`) return the full `1,000,000` context window and `128,000` max output instead of falling through to `DEFAULT_CAPABILITIES` (`200k` / `64k`).
+- **Active-Provider Virtual Combo Member Filtering (`src/app/api/v1/models/route.js`, `src/app/api/v1/models/info/route.js`)**:
+  - Added `collectActiveProviders` and `filterActiveComboMembers` so `/v1/models` and `/v1/models/info` narrow `auto/*` `comboMembers`, `comboMemberCount`, and `applyComboContextFields` (`context_window`, `max_tokens`, `capabilities.maxOutput`) to active provider connections when any active member exists (falling back to full catalog members when no active connections are configured).
+  - Updated `applyComboContextFields` to also propagate resolved `maxOutput` into `entry.capabilities.maxOutput`.
+
 # v0.15.274 (2026-11-27)
 
 ## Antigravity Pooled Gemini 4 Argon Quota Consolidation

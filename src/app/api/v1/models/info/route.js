@@ -2,9 +2,9 @@ import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
-import { getComboByName } from "@/lib/localDb";
+import { getComboByName, getProviderConnections } from "@/lib/localDb";
 import { resolveVirtualAutoCombo } from "open-sse/services/autoCombo/virtualFactory.js";
-import { applyComboContextFields } from "../route.js";
+import { applyComboContextFields, collectActiveProviders, filterActiveComboMembers } from "../route.js";
 import {
   getAllModelDynamicCapabilities,
   getModelDynamicCapabilities,
@@ -134,6 +134,11 @@ async function lookup(fullId, requestedKind) {
       if (virtual) {
         const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
         if (!memberIds.length) return null;
+        let connections = [];
+        try {
+          connections = (await getProviderConnections()) || [];
+        } catch {}
+        const effectiveMemberIds = filterActiveComboMembers(memberIds, collectActiveProviders(connections));
         const out = {
           id: fullId,
           name: fullId,
@@ -141,10 +146,10 @@ async function lookup(fullId, requestedKind) {
           owned_by: "auto-combo",
           isCombo: true,
           endpoint: KIND_ENDPOINT["llm"] || "/v1/chat/completions",
-          comboMembers: memberIds.slice(0, 8),
-          comboMemberCount: memberIds.length,
+          comboMembers: effectiveMemberIds.slice(0, 8),
+          comboMemberCount: effectiveMemberIds.length,
         };
-        applyComboContextFields(out, { models: memberIds });
+        applyComboContextFields(out, { models: effectiveMemberIds });
         return out;
       }
     } catch (e) {

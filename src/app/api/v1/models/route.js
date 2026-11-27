@@ -352,6 +352,40 @@ export function resolveComboMaxOutput(combo) {
   return min === Infinity ? undefined : min;
 }
 
+/** Collect active canonical provider IDs and aliases (including noAuth+hasFree when DB has connections). */
+export function collectActiveProviders(connections = []) {
+  const active = new Set();
+  for (const conn of connections) {
+    if (!conn || conn.isActive === false || !conn.provider) continue;
+    active.add(conn.provider);
+    active.add(ALIAS_TO_ID[conn.provider] || conn.provider);
+  }
+  if (connections.length > 0) {
+    for (const [providerId, providerDef] of Object.entries(AI_PROVIDERS)) {
+      if (providerDef?.noAuth && providerDef?.hasFree) {
+        active.add(providerId);
+        active.add(ALIAS_TO_ID[providerId] || providerId);
+      }
+    }
+  }
+  return active;
+}
+
+/** Narrow virtual-combo members to active providers when any active member exists. */
+export function filterActiveComboMembers(memberIds, activeProviders) {
+  if (!Array.isArray(memberIds) || memberIds.length === 0) return [];
+  if (!activeProviders || activeProviders.size === 0) return memberIds;
+  const filtered = memberIds.filter((ref) => {
+    if (typeof ref !== "string") return false;
+    const slash = ref.indexOf("/");
+    if (slash <= 0) return true;
+    const rawProvider = ref.slice(0, slash);
+    const canonical = ALIAS_TO_ID[rawProvider] || rawProvider;
+    return activeProviders.has(rawProvider) || activeProviders.has(canonical);
+  });
+  return filtered.length > 0 ? filtered : memberIds;
+}
+
 /** Attach LLM combo context/max fields only when catalog-resolved (no fabricated floor). */
 export function applyComboContextFields(entry, combo) {
   if (!entry || !combo) return entry;
@@ -379,6 +413,7 @@ export function applyComboContextFields(entry, combo) {
   entry.capabilities = {
     ...DEFAULT_CAPABILITIES,
     ...(comboContextWindow ? { contextWindow: comboContextWindow } : {}),
+    ...(maxOut ? { maxOutput: maxOut } : {}),
     ...existing,
     tools: (combo?.kind ?? LLM_KIND) === LLM_KIND,
   };
@@ -691,11 +726,13 @@ export async function buildModelsList(kindFilter) {
   // the OpenAI /v1/models side. Review #320: never lose virtual combos to early return.
   const shouldIncludeLlm = !kindFilter || kindFilter.includes("all") || kindFilter.includes("llm");
   if (shouldIncludeLlm) {
+    const activeProviders = collectActiveProviders(connections);
     for (const tpl of AUTO_COMBO_TEMPLATES) {
       if (models.some((m) => m.id === tpl.name)) continue;
       const virtual = resolveVirtualAutoCombo(tpl.name);
       const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
       if (memberIds.length === 0) continue; // Skip ghost combos with no usable members
+      const effectiveMemberIds = filterActiveComboMembers(memberIds, activeProviders);
       const entry = {
         id: tpl.name,
         object: "model",
@@ -704,10 +741,10 @@ export async function buildModelsList(kindFilter) {
         comboCategory: tpl.categories?.[0] || null,
         comboTier: tpl.tiers?.[0] || null,
         comboStrategy: tpl.strategy || null,
-        comboMembers: memberIds.slice(0, 8),
-        comboMemberCount: memberIds.length,
+        comboMembers: effectiveMemberIds.slice(0, 8),
+        comboMemberCount: effectiveMemberIds.length,
       };
-      applyComboContextFields(entry, { models: memberIds });
+      applyComboContextFields(entry, { models: effectiveMemberIds });
       models.push(entry);
     }
   }
