@@ -413,6 +413,10 @@ export const MODEL_CAPABILITIES = {
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  "auto": {
+    "best-free-1m": { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 128000 },
+    "free-1m":      { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 128000 },
+  },
   // NOTE: the probed-SKU entries below inline `{ thinkingCanDisable: false }`
   // directly (a shared const cannot be referenced from inside this literal —
   // const TDZ throws at import). Do not "clean up" by extracting one.
