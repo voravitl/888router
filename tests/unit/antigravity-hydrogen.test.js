@@ -113,8 +113,11 @@ describe("Antigravity quota: Gemini 4 Hydrogen", () => {
       displayName: "Gemini 4 Hydrogen",
     });
     expect(usage.quotas["Gemini (all models)"]).toMatchObject({
-      remainingPercentage: 65,
-      memberCount: 1,
+      remainingPercentage: 25,
+      memberCount: 2,
+      family: "gemini",
+      familyKey: "gemini",
     });
+    expect(usage.quotas["Gemini 4 Argon (all models)"]).toBeUndefined();
   });
 });

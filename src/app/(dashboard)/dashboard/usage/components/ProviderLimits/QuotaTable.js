@@ -9,8 +9,7 @@ import { formatResetTimeDisplay, getQuotaTone } from "./quotaVisuals";
 const PAGE_SIZE = 10;
 const FAMILY_ORDER = {
   gemini: 0,
-  gemini_argon: 1,
-  claude: 2,
+  claude: 1,
 };
 
 function sortQuotas(quotas, sortMode) {

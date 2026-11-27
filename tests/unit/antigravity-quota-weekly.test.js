@@ -227,7 +227,7 @@ describe("Antigravity weekly quota overlay", () => {
     expect(isFamilyRollup(weeklyItem)).toBe(true);
   });
 
-  it("does not overwrite Gemini weekly quota or poison Gemini models when Gemini 4 Argon weekly limit is exhausted", async () => {
+  it("pools Gemini 4 Argon into Gemini weekly quota and ignores legacy Gemini 4 Argon weekly group", async () => {
     mockUsage({
       models: {
         "gemini-3.8-flash-high": {
@@ -273,33 +273,92 @@ describe("Antigravity weekly quota overlay", () => {
     const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
     const usage = await getAntigravityUsage("access-token", {});
 
-    // Gemini weekly quota must NOT be overwritten by Argon's 0%
+    // Gemini weekly quota must NOT be overwritten by a legacy Argon group's 0%
     expect(usage.quotas.gemini_weekly).toMatchObject({
       remainingPercentage: 47,
       displayName: "Gemini (Weekly)",
       resetAt: "2026-09-20T00:00:00.000Z",
     });
 
-    // Argon has its own weekly quota row
-    expect(usage.quotas.gemini_argon_weekly).toMatchObject({
-      remainingPercentage: 0,
-      displayName: "Gemini 4 Argon (Weekly)",
-      resetAt: "2026-09-22T00:00:00.000Z",
-    });
+    // Legacy Argon weekly/family rows must not be emitted
+    expect(usage.quotas.gemini_argon_weekly).toBeUndefined();
+    expect(usage.quotas["Gemini 4 Argon (all models)"]).toBeUndefined();
 
-    // Gemini 3.8 Flash must remain available (60%), NOT zeroed out
+    // Gemini 3.8 Flash remains available per-model (60%)
     expect(usage.quotas["gemini-3.8-flash-high"]).toMatchObject({
       remainingPercentage: 60,
     });
 
-    // Gemini (all models) family rollup must reflect Gemini pool (60%), NOT poisoned by Argon
+    // Gemini (all models) family rollup reflects min across pooled Gemini models (min(60%, 0%) = 0%)
     expect(usage.quotas["Gemini (all models)"]).toMatchObject({
-      remainingPercentage: 60,
+      remainingPercentage: 0,
+      memberCount: 2,
     });
 
-    // Argon model is zeroed out per-model
+    // Argon model retains its 0% reading
     expect(usage.quotas["gemini-4-argon-high"]).toMatchObject({
       remainingPercentage: 0,
+    });
+  });
+
+  it("zeroes Gemini 4 Argon alongside all other Gemini models when gemini_weekly is exhausted", async () => {
+    mockUsage({
+      models: {
+        "gemini-3.8-flash-high": {
+          quotaInfo: { remainingFraction: 0.6, resetTime: "2026-09-13T12:00:00Z" },
+        },
+        "gemini-4-argon-high": {
+          quotaInfo: { remainingFraction: 0.6, resetTime: "2026-09-14T12:00:00Z" },
+        },
+      },
+      weekly: weeklySummary(0, "2026-09-20T00:00:00Z", 0.5, "2026-09-21T00:00:00Z"),
+    });
+
+    const { getAntigravityUsage } = await import("../../open-sse/services/usage/google.js");
+    const usage = await getAntigravityUsage("access-token", {});
+
+    expect(usage.quotas["Gemini (all models)"].remainingPercentage).toBe(0);
+    expect(usage.quotas["gemini-3.8-flash-high"].remainingPercentage).toBe(0);
+    expect(usage.quotas["gemini-4-argon-high"].remainingPercentage).toBe(0);
+    expect(usage.quotas["gemini-4-argon-high"].resetAt).toBe("2026-09-20T00:00:00.000Z");
+  });
+
+  it("parseWeeklyQuotaSummary handles null/missing groups, empty/disabled/5h buckets, and ignores legacy Argon group", async () => {
+    const { parseWeeklyQuotaSummary } = await import("../../open-sse/services/usage/antigravity-weekly.js");
+
+    expect(parseWeeklyQuotaSummary(null)).toEqual({});
+    expect(parseWeeklyQuotaSummary({})).toEqual({});
+    expect(parseWeeklyQuotaSummary({ groups: [{ displayName: "Gemini Models", buckets: [] }] })).toEqual({});
+    expect(parseWeeklyQuotaSummary({
+      groups: [
+        {
+          displayName: "Gemini Models",
+          buckets: [
+            { bucketId: "gemini-5h", displayName: "Five Hour Limit Remaining", remainingFraction: 0.44, resetTime: "2026-11-27T04:18:07Z" },
+            { bucketId: "gemini-weekly-disabled", displayName: "Weekly Limit", disabled: true, remainingFraction: 0.1, resetTime: "2026-12-03T08:18:07Z" },
+            { bucketId: "gemini-weekly", displayName: "Weekly Limit Remaining", remainingFraction: 0.25, resetTime: "2026-12-03T08:18:07Z" },
+          ],
+        },
+        {
+          displayName: "Gemini 4 Argon",
+          buckets: [
+            { bucketId: "gemini-argon-wtu-weekly", displayName: "Gemini 4 Argon Weekly Limit", remainingFraction: 0, resetTime: "2026-12-03T08:18:07Z" },
+          ],
+        },
+      ],
+    })).toEqual({
+      gemini_weekly: {
+        used: 750,
+        total: 1000,
+        resetAt: "2026-12-03T08:18:07.000Z",
+        remainingPercentage: 25,
+        unlimited: false,
+        displayName: "Gemini (Weekly)",
+        family: "gemini",
+        familyKey: "gemini",
+        memberCount: 1,
+        isWeekly: true,
+      },
     });
   });
 });

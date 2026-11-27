@@ -360,7 +360,7 @@ export function getRemainingPercentage(quota) {
 
 /**
  * Strict family-rollup discriminator for antigravity rollup rows.
- * Only backend-emitted rollups (`family` in {gemini, gemini_argon, claude} with a matching
+ * Only backend-emitted rollups (`family` in {gemini, claude} with a matching
  * `familyKey` and positive integer `memberCount`) pin above pagination —
  * a bare `typeof family === "string"` check would also pin `""` or any
  * malformed provider payload and bypass the pagination bound (#403).
@@ -368,8 +368,7 @@ export function getRemainingPercentage(quota) {
 export function isFamilyRollup(quota) {
   return (
     (quota?.family === "gemini" ||
-      quota?.family === "claude" ||
-      quota?.family === "gemini_argon") &&
+      quota?.family === "claude") &&
     quota?.familyKey === quota?.family &&
     Number.isInteger(quota?.memberCount) &&
     quota.memberCount > 0

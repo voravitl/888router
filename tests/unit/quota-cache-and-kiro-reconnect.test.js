@@ -125,19 +125,21 @@ describe("Quota cache hydration, Kiro reconnect CTA helper, and /api/models dedu
     expect(p2.contextByFullModel["km/kimi-k2"]).toBe(128000);
   });
 
-  it("isFamilyRollup accepts gemini_argon and rejects malformed gemini_argon rollups", async () => {
+  it("isFamilyRollup accepts gemini/claude and rejects gemini_argon and malformed rollups", async () => {
     const { isFamilyRollup } = await import(
       "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js"
     );
 
-    expect(isFamilyRollup({ family: "gemini_argon", familyKey: "gemini_argon", memberCount: 2 })).toBe(true);
-    expect(isFamilyRollup({ family: "gemini_argon", familyKey: "gemini_argon", memberCount: 1, isWeekly: true })).toBe(true);
-    expect(isFamilyRollup({ family: "gemini_argon", familyKey: "gemini", memberCount: 2 })).toBe(false);
-    expect(isFamilyRollup({ family: "gemini_argon", familyKey: "gemini_argon", memberCount: 0 })).toBe(false);
-    expect(isFamilyRollup({ family: "gemini_argon", familyKey: "gemini_argon" })).toBe(false);
+    expect(isFamilyRollup({ family: "gemini", familyKey: "gemini", memberCount: 2 })).toBe(true);
+    expect(isFamilyRollup({ family: "claude", familyKey: "claude", memberCount: 1, isWeekly: true })).toBe(true);
+    expect(isFamilyRollup({ family: "gemini_argon", familyKey: "gemini_argon", memberCount: 2 })).toBe(false);
+    expect(isFamilyRollup({ family: "gemini_argon", familyKey: "gemini_argon", memberCount: 1, isWeekly: true })).toBe(false);
+    expect(isFamilyRollup({ family: "gemini", familyKey: "claude", memberCount: 2 })).toBe(false);
+    expect(isFamilyRollup({ family: "gemini", familyKey: "gemini", memberCount: 0 })).toBe(false);
+    expect(isFamilyRollup({ family: "gemini", familyKey: "gemini" })).toBe(false);
   });
 
-  it("parseQuotaData('antigravity') preserves isWeekly only on weekly rows and forwards Argon rollup metadata", async () => {
+  it("parseQuotaData('antigravity') preserves isWeekly only on weekly rows and does not pin legacy gemini_argon rows", async () => {
     const { isFamilyRollup, parseQuotaData } = await import(
       "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js"
     );
@@ -151,6 +153,16 @@ describe("Quota cache hydration, Kiro reconnect CTA helper, and /api/models dedu
           remainingPercentage: 25,
           displayName: "Gemini 4 Argon (High)",
         },
+        "Gemini (all models)": {
+          used: 750,
+          total: 1000,
+          resetAt: "2026-11-14T12:00:00.000Z",
+          remainingPercentage: 25,
+          displayName: "Gemini (all models)",
+          family: "gemini",
+          familyKey: "gemini",
+          memberCount: 2,
+        },
         "Gemini 4 Argon (all models)": {
           used: 750,
           total: 1000,
@@ -160,17 +172,6 @@ describe("Quota cache hydration, Kiro reconnect CTA helper, and /api/models dedu
           family: "gemini_argon",
           familyKey: "gemini_argon",
           memberCount: 2,
-        },
-        gemini_argon_weekly: {
-          used: 400,
-          total: 1000,
-          resetAt: "2026-11-20T00:00:00.000Z",
-          remainingPercentage: 60,
-          displayName: "Gemini 4 Argon (Weekly)",
-          family: "gemini_argon",
-          familyKey: "gemini_argon",
-          memberCount: 1,
-          isWeekly: true,
         },
         gemini_weekly: {
           used: 200,
@@ -188,27 +189,25 @@ describe("Quota cache hydration, Kiro reconnect CTA helper, and /api/models dedu
 
     const byName = Object.fromEntries(parsed.map((row) => [row.name, row]));
 
-    expect(byName["Gemini 4 Argon (all models)"]).toMatchObject({
-      family: "gemini_argon",
-      familyKey: "gemini_argon",
+    expect(byName["Gemini (all models)"]).toMatchObject({
+      family: "gemini",
+      familyKey: "gemini",
       memberCount: 2,
-      displayName: "Gemini 4 Argon (all models)",
+      displayName: "Gemini (all models)",
     });
-    expect(byName["Gemini 4 Argon (all models)"].isWeekly).toBeUndefined();
-    expect(isFamilyRollup(byName["Gemini 4 Argon (all models)"])).toBe(true);
-
-    expect(byName["Gemini 4 Argon (Weekly)"].isWeekly).toBe(true);
-    expect(isFamilyRollup(byName["Gemini 4 Argon (Weekly)"])).toBe(true);
+    expect(byName["Gemini (all models)"].isWeekly).toBeUndefined();
+    expect(isFamilyRollup(byName["Gemini (all models)"])).toBe(true);
 
     expect(byName["Gemini (Weekly)"].isWeekly).toBe(true);
     expect(isFamilyRollup(byName["Gemini (Weekly)"])).toBe(true);
 
+    expect(isFamilyRollup(byName["Gemini 4 Argon (all models)"])).toBe(false);
     expect(byName["Gemini 4 Argon (High)"].isWeekly).toBeUndefined();
     expect(isFamilyRollup(byName["Gemini 4 Argon (High)"])).toBe(false);
   });
 
-  it("google.js emits Gemini 4 Argon (all models) rollup and zeroes it when weekly Argon quota is exhausted", async () => {
-    let weeklyArgonRemaining = 0.6;
+  it("google.js pools Gemini 4 Argon into Gemini (all models) and zeroes all pooled Gemini models when gemini_weekly is exhausted", async () => {
+    let weeklyGeminiRemaining = 0.75;
     const proxyAwareFetch = vi.fn(async (url) => {
       if (url.includes(":loadCodeAssist")) {
         return {
@@ -258,17 +257,8 @@ describe("Quota cache hydration, Kiro reconnect CTA helper, and /api/models dedu
                 buckets: [{
                   bucketId: "gemini-weekly",
                   displayName: "Weekly Limit",
-                  remainingFraction: 0.75,
+                  remainingFraction: weeklyGeminiRemaining,
                   resetTime: "2026-11-20T00:00:00Z",
-                }],
-              },
-              {
-                displayName: "Gemini 4 Argon",
-                buckets: [{
-                  bucketId: "gemini-argon-wtu-weekly",
-                  displayName: "Gemini 4 Argon Weekly Limit",
-                  remainingFraction: weeklyArgonRemaining,
-                  resetTime: "2026-11-21T00:00:00Z",
                 }],
               },
               {
@@ -300,20 +290,17 @@ describe("Quota cache hydration, Kiro reconnect CTA helper, and /api/models dedu
     _clearWeeklyCache();
     const healthyUsage = await getAntigravityUsage("token-healthy", {});
 
-    expect(healthyUsage.quotas["Gemini 4 Argon (all models)"]).toMatchObject({
+    expect(healthyUsage.quotas["Gemini 4 Argon (all models)"]).toBeUndefined();
+    expect(healthyUsage.quotas.gemini_argon_weekly).toBeUndefined();
+    expect(healthyUsage.quotas["Gemini (all models)"]).toMatchObject({
       used: 700,
       total: 1000,
       remainingPercentage: 30,
-      displayName: "Gemini 4 Argon (all models)",
-      family: "gemini_argon",
-      familyKey: "gemini_argon",
-      memberCount: 2,
-      resetAt: "2026-11-14T11:00:00.000Z",
-    });
-    expect(healthyUsage.quotas["Gemini (all models)"]).toMatchObject({
-      remainingPercentage: 85,
+      displayName: "Gemini (all models)",
       family: "gemini",
-      memberCount: 1,
+      familyKey: "gemini",
+      memberCount: 3,
+      resetAt: "2026-11-14T11:00:00.000Z",
     });
 
     const parsedHealthy = parseQuotaData("antigravity", healthyUsage);
@@ -322,28 +309,29 @@ describe("Quota cache hydration, Kiro reconnect CTA helper, and /api/models dedu
       expect.arrayContaining([
         "Gemini (all models)",
         "Gemini (Weekly)",
-        "Gemini 4 Argon (all models)",
-        "Gemini 4 Argon (Weekly)",
         "Claude (all models)",
         "Claude & GPT (Weekly)",
       ]),
     );
-    expect(parsedHealthy.find((r) => r.name === "Gemini 4 Argon (Weekly)")?.isWeekly).toBe(true);
+    expect(rollupNames).not.toContain("Gemini 4 Argon (all models)");
+    expect(rollupNames).not.toContain("Gemini 4 Argon (Weekly)");
+    expect(parsedHealthy.find((r) => r.name === "Gemini (Weekly)")?.isWeekly).toBe(true);
 
-    // Now test exhausted weekly Argon quota zeroes out the Argon family rollup too
-    weeklyArgonRemaining = 0;
+    // Now test exhausted weekly Gemini quota zeroes out the Gemini family rollup + Argon models
+    weeklyGeminiRemaining = 0;
     _clearWeeklyCache();
     const exhaustedUsage = await getAntigravityUsage("token-exhausted", {});
 
-    expect(exhaustedUsage.quotas["Gemini 4 Argon (all models)"]).toMatchObject({
+    expect(exhaustedUsage.quotas["Gemini (all models)"]).toMatchObject({
       used: 1000,
       total: 1000,
       remainingPercentage: 0,
-      resetAt: "2026-11-21T00:00:00.000Z",
+      resetAt: "2026-11-20T00:00:00.000Z",
     });
+    expect(exhaustedUsage.quotas["gemini-3.8-flash-high"].remainingPercentage).toBe(0);
     expect(exhaustedUsage.quotas["gemini-4-argon-high"].remainingPercentage).toBe(0);
     expect(exhaustedUsage.quotas["gemini-4-argon-low"].remainingPercentage).toBe(0);
-    expect(exhaustedUsage.quotas["Gemini (all models)"].remainingPercentage).toBe(85);
+    expect(exhaustedUsage.quotas["Claude (all models)"].remainingPercentage).toBe(90);
 
     vi.doUnmock("../../open-sse/utils/proxyFetch.js");
   });

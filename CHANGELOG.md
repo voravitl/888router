@@ -1,3 +1,14 @@
+# v0.15.274 (2026-11-27)
+
+## Antigravity Pooled Gemini 4 Argon Quota Consolidation
+- **Unified Gemini Pool & Weekly Reconciliation (`open-sse/services/usage/google.js`, `open-sse/services/usage/antigravity-weekly.js`, `src/app/api/usage/[connectionId]/route.js`)**:
+  - Removed the separate `gemini_argon` family rollup (`"Gemini 4 Argon (all models)"`) and `gemini_argon_weekly` matcher so `gemini-4-argon-{low,medium,high}` now pool directly into `"Gemini (all models)"` and reconcile against `gemini_weekly`, matching upstream Antigravity's unified `"Gemini Models"` quota group.
+  - Kept the `(?!.*argon)` negative lookahead on `gemini_weekly` in `GROUP_MATCHERS` so any legacy `"Gemini 4 Argon"` weekly group in stale payloads cannot overwrite `gemini_weekly`.
+  - Updated `GET /api/usage/[connectionId]` fallback family candidates to `["Gemini (all models)", "Claude (all models)"]`.
+- **ProviderLimits Rollup UI & Tests (`src/app/(dashboard)/dashboard/usage/components/ProviderLimits/QuotaTable.js`, `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js`, `tests/unit/antigravity-argon.test.js`, `tests/unit/antigravity-hydrogen.test.js`, `tests/unit/antigravity-neon.test.js`, `tests/unit/antigravity-quota-weekly.test.js`, `tests/unit/quota-cache-and-kiro-reconnect.test.js`, `tests/translator/__snapshots__/golden-url-header.test.js.snap`)**:
+  - Removed `gemini_argon` from `FAMILY_ORDER` in `QuotaTable.js` and `isFamilyRollup` in `utils.js` (keeping primary pinned rollups strictly to `gemini` and `claude`).
+  - Updated Antigravity Argon, Neon, weekly summary, and quota-cache unit tests to cover unified Gemini pooling, `gemini_weekly` exhaustion propagation to Argon models, `parseWeeklyQuotaSummary` edge cases, and `isFamilyRollup` / `parseQuotaData` behavior, and refreshed golden header snapshots for `0.15.274`.
+
 # v0.15.273 (2026-11-24)
 
 ## Antigravity Anti-Ban Hardening, `gemini-4-carbon` Parity & Live E2E Matrix Polish

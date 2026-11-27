@@ -234,14 +234,15 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'gemini-3.1-flash-image',
       ];
 
-      // Family rollup: Gemini versions share one pooled quota server-side, so
-      // per-version bars all move together and confuse. Aggregate per family
-      // (Gemini / Gemini 4 Argon / Claude) using the MINIMUM remaining fraction —
-      // the tightest pool is what the user can actually still spend.
+      // Family rollup: Gemini versions (including Gemini 4 Argon) share one
+      // pooled quota server-side, so per-version bars all move together and
+      // confuse. Aggregate per family (Gemini / Claude) using the MINIMUM
+      // remaining fraction — the tightest pool is what the user can actually
+      // still spend.
       // Per-model rows are kept under `models` for drill-down; the UI renders
       // the family rows as the primary bars.
-      const familyFractions = { gemini: [], gemini_argon: [], claude: [] };
-      const familyResets = { gemini: [], gemini_argon: [], claude: [] };
+      const familyFractions = { gemini: [], claude: [] };
+      const familyResets = { gemini: [], claude: [] };
 
       for (const [modelKey, info] of Object.entries(data.models)) {
         // Skip models without quota info
@@ -289,11 +290,9 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
             ? null
             : lowerKey.startsWith("claude")
               ? "claude"
-              : lowerKey.includes("argon")
-                ? "gemini_argon"
-                : lowerKey.startsWith("gemini") || lowerKey.startsWith("gemini-pro-agent")
-                  ? "gemini"
-                  : null;
+              : lowerKey.startsWith("gemini") || lowerKey.startsWith("gemini-pro-agent")
+                ? "gemini"
+                : null;
         if (family) {
           familyFractions[family].push(remainingFraction);
           const resetAt = parseResetTime(info.quotaInfo.resetTime);
@@ -303,7 +302,6 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
 
       const FAMILY_LABELS = {
         gemini: "Gemini",
-        gemini_argon: "Gemini 4 Argon",
         claude: "Claude",
       };
 
@@ -357,10 +355,9 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
 
       // If every per-model quota in a family is exhausted, do not show a
       // misleading available weekly quota for that family.
-      // Note: Argon has its own weekly limit group and is handled separately from the pooled Gemini models.
+      // Gemini 4 Argon shares the unified Gemini pool (no separate weekly group).
       const entries = Object.entries(quotas);
-      const geminiModels = entries.filter(([key]) => key.startsWith("gemini-") && !key.includes("image") && !key.includes("argon"));
-      const argonModels = entries.filter(([key]) => key.includes("argon"));
+      const geminiModels = entries.filter(([key]) => key.startsWith("gemini-") && !key.includes("image"));
       const claudeModels = entries.filter(([key]) => key.startsWith("claude-"));
 
       const reconcileFamilyWeekly = (weeklyQuota, familyRollupKey, modelEntries) => {
@@ -394,7 +391,6 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       };
 
       reconcileFamilyWeekly(weeklyQuotas.gemini_weekly, "Gemini (all models)", geminiModels);
-      reconcileFamilyWeekly(weeklyQuotas.gemini_argon_weekly, "Gemini 4 Argon (all models)", argonModels);
       reconcileFamilyWeekly(weeklyQuotas.claude_gpt_weekly, "Claude (all models)", claudeModels);
 
       Object.assign(quotas, weeklyQuotas);
