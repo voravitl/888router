@@ -3,8 +3,8 @@ import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getComboByName, getProviderConnections } from "@/lib/localDb";
-import { resolveVirtualAutoCombo } from "open-sse/services/autoCombo/virtualFactory.js";
-import { applyComboContextFields, collectActiveProviders, filterActiveComboMembers } from "../route.js";
+import { resolveVirtualAutoCombo, filterAutoComboModelsByRuntime } from "open-sse/services/autoCombo/virtualFactory.js";
+import { applyComboContextFields, collectActiveProviders } from "../route.js";
 import {
   getAllModelDynamicCapabilities,
   getModelDynamicCapabilities,
@@ -135,10 +135,20 @@ async function lookup(fullId, requestedKind) {
         const memberIds = (virtual?.models || []).map((m) => (typeof m === "string" ? m : m?.id || "")).filter(Boolean);
         if (!memberIds.length) return null;
         let connections = [];
+        let syncedModels = {};
         try {
-          connections = (await getProviderConnections()) || [];
+          connections = ((await getProviderConnections()) || []).filter((c) => c && c.isActive !== false);
         } catch {}
-        const effectiveMemberIds = filterActiveComboMembers(memberIds, collectActiveProviders(connections));
+        if (connections.length > 0) {
+          try {
+            syncedModels = (await getSyncedModelsMap()) || {};
+          } catch {}
+        }
+        const effectiveMemberIds = filterAutoComboModelsByRuntime(memberIds, {
+          connections,
+          syncedModels,
+          activeProviders: collectActiveProviders(connections),
+        });
         const out = {
           id: fullId,
           name: fullId,

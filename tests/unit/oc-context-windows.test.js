@@ -19,11 +19,9 @@ const EXPECTED = {
   "deepseek-v4.1-flash-free":   { contextWindow: 200000,  maxOutput: 32000,  vision: false },
   "flint-40b-free":             { contextWindow: 262144,  maxOutput: 65536,  vision: false },
   "big-pickle":                 { contextWindow: 200000,  maxOutput: 64000,  vision: false },
-  "longcat-2.5-free":           { contextWindow: 1000000, maxOutput: 262144, vision: true },
   "iceman-free":                { contextWindow: 262144,  maxOutput: 131072, vision: false },
-  "inkling-2-small-free":       { contextWindow: 1048576, maxOutput: 131072, vision: true },
   "hy4-flash-free":             { contextWindow: 1048576, maxOutput: 65536,  vision: true },
-  "tidepool-alpha-free":        { contextWindow: 1048576, maxOutput: 131072, vision: false },
+  "seaglass-alpha-free":        { contextWindow: 1048576, maxOutput: 131072, vision: false },
 };
 
 describe("oc (OpenCode Zen free) context windows match models.dev", () => {

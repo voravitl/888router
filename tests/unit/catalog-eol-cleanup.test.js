@@ -112,8 +112,15 @@ describe("Registry & Free Model Catalog EOL cleanup (2026-11-19)", () => {
     expect(new Set(modelIds)).toEqual(new Set(expectedLive));
   });
 
-  it("updates opencode free catalog to exact 12 live models", () => {
-    const retired = ["glm-5.3-flash-free", "pulse-alpha-free", "crouton-alpha-free"];
+  it("updates opencode free catalog to exact 10 live models", () => {
+    const retired = [
+      "glm-5.3-flash-free",
+      "pulse-alpha-free",
+      "crouton-alpha-free",
+      "longcat-2.5-free",
+      "inkling-2-small-free",
+      "tidepool-alpha-free",
+    ];
     const expectedLive = [
       "nemotron-3.5-lightning-free",
       "nemotron-3.5-super-vl-free",
@@ -122,11 +129,9 @@ describe("Registry & Free Model Catalog EOL cleanup (2026-11-19)", () => {
       "deepseek-v4.1-flash-free",
       "flint-40b-free",
       "big-pickle",
-      "longcat-2.5-free",
       "iceman-free",
-      "inkling-2-small-free",
       "hy4-flash-free",
-      "tidepool-alpha-free",
+      "seaglass-alpha-free",
     ];
 
     const regIds = opencodeRegistry.models.map((m) => m.id);
@@ -136,7 +141,7 @@ describe("Registry & Free Model Catalog EOL cleanup (2026-11-19)", () => {
       expect(regIds).not.toContain(id);
       expect(modelIds).not.toContain(id);
     }
-    expect(regIds).toHaveLength(12);
+    expect(regIds).toHaveLength(10);
     expect(new Set(regIds)).toEqual(new Set(expectedLive));
     expect(new Set(modelIds)).toEqual(new Set(expectedLive));
   });

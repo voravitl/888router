@@ -347,6 +347,7 @@ export const MODEL_CAPABILITIES = {
   "iceman-free":                 { reasoning: true, contextWindow: 262144,  maxOutput: 131072 },
   "inkling-2-small-free":        { reasoning: true, vision: true, contextWindow: 1048576, maxOutput: 131072 },
   "hy4-flash-free":              { reasoning: true, vision: true, contextWindow: 1048576, maxOutput: 65536 },
+  "seaglass-alpha-free":         { reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
   "tidepool-alpha-free":         { reasoning: true, contextWindow: 1048576, maxOutput: 131072 },
   "big-pickle":                  { reasoning: true, contextWindow: 200000,  maxOutput: 64000 },
   // GLM-5.3 and GLM-5.2 have 1M context (overrides *glm-5* pattern's 200k). Claude 4.6/4.7/4.8 and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)

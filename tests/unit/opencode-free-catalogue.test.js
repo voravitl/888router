@@ -54,9 +54,13 @@ const DEAD = [
   "glm-5.3-flash-free",
   "pulse-alpha-free",
   "crouton-alpha-free",
+  // Retired by 2026-11-27 (410/400 in live gateway + removed from live /zen/v1/models):
+  "longcat-2.5-free",
+  "inkling-2-small-free",
+  "tidepool-alpha-free",
 ];
 
-// Verified serving on 2026-11-19 against live /zen/v1/models.
+// Verified serving on 2026-11-27 against live /zen/v1/models.
 const ALIVE = [
   "nemotron-3.5-lightning-free",       // 200
   "mimo-v2.6-flash-free",              // 200
@@ -65,11 +69,9 @@ const ALIVE = [
   "deepseek-v4.1-flash-free",          // 200
   "nemotron-3.5-super-vl-free",        // 200
   "flint-40b-free",                    // 200
-  "longcat-2.5-free",
   "iceman-free",
-  "inkling-2-small-free",
   "hy4-flash-free",
-  "tidepool-alpha-free",
+  "seaglass-alpha-free",
 ];
 
 describe("opencode free catalogue lists only models that serve", () => {

@@ -58,8 +58,10 @@ const opencodeConfig = {
   //   pulse-alpha-free, flint-40b-free, crouton-alpha-free.
   // Retired by 2026-11-19 (removed from live /zen/v1/models):
   //   glm-5.3-flash-free, pulse-alpha-free, crouton-alpha-free.
-  //   Added live free models from /zen/v1/models:
-  //   longcat-2.5-free, iceman-free, inkling-2-small-free, hy4-flash-free, tidepool-alpha-free.
+  //   Added: iceman-free, hy4-flash-free.
+  // Retired by 2026-11-27 (410/400 in live gateway + removed from live /zen/v1/models):
+  //   longcat-2.5-free, inkling-2-small-free, tidepool-alpha-free.
+  //   Added live 1M model: seaglass-alpha-free.
   // The paid tier (registry/opencode-go.js) is a DIFFERENT upstream and keeps
   // its own catalogue; the two must not be pruned together.
   models: [
@@ -70,11 +72,9 @@ const opencodeConfig = {
     { id: "deepseek-v4.1-flash-free", name: "deepseek-v4.1-flash-free" },
     { id: "flint-40b-free", name: "flint-40b-free" },
     { id: "big-pickle", name: "big-pickle" },
-    { id: "longcat-2.5-free", name: "longcat-2.5-free" },
     { id: "iceman-free", name: "iceman-free" },
-    { id: "inkling-2-small-free", name: "inkling-2-small-free" },
     { id: "hy4-flash-free", name: "hy4-flash-free" },
-    { id: "tidepool-alpha-free", name: "tidepool-alpha-free" },
+    { id: "seaglass-alpha-free", name: "seaglass-alpha-free" },
   ],
 };
 
