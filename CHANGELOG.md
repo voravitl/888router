@@ -1,3 +1,13 @@
+# v0.15.276 (2026-11-27)
+
+## Fix `auto/*` Runtime Unconnected-Provider Walk, Dynamic Cache Bleed & OpenCode Zen Catalog Sync
+- **Runtime Active-Provider & Stale Synced-Model Filtering (`src/sse/services/model.js`, `open-sse/services/autoCombo/virtualFactory.js`, `src/app/api/v1/models/route.js`, `src/app/api/v1/models/info/route.js`, `tests/unit/auto-combo-runtime-filter.test.js`)**:
+  - Added `filterAutoComboModelsByRuntime` and wired it into `getComboModels("auto/*")` (plus `/v1/models` and `/v1/models/info`) so runtime chat execution narrows `auto/*` candidates to active provider connections (including `noAuth && hasFree` virtual providers when connections exist) and drops dynamic-only models marked `status === "stale"` in `syncedModels`, eliminating wasted fallback walks through unconnected/dead providers (`chatgpt-web`, `felo-web`, `freebuff`, `aihubmix`, `nara`, `api-airforce`, `bazaarlink`).
+  - Guarded `resolveVirtualAutoCombo` against vendor-stripped `capabilityKey` dynamic cache shadows (e.g. `nousresearch:longcat-2.0:free`, `openrouter:nemotron-3.5-lightning:free`) for vendor-prefixed providers, and added retired OpenCode free IDs to `EXCLUDED_FREE_CANDIDATES` so stale DB `modelCapabilities` rows cannot leak back into `auto/best-free-1m`.
+  - Removed the superseded `filterActiveComboMembers` helper from `src/app/api/v1/models/route.js` (its last call sites were replaced by `filterAutoComboModelsByRuntime`).
+- **OpenCode Zen Catalog Alignment (`open-sse/providers/registry/opencode.js`, `open-sse/providers/capabilities.js`, `tests/unit/oc-context-windows.test.js`, `tests/unit/opencode-free-catalogue.test.js`, `tests/unit/catalog-eol-cleanup.test.js`, `tests/unit/opencode-models-sync.test.js`)**:
+  - Removed retired OpenCode free IDs (`longcat-2.5-free`, `inkling-2-small-free`, `tidepool-alpha-free`) that returned HTTP `410`/`400` in live gateway traffic and were removed from `https://opencode.ai/zen/v1/models`, and added live 1M model `seaglass-alpha-free` (`contextWindow: 1048576`, `maxOutput: 131072`, `reasoning: true`).
+
 # v0.15.275 (2026-11-27)
 
 ## `auto/best-free-1m` Split-Provider Capability Parity & Active-Provider Filtering
