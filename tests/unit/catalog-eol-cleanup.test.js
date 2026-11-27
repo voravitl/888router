@@ -146,9 +146,8 @@ describe("Registry & Free Model Catalog EOL cleanup (2026-11-19)", () => {
     expect(new Set(modelIds)).toEqual(new Set(expectedLive));
   });
 
-  it("adds longcat-2.5-free, hy4-flash-free, and qwen4-max with openai supportedFormats to opencode-go", () => {
+  it("adds hy4-flash-free and qwen4-max with openai supportedFormats to opencode-go, and drops retired longcat-2.5-free (410 live 2026-11-27)", () => {
     const added = [
-      ["longcat-2.5-free", "LongCat 2.5 Free"],
       ["hy4-flash-free", "Hy4 Flash Free"],
       ["qwen4-max", "Qwen 4 Max"],
     ];
@@ -159,5 +158,10 @@ describe("Registry & Free Model Catalog EOL cleanup (2026-11-19)", () => {
       expect(entry).toEqual({ id, name, supportedFormats: ["openai"] });
       expect(getModelSupportedFormats("opencode-go", id)).toEqual(["openai"]);
     }
+
+    expect(
+      opencodeGoRegistry.models.find((m) => m.id === "longcat-2.5-free"),
+      "opencode-go must not advertise retired longcat-2.5-free"
+    ).toBeUndefined();
   });
 });

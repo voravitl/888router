@@ -1,3 +1,10 @@
+# v0.15.277 (2026-11-27)
+
+## Fix OpenCode Go Seed Catalog: Drop Upstream-Deprecated Models (410 ModelDeprecated)
+- **Retired seed IDs (`open-sse/providers/registry/opencode-go.js`, `open-sse/services/autoCombo/virtualFactory.js`, `tests/unit/opencode-go-models.test.js`, `tests/unit/catalog-eol-cleanup.test.js`, `tests/unit/ocg-responses-transport-pick.test.js`)**:
+  - Removed `glm-5.2`, `longcat-2.0`, and `longcat-2.5-free` from the static OpenCode Go seed catalog — live gateway probes (2026-11-27) return `410 ModelDeprecated` with explicit replacements (`glm-5.2` → `glm-5.3`, `longcat-2.0`/`longcat-2.5-free` → `longcat-2.5`), and all three are absent from `GET /zen/go/v1/models`. The named replacement `longcat-2.5` (live-verified serving) is seeded so the offline fallback still routes the family.
+  - Added `opencode-go/longcat-2.5-free` to `EXCLUDED_FREE_CANDIDATES` so stale DB `modelCapabilities` rows cannot leak the retired free id back into `auto/best-free-1m`.
+
 # v0.15.276 (2026-11-27)
 
 ## Fix `auto/*` Runtime Unconnected-Provider Walk, Dynamic Cache Bleed & OpenCode Zen Catalog Sync

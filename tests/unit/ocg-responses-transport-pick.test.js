@@ -23,13 +23,13 @@ describe("chatCore per-model transport pick (responses-only models)", () => {
   });
 
   it("openai client + chat-only model keeps chat/completions transport", () => {
-    const t = pickTransport("opencode-go", "openai", "opencode-go", "longcat-2.0");
+    const t = pickTransport("opencode-go", "openai", "opencode-go", "longcat-2.5");
     expect(t?.format).toBe("openai");
     expect(t?.baseUrl).toBe("https://opencode.ai/zen/go/v1/chat/completions");
   });
 
   it("claude client + chat-only model resolves the openai transport (chat/completions)", () => {
-    const t = pickTransport("opencode-go", "claude", "opencode-go", "glm-5.2");
+    const t = pickTransport("opencode-go", "claude", "opencode-go", "glm-5.3-flash");
     expect(t?.format).toBe("openai");
     expect(t?.baseUrl).toBe("https://opencode.ai/zen/go/v1/chat/completions");
   });
