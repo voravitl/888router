@@ -83,4 +83,14 @@ describe("docker-compose runs exactly one gateway, 888route on host port 20129",
   it("relies on built-in Lossless RTK defaults instead of RTK_* env overrides", () => {
     expect(live).not.toMatch(/^\s*RTK_[A-Z0-9_]+:/m);
   });
+
+  it("auto-restarts the gateway and caps its memory (an OOM kill must not be a silent outage)", () => {
+    // 2026-11-28: the gateway was OOM-killed (exit 137) and stayed dead for
+    // ~2 hours because restart was "no" — compose only runs one gateway and
+    // nothing else revives it (watchtower re-pulls images, it does not
+    // restart exited containers). The shared VM (~4GB) also holds other
+    // services, so an uncapped leaking gateway can OOM the whole VM.
+    expect(live).toMatch(/restart:\s*unless-stopped/);
+    expect(live).toMatch(/mem_limit:\s*2g/);
+  });
 });

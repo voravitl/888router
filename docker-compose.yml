@@ -21,7 +21,17 @@ services:
     # build:
     #   context: .
     container_name: 888route
-    restart: "no"
+    # Auto-restart is load-bearing: on 2026-11-28 the gateway was OOM-killed
+    # (exit 137) and stayed dead for ~2 hours because restart was "no" —
+    # nothing else revives an exited container (watchtower re-pulls images,
+    # it does not restart them). `unless-stopped` revives OOM/crash kills in
+    # seconds while still honouring an explicit `docker compose stop`.
+    restart: unless-stopped
+    # Cap the gateway's memory so a leak cannot OOM the shared VM (~4GB,
+    # 9 containers). At the cap the kill becomes a seconds-long blip thanks
+    # to the restart policy above, instead of dragging every sibling
+    # container down. Idles at ~124MiB.
+    mem_limit: 2g
     ports:
       - "20129:20128"
     labels:
