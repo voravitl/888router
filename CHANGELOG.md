@@ -1,3 +1,11 @@
+# v0.15.278 (2026-11-28)
+
+## Fix Gateway Deployment: Auto-Restart After OOM Kill + Memory Cap
+- **`docker-compose.yml` (service `888route` only)**:
+  - `restart: unless-stopped` — on 2026-11-28 the gateway was OOM-killed (`exit 137`, `OOMKilled=true`) and stayed dead ~2 hours because `restart: "no"` left nothing to revive it (watchtower re-pulls images, it does not restart exited containers). The policy revives crash/OOM kills in seconds while still honouring an explicit `docker compose stop`.
+  - `mem_limit: 2g` — caps the gateway so a leak cannot OOM the shared ~4GB VM (9 containers live in it); the kill becomes a seconds-long blip via the restart policy instead of dragging every sibling down. Gateway idles at ~124MiB.
+  - Regression-pinned by `tests/unit/compose-single-gateway.test.js` (RED on base, GREEN on branch).
+
 # v0.15.277 (2026-11-27)
 
 ## Fix OpenCode Go Seed Catalog: Drop Upstream-Deprecated Models (410 ModelDeprecated)
